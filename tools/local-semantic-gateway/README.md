@@ -16,7 +16,7 @@ BitOVP workerが固定のローカルLLMへ非同期jobを送るための、Pyth
 すべてのAPIに、private tokenによるBearer認証が必要です。tokenは一つのpreview tenantへ固定します。任意のURL・model・runtime設定・schema・shell・toolを要求へ追加できません。CORSによるブラウザー直接接続も提供しません。
 
 - `GET /health`: Gatewayの版、登録stage、固定モデル、`quarantinedProfiles`、`acceptingJobs`を返します。隔離中や停止中は`status: "degraded"`、`acceptingJobs: false`。backend推論の動作確認は別です。
-- `GET /readiness/{profile}`: `amd`または`nvidia`だけを受け付ける認証付きの手動診断です。専用runtimeの`/api/version`と`/api/tags`へGETし、固定版とmodel digestを照合します。停止中・いずれかのprofileが隔離中ならruntimeへ接続しません。モデルの読込・推論・解放は行いません。
+- `GET /readiness/{profile}`: `amd`または`nvidia`だけを受け付ける認証付きのmetadata診断です。専用runtimeの`/api/version`と`/api/tags`へGETし、固定版・model digest、runtimeの実行条件、カーネルのGPU情報とデバイスへのアクセス権を照合します。GPUデバイスをopenせず、`gpu-discover`も実行しません。停止中・いずれかのprofileが隔離中ならruntimeへ接続しません。モデルの読込・推論・解放は行いません。
 - `POST /v1/semantic-jobs`: 初回202、同じ要求の再送200、同じkeyで異なるbodyは409。
 - `GET /v1/semantic-jobs/{id}`: 認証tenantに属するjobだけを返します。
 - `POST /v1/semantic-jobs/{id}/cancel`: `{}`を送り、取消を要求します。
@@ -26,15 +26,19 @@ readinessの成功HTTP応答は常に200で、次の固定キーだけを返し�
 ```text
 version: "bitovp-semantic-readiness-v2"
 profile: "amd" | "nvidia"
+organizationId: tokenに紐づくtenant UUID
 scope: "METADATA_ONLY"
 ready: codeが"READY"の場合だけtrue
 code: "READY" | "GATEWAY_STOPPING" | "RUNTIME_QUARANTINED"
       | "RUNTIME_UNAVAILABLE" | "RUNTIME_VERSION_MISMATCH" | "MODEL_MISMATCH"
+      | "GPU_UNVERIFIED"
+gpu: READYの場合だけ、新鮮なbitovp-runtime-gpu-capability-v1の受動確認情報
+     method: "PASSIVE_DEVICE_ACCESS"
 ```
 
 `/health`の設定値と異なりruntimeの現在の登録情報を読みますが、GPUの空き・モデルの読込可否・推論結果の正しさまでは保証しません。各GETは既存の固定loopback接続・接続5秒/応答読取10秒・応答2MiB上限を使い、redirectやproxyを使いません。二つの読取を直列に行うため、clientはその合計時間も考慮します。raw error、接続先host、観測した未承認model名・digestは応答やログへ出しません。
 
-作成要求は次のキーだけを持ちます。
+既定の4stage registryへの作成要求は次のキーだけを持ちます。追加のCHOICE stageは後述の専用registryを明示した場合に限ります。
 
 ```text
 version: "bitovp-semantic-job-v1"
@@ -66,7 +70,7 @@ contextは8192、thinking=false、temperature=0、seed=41、jobの推論予算�
 
 現在の文脈付き翻訳は`LOCAL_CAPTION_JA_V2`を使い、旧v1のprompt・identity・証拠は履歴として保持します。字幕のcurrentなsource spanまたはanchorから、同じ素材・time mapのAISA場面、ショット、人物名を参照DATAへ選びます。任意の参照項目は全文のまま最大1400 UTF-8 bytes、本文・採用済み同文脈訳を含むDATA全体は4500 bytesまで。sourceや文脈・ASR policy・model/promptの変更は別cache keyです。同じ確認済みショット文脈の同じ台詞は採用済み表記を引き継ぎ、異なる場面や文脈不明のcueへtextだけで使い回しません。currentな手動訳は上書きしません。これは構造・出典・表記の一貫性の検証であり、訳の意味的正しさの保証ではありません。
 
-PLaMo 3 Translate用のpure PFML3 adapterは別identityの実験用準備です。このGatewayのjobやStory receiptがPLaMoへ切り替わることはなく、adapterだけではdownload・service・推論を有効にしません。利用条件、実weight SHA、変換/runtime、両GPUの実測は別途確認します。
+PLaMo 3 Translateは字幕専用の別identity・専用jobとして明示設定します。導入条件と実行経路は後述の「PLaMo 翻訳専用の導入境界」を参照してください。StoryのQwen identityは変更しません。
 
 従来の二段stageだけのregistryも読み込めます。現在の翻訳にはv2 stageの登録が必要です。翻訳stageを追加しても、Story identityは旧二段だけを同じ構造でhashし、翻訳identityを別に作るため、登録追加だけで既存Ledger cacheを失効させません。新ASR品質policyによって入力が変わる場合のcache分離は、これとは別です。
 
@@ -124,7 +128,7 @@ with inference_lease(folder.parent / "locks/inference.lock"):
 公開registryは、checkoutのcoreから推論なしで生成できます（出力先はrepository外へ指定します）。
 
 ```sh
-pnpm --filter @bitovp/worker exec tsx -e 'import {writeFileSync} from "node:fs"; import {localSemanticStageRegistry} from "@bitovp/core"; writeFileSync(process.argv[1],JSON.stringify(localSemanticStageRegistry(),null,2)+"\n")' /absolute/path/to/stages.json
+pnpm --filter @bitovp/worker exec tsx scripts/write-local-semantic-stages.ts /absolute/path/to/stages.json
 ```
 
 ### 検証済み編集候補から選ぶ CHOICE stage
@@ -145,7 +149,15 @@ registryを書き換えただけではアプリの新方式は有効になりま
 
 既設Gatewayへの更新時に下の初回導入scriptを再実行しません。運用者がidleと所有unitを確認し、既存directory/unitと公開registryをbackupしてから、`gateway.py`・`gpu_capability.py`・`plamo_runtime.py`とregistryを同じ検証済みsnapshotから更新し、同じunitを再起動します。token・tenant・証明書・profile設定は維持します。healthで旧二段と新翻訳stageのschema/prompt identityを照合した後、別途実推論を確認します。
 
-`/readiness/<profile>` の READY は、固定したruntime版・モデルdigestに加え、`bitovp-runtime-gpu-capability-v1` の新鮮なGPU能力情報を要求します。`gpu_capability.py` は、専用user serviceのMainPID、同一UID・mount/user namespace、専用loopback listener、実行中のbinary、profileのGPU選択条件を照合します。実runtimeとGatewayのUID/GID・補助group・有効capability・LSM contextが異なる場合、runtimeにSeccomp filterがある場合、未知のdevice制限がある場合も能力を確認済みとはしません。DeviceAllowはsystemctlが空値を省略するため、固定unitのD-Bus propertyをbusctlで読み、型付きの空配列 `a(ss) 0` を明示確認します。欠落・不正な型・空でない配列は拒否します。そのruntimeと固定backend libraryのSHAを確認し、同じGPU選択条件でOllama 0.40.14の `gpu-discover` だけを実行します。CUDA/ROCm backendが列挙した実デバイスと正の空きメモリを確認し、CPUのみ・sysfsのみ・未知の状態は `GPU_UNVERIFIED` とします。モデルはロードせず、chat/generate/download/unloadも呼びません。モデルを毎回unloadする待機状態でも能力を確認できます。実推論後のGPU配置と解放確認は引き続き別に必須です。
+`/readiness/<profile>` の READY は、固定したruntime版・モデルdigestと、現在のデバイスへの受動的なアクセス確認を示します。`gpu_capability.py` は、専用user serviceのMainPID、同一UID・mount/user namespace、専用loopback listener、実行中のbinary、profileのGPU選択条件を照合します。実runtimeとGatewayのUID/GID・補助group・有効capability・LSM contextが異なる場合、runtimeにSeccomp filterがある場合、未知のdevice制限がある場合は確認済みとしません。DeviceAllowは固定unitのD-Bus propertyから型付きの空配列 `a(ss) 0` を明示確認し、欠落・不正な型・空でない配列は拒否します。runtimeと固定backend libraryのSHA確認も維持します。
+
+待機時の `PASSIVE_DEVICE_ACCESS` は、NVIDIAではカーネルに登録された選択GPUのUUID・device minorとデバイスのアクセス権、AMDではKFDのGPU情報・amdgpu driverと全候補render deviceのアクセス権を確認します。AMDはKFDとROCrの順序が一致するとは仮定せず、候補の一部にアクセスできない場合も利用不可とします。デバイスのopen・ioctl・GPU検出コマンド・モデルのロードは行いません。時刻はこの受動確認の観測時刻です。以前の実GPU検出の時刻を書き換えたり、空きVRAMやbackend実動作を確認済みとしたりはしません。デバイスなし・CPUのみ・権限不足・未知の状態は `GPU_UNVERIFIED` とします。
+
+新しいsemantic/Plamo推論ジョブを受け付ける時と、共有推論leaseを取得した実行直前は、毎回キャッシュを使わずOllama 0.40.14の `gpu-discover` を実行します。`OLLAMA_NATIVE_DISCOVERY` だけを実GPUの根拠として受理し、CUDA/ROCmが列挙した実デバイスと正の空きメモリを確認します。受動確認の結果を代用できません。実推論後のGPU配置と解放確認も引き続き必須です。health・readiness・履歴・取消・同一requestKeyの再読は実GPU検出を起動しません。
+
+デバイスノードは、カーネルに登録されたmajor/minorと実ファイルの `st_rdev` 全体が一致することを要求します。パス名や文字デバイスであることだけでは確認済みとせず、別デバイスへの誤った結び付けを拒否します。
+
+更新時は、新しい方法名を受理するWeb/Workerを先に配備し、その後Gatewayを更新します。旧Web/Workerは `PASSIVE_DEVICE_ACCESS` を未知として拒否するため、Gatewayだけを先に更新するとクリップ機能が一時的に利用不可になります。
 
 Workerは4秒以内のmetadata確認をまとめ、5秒間隔で更新します。元のGPU観測時刻を保持し、15秒を超えた成功はWeb受付にもWorkerの新規claimにも使いません。WebはRedisのWorker状態だけを読み、画面からLANを直接probeしません。取得不能時も既存結果の参照、所有タスクのcancel、確定済みartifactの回復は維持します。GPU-discovery子プロセスはGatewayと同じuser unitのメモリ予算に入ります。モデルを使わない管理用preflightで子プロセスの最大RSSが304,412 KiB、親が25,044 KiBだったため、provisionerのGateway予算は有限の `MemoryMax=512M` とします。既設256Mはこの子プロセスの実測だけでも超えます。配備時は所有Gateway unitも512Mへ更新し、そのunit内の実際の認証付きGETで `MemoryPeak`、OOM、再起動数、timeoutを測定してください。管理用shellの成功はGatewayの権限・制限やcgroup内での成功を保証しません。CLIやfixtureの成功だけを実機確認として扱いません。
 
@@ -186,7 +198,7 @@ loader の探索 directory とbinary/libraryの親directoryは、子directoryを
 
 共通 inference.lock 内で既設 Qwen が unloaded/専用 unit が inactive なことを確認してから起動します。最初の unit InvocationID/MainPID/startTicks を固定し、同じ起動identityの検証済み `/usr/bin/env` launcher から binary への移行だけを最大5秒待ちます。二度の観測の間にexecが完了した場合は、同じownerの期待binary/argvを再検証して期限内のloopに戻ります。不明な executable や argv を待機理由にしません。起動済み binary/profile と owned PID の GPU 割当を確認し、終了・取消・HTTP失敗のいずれも cgroup 空、捕捉済み旧 PID 終了を確認してから lock を解放し terminal 成功/取消にします。既にinactive/failed、MainPID0、元InvocationIDまたは解除済みの空ID、旧PID終了・cgroup空を証明できた場合はstopを呼びません。MainPID0でもforeign InvocationIDやactivating、未捕捉ownerを解放済みと扱わず、停止もせずcleanup:falseと永続global quarantineに進めます。捕捉済み startTicks を再観測で上書きせず、外部restartやPID再利用で起動identityが変わった場合も新プロセスをownedへ昇格させません。HTTP 接続の終了だけでは解放と扱いません。既存 Qwen 用 offline release CLI の証明を PLaMo job に流用することは拒否します。PLaMo の隔離解除を必要とする実運用は、専用 unit を対象にした独立監査済み operator 手順の追加が必要です。
 
-この追加は未配置環境でも fail closed となる adapter/protocol/recipe/fixture の実装です。ライセンス用途確認前の PLaMo 重み取得・実 service 配置・native 翻訳精度/速度の試験は行っていません。固定 [llama.cpp server source](https://github.com/ggml-org/llama.cpp/blob/10d4846a572aebf21c0482d140b00e74c0f1ad20/tools/server/README.md) の raw completion/stop/timing と CLI を基にしています。
+未配置環境では実行を拒否します。adapterやfixtureの検証は、実際の重みの配置、専用serviceの起動、翻訳精度・速度の検証とは区別します。固定 [llama.cpp server source](https://github.com/ggml-org/llama.cpp/blob/10d4846a572aebf21c0482d140b00e74c0f1ad20/tools/server/README.md) の raw completion/stop/timing と CLI を基にしています。
 
 ### 組織に束縛したclip受付
 

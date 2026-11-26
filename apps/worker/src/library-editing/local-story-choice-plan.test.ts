@@ -1,9 +1,11 @@
 import {
 	buildFeasibleStoryChoices,
 	cfrTimeMapSchema,
+	compileFeasibleStoryChoice,
 	hashEditingEvidence,
 	type LocalStoryCorpus,
 	type LocalStoryInput,
+	selectLocalStoryClips,
 	sliceFeasibleStoryChoices,
 } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
@@ -75,6 +77,88 @@ function data(prompt: string) {
 }
 
 describe("bounded all-card feasible-choice prompts", () => {
+	it("offers source-ordered whole plans when a later change makes an earlier outcome impossible", () => {
+		const f = fixture(4);
+		const { input, ledger } = f.full;
+		input.timeMap.sourceEndUs = 30_000_000;
+		input.timeMap.editingEndFrame = 900;
+		input.timeMapHash = hashEditingEvidence(input.timeMap);
+		const spans = [
+			[0, 75],
+			[100, 389],
+			[500, 555],
+			[600, 719],
+		] as const;
+		const roles = ["CONTEXT", "ACTION", "OUTCOME", "CHANGE"] as const;
+		for (const [index, shot] of input.shots.entries()) {
+			const span = spans[index],
+				event = ledger.events[index];
+			if (!span || !event) throw new Error("Invalid chronology fixture");
+			[shot.fromFrame, shot.toFrame] = span;
+			event.role = roles[index] ?? "ACTION";
+		}
+		const impossible = {
+			mode: "FLOW" as const,
+			message: "出来事を紹介する。",
+			uncertainty: "",
+			beats: [0, 1, 3, 2].map((index, position) => {
+				const event = ledger.events[index];
+				if (!event) throw new Error("Invalid chronology fixture");
+				return {
+					id: `b${position + 1}`,
+					role: event.role,
+					eventIds: [event.id],
+					requires: position ? [`b${position}`] : [],
+				};
+			}),
+		};
+		// The captured failure fits in time, but its last mandatory beat goes backwards.
+		expect(spans.reduce((sum, [from, to]) => sum + to - from, 0)).toBe(538);
+		expect(
+			selectLocalStoryClips({
+				input,
+				ledger,
+				blueprint: { ...impossible, beats: impossible.beats.slice(0, 3) },
+				targetDurationFrames: 900,
+			}).actualDurationFrames,
+		).toBe(483);
+		expect(() =>
+			selectLocalStoryClips({
+				input,
+				ledger,
+				blueprint: impossible,
+				targetDurationFrames: 900,
+			}),
+		).toThrow("LOCAL_STORY_NO_FITTING_PLAN");
+		const before = structuredClone(f);
+		const prepared = prepareLocalStoryChoicePrompts(f);
+		expect(prepared.choices.plans.length).toBeGreaterThan(0);
+		for (const prompt of prepared.prompts) {
+			expect(data(prompt).cards).toHaveLength(4);
+			expect(Buffer.byteLength(prompt)).toBeLessThanOrEqual(6656);
+		}
+		for (const plan of prepared.choices.plans) {
+			const { selection } = compileFeasibleStoryChoice({
+				input,
+				ledger,
+				choices: prepared.choices,
+				requestedMode: f.mode,
+				choice: {
+					planId: plan.id,
+					message: impossible.message,
+					uncertainty: "",
+				},
+			});
+			expect(selection.requestedDurationFrames).toBe(900);
+			expect(selection.actualDurationFrames).toBeGreaterThan(0);
+			expect(selection.actualDurationFrames).toBeLessThanOrEqual(900);
+			const order = selection.localStorySelection.selectedEventIds.map((id) =>
+				ledger.events.findIndex((event) => event.id === id),
+			);
+			expect(order).toEqual([...order].sort((a, b) => a - b));
+		}
+		expect(f).toEqual(before);
+	});
 	it("retains all 52 exact cards, source order and Unicode strings while presenting only complete plan IDs", () => {
 		const f = fixture(52),
 			before = structuredClone(f),

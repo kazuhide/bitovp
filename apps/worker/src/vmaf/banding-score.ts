@@ -1,5 +1,10 @@
 import { readFile, rm } from "node:fs/promises";
-import { sampleAspectRatioFromProbe } from "@bitovp/core";
+import {
+	type HdrInput,
+	hdrColorConversion,
+	hdrInputFromProbe,
+	sampleAspectRatioFromProbe,
+} from "@bitovp/core";
 import { type BandingFrame, canonicalBandingScore } from "@bitovp/core/banding";
 import type { ProcessRunner } from "../feeder/supervisor";
 import { presentationTransformReason } from "./hardware-decode";
@@ -16,7 +21,10 @@ type BandingInput = {
 	height: number;
 	bitDepth: number;
 	frames?: number;
+	eotf?: HdrBandingMethod;
+	hdrInput?: HdrInput;
 };
+export type HdrBandingMethod = "PQ" | "HLG_TO_PQ_1000_NITS";
 
 /** libvmaf builds report release/describe names or a Git revision. Preserve the
  * exact upstream identity; a revision must never be relabelled as a release. */
@@ -55,7 +63,7 @@ export function assertBandingGeometry(input: {
 		);
 }
 
-export function bandingInputFromProbe(text: string) {
+export function bandingInputFromProbe(text: string, eotf?: HdrBandingMethod) {
 	const data = object(JSON.parse(text));
 	const videos = Array.isArray(data?.streams)
 		? data.streams
@@ -93,14 +101,25 @@ export function bandingInputFromProbe(text: string) {
 	)
 		throw new Error("BANDING_FULL_RANGE_UNSUPPORTED");
 	if (
-		["smpte2084", "arib-std-b67", "smpte428"].includes(
+		!eotf &&
+		(["smpte2084", "arib-std-b67", "smpte428"].includes(
 			String(video.color_transfer),
 		) ||
-		String(video.color_primaries).startsWith("bt2020") ||
-		String(video.color_space).startsWith("bt2020")
+			String(video.color_primaries).startsWith("bt2020") ||
+			String(video.color_space).startsWith("bt2020"))
 	)
 		throw new Error("BANDING_HDR_UNSUPPORTED");
-	return { ...input, bitDepth: input.bitDepth };
+	const hdrInput = eotf ? hdrInputFromProbe(text, "distorted") : undefined;
+	if (
+		hdrInput &&
+		hdrInput.transfer !== (eotf === "PQ" ? "smpte2084" : "arib-std-b67")
+	)
+		throw new Error("BANDING_HDR_METHOD_MISMATCH");
+	return {
+		...input,
+		bitDepth: input.bitDepth,
+		...(eotf ? { eotf, hdrInput } : {}),
+	};
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -162,11 +181,17 @@ export function parseBandingTiming(
 					!["tv", "mpeg", "unknown", "unspecified"].includes(
 						String(frame.color_range),
 					)) ||
-				["smpte2084", "arib-std-b67", "smpte428"].includes(
-					String(frame.color_transfer),
-				) ||
-				String(frame.color_primaries).startsWith("bt2020") ||
-				String(frame.color_space).startsWith("bt2020")
+				(!input.hdrInput &&
+					(["smpte2084", "arib-std-b67", "smpte428"].includes(
+						String(frame.color_transfer),
+					) ||
+						String(frame.color_primaries).startsWith("bt2020") ||
+						String(frame.color_space).startsWith("bt2020"))) ||
+				(input.hdrInput &&
+					(frame.color_transfer !== input.hdrInput.transfer ||
+						frame.color_primaries !== input.hdrInput.primaries ||
+						frame.color_space !== "bt2020nc" ||
+						frame.color_range !== "tv"))
 			)
 				throw new Error("BANDING_FRAME_PRESENTATION_CHANGED");
 		}
@@ -203,8 +228,12 @@ export function buildCpuBandingCommand(
 	// This is FFmpeg filter escaping, not shell escaping (the runner uses argv).
 	const escaped = logPath.replace(/([\\':,;[\]])/g, "\\$1");
 	const feature = original
-		? `'name=cambi\\:enc_width=${original.width}\\:enc_height=${original.height}\\:enc_bitdepth=${original.bitDepth}'`
+		? `'name=cambi\\:enc_width=${original.width}\\:enc_height=${original.height}\\:enc_bitdepth=${original.bitDepth}${original.eotf ? "\\:eotf=pq" : ""}'`
 		: "name=cambi";
+	const conversion =
+		original?.eotf === "HLG_TO_PQ_1000_NITS" && original.hdrInput
+			? `${hdrColorConversion(original.hdrInput)},`
+			: "";
 	return [
 		"-hide_banner",
 		"-nostdin",
@@ -221,7 +250,7 @@ export function buildCpuBandingCommand(
 		"-filter_complex_threads",
 		"1",
 		"-filter_complex",
-		`[0:v:0]split=2[dist][ref];[dist][ref]libvmaf=model=:feature=${feature}:log_fmt=json:log_path='${escaped}':n_threads=${threads}:n_subsample=1[out]`,
+		`[0:v:0]${conversion}split=2[dist][ref];[dist][ref]libvmaf=model=:feature=${feature}:log_fmt=json:log_path='${escaped}':n_threads=${threads}:n_subsample=1[out]`,
 		"-map",
 		"[out]",
 		"-an",
@@ -294,6 +323,7 @@ export async function runCpuBandingScore(
 	signal: AbortSignal,
 	threads = 1,
 	inputProbe?: string,
+	hdrMethod?: HdrBandingMethod,
 ) {
 	try {
 		signal.throwIfAborted();
@@ -308,7 +338,7 @@ export async function runCpuBandingScore(
 			if (result.code !== 0) throw new Error("BANDING_INPUT_PROBE_FAILED");
 			probe = result.stdout;
 		}
-		const original = bandingInputFromProbe(probe);
+		const original = bandingInputFromProbe(probe, hdrMethod);
 		const timing = await probeBandingTiming(deps, input, signal, original);
 		await rm(logPath, { force: true });
 		const run = await deps.runner.run(
@@ -321,7 +351,7 @@ export async function runCpuBandingScore(
 			throw new Error(`BANDING_CPU_SCORING_FAILED (${run.code})`);
 		const log: unknown = JSON.parse(await readFile(logPath, "utf8"));
 		const version = parseBandingLibvmafVersion(object(log)?.version);
-		const featureName = `cambi_encbd_${original.bitDepth}_ench_${original.height}_encw_${original.width}`;
+		const featureName = `cambi_encbd_${original.bitDepth}_ench_${original.height}_encw_${original.width}${hdrMethod ? "_eotf_pq" : ""}`;
 		return {
 			frames: parseCpuBandingLog(log, timing, featureName),
 			libvmafVersion: version,

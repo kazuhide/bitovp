@@ -28,7 +28,10 @@ import type { createLocalSemanticClient } from "./local-semantic-client";
 import type { LocalStoryArtifactStore } from "./local-story-artifacts";
 import * as asrQuoteRepair from "./local-story-asr-quote-repair";
 import * as blueprintPrompt from "./local-story-blueprint-prompt";
-import { createLocalStoryEngine } from "./local-story-engine";
+import {
+	createLocalStoryEngine,
+	localStoryArtifactHash,
+} from "./local-story-engine";
 import {
 	createLegacyLocalStoryLedgerCache,
 	createLegacyV2LocalStoryLedgerCache,
@@ -176,8 +179,10 @@ function fixture(
 		useSpeechEvidence?: boolean;
 		firstClause?: string;
 		clauses?: string[];
+		shotSeconds?: number;
 		shotPaddingRepeats?: number;
 		segments?: { startUs: number; endUs: number; text: string }[];
+		speechIntervals?: { startUs: number; endUs: number }[];
 		modelSha256?: string;
 		pinnedAsrModelSha256?: string | null;
 		changeLedger?(
@@ -205,11 +210,13 @@ function fixture(
 		"The dog returns the bag to its owner.",
 		"The owner receives the bag.",
 	];
+	const shotSeconds = options.shotSeconds ?? 5;
+	const duration = clauses.length * shotSeconds;
 	const analysis = normalizeSceneAnalysis({
 		metadata: { version: "authored-local-story-engine-test" },
 		title: "A returned bag",
 		description: "A dog returns a missing bag.",
-		duration: clauses.length * 5,
+		duration,
 		scenes: [
 			{
 				id: sceneId,
@@ -217,13 +224,13 @@ function fixture(
 				title: "The bag",
 				summary: "A missing bag is returned.",
 				startInSeconds: 0,
-				endInSeconds: clauses.length * 5,
+				endInSeconds: duration,
 				content: {
 					objects: [{ category: "bag", description: "The missing bag." }],
 				},
 				shots: clauses.map((clause, index) => ({
-					startInSeconds: index * 5,
-					endInSeconds: (index + 1) * 5,
+					startInSeconds: index * shotSeconds,
+					endInSeconds: (index + 1) * shotSeconds,
 					// Long but valid source fields ensure the real byte budget creates several chunks.
 					detailedDescription:
 						clause +
@@ -248,9 +255,9 @@ function fixture(
 		mediaVersionId: mediaId,
 		kind: "CFR",
 		sourceStartUs: 0,
-		sourceEndUs: clauses.length * 5_000_000,
+		sourceEndUs: duration * 1_000_000,
 		editingStartFrame: 0,
-		editingEndFrame: clauses.length * 150,
+		editingEndFrame: duration * 30,
 		fps: { num: 30, den: 1 },
 	});
 	const segments = options.segments ?? [
@@ -296,15 +303,22 @@ function fixture(
 		},
 	};
 	mocks.createStore.mockReturnValue(store);
-	mocks.prepareTranscript.mockResolvedValue({
+	const transcript = {
 		qualityPolicyFingerprint: TRANSCRIPTION_POLICY_FINGERPRINT,
 		segments,
 		status: "READY",
-		fingerprint: hashEditingEvidence(segments),
-		warnings: [],
+		fingerprint: hashEditingEvidence(
+			options.speechIntervals
+				? { segments, speechIntervals: options.speechIntervals }
+				: segments,
+		),
+		speechIntervals: options.speechIntervals,
+		warnings:
+			options.speechIntervals && segments.length === 0 ? ["NO_SPEECH"] : [],
 		modelSha256: "b".repeat(64),
 		cached: true,
-	});
+	};
+	mocks.prepareTranscript.mockResolvedValue(transcript);
 	const requests: Request[] = [];
 	let blueprintAttempt = 0;
 	let choiceAttempt = 0;
@@ -482,6 +496,7 @@ function fixture(
 		input,
 		chunks,
 		segments,
+		transcript,
 		config,
 		choiceProbe,
 	};
@@ -679,6 +694,147 @@ beforeEach(() => {
 });
 
 describe("local story engine with real evidence contracts and a fake local model", () => {
+	it("reuses the full source ledger for a trailer without asking the model to draft a conclusion", async () => {
+		const f = fixture({ choiceEnabled: true, shotPaddingRepeats: 80 });
+		const { storyMode: _storyMode, ...parameters } = f.context.parameters;
+		const trailer = {
+			durationMode: "EXACT",
+			disclosure: "SETUP_AND_QUESTION",
+		} as const;
+		const context = { ...f.context, parameters: { ...parameters, trailer } };
+		const result = await f.engine.plan(context);
+
+		expect(f.requests.length).toBeGreaterThan(0);
+		expect(f.requests.every(({ stage }) => stage === "LOCAL_LEDGER_V1")).toBe(
+			true,
+		);
+		expect(f.choiceProbe).not.toHaveBeenCalled();
+		expect(result.selection.actualDurationFrames).toBe(450);
+		expect(result.evidence.blueprint.beats.map(({ role }) => role)).toEqual([
+			"CONTEXT",
+			"ACTION",
+			"ACTION",
+		]);
+		expect(result.evidence.trailer).toEqual({
+			intent: trailer,
+			windows: result.selection.clips.map(({ sourceInUs, durationFrames }) => ({
+				sourceInUs,
+				durationFrames,
+			})),
+		});
+		expect(result.evidence.artifactHash).toBe(
+			localStoryArtifactHash(result.evidence),
+		);
+		expect(result.warnings).toContain("LOCAL_STORY_VISUAL_GROUNDING_PENDING");
+		const firstCalls = f.run.mock.calls.length;
+
+		// A new task may reuse the full-source ledger with a different disclosure policy.
+		const second = await f.engine.plan({
+			...context,
+			task: { ...context.task, id: randomUUID() },
+			parameters: {
+				...parameters,
+				trailer: { durationMode: "TARGET", disclosure: "SETUP_ONLY" },
+			},
+		});
+		expect(f.run).toHaveBeenCalledTimes(firstCalls);
+		expect(second.evidence.ledgerHash).toBe(result.evidence.ledgerHash);
+		expect(second.evidence.artifactHash).not.toBe(result.evidence.artifactHash);
+		expect(second.selection.actualDurationFrames).toBe(150);
+		expect(second.warnings).toContain(
+			"LOCAL_STORY_DURATION_LIMITED_BY_EVIDENCE",
+		);
+	});
+
+	it("does not fall back to scene metadata alone when full-source audio transcription is unavailable", async () => {
+		const f = fixture();
+		const { storyMode: _storyMode, ...parameters } = f.context.parameters;
+		mocks.prepareTranscript.mockResolvedValueOnce({
+			status: "UNAVAILABLE",
+			segments: [],
+		});
+		await expect(
+			f.engine.plan({
+				...f.context,
+				parameters: {
+					...parameters,
+					trailer: { durationMode: "TARGET", disclosure: "SETUP_ONLY" },
+				},
+			}),
+		).rejects.toMatchObject({ code: "LOCAL_STORY_TRANSCRIPT_REQUIRED" });
+		expect(f.run).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{
+			kind: "one interval",
+			shotSeconds: 5,
+			speechIntervals: [{ startUs: 4_000_000, endUs: 6_000_000 }],
+		},
+		{
+			kind: "two intervals at the 180-second transcription boundary",
+			shotSeconds: 180,
+			speechIntervals: [
+				{ startUs: 179_000_000, endUs: 180_000_000 },
+				{ startUs: 180_000_000, endUs: 181_000_000 },
+			],
+		},
+	])("rejects outcome-crossing VAD with $kind for fresh and cached evidence", async ({
+		shotSeconds,
+		speechIntervals,
+	}) => {
+		const f = fixture({
+			segments: [],
+			shotPaddingRepeats: 80,
+			shotSeconds,
+			speechIntervals,
+			changeLedger(ledger, chunk) {
+				return chunk.refs.includes("s1")
+					? {
+							...ledger,
+							events: ledger.events.map((event) => ({
+								...event,
+								role: "OUTCOME",
+							})),
+						}
+					: ledger;
+			},
+		});
+		mocks.prepareTranscript.mockResolvedValueOnce({
+			...f.transcript,
+			cached: false,
+		});
+		const { storyMode: _storyMode, ...parameters } = f.context.parameters;
+		const context = {
+			...f.context,
+			parameters: {
+				...parameters,
+				targetDurationFrames: shotSeconds * 30,
+				trailer: {
+					durationMode: "EXACT",
+					disclosure: "SETUP_AND_QUESTION",
+				} as const,
+			},
+		};
+		for (let attempt = 0; attempt < 2; attempt++) {
+			await expect(
+				f.engine.plan({
+					...context,
+					task: { ...context.task, id: randomUUID() },
+				}),
+			).rejects.toMatchObject({
+				code: "LOCAL_TRAILER_EXACT_DURATION_UNAVAILABLE",
+			});
+		}
+		expect(f.requests).toHaveLength(f.chunks.length);
+		expect(f.requests.every(({ stage }) => stage === "LOCAL_LEDGER_V1")).toBe(
+			true,
+		);
+		expect(mocks.prepareTranscript).toHaveBeenCalledWith(
+			expect.objectContaining({ includeSpeechIntervals: true }),
+		);
+	});
+
 	it.each([
 		"QUOTE",
 		"ASR",
@@ -1873,6 +2029,88 @@ describe("local story engine with real evidence contracts and a fake local model
 			"Where is my bag?",
 		);
 		expect(result.segments).toEqual(f.segments);
+	});
+	it.each([
+		"legacy",
+		"choice",
+	] as const)("runs %s ASR and ledger planning only for the verified requested scene", async (planner) => {
+		const choice = planner === "choice";
+		const f = fixture({ choiceEnabled: choice });
+		const analysis = item(f.context.verified.analysisDocument);
+		const scene = item(analysis.scenes[0]);
+		f.context.verified.analysisDocument = {
+			...analysis,
+			scenes: [
+				{ ...scene, endInSeconds: 25, shots: scene.shots.slice(0, 5) },
+				{
+					...scene,
+					id: randomUUID(),
+					startInSeconds: 25,
+					shots: scene.shots.slice(5),
+				},
+			],
+		};
+		const sceneScope = { sceneId: scene.id, startUs: 0, endUs: 25_000_000 };
+		const result = await f.engine.plan({
+			...f.context,
+			parameters: {
+				...f.context.parameters,
+				storySceneId: scene.id,
+				...(choice ? { storyPlanner: "FEASIBLE_CHOICE_V1" as const } : {}),
+			},
+		});
+		expect(mocks.prepareTranscript).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ sceneScope }),
+		);
+		expect(result.evidence.sceneScope).toEqual(sceneScope);
+		expect(result.evidence.sceneFrameBounds).toEqual({
+			fromFrame: 0,
+			toFrame: 750,
+		});
+		expect(result.evidence.inputCoverage).toMatchObject({
+			totalShots: 5,
+			processedShots: 5,
+		});
+		expect(
+			f.requests
+				.filter((r) => r.stage === "LOCAL_LEDGER_V1")
+				.flatMap((r) => payload<LocalStoryChunk>(r.prompt).refs),
+		).toEqual(["s0", "s1", "s2", "s3", "s4"]);
+		expect(result.selection.clips.length).toBeGreaterThan(0);
+		expect(new Set(result.selection.clips.map((clip) => clip.sceneId))).toEqual(
+			new Set([scene.id]),
+		);
+		expect(result.evidence.artifactHash).toBe(
+			localStoryArtifactHash(result.evidence),
+		);
+	});
+	it("rejects an unknown requested scene before starting ASR or model work", async () => {
+		const f = fixture();
+		await expect(
+			f.engine.plan({
+				...f.context,
+				parameters: { ...f.context.parameters, storySceneId: randomUUID() },
+			}),
+		).rejects.toMatchObject({ code: "LOCAL_STORY_SCENE_SCOPE_INVALID" });
+		expect(mocks.prepareTranscript).not.toHaveBeenCalled();
+		expect(f.run).not.toHaveBeenCalled();
+	});
+	it("reports unavailable transcription for the selected scene before model work", async () => {
+		const f = fixture();
+		const analysis = item(f.context.verified.analysisDocument);
+		const storySceneId = item(analysis.scenes[0]).id;
+		mocks.prepareTranscript.mockResolvedValueOnce({
+			qualityPolicyFingerprint: TRANSCRIPTION_POLICY_FINGERPRINT,
+			status: "UNAVAILABLE",
+			segments: [],
+		});
+		await expect(
+			f.engine.plan({
+				...f.context,
+				parameters: { ...f.context.parameters, storySceneId },
+			}),
+		).rejects.toMatchObject({ code: "LOCAL_STORY_SCENE_TRANSCRIPT_REQUIRED" });
+		expect(f.run).not.toHaveBeenCalled();
 	});
 	it("processes all complete source chunks and returns nontruncated coverage proof", async () => {
 		const f = fixture(),

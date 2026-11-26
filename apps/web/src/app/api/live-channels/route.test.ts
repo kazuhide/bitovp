@@ -22,6 +22,7 @@ const credFindUnique = vi.fn(async () => ({ provider: "AWS_S3" }));
 // schedule rows would fire a START with no STOP. The tx double hands the
 // callback the same delegates so assertions see every write.
 const presetFindFirst = vi.fn();
+const presetCreate = vi.fn();
 /**
  * open alerts for the whole page come from ONE grouped read. The
  * default is an empty grouping — "looked, found none" — so every pre-existing
@@ -82,10 +83,15 @@ const prismaMock = {
 	},
 	liveChannel: { create, update, updateMany, findMany, findUnique },
 	$queryRaw: queryRaw,
-	preset: { findFirst: presetFindFirst },
+	preset: { findFirst: presetFindFirst, create: presetCreate },
 	liveSchedule: { createMany: scheduleCreateMany, findMany: scheduleFindMany },
 	alertEvent: { groupBy: alertGroupBy },
-	credential: { findUnique: credFindUnique, findMany: vi.fn(async () => []) },
+	credential: {
+		findUnique: credFindUnique,
+		findMany: vi.fn(
+			async (): Promise<{ id: string; provider: string }[]> => [],
+		),
+	},
 	$transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
 		fn(prismaMock),
 	),
@@ -130,6 +136,7 @@ vi.mock("@/lib/server/storage", () => ({
 	sealSourceIdentity: (...args: unknown[]) => sealSourceIdentity(...args),
 }));
 
+import { POST as savePreset } from "@/app/api/presets/route";
 import { ACTOR_HEADER } from "@/lib/auth/api-token-gate";
 import { GET, POST } from "./route";
 
@@ -150,6 +157,44 @@ function withAccount(base: Record<string, unknown> = plan) {
 		...base,
 		bitmovin: { ...(base.bitmovin as object), accountId: ACCOUNT_ID },
 	};
+}
+
+function moqPlan(kind: "FMP4" | "CMAF" = "FMP4"): Record<string, unknown> {
+	const raw = JSON.parse(
+		readFileSync(
+			join(
+				__dirname,
+				"../../../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+			),
+			"utf8",
+		),
+	);
+	return withAccount({
+		...raw,
+		outputs: [
+			{
+				key: "relay",
+				kind: "MOQ",
+				credentialId: "00000000-0000-4000-8000-000000000002",
+				name: "MoQ relay",
+				trackNamespace: ["interop", "event-20261117"],
+				draftVersion: "DRAFT_18",
+			},
+		],
+		liveManifests: [],
+		start: { ...raw.start, encodingOption: "CUSTOM" },
+		muxings: raw.muxings.map(
+			(muxing: { destination: object; streamKey: string }) => ({
+				...muxing,
+				kind,
+				segmentLength: kind === "CMAF" ? 0.5 : 1,
+				...(kind === "CMAF" && muxing.streamKey !== "a128"
+					? { framesPerCmafChunk: 3 }
+					: {}),
+				destination: { ...muxing.destination, outputKey: "relay" },
+			}),
+		),
+	});
 }
 
 function managedAisaPlan() {
@@ -220,6 +265,121 @@ afterEach(() => {
 });
 
 describe("POST /api/live-channels", () => {
+	it("persists and enqueues an MoQ-only expert plan with vault references", async () => {
+		prismaMock.credential.findMany.mockResolvedValueOnce([
+			{
+				id: "00000000-0000-4000-8000-000000000002",
+				provider: "MOQ",
+			},
+		]);
+		const candidate = moqPlan();
+		const response = await POST(postRequest({ plan: candidate }));
+		expect(response.status).toBe(201);
+		const data = create.mock.calls[0]?.[0].data;
+		expect(data.plan.outputs).toEqual(candidate.outputs);
+		expect(data.plan.liveManifests).toEqual([]);
+		expect(
+			data.stepLog.find(
+				(step: { kind: string }) => step.kind === "CREATE_OUTPUT_MOQ",
+			),
+		).toMatchObject({
+			kind: "CREATE_OUTPUT_MOQ",
+			payload: {
+				credentialId: "00000000-0000-4000-8000-000000000002",
+				trackNamespace: ["interop", "event-20261117"],
+				draftVersion: "DRAFT_18",
+			},
+		});
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it("saves and launches a CMAF MoQ template with its chunk settings", async () => {
+		const candidate = moqPlan("CMAF");
+		presetCreate.mockResolvedValueOnce({ id: PRESET_ID, revision: 1 });
+		const saved = await savePreset(
+			new Request("http://test/api/presets", {
+				method: "POST",
+				body: JSON.stringify({
+					kind: "LIVE_PLAN",
+					name: "CMAF MoQ",
+					plan: candidate,
+				}),
+			}),
+		);
+		expect(saved.status).toBe(201);
+		const persisted = presetCreate.mock.calls[0]?.[0].data;
+		expect(persisted).toMatchObject({
+			kind: "LIVE_PLAN",
+			body: { muxings: candidate.muxings, liveManifests: [] },
+		});
+
+		presetFindFirst.mockResolvedValueOnce({ id: PRESET_ID });
+		prismaMock.credential.findMany.mockResolvedValueOnce([
+			{ id: "00000000-0000-4000-8000-000000000002", provider: "MOQ" },
+		]);
+		const response = await POST(
+			postRequest({
+				plan: persisted.body,
+				presetId: PRESET_ID,
+				presetRevision: 1,
+			}),
+		);
+		expect(response.status).toBe(201);
+		const data = create.mock.calls[0]?.[0].data;
+		expect(data).toMatchObject({ presetId: PRESET_ID, presetRevision: 1 });
+		expect(data.plan.muxings).toEqual(persisted.body.muxings);
+		expect(
+			data.stepLog.filter((step: { kind: string }) =>
+				step.kind.startsWith("CREATE_MUXING_"),
+			),
+		).toEqual(
+			["v1080", "v720", "v360", "a128"].map((key) =>
+				expect.objectContaining({
+					kind: "CREATE_MUXING_CMAF",
+					payload: expect.objectContaining({
+						segmentLength: 0.5,
+						...(key !== "a128" ? { framesPerCmafChunk: 3 } : {}),
+					}),
+					refs: expect.objectContaining({
+						outputId: "output:relay",
+						streamId: `stream:${key}`,
+					}),
+				}),
+			),
+		);
+		expect(data.stepLog).toContainEqual(
+			expect.objectContaining({ kind: "START_LIVE_ENCODING" }),
+		);
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		"missing",
+		"AWS_S3",
+	])("rejects an MoQ credential unavailable as MOQ in this tenant (%s) before provisioning", async (provider) => {
+		prismaMock.credential.findMany.mockResolvedValueOnce(
+			provider === "missing"
+				? []
+				: [
+						{
+							id: "00000000-0000-4000-8000-000000000002",
+							provider,
+						},
+					],
+		);
+		const response = await POST(postRequest({ plan: moqPlan() }));
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({
+			details: {
+				issues: expect.arrayContaining([
+					expect.objectContaining({ code: "LIVE_MOQ_CREDENTIAL_PROVIDER" }),
+				]),
+			},
+		});
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
 	it("persists the managed analysis lifecycle in the standard creation endpoint", async () => {
 		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
 		const candidate = managedAisaPlan();
@@ -941,7 +1101,9 @@ describe("GET /api/live-channels", () => {
 		expect(body.items[0]).not.toHaveProperty("schedules");
 		const args = findMany.mock.calls[0]?.[0] as {
 			select: Record<string, boolean>;
+			orderBy: unknown;
 		};
+		expect(args.orderBy).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
 		expect(args.select).not.toHaveProperty("plan");
 		expect(args.select).not.toHaveProperty("stepLog");
 		expect(args.select).not.toHaveProperty("lastHeartbeat");

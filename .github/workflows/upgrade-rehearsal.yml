@@ -1,0 +1,48 @@
+name: Upgrade rehearsal
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upgrade-rehearsal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upgrade-and-rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          check-latest: true
+      - name: Install the pinned package manager
+        run: |
+          COREPACK_HOME="$(mktemp -d "$RUNNER_TEMP/corepack-bitovp.XXXXXX")"
+          export COREPACK_HOME
+          printf 'COREPACK_HOME=%s\n' "$COREPACK_HOME" >> "$GITHUB_ENV"
+          corepack enable
+          corepack install
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bitovp/db build
+      - run: pnpm test:postgres-runner
+      - name: Upgrade seeded v1.2.1 data and restore the original database
+        run: node scripts/upgrade-rehearsal.mjs --base-ref v1.2.1 --output-directory "$RUNNER_TEMP/bitovp-upgrade"
+      - name: Retain the identity and verification results in the job summary
+        run: |
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/bitovp-upgrade/upgrade-report.json" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove only this rehearsal's PostgreSQL fixture
+        if: always()
+        run: node scripts/postgres-integration.mjs --cleanup --state-file "$RUNNER_TEMP/bitovp-upgrade/postgres-state.json"

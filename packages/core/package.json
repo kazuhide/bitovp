@@ -1,6 +1,6 @@
 {
 	"name": "@bitovp/core",
-	"version": "1.2.0",
+	"version": "1.3.5",
 	"private": true,
 	"type": "module",
 	"exports": {
@@ -9,10 +9,14 @@
 		"./aisa-live-client": "./src/aisa-live-client.ts",
 		"./presets": "./src/plan/sample-presets.ts",
 		"./wizard": "./src/wizard/index.ts",
+		"./vod-input-timeline": "./src/vod-input-timeline/index.ts",
+		"./encoding-experiments": "./src/encoding-experiments.ts",
+		"./encoding-experiments-files": "./src/encoding-experiments-files.ts",
 		"./testing": "./src/testing/index.ts",
 		"./local-semantic-diagnostic-probe": "./src/local-semantic-diagnostic-probe.ts",
 		"./local-caption-config": "./src/content-editing/local-caption-config-node.ts",
-		"./local-story-flow-server": "./src/local-story-flow-server.ts"
+		"./local-story-flow-server": "./src/local-story-flow-server.ts",
+		"./local-story-flow-hierarchy": "./src/local-story-flow-hierarchy.ts"
 	},
 	"scripts": {
 		"test": "vitest run",

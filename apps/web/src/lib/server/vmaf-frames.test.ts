@@ -6,11 +6,103 @@ import {
 	downsampleFrameBlob,
 	downsampleFrames,
 	iterateFrames,
+	readVmafChartData,
 } from "./vmaf-frames";
 
 function frames(scores: number[]): VmafFrame[] {
 	return scores.map((vmaf, frameNum) => ({ frameNum, vmaf }));
 }
+
+describe("full measured VMAF distributions", () => {
+	it("keeps the actual 90/10 score frequency even when the line chart keeps only bucket minima", async () => {
+		const input = frames(
+			Array.from({ length: 1000 }, (_, i) => (i % 10 ? 90 : 40)),
+		);
+		const result = await readVmafChartData(
+			gzipSync(JSON.stringify(input)),
+			100,
+		);
+		expect(result.frames.every((frame) => frame.vmaf === 40)).toBe(true);
+		expect(result.distribution).toMatchObject({
+			frameCount: 1000,
+			min: 40,
+			max: 90,
+		});
+		expect(result.distribution?.mean).toBeCloseTo(85, 10);
+		expect(result.distribution?.bins).toHaveLength(64);
+		expect(result.distribution?.bins[0]?.count).toBe(100);
+		expect(result.distribution?.bins.at(-1)?.count).toBe(900);
+		expect(
+			result.distribution?.bins.reduce((total, bin) => total + bin.count, 0),
+		).toBe(1000);
+	});
+	it("preserves above-100 and negative scores on their measured range", async () => {
+		const result = await readVmafChartData(
+			gzipSync(JSON.stringify(frames([-10, 110, 125]))),
+		);
+		expect(result.distribution).toMatchObject({
+			frameCount: 3,
+			min: -10,
+			max: 125,
+			mean: 75,
+		});
+		expect(result.frames.map((frame) => frame.vmaf)).toEqual([-10, 110, 125]);
+	});
+	it("represents a constant score without inventing a spread", async () => {
+		const result = await readVmafChartData(
+			gzipSync(JSON.stringify(frames([99.25, 99.25, 99.25]))),
+		);
+		expect(result.distribution).toEqual({
+			frameCount: 3,
+			min: 99.25,
+			max: 99.25,
+			mean: 99.25,
+			binWidth: 0,
+			bins: [{ score: 99.25, count: 3 }],
+		});
+	});
+	it("keeps finite extreme values without an overflowing histogram or mean", async () => {
+		const result = await readVmafChartData(
+			gzipSync(JSON.stringify(frames([-1e308, 1e308]))),
+		);
+		expect(result.distribution).toMatchObject({
+			frameCount: 2,
+			min: -1e308,
+			max: 1e308,
+			mean: 0,
+		});
+		expect(
+			result.distribution?.bins.every((bin) => Number.isFinite(bin.score)),
+		).toBe(true);
+		expect(
+			result.distribution?.bins.reduce((total, bin) => total + bin.count, 0),
+		).toBe(2);
+	});
+	it("keeps absent measured values unknown rather than fabricating a zero distribution", async () => {
+		const result = await readVmafChartData(gzipSync("[]"));
+		expect(result).toEqual({ frames: [], frameCount: 0, distribution: null });
+	});
+	it.each([
+		null,
+		"90",
+		undefined,
+	])("rejects an invalid measured score instead of counting it as zero (%s)", async (vmaf) => {
+		await expect(
+			readVmafChartData(gzipSync(JSON.stringify([{ frameNum: 0, vmaf }]))),
+		).rejects.toThrow();
+	});
+	it("honors cancellation while preparing a distribution", async () => {
+		const controller = new AbortController();
+		controller.abort(new Error("CANCELED_DISTRIBUTION"));
+		await expect(
+			readVmafChartData(
+				gzipSync(JSON.stringify(frames([90]))),
+				undefined,
+				controller.signal,
+			),
+		).rejects.toThrow("CANCELED_DISTRIBUTION");
+	});
+});
 
 describe("iterateFrames", () => {
 	it("gunzips the worker's gzip(JSON.stringify(frames)) blob", async () => {

@@ -1,0 +1,596 @@
+{
+	"schemaVersion": 1,
+	"sdkVersion": "1.288.0",
+	"entries": [
+		{
+			"sdkMethod": "encoding.configurations.video.h264.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["autoLevelSetup"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/vod/new/rendition-editors.tsx",
+						"anchor": "codec=\"H264\""
+					}
+				],
+				"json": [
+					{
+						"file": "packages/core/src/plan/codec-detail-controls.ts",
+						"anchor": "autoLevelSetup: codecEnumSchema(\"AutoLevelSetup\").optional()"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/configs.ts",
+						"anchor": "...codecDetailWireControls(\"H264\", p)"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "packages/core/src/plan/codec-detail-controls.test.ts",
+						"anchor": "autoLevelSetup: \"DISABLED\""
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.codec-detail-controls.test.ts",
+						"anchor": "autoLevelSetup: \"DISABLED\""
+					}
+				],
+				"guiControls": [
+					{
+						"file": "apps/web/src/app/vod/new/codec-detail-fields.ts",
+						"anchor": "key: \"autoLevelSetup\""
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "Advanced VOD and shared Live H.264 editor; imported plan and payload path are supported. Scope is this field, not every H.264 setting or provider combination.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoh264",
+					"reviewedAt": "2026-11-16"
+				},
+				"conditions": [
+					"Explicit maxBitrate or bufsize disables automatic calculation; an explicitly selected level controls its limits."
+				]
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["maxLevel"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/vod/new/rendition-editors.tsx",
+						"anchor": "key: \"maxLevel\""
+					}
+				],
+				"json": [
+					{
+						"file": "packages/core/src/plan/schema.ts",
+						"anchor": "maxLevel: codecEnumSchema(\"LevelAv1\").optional()"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/configs.ts",
+						"anchor": "maxLevel: optEnum(LevelAv1, p.maxLevel, \"LevelAv1\")"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/vod/new/vod-codec-settings.test.tsx",
+						"anchor": "maxLevel: \"L5_1\""
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.vod-codec-settings.test.ts",
+						"anchor": "serializes AV1 maximum level %s and zero HDR10 light levels"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "VOD advanced control. Both enum name L4_1 and wire value 4.1 are accepted by plans; requests serialize 4.1. With autoLevelSetup DISABLED, maxLevel remains in the plan with PLAN_AV1_MAX_LEVEL_DISABLED warning.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoav1",
+					"reviewedAt": "2026-11-16"
+				},
+				"conditions": ["Has no effect when autoLevelSetup is DISABLED."]
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["autoLevelSetup"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/vod/new/rendition-editors.tsx",
+						"anchor": "key: \"autoLevelSetup\""
+					}
+				],
+				"json": [
+					{
+						"file": "packages/core/src/plan/schema.ts",
+						"anchor": "autoLevelSetup: z.enum([\"ENABLED\", \"DISABLED\"]).optional()"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/configs.ts",
+						"anchor": "p.autoLevelSetup,"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/vod/new/rendition-editors.mount.test.tsx",
+						"anchor": "Av1AdvancedEditor offers autoLevelSetup as an enum"
+					},
+					{
+						"file": "packages/core/src/plan/vod-codec-settings.test.ts",
+						"anchor": "toMatchObject({ maxLevel: \"L4_1\", autoLevelSetup: \"DISABLED\" })"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "VOD enum control ENABLED/DISABLED. Source and form/compiler tests are evidence of access; no provider execution is asserted.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoav1",
+					"reviewedAt": "2026-11-16"
+				},
+				"conditions": [
+					"Explicit maxBitrate or bufsize disables automatic calculation; an explicitly selected level controls its limits."
+				]
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["masterDisplay"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/vod/new/rendition-editors.tsx",
+						"anchor": "key: \"masterDisplay\""
+					}
+				],
+				"json": [
+					{
+						"file": "packages/core/src/plan/schema.ts",
+						"anchor": "masterDisplay:"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/configs.ts",
+						"anchor": "p.masterDisplay"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/vod/new/vod-codec-settings.test.tsx",
+						"anchor": "edits optional AV1 settings in the existing advanced section in %s"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.vod-codec-settings.test.ts",
+						"anchor": "serializes AV1 maximum level %s and zero HDR10 light levels"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "VOD AV1 HDR metadata advanced control; optional values are retained through plan/draft/import and serialized. This does not establish HDR output or playback qualification.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoav1",
+					"reviewedAt": "2026-11-16"
+				},
+				"conditions": []
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["maxContentLightLevel"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/vod/new/rendition-editors.tsx",
+						"anchor": "key: \"maxContentLightLevel\""
+					}
+				],
+				"json": [
+					{
+						"file": "packages/core/src/plan/schema.ts",
+						"anchor": "maxContentLightLevel:"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/configs.ts",
+						"anchor": "p.maxContentLightLevel"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/vod/new/vod-codec-settings.test.tsx",
+						"anchor": "edits optional AV1 settings in the existing advanced section in %s"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.vod-codec-settings.test.ts",
+						"anchor": "serializes AV1 maximum level %s and zero HDR10 light levels"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "VOD AV1 HDR metadata advanced control; optional values are retained through plan/draft/import and serialized. This does not establish HDR output or playback qualification.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoav1",
+					"reviewedAt": "2026-11-16"
+				},
+				"conditions": []
+			}
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["maxPictureAverageLightLevel"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/vod/new/rendition-editors.tsx",
+						"anchor": "key: \"maxPictureAverageLightLevel\""
+					}
+				],
+				"json": [
+					{
+						"file": "packages/core/src/plan/schema.ts",
+						"anchor": "maxPictureAverageLightLevel:"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/configs.ts",
+						"anchor": "p.maxPictureAverageLightLevel"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/vod/new/vod-codec-settings.test.tsx",
+						"anchor": "edits optional AV1 settings in the existing advanced section in %s"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.vod-codec-settings.test.ts",
+						"anchor": "serializes AV1 maximum level %s and zero HDR10 light levels"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "VOD AV1 HDR metadata advanced control; optional values are retained through plan/draft/import and serialized. This does not establish HDR output or playback qualification.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoav1",
+					"reviewedAt": "2026-11-16"
+				},
+				"conditions": []
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["relayUrl"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/settings/credentials/credential-form.tsx",
+						"anchor": "fields.secret.map((def) => renderField(\"secret\", def))"
+					}
+				],
+				"guiControls": [
+					{
+						"file": "apps/web/src/app/settings/credentials/provider-fields.ts",
+						"anchor": "labelKey: \"fields.moqRelayUrl\""
+					}
+				],
+				"validation": [
+					{
+						"file": "packages/core/src/credentials/schemas.ts",
+						"anchor": "relayUrl: moqRelayUrlSchema,"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/exec-io.ts",
+						"anchor": "relayUrl: secret.relayUrl,"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/io.ts",
+						"anchor": "return api.encoding.outputs.moq"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/settings/credentials/credential-form.moq.test.tsx",
+						"anchor": "relayUrl: \"moqt://relay.example.com:443\","
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.moq-output.test.ts",
+						"anchor": "sends MoQ fields to the provider and keeps relay credentials out of the audit trail"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "Publishing relay URL from the encrypted Live delivery credential. The plan stores the credential ID.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
+					"reviewedAt": "2026-11-25"
+				},
+				"conditions": ["Required for a Live MoQ output."]
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["authToken"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/settings/credentials/credential-form.tsx",
+						"anchor": "fields.secret.map((def) => renderField(\"secret\", def))"
+					}
+				],
+				"guiControls": [
+					{
+						"file": "apps/web/src/app/settings/credentials/provider-fields.ts",
+						"anchor": "labelKey: \"fields.moqAuthToken\""
+					}
+				],
+				"validation": [
+					{
+						"file": "packages/core/src/credentials/schemas.ts",
+						"anchor": "authToken: z.string().min(1).optional(),"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/exec-io.ts",
+						"anchor": "? { authToken: secret.authToken }"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/io.ts",
+						"anchor": "return api.encoding.outputs.moq"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/settings/credentials/credential-form.moq.test.tsx",
+						"anchor": "authToken: \"publish-secret\","
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.moq-output.test.ts",
+						"anchor": "sends MoQ fields to the provider and keeps relay credentials out of the audit trail"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "Optional publishing token from the encrypted relay credential. The Worker omits it when unset.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
+					"reviewedAt": "2026-11-25"
+				},
+				"conditions": ["Optional relay authorization token."]
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["authTokenType"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/settings/credentials/credential-form.tsx",
+						"anchor": "fields.secret.map((def) => renderField(\"secret\", def))"
+					}
+				],
+				"guiControls": [
+					{
+						"file": "apps/web/src/app/settings/credentials/provider-fields.ts",
+						"anchor": "labelKey: \"fields.moqAuthTokenType\""
+					}
+				],
+				"validation": [
+					{
+						"file": "packages/core/src/credentials/schemas.ts",
+						"anchor": "authTokenType: z.int32().nonnegative().optional(),"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/exec-io.ts",
+						"anchor": "? { authTokenType: secret.authTokenType }"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/io.ts",
+						"anchor": "return api.encoding.outputs.moq"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/settings/credentials/credential-form.moq.test.tsx",
+						"anchor": "authTokenType: 0,"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.moq-output.test.ts",
+						"anchor": "sends MoQ fields to the provider and keeps relay credentials out of the audit trail"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "Optional token type from the encrypted relay credential. Zero is preserved.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
+					"reviewedAt": "2026-11-25"
+				},
+				"conditions": [
+					"Requires an authorization token. Allowed values range from zero to the signed 32-bit maximum."
+				]
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["trackNamespace"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/live/new/live-wizard.tsx",
+						"anchor": "id=\"lw-moq-namespace\""
+					}
+				],
+				"json": [
+					{
+						"file": "apps/web/src/app/live/new/build-live-plan.ts",
+						"anchor": "trackNamespace: o.moq?.trackNamespace ?? [],"
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/live-processor.ts",
+						"anchor": "entry.payload.trackNamespace = bindMoqPlaybackNamespace("
+					},
+					{
+						"file": "packages/core/src/live/moq-run-namespace.ts",
+						"anchor": "if (namespace.length !== 1 || !field) return namespace;"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/exec-io.ts",
+						"anchor": "trackNamespace: moqTrackNamespaceSchema.parse(p.trackNamespace),"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/io.ts",
+						"anchor": "return api.encoding.outputs.moq"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/live/new/live-wizard.output.test.tsx",
+						"anchor": "trackNamespace: [\"new-channel\"],"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.moq-output.test.ts",
+						"anchor": "sends MoQ fields to the provider and keeps relay credentials out of the audit trail"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/live-processor.test.ts",
+						"anchor": "writes the effective MoQ namespace to the run before dispatching its output CREATE"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "The Live wizard stores the configured tuple. On a fresh run the Worker bounds a single component and applies its run-specific -bitovp-<runId> suffix before creating the output. It forwards multi-component tuples unchanged.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
+					"reviewedAt": "2026-11-25"
+				},
+				"conditions": ["Required tuple of one to 32 strings."]
+			}
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.create",
+			"target": {
+				"location": "body",
+				"propertyPath": ["draftVersion"]
+			},
+			"access": "gui-confirmed",
+			"evidence": {
+				"gui": [
+					{
+						"file": "apps/web/src/app/live/new/live-wizard.tsx",
+						"anchor": "id=\"lw-moq-draft\""
+					}
+				],
+				"json": [
+					{
+						"file": "apps/web/src/app/live/new/build-live-plan.ts",
+						"anchor": "draftVersion: o.moq?.draftVersion ?? \"DRAFT_16\","
+					}
+				],
+				"payload": [
+					{
+						"file": "apps/worker/src/orchestrator/ops/exec-io.ts",
+						"anchor": "draftVersion: moqDraftVersionSchema.parse(p.draftVersion),"
+					},
+					{
+						"file": "apps/worker/src/orchestrator/ops/io.ts",
+						"anchor": "return api.encoding.outputs.moq"
+					}
+				],
+				"contractTests": [
+					{
+						"file": "apps/web/src/app/live/new/live-wizard.copy.test.tsx",
+						"anchor": "draftVersion: \"DRAFT_18\","
+					},
+					{
+						"file": "apps/worker/src/orchestrator/sdk-ops.moq-output.test.ts",
+						"anchor": "sends MoQ fields to the provider and keeps relay credentials out of the audit trail"
+					}
+				]
+			},
+			"provider": "unverified",
+			"note": "Custom Live output field. Operators select the draft supported by their relay.",
+			"api": {
+				"writeability": "documented-request-field",
+				"reference": {
+					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
+					"reviewedAt": "2026-11-25"
+				},
+				"conditions": ["Required. The API accepts DRAFT_16 and DRAFT_18."]
+			}
+		}
+	]
+}

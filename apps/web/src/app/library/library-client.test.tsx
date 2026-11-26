@@ -16,6 +16,7 @@ const response: LibraryCatalog = {
 			tags: ["nature"],
 			revision: 1,
 			clipProjectCount: 2,
+			clipExportCount: 0,
 			archived: false,
 			updatedAt: "2026-09-15",
 			catalogMetadata: { formats: ["HLS"], duration: 90, sceneCount: 3 },
@@ -38,6 +39,9 @@ beforeEach(() => {
 });
 vi.mock("@/lib/api", () => ({
 	apiFetch: (url: string) => apiFetch(url),
+}));
+vi.mock("@/lib/auth/use-role-access", () => ({
+	useMutationAccess: () => false,
 }));
 vi.mock("./catalog-thumbnail", () => ({
 	CatalogThumbnail: ({
@@ -71,6 +75,59 @@ it("requests original contents before paging and leaves generated clips under th
 		).searchParams.get("scope"),
 	).toBe("originals");
 	expect(screen.getByText("2 clip drafts")).toBeVisible();
+});
+
+it("shows retained export counts and a generation history link with editing offline", async () => {
+	const original = response.items[0];
+	if (!original) throw new Error("Missing catalog fixture");
+	apiFetch.mockResolvedValue({
+		...response,
+		items: [
+			{
+				...original,
+				clipExportCount: 1,
+				singleClipExport: { projectId: "project", exportId: "retained" },
+			},
+			{
+				...original,
+				id: "drafts",
+				title: "Draft material",
+				clipExportCount: 0,
+			},
+			{
+				...original,
+				id: "exports",
+				title: "Multiple clips",
+				clipExportCount: 2,
+			},
+		],
+	});
+	renderWithQuery(<LibraryClient clipEditingAvailable={false} />);
+	expect(
+		await screen.findByRole("link", { name: /1 clip exported/ }),
+	).toHaveAttribute("href", "/library/edits/project/result?exportId=retained");
+	expect(
+		screen.getByRole("link", { name: /2 clips exported/ }),
+	).toHaveAttribute("href", "/library/exports#finished-clips");
+	expect(screen.getByText("0 clips exported")).toBeVisible();
+	expect(screen.getByText("1 clip draft")).toBeVisible();
+	expect(
+		screen.getByRole("link", { name: "Generation history" }),
+	).toHaveAttribute("href", "/library/generations");
+});
+
+it("distinguishes unavailable export counts from verified zero and drafts", async () => {
+	apiFetch.mockResolvedValue({
+		...response,
+		items: response.items.map((item) => ({
+			...item,
+			clipExportCount: undefined,
+		})),
+	});
+	renderWithQuery(<LibraryClient />);
+	expect(await screen.findByText("Export count unavailable")).toBeVisible();
+	expect(screen.queryByText("0 clips exported")).toBeNull();
+	expect(screen.queryByText("2 clip drafts")).toBeNull();
 });
 
 it.each([

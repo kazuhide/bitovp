@@ -9,15 +9,20 @@ import {
 	type LocalStoryField,
 	type LocalStoryInput,
 	type LocalStoryLedger,
+	type LocalStorySceneFrameBounds,
+	type LocalStorySceneScope,
 	localStoryBlueprintSchema,
 	localStoryCorpusSchema,
 	localStoryLedgerSchema,
+	localStorySceneScopeSchema,
 } from "./local-story-contracts";
 import {
 	getPreparedShotPartitionEntry,
 	type PreparedShotPartition,
+	preparedFrameForSourceAppearance,
 } from "./prepared-shot-partition";
-import { cfrTimeMapSchema } from "./schema";
+import { type CfrTimeMap, cfrTimeMapSchema } from "./schema";
+import { originalTimeToCfrFrame } from "./time";
 import { hashEditingEvidence } from "./verify-automatic-binding";
 
 const bytes = (value: unknown) =>
@@ -62,9 +67,10 @@ function assert(
 }
 
 /** Exact decimal arithmetic keeps a genuine sub-frame timestamp conservative. */
-function rawFrame(
+function rawClockUnits(
 	seconds: number,
 	originUs: number,
+	unitsPerSecond: bigint,
 	rounding: "FLOOR" | "CEIL",
 ) {
 	const [mantissa = "0", power = "0"] = seconds
@@ -77,7 +83,9 @@ function rawFrame(
 	const exponent = Number(power);
 	if (exponent > 0) numerator *= 10n ** BigInt(exponent);
 	else if (exponent < 0) denominator *= 10n ** BigInt(-exponent);
-	const n = (numerator * 1_000_000n - BigInt(originUs) * denominator) * 30n,
+	const n =
+			(numerator * 1_000_000n - BigInt(originUs) * denominator) *
+			unitsPerSecond,
 		d = denominator * 1_000_000n,
 		q = n / d,
 		r = n % d;
@@ -89,6 +97,143 @@ function rawFrame(
 				: q + (n > 0n ? 1n : 0n),
 	);
 }
+function rawFrame(
+	seconds: number,
+	originUs: number,
+	rounding: "FLOOR" | "CEIL",
+) {
+	return rawClockUnits(seconds, originUs, 30n, rounding);
+}
+type Analysis = ReturnType<typeof sceneAnalysisDocumentSchema.parse>;
+
+function findScopedScene(analysis: Analysis, sceneId: string) {
+	const matches = analysis.scenes.filter(
+		(scene) => scene.id.toLowerCase() === sceneId.toLowerCase(),
+	);
+	const scene = matches[0];
+	assert(
+		matches.length === 1 &&
+			scene &&
+			!EXCLUDED.has(scene.type.toUpperCase()) &&
+			scene.shots.every(
+				(shot) =>
+					shot.startInSeconds >= scene.startInSeconds &&
+					shot.endInSeconds <= scene.endInSeconds,
+			),
+		"LOCAL_STORY_SCENE_SCOPE_INVALID",
+	);
+	return scene;
+}
+
+function sceneAudioBounds(
+	scene: Analysis["scenes"][number],
+	map: CfrTimeMap,
+): LocalStorySceneScope {
+	const result = localStorySceneScopeSchema.safeParse({
+		sceneId: scene.id.toLowerCase(),
+		startUs: rawClockUnits(scene.startInSeconds, 0, 1_000_000n, "CEIL"),
+		endUs: rawClockUnits(scene.endInSeconds, 0, 1_000_000n, "FLOOR"),
+	});
+	assert(
+		result.success &&
+			result.data.startUs >= map.sourceStartUs &&
+			result.data.endUs <= map.sourceEndUs,
+		"LOCAL_STORY_SCENE_SCOPE_INVALID",
+	);
+	return result.data;
+}
+
+export function resolveLocalStorySceneFrameBounds(
+	scope: LocalStorySceneScope,
+	map: CfrTimeMap,
+	prepared?: PreparedShotPartition,
+): LocalStorySceneFrameBounds {
+	let fromFrame = Number(
+		originalTimeToCfrFrame(scope.startUs, map.sourceStartUs, "CEIL"),
+	);
+	let toFrame = Number(
+		originalTimeToCfrFrame(scope.endUs, map.sourceStartUs, "FLOOR"),
+	);
+	if (prepared) {
+		const scene = findScopedScene(prepared.analysis, scope.sceneId);
+		const audio = sceneAudioBounds(scene, map);
+		assert(
+			prepared.timeMapHash === hashEditingEvidence(map) &&
+				scope.startUs === audio.startUs &&
+				scope.endUs === audio.endUs,
+			"LOCAL_STORY_CLOCK_MISMATCH",
+		);
+		// An authored decimal can be just past a source frame that rounds to
+		// the same microsecond. Scope boundaries must keep the original value.
+		fromFrame = Math.max(
+			fromFrame,
+			preparedFrameForSourceAppearance(prepared, scene.startInSeconds, {
+				snapToSourceGrid: false,
+			}),
+		);
+		toFrame = Math.min(
+			toFrame,
+			preparedFrameForSourceAppearance(prepared, scene.endInSeconds, {
+				snapToSourceGrid: false,
+			}),
+		);
+	}
+	assert(fromFrame < toFrame, "LOCAL_STORY_SCENE_SCOPE_INVALID");
+	return { fromFrame, toFrame };
+}
+
+function resolveSceneScope(
+	analysis: Analysis,
+	map: CfrTimeMap,
+	sceneId: string,
+) {
+	const scope = sceneAudioBounds(findScopedScene(analysis, sceneId), map);
+	resolveLocalStorySceneFrameBounds(scope, map);
+	return scope;
+}
+
+export function resolveLocalStorySceneScope(options: {
+	analysis: unknown;
+	timeMap: unknown;
+	sceneId: string;
+}): LocalStorySceneScope {
+	return resolveSceneScope(
+		sceneAnalysisDocumentSchema.parse(options.analysis),
+		cfrTimeMapSchema.parse(options.timeMap),
+		options.sceneId,
+	);
+}
+
+export function localStoryClipsWithinSceneScope(options: {
+	scope: LocalStorySceneScope;
+	frameBounds: LocalStorySceneFrameBounds;
+	timeMap: CfrTimeMap;
+	clips: readonly {
+		sourceInUs: number;
+		durationFrames: number;
+		sceneId: string;
+	}[];
+}): boolean {
+	const { fromFrame, toFrame } = options.frameBounds;
+	return options.clips.every((clip) => {
+		if (
+			clip.sceneId.toLowerCase() !== options.scope.sceneId ||
+			!Number.isSafeInteger(clip.sourceInUs) ||
+			!Number.isSafeInteger(clip.durationFrames) ||
+			clip.durationFrames <= 0
+		)
+			return false;
+		const start = Number(
+			originalTimeToCfrFrame(
+				clip.sourceInUs,
+				options.timeMap.sourceStartUs,
+				"FLOOR",
+			),
+		);
+		return start >= fromFrame && start + clip.durationFrames <= toFrame;
+	});
+}
+
 const field = (pointer: string, text: string): LocalStoryField => ({
 	pointer,
 	kind: "AISA",
@@ -101,6 +246,8 @@ export function buildLocalStoryInput(options: {
 	timeMap: unknown;
 	preparedPartition?: PreparedShotPartition;
 	segments?: readonly { startUs: number; endUs: number; text: string }[];
+	includeExcludedWindows?: boolean;
+	storySceneId?: string;
 }): LocalStoryInput {
 	if (options.analysis && typeof options.analysis === "object") {
 		const scenes = (options.analysis as { scenes?: unknown }).scenes;
@@ -116,6 +263,10 @@ export function buildLocalStoryInput(options: {
 	const analysis = sceneAnalysisDocumentSchema.parse(options.analysis),
 		map = cfrTimeMapSchema.parse(options.timeMap),
 		p = options.preparedPartition;
+	const sceneScope =
+		options.storySceneId === undefined
+			? undefined
+			: resolveSceneScope(analysis, map, options.storySceneId);
 	if (p) {
 		// The public accessor also verifies the unforgeable factory-owned partition.
 		getPreparedShotPartitionEntry(p, {
@@ -127,6 +278,10 @@ export function buildLocalStoryInput(options: {
 			"LOCAL_STORY_CLOCK_MISMATCH",
 		);
 	}
+	// Use prepared joins between shots and apply both clocks only at the outer scene bounds.
+	const scopedFrames = sceneScope
+		? resolveLocalStorySceneFrameBounds(sceneScope, map, p)
+		: undefined;
 	assert(
 		bytes({ title: analysis.title, description: analysis.description }) <= 500,
 		"LOCAL_STORY_BRIEF_LIMIT",
@@ -135,8 +290,8 @@ export function buildLocalStoryInput(options: {
 		assert(
 			Number.isSafeInteger(s.startUs) &&
 				Number.isSafeInteger(s.endUs) &&
-				s.startUs >= map.sourceStartUs &&
-				s.endUs <= map.sourceEndUs &&
+				s.startUs >= (sceneScope?.startUs ?? map.sourceStartUs) &&
+				s.endUs <= (sceneScope?.endUs ?? map.sourceEndUs) &&
 				s.endUs > s.startUs &&
 				typeof s.text === "string" &&
 				s.text.length <= 16_000,
@@ -145,6 +300,25 @@ export function buildLocalStoryInput(options: {
 		return { startUs: s.startUs, endUs: s.endUs, text: s.text };
 	});
 	assert(segments.length <= 20_000, "LOCAL_STORY_TRANSCRIPT_LIMIT");
+	const excludedWindows: { fromFrame: number; toFrame: number }[] = [];
+	const strictPrepared = options.includeExcludedWindows ? p : undefined;
+	function excludedSourceWindow(start: number, end: number) {
+		const rawFrom = rawFrame(start, map.sourceStartUs, "FLOOR");
+		const rawTo = rawFrame(end, map.sourceStartUs, "CEIL");
+		// The prepared track can show excluded footage beyond the same time on
+		// the original continuous clock.
+		const fromFrame = Math.max(
+			0,
+			p
+				? Math.min(rawFrom, preparedFrameForSourceAppearance(p, start))
+				: rawFrom,
+		);
+		const toFrame = Math.min(
+			map.editingEndFrame - map.editingStartFrame,
+			p ? Math.max(rawTo, preparedFrameForSourceAppearance(p, end)) : rawTo,
+		);
+		return fromFrame < toFrame ? { fromFrame, toFrame } : undefined;
+	}
 	const input: LocalStoryInput = {
 		version: "local-story-input-v1",
 		title: analysis.title,
@@ -152,13 +326,33 @@ export function buildLocalStoryInput(options: {
 		timeMap: map,
 		timeMapHash: hashEditingEvidence(map),
 		...(p ? { normalizationReceiptHash: p.normalizationReceiptHash } : {}),
+		...(sceneScope ? { sceneScope, sceneFrameBounds: scopedFrames } : {}),
 		scenes: [],
 		shots: [],
+		...(options.includeExcludedWindows ? { excludedWindows } : {}),
 		coverage: [],
 		segments,
 	};
 	let ordinal = 0;
 	analysis.scenes.forEach((scene, sceneIndex) => {
+		const intervals = scene.shots.length ? scene.shots : [scene];
+		if (sceneScope && scene.id.toLowerCase() !== sceneScope.sceneId) {
+			ordinal += intervals.length;
+			return;
+		}
+		const excluded = EXCLUDED.has(scene.type.toUpperCase());
+		if (excluded && options.includeExcludedWindows) {
+			// Excluded shots can extend outside their scene. Every shot overlaps it,
+			// so the scene and shots together form one continuous forbidden window.
+			let start = scene.startInSeconds;
+			let end = scene.endInSeconds;
+			for (const shot of scene.shots) {
+				start = Math.min(start, shot.startInSeconds);
+				end = Math.max(end, shot.endInSeconds);
+			}
+			const window = excludedSourceWindow(start, end);
+			if (window) excludedWindows.push(window);
+		}
 		const context = [
 			field(`/scenes/${sceneIndex}/summary`, scene.summary),
 			...(scene.content?.objects ?? []).flatMap((o, i) => [
@@ -184,17 +378,20 @@ export function buildLocalStoryInput(options: {
 			text: context.map((v) => v.text).join("\n"),
 			fields: context,
 		});
-		const intervals = scene.shots.length ? scene.shots : [scene];
 		intervals.forEach((interval, index) => {
 			const ref = `s${ordinal++}`;
-			if (EXCLUDED.has(scene.type.toUpperCase())) {
+			if (excluded) {
 				input.coverage.push({ ref, status: "EXCLUDED" });
 				return;
 			}
+			const window = strictPrepared
+				? excludedSourceWindow(interval.startInSeconds, interval.endInSeconds)
+				: undefined;
 			if (
 				interval.startInSeconds < map.sourceStartUs / 1_000_000 ||
 				interval.endInSeconds > map.sourceEndUs / 1_000_000
 			) {
+				if (window) excludedWindows.push(window);
 				input.coverage.push({ ref, status: "OUTSIDE_MEDIA" });
 				return;
 			}
@@ -202,17 +399,45 @@ export function buildLocalStoryInput(options: {
 				entry = p
 					? getPreparedShotPartitionEntry(p, { sceneId: scene.id, shotIndex })
 					: undefined;
-			const fromFrame = p
-					? entry?.fromFrame
-					: rawFrame(interval.startInSeconds, map.sourceStartUs, "CEIL"),
-				toFrame = p
-					? entry?.toFrame
-					: rawFrame(interval.endInSeconds, map.sourceStartUs, "FLOOR");
+			const videoToFrame =
+				strictPrepared && entry
+					? Math.min(
+							entry.certainToFrame,
+							preparedFrameForSourceAppearance(
+								strictPrepared,
+								interval.endInSeconds,
+							),
+						)
+					: undefined;
+			// A trailer can use only the part that belongs to this shot on both clocks.
+			let fromFrame =
+				strictPrepared && entry
+					? Math.max(
+							entry.certainFromFrame,
+							rawFrame(interval.startInSeconds, map.sourceStartUs, "CEIL"),
+						)
+					: p
+						? entry?.fromFrame
+						: rawFrame(interval.startInSeconds, map.sourceStartUs, "CEIL");
+			let toFrame =
+				videoToFrame !== undefined
+					? Math.min(
+							videoToFrame,
+							rawFrame(interval.endInSeconds, map.sourceStartUs, "FLOOR"),
+						)
+					: p
+						? entry?.toFrame
+						: rawFrame(interval.endInSeconds, map.sourceStartUs, "FLOOR");
+			if (scopedFrames && fromFrame !== undefined && toFrame !== undefined) {
+				fromFrame = Math.max(fromFrame, scopedFrames.fromFrame);
+				toFrame = Math.min(toFrame, scopedFrames.toFrame);
+			}
 			if (
 				fromFrame === undefined ||
 				toFrame === undefined ||
 				toFrame <= fromFrame
 			) {
+				if (window) excludedWindows.push(window);
 				input.coverage.push({ ref, status: "UNREPRESENTABLE" });
 				return;
 			}
@@ -259,6 +484,16 @@ export function buildLocalStoryInput(options: {
 				...(shotIndex === undefined ? {} : { shotIndex }),
 				fromFrame,
 				toFrame,
+				...(window ? { exclusionWindow: window } : {}),
+				...(videoToFrame === undefined
+					? {}
+					: {
+							preparedBoundary: {
+								startInSeconds: interval.startInSeconds,
+								endInSeconds: interval.endInSeconds,
+								videoToFrame,
+							},
+						}),
 				text: fields.map((v) => v.text).join("\n"),
 				fields,
 			});

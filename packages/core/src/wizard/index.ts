@@ -14,5 +14,7 @@
  * thin re-export shims at the old paths, so no call site there changed.
  */
 export * from "./build-plan";
+export * from "./input-favorites";
+export * from "./input-timeline";
 export * from "./placeholder";
 export * from "./plan-to-wizard";

@@ -73,6 +73,29 @@ describe("who may skip the delivery commitment", () => {
 	});
 });
 
+describe("who may lower the rails that came with the whole-file outputs", () => {
+	// PLAN_OUTPUT_FILE_COLLISION and PLAN_HLS_AUDIO_UNSELECTED refuse plans that
+	// were accepted before. History is not re-litigated; new submissions are.
+	it("re-run lowers them — a job that finished before they existed can be run again", () => {
+		const rerun = source("apps/web/src/lib/server/rerun-job.ts");
+		// As a line of code, which a mention in a comment is not, and at both of
+		// its doors: lowered at one only, the job is refused at the other. That it
+		// then runs is pinned where the route is called (re-run-as-new/route.test.ts).
+		expect(rerun).toMatch(/^\s*demoteFileOutputRails: true,$/m);
+		expect(rerun).toMatch(
+			/^\s*const preIssues = validatePlan\(parsedPlan\.data, rerunValidationOptions\);$/m,
+		);
+		expect(rerun).toMatch(/^\s*validationOptions: rerunValidationOptions,$/m);
+	});
+
+	it("no OTHER submit path lowers them", () => {
+		const lowering = submitCallers().filter((f) =>
+			source(f).includes("demoteFileOutputRails"),
+		);
+		expect(lowering).toEqual(["apps/web/src/lib/server/rerun-job.ts"]);
+	});
+});
+
 describe("who passes the QC/VMAF policy (ledger #131 / review-265 131-B2)", () => {
 	it("EVERY submit door passes qcVmafEnabled — absent means no gate, which is how A2 happened", () => {
 		// The policy is optional so the corpus runner and fixtures can submit

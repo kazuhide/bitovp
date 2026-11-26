@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { localSemanticWorkerRegistryKeys } from "./local-semantic-readiness";
+import { nativeEditingPreflightSchema } from "./native-editing-preflight";
 
 export const localSemanticDiagnosticRequestSchema = z.strictObject({
 	version: z.literal("local-semantic-diagnostic-request-v1"),
@@ -16,6 +17,7 @@ export const localSemanticDiagnosticResultSchema = z.strictObject({
 	profile: z.enum(["amd", "nvidia"]),
 	observedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 	diagnostic: z.strictObject({
+		native: nativeEditingPreflightSchema.optional(),
 		scope: z.literal("METADATA_ONLY"),
 		code: z.enum([
 			"READY",

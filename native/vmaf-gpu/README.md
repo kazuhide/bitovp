@@ -46,9 +46,25 @@ VMAF_PREFIX="$HOME/.local/bitovp-vmaf"
   --reference reference.mp4 \
   --distorted encoded.mp4 \
   --model "vmaf_v1.0.16_3d0h=$VMAF_PREFIX/share/bitovp-vmaf/model/vmaf_v1.0.16_3d0h.json" \
-  --backend cuda --bit-depth 10 --threads 4 \
+  --backend cuda --bit-depth 8 --threads 4 \
   --verify-cpu --output result.json
 ```
+
+`--bit-depth` is the bit depth of the 4:2:0 pictures that are compared, 8 (the
+default) or 10. `--width` and `--height` are their size, the reference's by
+default. A run tells CAMBI nothing about the encode before it was scaled, so
+the score is the one that libvmaf gives through FFmpeg for the same pictures.
+With the reference's size, and with the bit depth of a `yuv420p` or
+`yuv420p10le` reference, that is the score of FFmpeg's libvmaf filter for the
+pair when the encode is first scaled with `scale=W:H:flags=bicubic` and the
+frames, evenly spaced in both files, are paired by their index, as long as
+FFmpeg has to convert neither file's range or colour matrix nor the reference's
+pixel format. The bitovp worker passes these values and refuses the pairs that
+FFmpeg converts; the
+[GPU quality guide](../../docs/user-guide/GPU-QUALITY.md#gpu-scores-and-local-cpu-scores)
+names them. The pictures are decoded and scaled with the FFmpeg libraries that
+the scorer is built against; the comparison with FFmpeg n8.1.3 used those of
+FFmpeg 6.1.1.
 
 Use `--backend cpu` without `--verify-cpu` for the official CPU reference.
 Use `--backend vulkan --vendor amd` for an AMD GPU. `--device` selects a device
@@ -166,6 +182,37 @@ cross the TypeScript boundary for each frame. The worker currently also runs
 the CPU comparison for every frame, so its total cost includes that verification.
 Measurements made with a previous experimental scorer keep their original
 provenance and require a new measurement to use this implementation.
+
+## Score an NVENC experiment window
+
+The `--experiment-window` mode compares a reference interval with the complete
+encoded clip. It accepts 1 to 3600 frames of progressive 1920×1080, 30 fps,
+limited-range BT.709 8-bit 4:2:0 video. The reference start is a zero-based frame
+number. The encoded clip must start at PTS zero and contain exactly the requested
+number of frames. The scorer checks absolute presentation timestamps within half
+an input clock tick, using ticks of at most one millisecond.
+
+```sh
+"$VMAF_PREFIX/bin/bitovp-vmaf" --backend cuda --decode cuda --device 0 \
+  --experiment-window --reference-start-frame 24 --frame-count 90 \
+  --reference /absolute/reference.mp4 --distorted /absolute/encoded-window.mkv \
+  --model "vmaf_v1.0.16_3d0h=$VMAF_PREFIX/share/bitovp-vmaf/model/vmaf_v1.0.16_3d0h.json" \
+  --output experiment.json
+```
+
+The scorer decodes the reference on the CPU and uploads its frames to CUDA.
+NVDEC-decoded frames stay on the GPU through feature extraction. Add
+`--verify-cpu` to compare the window against an independent software decode and
+the official CPU reference. For standalone CPU scoring use `--backend cpu
+--decode cpu` with the same window. `--device-info --backend cuda --experiment-window`
+creates a primary CUDA decoding context on the selected device and checks the
+NVDEC library and the decoder configurations in the scorer's linked FFmpeg.
+The `experimentCudaDecoders` array reports available paths using `H264`, `HEVC`,
+and `AV1`. The probe and CUDA
+score record the same `decoderRuntimeSha256`, covering the mapped FFmpeg libraries,
+resolved decoder symbols, and CUDA and NVDEC libraries. Driver JIT support is
+preloaded before the fingerprint. Each trial verifies the decoded frames and
+requires the admitted library mappings to stay stable through scoring.
 
 ## Compare performance
 

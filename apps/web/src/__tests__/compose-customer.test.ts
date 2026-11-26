@@ -87,14 +87,24 @@ describe("customer Compose isolation", () => {
 				expect(c.services[name].environment.DEPLOYMENT_PROFILE).toBe(profile);
 		}
 	});
-	it("preserves private local-quality overrides instead of forcing fixed defaults", () => {
+	it("preserves private memory and local-quality settings", () => {
 		const file = join(temp, "quality-settings.env");
 		writeFileSync(
 			file,
-			`${fixture}\n${runtimeSettings}\nVMAF_THREADS=3\nVMAF_CONCURRENCY=2\n`,
+			`${fixture}\n${runtimeSettings}\nREDIS_MAXMEMORY=96mb\nVMAF_THREADS=3\nVMAF_CONCURRENCY=2\n`,
 			{ mode: 0o600 },
 		);
 		const c = config("alpha", file);
+		expect(c.services.redis.command).toEqual([
+			"redis-server",
+			"--appendonly",
+			"yes",
+			"--maxmemory",
+			"96mb",
+			"--maxmemory-policy",
+			"noeviction",
+		]);
+		expect(config().services.redis.command).toContain("0");
 		expect(c.services.worker.environment).toMatchObject({
 			VMAF_THREADS: "3",
 			VMAF_CONCURRENCY: "2",

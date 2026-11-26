@@ -57,6 +57,56 @@ describe("evaluateWizardState (plan preview state)", () => {
 	it.each([
 		"ja",
 		"en",
+	] as const)("withholds unqualified AV concatenation before compilation with clear %s guidance", (locale) => {
+		const plan = buildPlan(completeState);
+		const video = plan.renditions.find(
+			(rendition) => rendition.codec === "H264",
+		);
+		const audio = plan.renditions.find(
+			(rendition) => rendition.codec === "AAC",
+		);
+		if (!video || !audio) throw new Error("fixture");
+		plan.concatenationStreams = [
+			{
+				key: "picture",
+				sources: [{ sourceKey: video.ingestKey, isMain: true, position: 0 }],
+			},
+			{
+				key: "sound",
+				sources: [
+					{
+						sourceKey: audio.ingestKey,
+						isMain: true,
+						position: 0,
+						paddingBefore: { duration: 1, unit: "SECONDS" },
+					},
+				],
+			},
+		];
+		for (const rendition of plan.renditions)
+			rendition.ingestKey = rendition.codec === "AAC" ? "sound" : "picture";
+		const evaluation = evaluatePlanDocument(plan);
+		if (!evaluation.ok) throw new Error("parseable fixture");
+		expect(evaluation.opCount).toBe(0);
+		expect(evaluation.ops).toEqual([]);
+		expect(evaluation.issues).toContainEqual(
+			expect.objectContaining({
+				code: "PLAN_CONCATENATION_AV_UNQUALIFIED",
+				level: "error",
+			}),
+		);
+		render(<PlanPreview evaluation={evaluation} />, locale);
+		const guidance =
+			locale === "ja"
+				? "映像と音声の素材・区間・余白を揃えてください。"
+				: "Use matching video/audio sources, trim ranges, positions and padding for cloud concatenation.";
+		const alerts = screen.getAllByRole("alert");
+		expect(alerts).toHaveLength(2);
+		for (const alert of alerts) expect(alert).toHaveTextContent(guidance);
+	});
+	it.each([
+		"ja",
+		"en",
 	] as const)("blocks shared clear OnDemand MP4 with separate-plan guidance in %s", (locale) => {
 		const plan = buildPlan(completeState);
 		const firstMuxing = plan.muxings[0];

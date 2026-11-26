@@ -1,5 +1,7 @@
 import type { AutoPortraitClip } from "./auto-portrait";
+import { localStorySelectedQuoteIssues } from "./local-story-coherence";
 import {
+	type LocalStoryBlueprint,
 	type LocalStoryEvent,
 	type LocalStoryInput,
 	type LocalStorySelection,
@@ -77,8 +79,14 @@ function required<T>(value: T | undefined): T {
 		throw new LocalStoryError("LOCAL_STORY_EVIDENCE_INVALID");
 	return value;
 }
+const spanSignature = (spans: readonly Span[]) =>
+	spans.map((v) => `${v.from}:${v.to}`).join(",");
 const signature = (s: State) =>
-	`${s.spans.map((v) => `${v.from}:${v.to}`).join(",")}|${s.selectedEventIds.join(",")}`;
+	`${spanSignature(s.spans)}|${s.selectedEventIds.join(",")}`;
+const compareStates = (a: State, b: State) =>
+	count(b.spans) - count(a.spans) ||
+	a.spans.length - b.spans.length ||
+	signature(a).localeCompare(signature(b), "en");
 function merge<T extends number | bigint>(
 	spans: readonly { from: T; to: T }[],
 ): { from: T; to: T }[] {
@@ -123,10 +131,14 @@ function speechSafe(input: LocalStoryInput, spans: readonly Span[]): Span[] {
 	// Exact 1/30-microsecond ticks keep adjacent original utterances half-open.
 	// Rounding every segment first would turn a shared 6.62s boundary into an
 	// overlap at frames 198/199 and transitively join unrelated utterances.
-	const utterances = input.segments.map((segment) => ({
-		from: (BigInt(segment.startUs) - sourceStart) * 30n,
-		to: (BigInt(segment.endUs) - sourceStart) * 30n,
-	}));
+	const toTicks = (interval: { startUs: number; endUs: number }) => ({
+		from: (BigInt(interval.startUs) - sourceStart) * 30n,
+		to: (BigInt(interval.endUs) - sourceStart) * 30n,
+	});
+	const utterances = input.segments.map(toTicks);
+	// Continuous VAD can be split exactly at a transcription window boundary.
+	if (input.speechIntervals?.length)
+		utterances.push(...merge(input.speechIntervals.map(toTicks)));
 	let result = merge(
 		spans.map((span) => ({
 			from: BigInt(span.from) * 1_000_000n,
@@ -135,7 +147,7 @@ function speechSafe(input: LocalStoryInput, spans: readonly Span[]): Span[] {
 	);
 	// Genuine source-time overlap can expose another utterance; converge before
 	// quantizing the final bounds, keeping the existing speech and footage guards.
-	for (let iteration = 0; iteration <= input.segments.length; iteration++) {
+	for (let iteration = 0; iteration <= utterances.length; iteration++) {
 		let changed = false;
 		result = merge(
 			result.map((span) => {
@@ -200,6 +212,7 @@ function clipsFor(
 function eventCandidates(
 	input: LocalStoryInput,
 	event: LocalStoryEvent,
+	includeUnpadded: boolean,
 ): Span[][] {
 	const shots = event.refs.map((ref) =>
 		required(input.shots.find((s) => s.ref === ref)),
@@ -229,41 +242,62 @@ function eventCandidates(
 				),
 		)
 	) {
-		const spans = speechFields.flat().map((f) => ({
-			from: Math.max(
-				0,
-				Number(
-					originalTimeToCfrFrame(
-						required(f.startUs),
-						input.timeMap.sourceStartUs,
-						"FLOOR",
-					),
-				) - 3,
-			),
-			to: Math.min(
-				input.timeMap.editingEndFrame - input.timeMap.editingStartFrame,
-				Number(
-					originalTimeToCfrFrame(
-						required(f.endUs),
-						input.timeMap.sourceStartUs,
-						"CEIL",
-					),
-				) + 3,
-			),
-		}));
-		candidates.push(speechSafe(input, spans));
+		const { sceneFrameBounds, timeMap } = input;
+		const bounds = speechFields.flat().map((f) => {
+			const from = Number(
+				originalTimeToCfrFrame(
+					required(f.startUs),
+					timeMap.sourceStartUs,
+					"FLOOR",
+				),
+			);
+			const to = Number(
+				originalTimeToCfrFrame(
+					required(f.endUs),
+					timeMap.sourceStartUs,
+					"CEIL",
+				),
+			);
+			// Clamp padding alone. Keep any required speech outside the scene so
+			// eligible-shot coverage can reject the candidate.
+			const first = sceneFrameBounds
+				? Math.min(from, sceneFrameBounds.fromFrame)
+				: 0;
+			const last = sceneFrameBounds
+				? Math.max(to, sceneFrameBounds.toFrame)
+				: timeMap.editingEndFrame - timeMap.editingStartFrame;
+			return { from, to, first, last };
+		});
+		for (const padding of includeUnpadded ? [3, 0] : [3]) {
+			const spans = bounds.map(({ from, to, first, last }) => ({
+				from: Math.max(first, from - padding),
+				to: Math.min(last, to + padding),
+			}));
+			candidates.push(speechSafe(input, spans));
+		}
 	}
-	return candidates;
+	return includeUnpadded
+		? [
+				...new Map(
+					candidates.map((spans) => [spanSignature(spans), spans]),
+				).values(),
+			]
+		: candidates;
 }
 
-/** Minimum usable footprint of an already grounded event. This measures the same
- * complete-speech candidates as selection; it does not choose beats or rank events. */
+/** Minimum footage for an event candidate. Check quote coverage on the combined
+ * plan because an earlier beat can supply speech quoted by a later one. */
 export function localStoryEventMinimumDurationFrames(
 	input: LocalStoryInput,
 	event: LocalStoryEvent,
 ): number | undefined {
+	const candidates = eventCandidates(
+		input,
+		event,
+		input.sceneFrameBounds !== undefined,
+	);
 	let minimum: number | undefined;
-	for (const spans of eventCandidates(input, event)) {
+	for (const spans of candidates) {
 		if (!clipsFor(input, spans)) continue;
 		const frames = count(spans);
 		if (minimum === undefined || frames < minimum) minimum = frames;
@@ -279,6 +313,21 @@ function checkedTarget(target: number) {
 	)
 		throw new LocalStoryError("LOCAL_STORY_DURATION_INVALID");
 	return target;
+}
+
+function startsInContext(
+	event: LocalStoryEvent,
+	firstFrame: number | undefined,
+	shotsByRef: ReadonlyMap<string, LocalStoryInput["shots"][number]>,
+) {
+	return (
+		event.role === "CONTEXT" &&
+		firstFrame !== undefined &&
+		event.refs.some((ref) => {
+			const shot = shotsByRef.get(ref);
+			return shot && shot.fromFrame <= firstFrame && shot.toFrame > firstFrame;
+		})
+	);
 }
 
 /** Fully validate each public selection, including callers outside feasible-choice search. */
@@ -312,27 +361,37 @@ export function createLocalStoryClipSelector(options: {
 		);
 	validateLocalStoryCorpusEvents(input, ledger.events);
 	const events = new Map(ledger.events.map((e) => [e.id, e]));
-	const candidates = new Map<string, Span[][]>();
-	return (selection: {
-		blueprint: unknown;
-		targetDurationFrames: number;
-	}): LocalStorySelectionResult => {
-		const target = checkedTarget(selection.targetDurationFrames);
-		const blueprint = validateLocalStoryBlueprint({
-			ledger,
-			blueprint: selection.blueprint,
-		});
-		// Five beats, four event alternatives and at most two timed variants give
-		// at most 8^5 states. Keep that bounded space so a long prefix cannot evict
-		// a short plan needed by a later mandatory beat.
+	const openingShots = input.trailerSelection
+		? new Map(input.shots.map((shot) => [shot.ref, shot]))
+		: undefined;
+	const paddedCandidates = new Map<string, Span[][]>();
+	const scopedFallbackCandidates = new Map<string, Span[][]>();
+	function search(
+		blueprint: LocalStoryBlueprint,
+		target: number,
+		includeUnpadded: boolean,
+	): State | undefined {
+		const candidates = includeUnpadded
+			? scopedFallbackCandidates
+			: paddedCandidates;
+		// Five beats and four event alternatives give at most 8^5 normal states.
+		// The scoped fallback has at most three variants per event and keeps its
+		// best terminal state, so it retains at most 12^4 prefixes and examines
+		// at most 12 + 12^2 + 12^3 + 12^4 + 12^5 extensions.
 		const maxStates = 32_768,
-			maxExpansions = 40_000;
+			maxExpansions = includeUnpadded ? 271_452 : 40_000;
+		const lastBeat = blueprint.beats.at(-1);
 		let beam: State[] = [
 				{ spans: [], selectedEventIds: [], selectedBeatIds: [] },
 			],
 			expansions = 0;
 		for (const beat of blueprint.beats) {
+			// A complete variant must cover its citations before duration ranking.
+			const verifyQuotes =
+				beat === lastBeat && (input.trailerSelection || input.sceneFrameBounds);
+			const streamTerminal = includeUnpadded && beat === lastBeat;
 			const next = new Map<string, State>();
+			let best: State | undefined;
 			for (const state of beam) {
 				if (!beat.requires.every((id) => state.selectedBeatIds.includes(id)))
 					continue;
@@ -343,12 +402,23 @@ export function createLocalStoryClipSelector(options: {
 						alternatives = eventCandidates(
 							input,
 							required(events.get(eventId)),
+							includeUnpadded,
 						);
 						candidates.set(eventId, alternatives);
 					}
 					for (const candidate of alternatives) {
 						if (++expansions > maxExpansions)
 							throw new LocalStoryError("LOCAL_STORY_SEARCH_LIMIT");
+						if (
+							openingShots &&
+							state.selectedEventIds.length === 0 &&
+							!startsInContext(
+								required(events.get(eventId)),
+								candidate[0]?.from,
+								openingShots,
+							)
+						)
+							continue;
 						const spans = addForward(state.spans, candidate);
 						if (!spans || count(spans) > target || !clipsFor(input, spans))
 							continue;
@@ -357,25 +427,44 @@ export function createLocalStoryClipSelector(options: {
 							selectedEventIds: [...state.selectedEventIds, eventId],
 							selectedBeatIds: [...state.selectedBeatIds, beat.id],
 						};
-						next.set(signature(value), value);
+						if (streamTerminal && best && compareStates(value, best) >= 0)
+							continue;
+						if (
+							verifyQuotes &&
+							localStorySelectedQuoteIssues(
+								input,
+								value.selectedEventIds.map((id) => required(events.get(id))),
+								spans,
+							).length
+						)
+							continue;
+						if (streamTerminal) best = value;
+						else next.set(signature(value), value);
 					}
 				}
 			}
-			beam = [...next.values()]
-				.sort((a, b) => {
-					// Compare whole plans: preserve complete beats, use the available duration,
-					// then minimize jumps and cuts. No event importance or top-K score exists.
-					return (
-						count(b.spans) - count(a.spans) ||
-						a.spans.length - b.spans.length ||
-						signature(a).localeCompare(signature(b), "en")
-					);
-				})
-				.slice(0, maxStates);
-			if (!beam.length)
-				throw new LocalStoryError("LOCAL_STORY_NO_FITTING_PLAN");
+			if (streamTerminal) return best;
+			beam = [...next.values()];
+			if (!includeUnpadded) beam = beam.sort(compareStates).slice(0, maxStates);
+			if (!beam.length) return undefined;
 		}
-		const selected = required(beam[0]);
+		return required(beam[0]);
+	}
+	return (selection: {
+		blueprint: unknown;
+		targetDurationFrames: number;
+	}): LocalStorySelectionResult => {
+		const target = checkedTarget(selection.targetDurationFrames);
+		const blueprint = validateLocalStoryBlueprint({
+			ledger,
+			blueprint: selection.blueprint,
+		});
+		// If no normal plan fits the scene, let each event use its complete
+		// speech with or without optional padding.
+		const selected =
+			search(blueprint, target, false) ??
+			(input.sceneFrameBounds ? search(blueprint, target, true) : undefined);
+		if (!selected) throw new LocalStoryError("LOCAL_STORY_NO_FITTING_PLAN");
 		return {
 			policyVersion: input.normalizationReceiptHash
 				? "aisa-prepared-local-story-window-v1"
@@ -387,7 +476,7 @@ export function createLocalStoryClipSelector(options: {
 				"LOCAL_LLM_COMPLETE_BEATS",
 				"SOURCE_PRESENTATION_ORDER",
 				"LOCAL_STORY_VISUAL_GROUNDING_PENDING",
-				...(input.segments.length
+				...(input.segments.length || input.speechIntervals?.length
 					? ["COMPLETE_UTTERANCE_BOUNDARIES"]
 					: ["TRANSCRIPT_UNAVAILABLE"]),
 				...(count(selected.spans) < target ? ["DURATION_UNDER_TARGET"] : []),

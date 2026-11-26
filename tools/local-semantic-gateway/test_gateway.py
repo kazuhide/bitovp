@@ -93,7 +93,7 @@ class FakeRuntime:
     def readiness(self, profile):
         return 'READY'
 
-    def gpu_capability(self, profile):
+    def gpu_capability(self, profile, *, discover=False):
         return {'version': 'bitovp-runtime-gpu-capability-v1', 'profile': profile,
                 'method': 'OLLAMA_NATIVE_DISCOVERY', 'backend': 'CUDA' if profile == 'nvidia' else 'ROCm',
                 'observedAt': round(time.time() * 1000)}
@@ -642,6 +642,67 @@ class GatewayTests(unittest.TestCase):
                     unittest.mock.call(profile, '/api/version'), unittest.mock.call(profile, '/api/tags')])
         self.assertEqual(self.call('GET', '/health'), before_health)
         self.assertIsNone(self.gateway.store.next_queued())
+
+    def test_periodic_readiness_does_not_start_native_gpu_discovery(self):
+        self.gateway.runtime = FixedRuntime()
+        proof = {**FakeRuntime().gpu_capability('nvidia'), 'method': 'PASSIVE_DEVICE_ACCESS'}
+        self.gateway.runtime.gpu_probe = unittest.mock.Mock()
+        self.gateway.runtime.gpu_probe.inspect.return_value = proof
+        self.gateway.runtime.gpu_probe.read.side_effect = AssertionError('idle GPU activation')
+        def metadata(profile, route):
+            return {'version': RUNTIME_VERSION} if route == '/api/version' else {'models': [{'name': MODEL, 'digest': MODEL_DIGEST}]}
+        with patch.object(self.gateway.runtime, 'request', side_effect=metadata):
+            for elapsed in range(0, 61, 5):
+                with patch('gateway.time.monotonic', return_value=elapsed):
+                    status, result = self.call('GET', '/readiness/nvidia')
+                self.assertEqual((status, result['code'], result['gpu']['method']),
+                                 (200, 'READY', 'PASSIVE_DEVICE_ACCESS'))
+        self.gateway.runtime.gpu_probe.read.assert_not_called()
+
+    def test_new_semantic_job_and_execution_each_require_fresh_native_discovery(self):
+        observations = []
+        proof = self.runtime.gpu_capability('nvidia')
+        def capability(profile, *, discover=False):
+            observations.append(discover)
+            return proof if discover else None
+        self.runtime.gpu_capability = capability
+        status, job = self.call('POST', '/v1/semantic-jobs', request())
+        self.assertEqual(status, 202)
+        self.assertTrue(self.gateway.run_one())
+        self.assertEqual(self.call('GET', '/v1/semantic-jobs/' + job['id'])[1]['state'], 'SUCCEEDED')
+        self.assertEqual(observations, [True, True])
+
+    def test_passive_device_access_cannot_substitute_for_inference_gpu_proof(self):
+        proof = {**self.runtime.gpu_capability('nvidia'), 'method': 'PASSIVE_DEVICE_ACCESS'}
+        with patch.object(self.runtime, 'gpu_capability', return_value=proof):
+            status, result = self.call('POST', '/v1/semantic-jobs', request())
+        self.assertEqual((status, result), (503, {'error': {'code': 'GPU_UNVERIFIED'}}))
+        self.assertIsNone(self.gateway.store.next_queued())
+
+    def test_gpu_loss_after_queueing_prevents_inference_without_reusing_admission(self):
+        observations = []
+        proof = self.runtime.gpu_capability('nvidia')
+        def capability(profile, *, discover=False):
+            observations.append(discover)
+            return proof if discover and len(observations) == 1 else None
+        self.runtime.gpu_capability = capability
+        status, job = self.call('POST', '/v1/semantic-jobs', request())
+        self.assertEqual(status, 202)
+        self.assertTrue(self.gateway.run_one())
+        result = self.call('GET', '/v1/semantic-jobs/' + job['id'])[1]
+        self.assertEqual((result['state'], result['errorCode']), ('FAILED', 'GPU_UNVERIFIED'))
+        self.assertFalse(any(call[0] == 'chat' for call in self.runtime.calls))
+        self.assertEqual(observations, [True, True])
+
+    def test_job_reads_replay_and_cancel_never_start_gpu_discovery(self):
+        body = request()
+        status, job = self.call('POST', '/v1/semantic-jobs', body)
+        self.assertEqual(status, 202)
+        with patch.object(self.runtime, 'gpu_capability', side_effect=AssertionError('read-only GPU activation')):
+            self.assertEqual(self.call('GET', '/health')[0], 200)
+            self.assertEqual(self.call('GET', '/v1/semantic-jobs/' + job['id'])[0], 200)
+            self.assertEqual(self.call('POST', '/v1/semantic-jobs', body)[0], 200)
+            self.assertEqual(self.call('POST', '/v1/semantic-jobs/' + job['id'] + '/cancel', {})[0], 200)
 
     def test_cpu_only_and_unknown_gpu_reject_readiness_and_job_admission_but_keep_reads_and_cancel(self):
         status, job = self.call('POST', '/v1/semantic-jobs', request())

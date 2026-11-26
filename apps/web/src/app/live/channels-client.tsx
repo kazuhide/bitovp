@@ -36,27 +36,12 @@ type Page = {
 	serverNow?: string;
 };
 
-/** Columns before the row menu; the empty-state row spans all of them. */
+/** The empty-state row spans every column. */
 const COLUMN_COUNT = 7;
 
 /**
- * The live channel list as an OPERATIONS COCKPIT
-
- *
- * It used to be Name / Status / Encoding ID / Created / Delete with the next
- * schedule as a footnote — which means that with several channels up, "which
- * RUNNING one has a stale ingest, an open alert, a stalled origin or a failed
- * feeder" could only be answered by opening every detail page in turn. Health,
- * Next event and elapsed/remaining are promoted into columns; the long
- * encoding id drops to a copy affordance under the name, and the destructive
- * per-row Delete moves behind a row menu so a mis-click cannot be one pixel
- * from a row link.
- *
- * The route still returns a LEAN payload (no plan/stepLog/streamKey, and a
- * heartbeat DIGEST rather than the column) — the health values are derived
- * server-side in one query, never fanned out per row from here.
- *
- * Auto-refreshes fast while any channel is PROVISIONING/RUNNING/STOPPING.
+ * Channel health, schedule and runtime come from the paginated list payload.
+ * Row actions share the VOD list's direct, confirmed delete control.
  */
 export function ChannelsClient() {
 	const { t } = useT();
@@ -93,7 +78,6 @@ export function ChannelsClient() {
 	// that silently hides nine of ten channels on the next visit is a bug
 	// report, not a remembered preference.
 	const [query, setQuery] = useState("");
-	const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
 	const channels = useInfiniteQuery({
 		queryKey: ["live-channels"],
@@ -155,7 +139,6 @@ export function ChannelsClient() {
 		mutationFn: (id: string) =>
 			apiFetch(`/api/live-channels/${id}`, { method: "DELETE" }),
 		onSuccess: () => {
-			setOpenMenuId(null);
 			queryClient.invalidateQueries({ queryKey: ["live-channels"] });
 		},
 	});
@@ -204,8 +187,8 @@ export function ChannelsClient() {
 						value={prefs.sort}
 						onChange={(e) => setSort(e.target.value as LiveListSort)}
 					>
-						<option value="anomaly">{t("live.list.sortAnomaly")}</option>
 						<option value="created">{t("live.list.sortCreated")}</option>
+						<option value="anomaly">{t("live.list.sortAnomaly")}</option>
 					</SelectNative>
 				</div>
 				<div className="flex items-center gap-2 text-xs text-zinc-400">
@@ -354,16 +337,18 @@ export function ChannelsClient() {
 									</td>
 									<td className="px-3 py-2 text-right align-top">
 										<RoleAccess control="live.channels.delete">
-											<RowMenu
-												channel={channel}
-												open={openMenuId === channel.id}
-												onOpenChange={(next) =>
-													setOpenMenuId(next ? channel.id : null)
-												}
+											<DeleteResourceButton
+												resourceLabel={channel.name}
+												disabled={isActiveChannelStatus(channel.status)}
+												disabledReason={t("live.stopBeforeDeleting")}
+												confirmTitle={t("live.deleteNamed", {
+													name: channel.name,
+												})}
+												confirmDescription={t("live.deleteConfirm")}
 												pending={
 													remove.isPending && remove.variables === channel.id
 												}
-												onDelete={() => remove.mutate(channel.id)}
+												onConfirm={() => remove.mutate(channel.id)}
 											/>
 										</RoleAccess>
 									</td>
@@ -408,86 +393,5 @@ export function ChannelsClient() {
 				</div>
 			) : null}
 		</section>
-	);
-}
-
-/**
- * Per-row overflow menu — where the destructive action lives now.
- *
- * A real `<button>` with `aria-expanded`/`aria-controls` and a panel that
- * closes on Escape: keyboard-operable without a portal, which matters because
- * the delete confirmation inside it is itself a portalled dialog (a popover
- * that unmounts its children on outside-click would take the open dialog with
- * it — the "portal children mount after parent effects" shape, from the other
- * end).
- *
- * The panel is CONDITIONALLY RENDERED rather than hidden with CSS, so "the
- * delete button is not in the primary columns" is a fact about the DOM and not
- * a claim about a stylesheet jsdom never applies.
- */
-function RowMenu({
-	channel,
-	open,
-	onOpenChange,
-	pending,
-	onDelete,
-}: {
-	channel: LiveChannelListItem;
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	pending: boolean;
-	onDelete: () => void;
-}) {
-	const { t } = useT();
-	const panelId = `live-row-menu-${channel.id}`;
-	// One handler, bound to the two elements that can actually hold focus —
-	// the trigger and the panel — rather than to a wrapper div, which would be
-	// an interaction handler on an element with no role to explain it.
-	const closeOnEscape = (e: { key: string }) => {
-		if (e.key === "Escape" && open) {
-			onOpenChange(false);
-		}
-	};
-	return (
-		<div className="relative inline-block text-left">
-			<Button
-				variant="secondary"
-				size="sm"
-				aria-expanded={open}
-				aria-controls={panelId}
-				aria-label={t("live.list.rowMenu", { name: channel.name })}
-				onClick={() => onOpenChange(!open)}
-				onKeyDown={closeOnEscape}
-			>
-				⋯
-			</Button>
-			{open ? (
-				// A fieldset, not a div with role="group": the panel IS a group of
-				// controls, and the semantic element carries the grouping without
-				// an ARIA promise the markup then has to keep.
-				<fieldset
-					id={panelId}
-					aria-label={t("live.list.rowMenu", { name: channel.name })}
-					onKeyDown={closeOnEscape}
-					className="absolute right-0 z-20 mt-1 flex w-56 flex-col items-start gap-2 rounded-md border border-zinc-800 bg-zinc-950 p-2 text-left shadow-lg"
-				>
-					<Link
-						href={`/live/${channel.id}`}
-						className="w-full rounded px-1.5 py-1 text-xs text-zinc-300 hover:bg-zinc-900 hover:text-emerald-400"
-					>
-						{t("live.list.openChannel")}
-					</Link>
-					<DeleteResourceButton
-						resourceLabel={channel.name}
-						disabled={isActiveChannelStatus(channel.status)}
-						disabledReason={t("live.stopBeforeDeleting")}
-						confirmTitle={t("live.deleteNamed", { name: channel.name })}
-						confirmDescription={t("live.deleteConfirm")}
-						pending={pending}
-						onConfirm={onDelete}
-					/>
-				</fieldset>
-			) : null}
-		</div>
 	);
 }

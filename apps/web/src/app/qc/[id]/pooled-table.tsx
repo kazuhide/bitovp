@@ -24,7 +24,10 @@ function Th({
 	hintLabel?: string;
 }) {
 	return (
-		<th className="px-3 py-2 text-right font-medium first:text-left">
+		<th
+			scope="col"
+			className="whitespace-nowrap px-3 py-2 text-right font-medium first:text-left"
+		>
 			<span className="inline-flex items-center gap-1">
 				{children}
 				{hint ? <InfoHint text={hint} label={hintLabel} /> : null}
@@ -81,6 +84,7 @@ export function PooledTable({ results }: { results: VmafResultDetail[] }) {
 					<thead>
 						<tr className="border-zinc-800 border-b text-zinc-500">
 							<th
+								scope="col"
 								className="px-3 py-2 text-left font-medium"
 								aria-sort={direction === "asc" ? "ascending" : "descending"}
 							>

@@ -91,7 +91,7 @@ describe.each([
 		expect(note).toHaveTextContent(kind);
 		expect(note).toHaveTextContent(
 			locale === "ja"
-				? "入力はRTMP・冗長RTMP・SRT"
+				? "対応を確認できる入力は RTMP・冗長 RTMP・SRT"
 				: "inputs are RTMP, redundant RTMP and SRT",
 		);
 		view.rerender(
@@ -187,7 +187,7 @@ describe.each([
 		expect(screen.queryByText(title)).toBeNull();
 	});
 
-	it("shows the real Custom reason beside the start action, not during an active run", () => {
+	it("keeps lifecycle controls free of the Custom Live configuration notice", () => {
 		const plan = compatiblePlan();
 		firstVideo(plan).rate = 60;
 		const props = {
@@ -202,11 +202,7 @@ describe.each([
 		expect(
 			screen.getByRole("button", { name: messages.live.start }),
 		).toBeInTheDocument();
-		expect(screen.getByRole("note", { name: title })).toBeVisible();
-		fireEvent.click(
-			within(screen.getByRole("note", { name: title })).getByRole("button"),
-		);
-		expect(screen.getByText(/60fps/)).toBeVisible();
+		expect(screen.queryByRole("note", { name: title })).toBeNull();
 		view.rerender(
 			<ChannelLifecycleActions {...props} hasEncoding status="RUNNING" />,
 		);

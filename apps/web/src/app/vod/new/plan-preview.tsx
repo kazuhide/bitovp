@@ -11,6 +11,7 @@ import {
 	planToEncodingTemplateYaml,
 	validatePlan,
 } from "@bitovp/core";
+import { WizardInputTimelineError } from "@bitovp/core/wizard";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { OpPayloadPopover } from "@/components/op-payload-popover";
@@ -45,6 +46,13 @@ export function evaluateWizardState(
 	try {
 		return evaluatePlanDocument(buildPlan(state), translate, options);
 	} catch (error) {
+		if (error instanceof WizardInputTimelineError)
+			return {
+				ok: false,
+				zodMessage: translate
+					? translate("vodTimeline.invalid")
+					: error.message,
+			};
 		if (error instanceof WizardCodecError)
 			return {
 				ok: false,
@@ -91,6 +99,8 @@ function friendlyIssueMessage(issue: PlanIssue, t: Translator): string {
 		return t("wizard.mixedEncodingModeGuidance");
 	if (issue.code === "PLAN_DASH_ONDEMAND_CLEAR_DRM")
 		return t("wizard.onDemandClearDrmGuidance");
+	if (issue.code === "PLAN_CONCATENATION_AV_UNQUALIFIED")
+		return t("wizard.concatAvQualificationError");
 	if (
 		issue.code === "PLAN_DUPLICATE_KEY" &&
 		(issue.path === "renditions" || issue.path === "muxings")

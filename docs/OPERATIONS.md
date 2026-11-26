@@ -24,6 +24,21 @@ automatically and do not require those manual repairs.
 6. Check migration exit status, health, authentication, organization isolation,
    worker queues, and the image revision before accepting new work.
 
+Web startup resolves the native Prisma query engine from the deployed
+`packages/db/generated/client` directory before launching Next.js. Run the
+database client build for the deployment host; a missing engine stops startup.
+When packaging multiple platform engines, set `PRISMA_QUERY_ENGINE_LIBRARY` to
+the correct deployed library. Remove or update any older release-specific
+override when changing the release path. This uses Prisma 6's
+[documented engine override](https://docs.prisma.io/docs/orm/v6/reference/environment-variables-reference#prisma_query_engine_library).
+
+`/api/health` requires both SDK resolution and an actual identity database read.
+A database or native-engine failure returns HTTP 503 with
+`database: "unavailable"`; it does not return database connection details.
+Also verify that an unauthenticated request to `/library` redirects to `/login`
+and that an authenticated user can open the Library. A running Node process
+alone does not establish readiness.
+
 After the backup and drain steps, prepare the selected images with:
 
 ```bash
@@ -35,11 +50,166 @@ Pulling images does not replace running data services. Recreate PostgreSQL/Redis
 during the maintenance window after checking their upgrade notes and preserving
 their volumes. Record the selected versions and image digests. The Node and data
 service pins must be updated for later security releases; `--no-cache` refreshes
-the available OS packages within the selected base.
+the available OS packages within the selected base. It also compiles the worker
+image's FFmpeg again, which takes several minutes.
 
 Never run web or worker with a PostgreSQL superuser or BYPASSRLS role. An image
 rollback may be incompatible with an already-applied migration. Preserve the
 new worker while it owns pending cleanup or cancellation work.
+
+### Redis queue memory
+
+The worker removes each finished periodic Live heartbeat and slate promotion
+job, including failed ticks. After a tick completes or fails, the worker
+examines up to 100 older entries in each terminal state of that queue in the
+background. Tenant job history keeps its existing retention settings.
+Worker logs record failures.
+
+For a new standard installation, `.env.example` sets `REDIS_MAXMEMORY=128mb`
+in the default 256 MiB Redis container. Standard and customer Compose accept
+this setting. Existing environment files that omit it retain the previous
+Redis budget of `0` (unlimited within the container). For customer Compose,
+set the value in the private application settings file.
+
+Check the current dataset and container consumption before enabling or lowering
+the budget on a populated installation. Use the Compose project for that
+installation. For customer installations, pass the same subcommands to
+`scripts/customer-compose.sh` with the usual project and settings files.
+
+```bash
+docker compose exec -T redis redis-cli INFO memory
+docker compose exec -T redis redis-cli INFO persistence
+docker compose stats --no-stream redis
+```
+
+Compare `used_memory`, `used_memory_rss` and `maxmemory` over representative
+load, including an AOF rewrite. Choose a budget above normal queue usage and
+leave container headroom for allocator overhead, buffers and copy-on-write.
+With `noeviction`, writes that require more memory can fail at the budget.
+Allow the worker to drain old periodic-job history before tightening the
+budget and apply the Compose setting during a maintenance window.
+
+### Worker FFmpeg
+
+The worker image compiles FFmpeg and ffprobe in the `ffmpeg-*` stages of
+`Dockerfile`. Each source is the archive of one commit or release, fixed by its
+SHA-256, and the compile steps run without network access. Two inputs are not
+fixed in that way: Debian's compiler and build tools, which `apt-get` installs
+into the digest-pinned base image and parts of which are linked into the
+programs, and the Dockerfile frontend that line 1 names. The image build fails
+unless the result has libvmaf and SRT and scores with a pinned VMAF model.
+
+[FFMPEG-BUILD.md](FFMPEG-BUILD.md) records this build: every source and
+command, what the logs of a build showed, the programs that came out, what was
+checked on them, what the build leaves out, and its known limits.
+
+To change a version:
+
+- Change the commit and the SHA-256 of its `ADD` line together. For libvmaf,
+  SVT-AV1, dav1d and FFmpeg the commit is the `ARG` above that line.
+- Take a commit that is on the project's own branch. An archive URL also
+  answers for a commit that exists only in a fork. For a GitHub repository,
+  `gh api repos/<owner>/<repo>/compare/<commit>...<branch>` must report
+  `behind_by: 0`. For x264,
+  `https://code.videolan.org/api/v4/projects/videolan%2Fx264/repository/commits/<commit>/refs?type=branch`
+  must list the branch.
+- For FFmpeg, set `FFMPEG_VER` to what
+  `git describe --tags --long --abbrev=10` prints for the commit, and
+  `SOURCE_DATE_EPOCH` to the commit's date (`git show -s --format=%ct`).
+  `--long` keeps the number of commits and the revision in the name of a
+  commit that is itself a tag. The build checks only that `FFMPEG_VER` ends
+  with the first ten characters of the revision.
+- With a new FreeType commit, take the dlg revision that it records for
+  `subprojects/dlg`. With a newer FFmpeg release, check which branch of the
+  NVIDIA headers that release needs.
+- Meson's version is written twice in its URL and once in the check below it.
+- Renew [FFMPEG-BUILD.md](FFMPEG-BUILD.md) as its section "Renewing this
+  record" says. A test fails until the record's stages, sources and commands
+  are those of `Dockerfile`; the logs, the checksums of the programs and the
+  measurements in it are renewed by hand.
+
+To build the image with another FFmpeg, replace the `ffmpeg` stage with a
+directory that holds `bin/ffmpeg`, `bin/ffprobe` and `share/licenses/`:
+`docker build --build-context ffmpeg=<directory> --file Dockerfile .`, or
+`additional_contexts` in a Compose override. The build does not verify a
+replaced FFmpeg. Check its SHA-256 yourself, keep the directory writable only
+by you, and do not name a remote image or URL as the context unless a digest
+fixes it. `share/licenses/` must hold the licences of what that FFmpeg
+contains. bitovp needs libvmaf, libx264, libdav1d, libass with Fontconfig, SRT
+with encryption, TLS for RTMPS, zlib for PNG image assets and, for GPU
+decoding, NVDEC.
+
+CI keeps the build of the `ffmpeg` stage and reuses it.
+`scripts/native-media-tools.sh --cache <directory>` keeps the build, with the
+VMAF models, under a key made from `Dockerfile`, `docker/vmaf-models.sha256`,
+the script itself and the processor architecture, and GitHub's cache carries
+that directory from run to run under a key of the same three files. A run
+that finds a build under its key copies it instead of compiling. A run
+compiles when no build is kept for its key where it may read: after a change
+to one of the three files; on `main` after such a change is merged, because
+GitHub keeps what a pull request stores for that pull request alone; and when
+GitHub has removed the entry, which it does when no run has read it for 7 days
+and may do earlier when the repository's caches exceed their size limit. The
+three jobs do not wait for each other: those that start before a build is
+stored each compile, GitHub stores one build, and the others log
+`Failed to save: Unable to reserve cache` and pass all the same. A job that
+fails keeps nothing. The step's log says which of the two happened:
+`FFmpeg: built from the pinned sources` or `FFmpeg: reused the build kept
+under the key of these sources (<key>)`.
+
+Every run, whether it compiled or copied, checks that the model directory
+holds the models of `docker/vmaf-models.sha256`, with their SHA-256, and
+nothing else, proves that this FFmpeg scores with a pinned model, and prints
+the SHA-256 of `ffmpeg` and `ffprobe`. The two jobs that build the worker
+image give the same directory to the image build, so the image holds the
+programs that the run has just proven: the offline media job with
+`--build-context ffmpeg=<directory>`, the installed GUI job with
+`additional_contexts` in its Compose override.
+
+A kept build is taken only when it holds the files that the list kept with it
+names, with the SHA-256 recorded there, and nothing else. That check finds
+damage, not replacement: whoever can write the cache can store another build
+with a list of its own. Reuse is safe for two reasons. First, GitHub lets a
+run restore only an entry that its own branch or pull request stored, one
+that the default branch stored, or one that the base branch of its pull
+request stored. So what a pull request stores is read by that pull request
+alone, and an entry that `main` and the pull requests into `main` restore is
+written only by a run on `main`. Second, the three jobs that restore one hold
+a read-only token and no secret and publish nothing. A workflow that holds a
+secret, may write to the repository or publishes an image must not restore
+this cache. A kept build that fails the check stops the job and is not built
+again in its place. Then, and after any doubt about a run on `main`, delete
+every `ffmpeg-…` entry, so that the next runs compile:
+
+```bash
+gh cache list --key ffmpeg- --limit 100
+gh cache list --key ffmpeg- --limit 100 --json id --jq '.[].id' | xargs -n 1 gh cache delete
+```
+
+On your own machine, keep a `--cache` directory writable only by you.
+
+A run that copies a build does not show that the pinned sources can still be
+downloaded and compiled, and no run of these jobs shows that `Dockerfile`
+alone still builds the image that an installation gets: the two image jobs
+build it with the directory in place of the `ffmpeg` stage. The `FFmpeg from
+source` workflow shows both every week and on request, without the cache. Its
+job `ffmpeg-from-source` runs the script with no `--cache`: it downloads the
+sources and the models, compiles FFmpeg and runs the proof. Its job
+`image-from-source` builds the whole worker image from `Dockerfile` and
+validates the ten-second asset with it. A failure there blocks no pull
+request, so look at its runs: `gh run list --workflow ffmpeg-source-build.yml`.
+In a public repository GitHub turns a schedule off after 60 days without
+activity in the repository: `gh workflow enable ffmpeg-source-build.yml` turns
+it on again, and `gh workflow run ffmpeg-source-build.yml` starts a run at any
+time.
+
+Building for another processor architecture, for example `--platform
+linux/amd64` on an Apple silicon Mac for a cloud quality worker, compiles
+FFmpeg under emulation. That took 12 to 17 minutes on a 10-core machine.
+
+FFmpeg in the image is under the GPL, version 3 or later, which sets
+conditions for giving the image to others, among them offering the source.
+`Dockerfile` names every source by commit or release.
 
 ## Backup and rollback
 
@@ -167,6 +337,19 @@ cannot overlap a process that is still shutting down.
 Resource selection keeps the model, resolution and scored frames unchanged.
 `VMAF_SUBSAMPLE` remains a separate explicit quality tradeoff. Reports record the
 selected resources for each comparison in `params.localResources`.
+
+## Local clip planning
+
+For the feasible-plan workflow, set `BITOVP_LOCAL_STORY_CHOICE_ENABLED=1` in
+both Web and Worker deployment environments after the Gateway metadata probe
+verifies the five-stage `bitovp-semantic-stages-planning-v1` registry, including
+`LOCAL_STORY_CHOICE_V1`. Restart Web and Worker to load the setting. The Worker
+builds complete candidate edits that satisfy duration, source order and speech
+boundaries, and the Local LLM selects one of those edits. New draft requests and
+retries record this planner in their task parameters. A missing capability
+produces `LOCAL_STORY_ENGINE_UNAVAILABLE` before a new task is created.
+The [Gateway guide](../tools/local-semantic-gateway/README.md#検証済み編集候補から選ぶ-choice-stage)
+covers registry generation and capability checks.
 
 ## Cloud quality workers
 

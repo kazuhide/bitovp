@@ -12,6 +12,7 @@ import {
 } from "@bitovp/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ServerContext } from "./context";
+import { updateContent } from "./library";
 import { confirmAnalysisAssociation } from "./library-analysis-associations";
 import { createAutomaticPortrait } from "./library-automatic-portrait";
 import { listContents, listQuery } from "./library-catalog";
@@ -25,6 +26,7 @@ import { requestEditingRender } from "./library-editing-renders";
 import {
 	contentParent,
 	listEditingProjectSummaries,
+	readStoredEditingExport,
 } from "./library-hierarchy";
 
 const holder = vi.hoisted(() => ({
@@ -70,6 +72,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			try {
 				if (!admin) return;
 				const where = { organizationId: org };
+				await admin.createRequest.deleteMany({ where });
 				await admin.libraryAnalysisBinding.deleteMany({ where });
 				await admin.libraryEvidenceReceipt.deleteMany({ where });
 				await admin.editProjectResource.deleteMany({ where });
@@ -188,6 +191,107 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			);
 			return { content, media, project };
 		}
+		it("archives and restores a Library registration without losing a queued render or retained media", async () => {
+			const { content, media, project } = await fixture();
+			expect(
+				(await listContents(prisma, listQuery.parse({}), org)).items.some(
+					(row) => row.id === content.id,
+				),
+			).toBe(true);
+			const confirmed = await confirmEditingRevision(
+				project.id,
+				{ expectedRevision: 1, confirmSuggestions: false },
+				"fixture",
+			);
+			const render = await requestEditingRender(project.id, {
+				revisionId: confirmed.currentRevisionId,
+				kind: "EXPORT",
+				requestKey: randomUUID(),
+			});
+			await updateContent(
+				prisma,
+				content.id,
+				{ expectedRevision: 1, archived: true },
+				"fixture",
+			);
+			expect(
+				(await listContents(prisma, listQuery.parse({}), org)).items.some(
+					(row) => row.id === content.id,
+				),
+			).toBe(false);
+			const archived = await listContents(
+				prisma,
+				listQuery.parse({ archived: "true" }),
+				org,
+			);
+			expect(
+				archived.items.find((row) => row.id === content.id)?.archived,
+			).toBe(true);
+			expect(
+				await prisma.renderRun.findUnique({ where: { id: render.id } }),
+			).toMatchObject({ state: "QUEUED", projectId: project.id });
+			expect(
+				await prisma.libraryMediaVersion.findUnique({
+					where: { id: media.id },
+				}),
+			).toMatchObject({ state: "READY" });
+			expect((await readEditingProject(project.id)).draft).toEqual(
+				confirmed.draft,
+			);
+			await updateContent(
+				prisma,
+				content.id,
+				{ expectedRevision: 2, archived: false },
+				"fixture",
+			);
+			expect(
+				(await listContents(prisma, listQuery.parse({}), org)).items.find(
+					(row) => row.id === content.id,
+				),
+			).toMatchObject({ archived: false, revision: 3 });
+			expect(
+				await prisma.contentRevision.count({
+					where: { contentId: content.id },
+				}),
+			).toBe(3);
+			expect(
+				await prisma.renderRun.findUnique({ where: { id: render.id } }),
+			).toMatchObject({ state: "QUEUED" });
+		});
+		it("rejects foreign and stale registration removal or restoration without appending history", async () => {
+			const { content } = await fixture();
+			const foreign = createTenantPrismaClient(app, otherOrg);
+			await expect(
+				updateContent(
+					foreign,
+					content.id,
+					{ expectedRevision: 1, archived: true },
+					"foreign",
+				),
+			).rejects.toMatchObject({ status: 404 });
+			await updateContent(
+				prisma,
+				content.id,
+				{ expectedRevision: 1, archived: true },
+				"fixture",
+			);
+			await expect(
+				updateContent(
+					prisma,
+					content.id,
+					{ expectedRevision: 1, archived: false },
+					"fixture",
+				),
+			).rejects.toMatchObject({ status: 409 });
+			expect(
+				await prisma.content.findUnique({ where: { id: content.id } }),
+			).toMatchObject({ archived: true, revision: 2 });
+			expect(
+				await prisma.contentRevision.count({
+					where: { contentId: content.id },
+				}),
+			).toBe(2);
+		});
 		it("saves and renders a V2 composition while retaining removed historical source references", async () => {
 			const { media, project } = await fixture(),
 				id = randomUUID();
@@ -1093,6 +1197,200 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				await listEditingProjectSummaries(foreign, f.content.id, 0),
 			).toEqual({ items: [], offset: 0, total: 0 });
 		});
+		it("copies a successful export into one new composition across concurrent retries", async () => {
+			const { project, content, media } = await fixture();
+			const composition = await saveEditingDraft(project.id, {
+				expectedRevision: 1,
+				document: toCompositionDocument(project.draft),
+			});
+			const saved = await confirmEditingRevision(
+				project.id,
+				{
+					expectedRevision: composition.draftRevision,
+					confirmSuggestions: false,
+				},
+				"fixture",
+			);
+			const { run } = await hierarchyExecution(saved, "EXPORT", "SUCCEEDED", 1);
+			const next = structuredClone(saved.draft);
+			const clip = next.clips[0];
+			const framing = clip?.framing[0];
+			if (!clip || !framing) throw new Error("Expected fixture framing");
+			clip.durationFrames = 60;
+			framing.toFrame = 60;
+			const edited = await saveEditingDraft(project.id, {
+				expectedRevision: saved.draftRevision,
+				document: next,
+			});
+			const result = await readStoredEditingExport(
+				holder.context,
+				project.id,
+				run.id,
+			);
+			expect(result).toMatchObject({
+				earlierVersion: true,
+				settings: {
+					canvas: { width: 1080, height: 1920 },
+					durationFrames: 180,
+					clips: [{ durationFrames: 180, framing: ["FIT"], audio: "SOURCE" }],
+				},
+			});
+			const request = {
+				title: "Clip (re-edit)",
+				fromExport: {
+					projectId: project.id,
+					exportId: run.id,
+					expectedOrganizationId: org,
+					requestKey: randomUUID(),
+				},
+			};
+			const [fork, replay] = await Promise.all([
+				createEditingProject(request, "fixture"),
+				createEditingProject(request, "fixture"),
+			]);
+			expect(fork.id).not.toBe(project.id);
+			expect(replay.id).toBe(fork.id);
+			expect(fork).toMatchObject({
+				contentId: content.id,
+				title: request.title,
+				draft: {
+					schemaVersion: 2,
+					mediaVersionId: media.id,
+					clips: [{ durationFrames: 180 }],
+				},
+				currentRevisionId: null,
+				renders: [],
+			});
+			expect(await readEditingProject(project.id)).toEqual(edited);
+			expect(
+				await prisma.editProject.count({ where: { contentId: content.id } }),
+			).toBe(2);
+			expect(
+				await prisma.editProjectResource.findFirst({
+					where: { projectId: fork.id, mediaVersionId: media.id },
+				}),
+			).not.toBeNull();
+			const renamed = "Later draft title";
+			await prisma.editProject.update({
+				where: { id: fork.id },
+				data: { title: renamed },
+			});
+			await expect(
+				createEditingProject(request, "fixture"),
+			).resolves.toMatchObject({
+				id: fork.id,
+				title: renamed,
+			});
+			await expect(
+				createEditingProject({ ...request, title: renamed }, "fixture"),
+			).rejects.toMatchObject({ status: 409, code: "REQUEST_KEY_REUSED" });
+			await expect(
+				createEditingProject(
+					{
+						...request,
+						fromExport: {
+							...request.fromExport,
+							expectedOrganizationId: otherOrg,
+						},
+					},
+					"fixture",
+				),
+			).rejects.toMatchObject({ status: 403 });
+			await expect(
+				createEditingProject(
+					{
+						...request,
+						fromExport: { ...request.fromExport, projectId: fork.id },
+					},
+					"fixture",
+				),
+			).rejects.toMatchObject({ status: 409, code: "REQUEST_KEY_REUSED" });
+			await expect(
+				createEditingProject(
+					{
+						...request,
+						fromExport: {
+							...request.fromExport,
+							projectId: fork.id,
+							requestKey: randomUUID(),
+						},
+					},
+					"fixture",
+				),
+			).rejects.toMatchObject({ status: 404 });
+			const racedRequest = {
+				...request,
+				fromExport: { ...request.fromExport, requestKey: randomUUID() },
+			};
+			const raced = await Promise.allSettled([
+				createEditingProject(racedRequest, "fixture"),
+				createEditingProject(
+					{ ...racedRequest, title: "Conflicting title" },
+					"fixture",
+				),
+			]);
+			expect(raced.filter((item) => item.status === "fulfilled")).toHaveLength(
+				1,
+			);
+			expect(raced.find((item) => item.status === "rejected")).toMatchObject({
+				reason: { status: 409, code: "REQUEST_KEY_REUSED" },
+			});
+			expect(
+				await prisma.editProject.count({ where: { contentId: content.id } }),
+			).toBe(3);
+		});
+
+		it("keeps an exported legacy crop whose rounded endpoints cover one pixel", async () => {
+			const { project, media } = await fixture();
+			const saved = await saveEditingDraft(project.id, {
+				expectedRevision: 1,
+				document: {
+					...project.draft,
+					clips: project.draft.clips.map((clip) => ({
+						...clip,
+						framing: [
+							{
+								fromFrame: 0,
+								toFrame: clip.durationFrames,
+								mode: "CROP",
+								origin: "MANUAL",
+								// At source width 640 the endpoints round from 10.25 and 10.75 to 10 and 11.
+								rect: { x: 10.25 / 640, y: 0, w: 0.5 / 640, h: 1 },
+							},
+						],
+					})),
+				},
+			});
+			const confirmed = await confirmEditingRevision(
+				project.id,
+				{ expectedRevision: saved.draftRevision, confirmSuggestions: false },
+				"fixture",
+			);
+			const { run } = await hierarchyExecution(
+				confirmed,
+				"EXPORT",
+				"SUCCEEDED",
+				1,
+			);
+			const copy = await createEditingProject(
+				{
+					title: "Legacy crop",
+					fromExport: {
+						projectId: project.id,
+						exportId: run.id,
+						expectedOrganizationId: org,
+						requestKey: randomUUID(),
+					},
+				},
+				"fixture",
+			);
+			expect(copy.id).not.toBe(project.id);
+			expect(copy.media.id).toBe(media.id);
+			expect(copy.draft.schemaVersion).toBe(1);
+			expect(copy.draft).toEqual(confirmed.draft);
+			expect(copy.renders).toEqual([]);
+		});
+
 		it("paginates multiple same-format alternatives deterministically and counts archived projects consistently", async () => {
 			const f = await fixture();
 			const at = new Date("2026-11-05T01:00:00Z");

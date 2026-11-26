@@ -35,7 +35,7 @@ export const SCHEDULED_SOON_MS = 15 * 60_000;
 export const LIVE_LIST_FILTERS = ["all", "active", "error", "soon"] as const;
 export type LiveListFilter = (typeof LIVE_LIST_FILTERS)[number];
 
-export const LIVE_LIST_SORTS = ["anomaly", "created"] as const;
+export const LIVE_LIST_SORTS = ["created", "anomaly"] as const;
 export type LiveListSort = (typeof LIVE_LIST_SORTS)[number];
 
 /**
@@ -265,17 +265,8 @@ export type ArrangedChannel = {
 };
 
 /**
- * Filter + sort the loaded page in one pass, so the Health cell, the Error
- * filter and the anomaly sort can never disagree about a row: they all read
- * the SAME reading.
- *
- * The `created` sort reproduces the server's own `createdAt desc, id desc`
- * order rather than trusting the array to already be in it — TanStack
- * concatenates pages, and a page boundary is exactly where an unsorted
- * "already sorted" assumption stops holding.
- *
- * Secondary order is the name, then the id: two channels with the same
- * anomaly and the same name must not swap places between two polls.
+ * The Health cell, error filter and anomaly sort share one reading per row.
+ * The API already pages by creation time and ID descending, as VOD does.
  */
 export function arrangeChannels(
 	items: readonly LiveChannelListItem[],
@@ -289,21 +280,15 @@ export function arrangeChannels(
 				matchesFilter(item, health, options.filter, nowMs) &&
 				matchesQuery(item, options.query),
 		);
-	return rows.sort((a, b) => {
-		if (options.sort === "anomaly" && a.health.rank !== b.health.rank) {
-			return a.health.rank - b.health.rank;
-		}
-		if (options.sort === "created") {
-			const created = b.item.createdAt.localeCompare(a.item.createdAt);
-			if (created !== 0) {
-				return created;
-			}
-		}
-		return (
+	if (options.sort === "created") {
+		return rows;
+	}
+	return rows.sort(
+		(a, b) =>
+			a.health.rank - b.health.rank ||
 			a.item.name.localeCompare(b.item.name) ||
-			a.item.id.localeCompare(b.item.id)
-		);
-	});
+			a.item.id.localeCompare(b.item.id),
+	);
 }
 
 /**
@@ -317,7 +302,7 @@ export type LiveListPrefs = { filter: LiveListFilter; sort: LiveListSort };
 
 export const DEFAULT_LIVE_LIST_PREFS: LiveListPrefs = {
 	filter: "all",
-	sort: "anomaly",
+	sort: "created",
 };
 
 /**

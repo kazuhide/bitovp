@@ -48,7 +48,7 @@ async function readBoundedBody(
 	}
 }
 
-export const AISA_LIVE_PREVIEW_SDK_VERSION = "1.288.0-develop.02b690c6";
+export const AISA_LIVE_PREVIEW_SDK_VERSION = "1.289.0-develop.4d2bbf1d";
 const SDK_PACKAGE = "@bitmovin-internal/api-sdk";
 const API_BASE = "https://api.bitmovin.com/v1";
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;

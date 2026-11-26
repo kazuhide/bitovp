@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { TRANSCRIPTION_POLICY_FINGERPRINT } from "../content-production/transcription-quality";
 import {
+	LOCAL_CAPTION_CONTEXT_POLICY,
+	PLAMO_CAPTION_VALIDATION_POLICY,
+} from "./caption-translation-policy";
+import {
 	applyLocalCaptionTranslation,
 	buildLocalCaptionTranslationBatches,
+	LOCAL_CAPTION_CONTEXT_POLICY_FINGERPRINT,
 	localCaptionModelIdentityV1Schema,
 	normalizeManualCaptionTranslationEdits,
+	PLAMO_CAPTION_TEMPLATE,
+	PLAMO_CAPTION_TEMPLATE_HASH,
+	PLAMO_CAPTION_VALIDATION_POLICY_FINGERPRINT,
 	validateLocalCaptionTranslation,
 } from "./local-caption-translation";
 import {
@@ -33,6 +41,17 @@ const batches = (cues = [cue(1), cue(2)]) =>
 	});
 
 describe("local Japanese caption translation contract", () => {
+	it("keeps shared browser identity digests equal to canonical server hashes", () => {
+		expect(LOCAL_CAPTION_CONTEXT_POLICY_FINGERPRINT).toBe(
+			hashEditingEvidence(LOCAL_CAPTION_CONTEXT_POLICY),
+		);
+		expect(PLAMO_CAPTION_TEMPLATE_HASH).toBe(
+			hashEditingEvidence(PLAMO_CAPTION_TEMPLATE),
+		);
+		expect(PLAMO_CAPTION_VALIDATION_POLICY_FINGERPRINT).toBe(
+			hashEditingEvidence(PLAMO_CAPTION_VALIDATION_POLICY),
+		);
+	});
 	it("covers every original cue exactly without exposing clock editing to the model", () => {
 		const all = Array.from({ length: 23 }, (_, i) => cue(i + 1));
 		const result = batches(all);

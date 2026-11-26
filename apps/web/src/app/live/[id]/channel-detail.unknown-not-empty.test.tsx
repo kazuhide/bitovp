@@ -238,41 +238,33 @@ beforeEach(() => {
 describe.each([
 	{
 		locale: "en",
-		unknown: "unknown",
 		unavailable: "could not be read",
 		empty: "0 running",
 		active: "1 running",
 	},
 	{
 		locale: "ja",
-		unknown: "不明",
 		unavailable: "取得できませんでした",
 		empty: "0 稼働",
 		active: "1 稼働",
 	},
 ] as const)("feeder summary query state ($locale)", ({
 	locale,
-	unknown,
 	unavailable,
 	empty,
 	active,
 }) => {
-	function expectSummary(
-		count: string,
-		summary: string,
-		tone: "neutral" | "warn" | "ok",
-	) {
-		expect(stripCell("feeders")?.textContent).toBe(count);
+	function expectSummary(summary: string, tone: "neutral" | "warn" | "ok") {
+		expect(stripCell("feeders")).toBeNull();
 		expect(summaryOf("sec-feeders")).toBe(summary);
 		expect(summaryToneOf("sec-feeders")).toBe(tone);
-		expect(stripCell("feeders")?.className).toContain("text-amber-400");
 	}
 	it("failed initial read is amber unknown, not zero", async () => {
 		mockPage("none", () => {
 			throw new Error("feeder unavailable");
 		});
 		wrap(<ChannelDetail id={CHANNEL} />, locale);
-		await waitFor(() => expectSummary(unknown, unavailable, "warn"));
+		await waitFor(() => expectSummary(unavailable, "warn"));
 	});
 	it.each([
 		0, 1,
@@ -286,7 +278,7 @@ describe.each([
 			});
 		});
 		const { client } = wrap(<ChannelDetail id={CHANNEL} />, locale);
-		await waitFor(() => expectSummary(unknown, unavailable, "warn"));
+		await waitFor(() => expectSummary(unavailable, "warn"));
 		retry = true;
 		let refetch: Promise<void> | undefined;
 		await act(async () => {
@@ -300,7 +292,7 @@ describe.each([
 		expect(state?.fetchStatus).toBe("fetching");
 		expect(state?.errorUpdateCount).toBe(1);
 		expect(state?.data).toBeUndefined();
-		await waitFor(() => expectSummary(unknown, unavailable, "warn"));
+		await waitFor(() => expectSummary(unavailable, "warn"));
 		await act(async () => {
 			release?.({
 				items: count ? [{ id: "feeder-1", status: "PUSHING" }] : [],
@@ -310,7 +302,7 @@ describe.each([
 		await waitFor(() =>
 			expect(summaryOf("sec-feeders")).toBe(count ? active : empty),
 		);
-		expect(stripCell("feeders")?.textContent).toBe(String(count));
+		expect(stripCell("feeders")).toBeNull();
 		expect(summaryToneOf("sec-feeders")).toBe(count ? "ok" : "neutral");
 	});
 	it.each([
@@ -329,7 +321,7 @@ describe.each([
 		await act(() =>
 			client.invalidateQueries({ queryKey: ["feeder-sessions", CHANNEL] }),
 		);
-		await waitFor(() => expectSummary(unknown, unavailable, "warn"));
+		await waitFor(() => expectSummary(unavailable, "warn"));
 		expect(client.getQueryData(["feeder-sessions", CHANNEL])).toEqual({
 			items: count ? [{ id: "feeder-1", status: "PUSHING" }] : [],
 		});
@@ -340,7 +332,7 @@ describe.each([
 		await waitFor(() =>
 			expect(summaryOf("sec-feeders")).toBe(count ? active : empty),
 		);
-		expect(stripCell("feeders")?.textContent).toBe(String(count));
+		expect(stripCell("feeders")).toBeNull();
 		expect(summaryToneOf("sec-feeders")).toBe(count ? "ok" : "neutral");
 	});
 	it("initial pending remains neutral and successful empty remains a measured zero", async () => {
@@ -354,7 +346,7 @@ describe.each([
 		);
 		wrap(<ChannelDetail id={CHANNEL} />, locale);
 		await waitFor(() => expect(summaryOf("sec-feeders")).toBe(empty));
-		expect(stripCell("feeders")?.textContent).toBe("0");
+		expect(stripCell("feeders")).toBeNull();
 		expect(summaryToneOf("sec-feeders")).toBe("neutral");
 		expect(release).toBeDefined();
 		await act(async () => {
@@ -366,6 +358,57 @@ describe.each([
 });
 
 describe("ChannelDetail — a failed read is not a healthy channel", () => {
+	it("withholds alert and schedule counts while retrying failed first reads", async () => {
+		mockPage("none");
+		const reply = apiFetch.getMockImplementation();
+		let retry = false;
+		let release!: () => void;
+		const ready = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		apiFetch.mockImplementation(async (input: string) => {
+			if (input.endsWith("/alerts") || input.endsWith("/schedules")) {
+				if (!retry) throw new Error("first telemetry read failed");
+				await ready;
+			}
+			return reply?.(input);
+		});
+		const { client } = wrap(<ChannelDetail id={CHANNEL} />);
+		await screen.findByRole("heading", { name: "unknown-not-empty" });
+		const keys = [
+			["live-channel-alerts", CHANNEL],
+			["live-schedules", CHANNEL],
+		];
+		await waitFor(() => {
+			for (const queryKey of keys) {
+				expect(client.getQueryState(queryKey)?.status).toBe("error");
+			}
+		});
+		retry = true;
+		await act(async () => {
+			for (const queryKey of keys) void client.refetchQueries({ queryKey });
+		});
+		await waitFor(() => {
+			for (const queryKey of keys) {
+				expect(client.getQueryState(queryKey)?.status).toBe("pending");
+			}
+		});
+		expect(stripCell("alerts")).toBeNull();
+		expect(stripCell("next-event")).toBeNull();
+		expect(summaryOf("sec-alerts")).not.toBe("0 open");
+		expect(summaryOf("sec-schedule")).not.toBe("none armed");
+		expect(nextActionCode()).not.toBe("ON_AIR");
+		expect(screen.queryByText("Nothing armed.")).toBeNull();
+		const upcoming = screen.getByText("Upcoming").parentElement;
+		expect(
+			within(upcoming as HTMLElement).getAllByText("Loading…"),
+		).toHaveLength(1);
+		await act(async () => release());
+		await waitFor(() => expect(nextActionCode()).toBe("ON_AIR"));
+		expect(stripCell("alerts")).toHaveTextContent("0");
+		expect(stripCell("next-event")).toHaveTextContent("none armed");
+	});
+
 	it("alerts RESOLVING with an empty list is still ON_AIR, a green 0, and '0 open'", async () => {
 		mockPage("none");
 		wrap(<ChannelDetail id={CHANNEL} />);
@@ -385,10 +428,7 @@ describe("ChannelDetail — a failed read is not a healthy channel", () => {
 		await screen.findByRole("region", { name: /channel status/i });
 		await waitFor(() => expect(nextActionCode()).toBe("ALERTS_UNKNOWN"));
 		expect(nextActionCode()).not.toBe("ON_AIR");
-		// The strip: amber unknown, not a green zero.
-		expect(stripCell("alerts")?.textContent).toBe("unknown");
-		expect(stripCell("alerts")?.className).toContain("text-amber-400");
-		expect(stripCell("alerts")?.className).not.toContain("text-emerald-400");
+		expect(stripCell("alerts")).toBeNull();
 		// The section summary: the same, in the closed-card line.
 		expect(summaryOf("sec-alerts")).toBe("could not be read");
 		expect(summaryOf("sec-alerts")).not.toBe("0 open");

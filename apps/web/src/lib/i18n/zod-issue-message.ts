@@ -59,8 +59,20 @@ export const SENTENCE_TO_KEY: ReadonlyMap<string, MessageKey> = new Map<
 		"zerr.diagnosticsSrtInputOnly",
 	],
 	[
+		"Task text download requires task diagnostics",
+		"zerr.diagnosticsTaskDownload",
+	],
+	[
 		"Expected an HTTPS download URL without credentials",
 		"zerr.diagnosticsHttpsDownload",
+	],
+	[
+		"Relay URL must be moqt://host[:port][/path] without user credentials, query or fragment",
+		"zerr.credMoqRelayUrl",
+	],
+	[
+		"Authorization token type requires an authorization token",
+		"zerr.credMoqTokenType",
 	],
 	[
 		"offset must be an ISO 8601 duration (e.g. PT10S, -PT1.500S)",

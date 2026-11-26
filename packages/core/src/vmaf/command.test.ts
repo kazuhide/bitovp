@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { buildVmafCommand } from "./command";
+import { BANDING_JOB_SCORING_VERSION } from "../banding/types";
+import {
+	buildVmafCommand,
+	VMAF_EXPERIMENTAL_GPU_DECODE_SCORING_VERSION,
+	VMAF_EXPERIMENTAL_GPU_SCORING_VERSION,
+	VMAF_FRAME_INDEX_SCORING_VERSION,
+	VMAF_OWNED_CUDA_SCORING_VERSION,
+	VMAF_OWNED_VULKAN_SCORING_VERSION,
+	VMAF_RETIRED_OWNED_CUDA_SCORING_VERSION,
+	VMAF_RETIRED_OWNED_VULKAN_SCORING_VERSION,
+	VMAF_SCORING_VERSION,
+	vmafComparableScoringVersion,
+} from "./command";
 
 /**
  * The libvmaf argv builder is pure — these assert its exact shape (no
@@ -137,16 +149,39 @@ describe("buildVmafCommand", () => {
 		expect(argv[i1 + 1]).toBe("/spool/reference.mp4"); // [1:v] reference
 	});
 
-	it("scale+fps-conforms the distorted input then runs libvmaf", () => {
+	it("scales the distorted input, gives both inputs one frame per slot of the reference's frame rate, then runs libvmaf", () => {
 		const fc = filterComplexOf(buildVmafCommand(BASE));
 		expect(fc).toBe(
 			// Both pads carry `setpts`: libvmaf pairs by PTS, and a mezzanine with a
 			// non-zero first timestamp otherwise has its frame N scored against the
 			// encode's frame N±1 — worth 61 VMAF points on a real encode.
-			"[0:v]scale=1920:1080:flags=bicubic,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];" +
-				"[1:v]settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
+			//
+			// Both pads carry `fps` as well (2026-11-14). `setpts` numbers the
+			// frames as they come, so frame N of the two is one moment only when
+			// both have a frame in every slot. With the filter on the encode alone,
+			// a reference and an encode that leave out the same slots scored 21.26
+			// where they score 52.96 with it on both.
+			//
+			// Each pad's slots count from its own first frame: a video that
+			// starts half a slot after its file, in whole milliseconds, had
+			// frames dropped and repeated by the filter otherwise.
+			"[0:v]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];" +
+				"[1:v]setpts=PTS-STARTPTS,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
 				"[dist][ref]libvmaf=model=version=vmaf_v0.6.1:log_path=/spool/qc/v360.vmaf.json:log_fmt=json[out]",
 		);
+	});
+
+	it("gives the reference the frame rate that it gives the encode, and no other filter of the encode's", () => {
+		for (const fpsConform of [24, 30000 / 1001, 59.94]) {
+			const fc = filterComplexOf(buildVmafCommand({ ...BASE, fpsConform }));
+			const [dist, ref] = fc.split(";");
+			expect(dist).toBe(
+				`[0:v]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=${fpsConform},settb=AVTB,setpts=N/FRAME_RATE/TB[dist]`,
+			);
+			expect(ref).toBe(
+				`[1:v]setpts=PTS-STARTPTS,fps=${fpsConform},settb=AVTB,setpts=N/FRAME_RATE/TB[ref]`,
+			);
+		}
 	});
 
 	it("selects a built-in model with model=version= and JSON log", () => {
@@ -263,8 +298,11 @@ describe("buildVmafCommand", () => {
 					scaleToReference: { width: 1280, height: 720 },
 				}),
 			),
-		).toContain(
-			"[0:v]scale=1280:720:flags=bicubic,settb=AVTB,setpts=N/FRAME_RATE/TB[dist]",
+		).toBe(
+			// Without a frame rate neither input gets the `fps` filter.
+			"[0:v]scale=1280:720:flags=bicubic,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];" +
+				"[1:v]settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
+				"[dist][ref]libvmaf=model=version=m:log_path=l:log_fmt=json[out]",
 		);
 		expect(
 			filterComplexOf(
@@ -276,7 +314,11 @@ describe("buildVmafCommand", () => {
 					fpsConform: 30,
 				}),
 			),
-		).toContain("[0:v]fps=30,settb=AVTB,setpts=N/FRAME_RATE/TB[dist]");
+		).toBe(
+			"[0:v]setpts=PTS-STARTPTS,fps=30,settb=AVTB,setpts=N/FRAME_RATE/TB[dist];" +
+				"[1:v]setpts=PTS-STARTPTS,fps=30,settb=AVTB,setpts=N/FRAME_RATE/TB[ref];" +
+				"[dist][ref]libvmaf=model=version=m:log_path=l:log_fmt=json[out]",
+		);
 	});
 
 	it("maps the libvmaf output and discards muxing (-f null -)", () => {
@@ -400,7 +442,28 @@ describe("buildVmafCommand — alignFrames", () => {
 		// Scale and fps FIRST, then the drop: dropping before the fps conform
 		// would count frames at the wrong rate.
 		expect(g).toContain(
-			"[0:v]scale=1920:1080:flags=bicubic,fps=24,select='gte(n\\,1)',settb=AVTB,setpts=N/FRAME_RATE/TB[dist]",
+			"[0:v]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=24,select='gte(n\\,1)',settb=AVTB,setpts=N/FRAME_RATE/TB[dist]",
+		);
+		expect(g).toContain(
+			"[1:v]setpts=PTS-STARTPTS,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[ref]",
+		);
+	});
+
+	it("drops the reference's leading frames after its frame-rate filter, as on the distorted side", () => {
+		const g = graph(
+			buildVmafCommand({
+				...base,
+				alignFrames: 2,
+				scaleToReference: { width: 1920, height: 1080 },
+				fpsConform: 24,
+			}),
+		);
+		// The offset counts slots of the reference's frame rate on both sides.
+		expect(g).toContain(
+			"[1:v]setpts=PTS-STARTPTS,fps=24,select='gte(n\\,2)',settb=AVTB,setpts=N/FRAME_RATE/TB[ref]",
+		);
+		expect(g).toContain(
+			"[0:v]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=24,settb=AVTB,setpts=N/FRAME_RATE/TB[dist]",
 		);
 	});
 });
@@ -470,5 +533,38 @@ describe("explicit frame-index BT709 10-bit method", () => {
 				}),
 			).toThrow();
 		}
+	});
+});
+
+describe("scoring generations", () => {
+	it("gives each method, and the family of banding jobs, a number of its own", () => {
+		// A row keeps one number for all of them, so two methods with one number
+		// would be one method to every reader of the row.
+		const generations = [
+			VMAF_SCORING_VERSION,
+			VMAF_FRAME_INDEX_SCORING_VERSION,
+			VMAF_EXPERIMENTAL_GPU_SCORING_VERSION,
+			VMAF_EXPERIMENTAL_GPU_DECODE_SCORING_VERSION,
+			VMAF_RETIRED_OWNED_CUDA_SCORING_VERSION,
+			VMAF_RETIRED_OWNED_VULKAN_SCORING_VERSION,
+			BANDING_JOB_SCORING_VERSION,
+			VMAF_OWNED_CUDA_SCORING_VERSION,
+			VMAF_OWNED_VULKAN_SCORING_VERSION,
+		];
+		expect(generations).toEqual([3, 6, 7, 8, 9, 10, 11, 12, 13]);
+		expect(new Set(generations).size).toBe(generations.length);
+	});
+
+	it("compares owned GPU scoring with the ordinary method, and nothing else with another generation", () => {
+		expect(vmafComparableScoringVersion(VMAF_OWNED_CUDA_SCORING_VERSION)).toBe(
+			VMAF_SCORING_VERSION,
+		);
+		expect(
+			vmafComparableScoringVersion(VMAF_OWNED_VULKAN_SCORING_VERSION),
+		).toBe(VMAF_SCORING_VERSION);
+		// The retired GPU generations scored a scaled encode higher, and the
+		// frame-index method compares other pictures.
+		for (const version of [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 14])
+			expect(vmafComparableScoringVersion(version), `${version}`).toBe(version);
 	});
 });

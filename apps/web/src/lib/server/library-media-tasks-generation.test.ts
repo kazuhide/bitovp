@@ -217,7 +217,15 @@ function fixture() {
 		rows.push(row);
 		return row;
 	}
-	return { rows, input, dependency, media, organizationId, normalizationRows };
+	return {
+		rows,
+		input,
+		dependency,
+		media,
+		organizationId,
+		normalizationRows,
+		analysis,
+	};
 }
 beforeEach(() => {
 	vi.stubEnv("BITOVP_LOCAL_STORY_CHOICE_ENABLED", undefined);
@@ -415,6 +423,41 @@ describe("local semantic generation intake", () => {
 		};
 		expect(envelope.identity.localStoryModel.profile).toBe("nvidia");
 	});
+	it("accepts only a scene from the pinned analysis and preserves it on retry", async () => {
+		configure();
+		const f = fixture();
+		const value = f.input();
+		const storySceneId = fixtureItem(f.analysis.document.scenes[0]).id;
+		const input = {
+			...value,
+			parameters: {
+				...value.parameters,
+				policy: "LOCAL_STORY",
+				renderMode: "DRAFT",
+				storySceneId,
+			},
+		};
+		await expect(
+			createMediaTask(
+				{
+					...input,
+					parameters: { ...input.parameters, storySceneId: randomUUID() },
+				},
+				null,
+			),
+		).rejects.toMatchObject({ code: "LOCAL_STORY_SCENE_SCOPE_INVALID" });
+		expect(f.rows).toEqual([]);
+		const accepted = await createMediaTask(input, null);
+		const row = fixtureItem(f.rows[0]);
+		expect(row.parameters).toMatchObject({
+			input: { parameters: { storySceneId } },
+		});
+		row.state = "ERROR";
+		await retryMediaTask(accepted.taskId, { requestKey: randomUUID() }, null);
+		expect(fixtureItem(f.rows[1]).parameters).toMatchObject({
+			input: { parameters: { storySceneId } },
+		});
+	});
 	it("pins new draft requests to Choice only after the dedicated capability is ready", async () => {
 		configure();
 		vi.stubEnv("BITOVP_LOCAL_STORY_CHOICE_ENABLED", "1");
@@ -453,6 +496,42 @@ describe("local semantic generation intake", () => {
 			GENERATION_POLICY_FINGERPRINT,
 		);
 		expect(row.requestHash).toBe(mediaTaskIntentHash(envelope.input));
+	});
+	it("preserves an explicit trailer through intake and retry without pinning the ordinary Choice workflow", async () => {
+		configure();
+		vi.stubEnv("BITOVP_LOCAL_STORY_CHOICE_ENABLED", "1");
+		holder.choiceReady.mockResolvedValue(false);
+		const f = fixture();
+		const value = f.input();
+		const trailer = { durationMode: "EXACT", disclosure: "SETUP_AND_QUESTION" };
+		const input = {
+			...value,
+			parameters: {
+				...value.parameters,
+				policy: "LOCAL_STORY",
+				renderMode: "DRAFT",
+				trailer,
+			},
+		};
+		const created = await createMediaTask(input, null);
+		expect(holder.choiceReady).not.toHaveBeenCalled();
+		const first = fixtureItem(f.rows[0]);
+		expect(first).toMatchObject({
+			parameters: { input: { parameters: { trailer } } },
+		});
+		const request = mediaTaskCreateSchema.parse(input);
+		expect(first.requestHash).toBe(mediaTaskIntentHash(request));
+		expect(await createMediaTask(input, null)).toEqual(created);
+		first.state = "ERROR";
+		await retryMediaTask(
+			created.taskId,
+			{ requestKey: randomUUID() },
+			"fixture",
+		);
+		expect(f.rows[1]).toMatchObject({
+			parameters: { input: { parameters: { trailer } } },
+			parentTaskId: created.taskId,
+		});
 	});
 	it("does not create a Choice task when its new capability is missing", async () => {
 		configure();

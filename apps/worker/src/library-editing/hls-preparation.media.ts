@@ -17,7 +17,13 @@ const id = (n: number) =>
 	`00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 
-for (const layout of ["FMP4_SEPARATE_AUDIO", "TS_MULTIPLEXED"] as const)
+// Synthetic lavfi inputs have their own pools, separate from output filter_threads.
+// Their CPU discovery is capped at the same two CPUs as the isolated media gate.
+for (const layout of [
+	"FMP4_SEPARATE_AUDIO",
+	"FMP4_SEPARATE_AUDIO_CUE_MARKERS",
+	"TS_MULTIPLEXED",
+] as const)
 	test(`native normal PREPARE captures pinned ${layout} and publishes indexed READY without an AISA binding`, async () => {
 		const base = process.env.BITOVP_HLS_NATIVE_OUT,
 			ffmpeg = process.env.BITOVP_HLS_FFMPEG,
@@ -34,12 +40,22 @@ for (const layout of ["FMP4_SEPARATE_AUDIO", "TS_MULTIPLEXED"] as const)
 				"-v",
 				"error",
 				"-nostdin",
+				"-cpucount",
+				"2",
+				"-filter_threads",
+				"1",
+				"-filter_complex_threads",
+				"1",
 				"-f",
 				"lavfi",
+				"-threads",
+				"1",
 				"-i",
 				"testsrc2=size=160x90:rate=24",
 				"-f",
 				"lavfi",
+				"-threads",
+				"1",
 				"-i",
 				"sine=frequency=880:sample_rate=48000",
 				"-t",
@@ -74,7 +90,7 @@ for (const layout of ["FMP4_SEPARATE_AUDIO", "TS_MULTIPLEXED"] as const)
 			];
 		await runMediaProcess(ffmpeg, args, { timeoutMs: 60000 });
 		const objects = new Map<string, Buffer>();
-		if (layout === "FMP4_SEPARATE_AUDIO") {
+		if (layout !== "TS_MULTIPLEXED") {
 			for (const kind of ["video", "audio"]) {
 				const folder = join(directory, kind);
 				await mkdir(folder);
@@ -85,6 +101,14 @@ for (const layout of ["FMP4_SEPARATE_AUDIO", "TS_MULTIPLEXED"] as const)
 						"-v",
 						"error",
 						"-nostdin",
+						"-cpucount",
+						"2",
+						"-filter_threads",
+						"1",
+						"-filter_complex_threads",
+						"1",
+						"-threads",
+						"1",
 						"-i",
 						original,
 						"-map",
@@ -107,6 +131,16 @@ for (const layout of ["FMP4_SEPARATE_AUDIO", "TS_MULTIPLEXED"] as const)
 					],
 					{ timeoutMs: 60000 },
 				);
+				if (layout === "FMP4_SEPARATE_AUDIO_CUE_MARKERS") {
+					const path = join(folder, "stream.m3u8");
+					const playlist = await readFile(path, "utf8");
+					await writeFile(
+						path,
+						playlist
+							.replace("#EXTINF:", "#EXT-X-CUE-OUT:0.0\n#EXTINF:")
+							.replace("#EXT-X-ENDLIST", "#EXT-X-CUE-IN\n#EXT-X-ENDLIST"),
+					);
+				}
 			}
 			const master =
 				'#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES,AUTOSELECT=YES,URI="audio/stream.m3u8"\n#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=160x90,CODECS="avc1.64000b,mp4a.40.2",AUDIO="a"\nvideo/stream.m3u8\n';
@@ -126,6 +160,14 @@ for (const layout of ["FMP4_SEPARATE_AUDIO", "TS_MULTIPLEXED"] as const)
 					"-v",
 					"error",
 					"-nostdin",
+					"-cpucount",
+					"2",
+					"-filter_threads",
+					"1",
+					"-filter_complex_threads",
+					"1",
+					"-threads",
+					"1",
 					"-i",
 					original,
 					"-map",

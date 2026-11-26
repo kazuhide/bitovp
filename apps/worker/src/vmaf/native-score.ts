@@ -1,31 +1,46 @@
+import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import {
 	localVmafExecutionSchema,
 	sampleAspectRatioFromProbe,
 	type VmafCommandOptions,
+	type VmafGpuPairReason,
+	vmafNativeComparison,
+	vmafNativeFrameTimes,
 } from "@bitovp/core";
 import type { ProcessRunner } from "../feeder/supervisor";
-import { parseFrameRate } from "./geometry";
 import {
 	type DecodePolicy,
 	presentationTransformReason,
 } from "./hardware-decode";
 import {
 	hashNativeFile,
+	type NativeExpected,
 	nativeSourceFromVersion,
 	prepareNativeModel,
 	verifyNativeReceipt,
 } from "./native-contract";
+import {
+	completedNativeScoreIdentity,
+	type NativeScoreReuseContext,
+	probeNativeDecoderRuntime,
+	readVerifiedNativeScore,
+	reconfirmNativeScore,
+	verifiedNativeScoreLookupKey,
+} from "./native-score-reuse";
 import { resourceVideoFromProbe } from "./resource-plan";
 
 export type NativeScoreContext = {
 	signal?: AbortSignal;
 	referenceProbe?: string;
 	distortedProbe?: string;
+	/** Binds an explicitly prepared reference's verified bytes to native scoring. */
+	expectedReferenceSha256?: string;
 	/** Internal scheduling controls; never alter a completed measurement's frame set. */
 	nativeInflightFrames?: 1 | 2 | 4;
 	/** Calibration-only prefix, written only to the caller's disposable directory. */
 	calibrationFrames?: number;
+	verifiedReuse?: NativeScoreReuseContext;
 };
 export type NativeResourceSnapshot = {
 	maxRssBytes: number;
@@ -33,8 +48,57 @@ export type NativeResourceSnapshot = {
 	scope: "before-result-serialization";
 };
 
+/**
+ * A pair that the owned scorer does not take: one that the worker finds
+ * before the scorer runs, or one that the scorer itself refuses when it has
+ * the two files open (`SCORER_PAIR_REFUSALS`). Nothing is wrong with the
+ * measurement: the ordinary method scores such a pair, and the scorer would
+ * not give that score for it. `reason` is its kind, which a result keeps when
+ * the worker scores the pair on the CPU in the scorer's place.
+ */
+export class NativePairRefusal extends Error {
+	constructor(
+		message: string,
+		readonly reason: VmafGpuPairReason,
+	) {
+		super(message);
+		this.name = "NativePairRefusal";
+	}
+}
+
+/** A file that the scorer does not take, whatever the other file is. */
+const input = (code: string) => new NativePairRefusal(code, "GPU_PAIR_INPUT");
+
+/**
+ * What the scorer says of two files whose frames it does not pair
+ * (`native/vmaf-gpu/src/main.cpp` and `decoder_pair.hpp`): FFmpeg's libraries
+ * name another frame rate for each of them, a frame's time is more than a
+ * quarter of a slot apart in the two, one of them ends before the other, or
+ * frame N of a file is more than a quarter of a slot from N slots after its
+ * first, as in two files that leave out the same frame. The check before the
+ * run reads the frame rates and the frame count that ffprobe gives for each
+ * file, which show no frame that a Matroska, WebM or MPEG-TS file leaves
+ * out, and the scorer reads the frames' times.
+ *
+ * The scorer's tests hold the last three sentences, and CI runs a test of
+ * each (`tests/runner_test.py`, and the frame-time limits of
+ * `tests/decoder_retention_test.cpp`, which need no file). None holds the
+ * first, so `local-score.native.test.ts` holds all four against the scorer's
+ * source: with another wording there, the worker would end such a
+ * measurement with an error again.
+ */
+export const SCORER_PAIR_REFUSALS = [
+	"Inputs must have the same known frame rate; conform them before comparison",
+	"Comparison presentation timestamps do not align",
+	"Comparison inputs have different frame counts",
+	"Comparison frame times do not follow the frame rate",
+];
+
 function probeInput(text: string) {
-	let parsed: { streams?: Record<string, unknown>[] };
+	let parsed: {
+		streams?: Record<string, unknown>[];
+		format?: { format_name?: unknown };
+	};
 	try {
 		parsed = JSON.parse(text);
 	} catch {
@@ -45,12 +109,12 @@ function probeInput(text: string) {
 		: [];
 	const [video] = videos;
 	if (videos.length !== 1 || !video)
-		throw new Error("NATIVE_UNSUPPORTED_VIDEO_STREAM_SELECTION");
+		throw input("NATIVE_UNSUPPORTED_VIDEO_STREAM_SELECTION");
 	if (presentationTransformReason(video))
-		throw new Error("NATIVE_UNSUPPORTED_PRESENTATION_TRANSFORM");
+		throw input("NATIVE_UNSUPPORTED_PRESENTATION_TRANSFORM");
 	const sar = sampleAspectRatioFromProbe(video.sample_aspect_ratio);
 	if (sar !== undefined && sar !== "1:1")
-		throw new Error("NATIVE_UNSUPPORTED_SAMPLE_ASPECT_RATIO");
+		throw input("NATIVE_UNSUPPORTED_SAMPLE_ASPECT_RATIO");
 	if (
 		["smpte2084", "arib-std-b67", "smpte428"].includes(
 			String(video.color_transfer),
@@ -58,7 +122,7 @@ function probeInput(text: string) {
 		String(video.color_primaries).startsWith("bt2020") ||
 		String(video.color_space).startsWith("bt2020")
 	)
-		throw new Error("NATIVE_UNSUPPORTED_HDR_COLOR");
+		throw input("NATIVE_UNSUPPORTED_HDR_COLOR");
 	const metadata = resourceVideoFromProbe(text);
 	if (
 		!metadata.bitDepth ||
@@ -67,23 +131,57 @@ function probeInput(text: string) {
 			(value) => Number.isSafeInteger(value) && value > 0 && value <= 16384,
 		)
 	)
-		throw new Error("NATIVE_UNSUPPORTED_INPUT_FORMAT");
-	const rate =
-		parseFrameRate(
-			typeof video.avg_frame_rate === "string"
-				? video.avg_frame_rate
-				: undefined,
-		) ??
-		parseFrameRate(
-			typeof video.r_frame_rate === "string" ? video.r_frame_rate : undefined,
-		);
-	if (!rate) throw new Error("NATIVE_UNSUPPORTED_FRAME_RATE");
-	return { ...metadata, rate };
+		throw input("NATIVE_UNSUPPORTED_INPUT_FORMAT");
+	return {
+		...metadata,
+		video,
+		movContainer: parsed?.format?.format_name === "mov,mp4,m4a,3gp,3g2,mj2",
+	};
 }
 
-/** Initial owned path deliberately has no implicit CPU fallback or geometry,
- * cadence, crop, rotation, or method substitution. The native runner checks
- * decoded frame counts, timestamp drift, and GPU/CPU numerical parity again. */
+/**
+ * What ffprobe says of the two files of a pair that the scorer takes, and the
+ * bit depth at which it has to compare them. Throws `NativePairRefusal` for a
+ * pair that it does not take: a file that it does not hold, pictures that
+ * FFmpeg converts before libvmaf compares them (`vmafNativeComparison`), or
+ * frames that the ordinary method pairs in another way than by their order
+ * (`vmafNativeFrameTimes`). The worker asks before it plans resources for the
+ * scorer, and `runNativeVmafScore` asks again for the two files that it
+ * scores.
+ *
+ * `prefixes` is for a calibration run, which times the scorer on the first
+ * frames of a pair that has passed here: the two cuts need not hold the same
+ * number of frames, and ffprobe's rates of a cut are not those of the file.
+ */
+export function nativePair(
+	referenceProbe: string,
+	distortedProbe: string,
+	prefixes = false,
+) {
+	const reference = probeInput(referenceProbe);
+	const distorted = probeInput(distortedProbe);
+	if (!prefixes) {
+		const times = vmafNativeFrameTimes(reference.video, distorted.video);
+		if ("refusal" in times)
+			throw new NativePairRefusal(times.refusal, times.reason);
+	}
+	const pictures = vmafNativeComparison(reference.video, distorted.video);
+	if ("refusal" in pictures)
+		throw new NativePairRefusal(pictures.refusal, pictures.reason);
+	return { reference, distorted, bitDepth: pictures.bitDepth };
+}
+
+/** The owned path substitutes nothing by itself: no CPU scoring, geometry,
+ * cadence, crop, rotation or method. The native runner checks decoded frame
+ * counts, timestamp drift, and GPU/CPU numerical parity again.
+ *
+ * A score is the one that the ordinary method gives for the same pair, or
+ * there is none: the pair is compared at the reference's bit depth with
+ * nothing declared to CAMBI, and a pair that the scorer cannot compare as
+ * libvmaf through FFmpeg does ends with a `NativePairRefusal`, before the run
+ * or from the scorer. The caller decides what follows: the processor scores
+ * such a pair of a "Local (GPU if available)" measurement with the ordinary
+ * method, and every other failure of the scorer ends the measurement. */
 export async function runNativeVmafScore(
 	deps: {
 		runner: ProcessRunner;
@@ -151,30 +249,34 @@ export async function runNativeVmafScore(
 		if (existing !== undefined) return existing;
 		const result = await deps.runner.run(
 			deps.ffprobePath,
-			["-v", "error", "-show_streams", "-of", "json", path],
+			[
+				"-v",
+				"error",
+				"-show_streams",
+				...(context.verifiedReuse && frameLimit === undefined
+					? ["-show_format"]
+					: []),
+				"-of",
+				"json",
+				path,
+			],
 			{ signal, abortKillAfterMs: 250 },
 		);
 		signal?.throwIfAborted();
 		if (result.code !== 0) throw new Error("NATIVE_UNSUPPORTED_INPUT_PROBE");
 		return result.stdout;
 	};
-	const reference = probeInput(
-		await probe(options.referencePath, context.referenceProbe),
+	const referenceProbe = await probe(
+		options.referencePath,
+		context.referenceProbe,
 	);
-	const distorted = probeInput(
+	const { reference, distorted, bitDepth } = nativePair(
+		referenceProbe,
 		await probe(options.distortedPath, context.distortedProbe),
+		frameLimit !== undefined,
 	);
-	if (Math.abs(reference.rate - distorted.rate) > 1e-6)
-		throw new Error("NATIVE_UNSUPPORTED_FRAME_RATE_CONVERSION");
 	if (reference.width !== size.width || reference.height !== size.height)
 		throw new Error("NATIVE_UNSUPPORTED_REFERENCE_GEOMETRY");
-	if (
-		frameLimit === undefined &&
-		reference.frames !== undefined &&
-		distorted.frames !== undefined &&
-		reference.frames !== distorted.frames
-	)
-		throw new Error("NATIVE_UNSUPPORTED_FRAME_COUNT_MISMATCH");
 	if (
 		frameLimit !== undefined &&
 		[reference.frames, distorted.frames].some(
@@ -192,6 +294,12 @@ export async function runNativeVmafScore(
 		throw new Error("NATIVE_UNSUPPORTED_DISTORTED_ORIGINAL");
 	const model = await prepareNativeModel(options, signal);
 	const referenceSha256 = await hashNativeFile(options.referencePath, signal);
+	if (
+		context.expectedReferenceSha256 !== undefined &&
+		(!/^[a-f0-9]{64}$/.test(context.expectedReferenceSha256) ||
+			context.expectedReferenceSha256 !== referenceSha256)
+	)
+		throw new Error("NATIVE_REFERENCE_PREPARATION_SHA256_MISMATCH");
 	const distortedSha256 = await hashNativeFile(options.distortedPath, signal);
 	const version = await deps.runner.run(deps.nativePath, ["--version"], {
 		signal,
@@ -200,9 +308,73 @@ export async function runNativeVmafScore(
 	signal?.throwIfAborted();
 	if (version.code !== 0) throw new Error("NATIVE_BINARY_UNAVAILABLE");
 	const sourceSha256 = nativeSourceFromVersion(version.stdout);
+	const expected: NativeExpected = {
+		model: options.model,
+		modelSha256: model.modelSha256,
+		backend: scoring.backend,
+		device: scoring.device,
+		sourceSha256,
+		...size,
+		bitDepth,
+		distortedOriginal: original,
+		referenceSha256,
+		distortedSha256,
+		frameCount: frameLimit ?? reference.frames ?? distorted.frames,
+		psnr: options.psnr === true || options.features?.includes("psnr") === true,
+	};
+	// A complete score must come from both files' own media bytes.
+	const reuse =
+		frameLimit === undefined && reference.movContainer && distorted.movContainer
+			? context.verifiedReuse
+			: undefined;
+	let lookupKey = reuse
+		? verifiedNativeScoreLookupKey(
+				reuse,
+				expected,
+				options.threads ?? 1,
+				options.decoderThreads ?? 1,
+				context.nativeInflightFrames ?? 1,
+			)
+		: undefined;
 	const receiptPath = `${options.logPath}.native.json`;
 	await rm(receiptPath, { force: true });
 	try {
+		const native = { runner: deps.runner, nativePath: deps.nativePath };
+		if (lookupKey && reuse?.load) {
+			const prior = await readVerifiedNativeScore(
+				reuse.load,
+				lookupKey,
+				expected,
+				reuse.selection.identity.deviceUuid,
+				signal,
+			);
+			if (prior) {
+				if (
+					await reconfirmNativeScore(
+						native,
+						reuse,
+						prior.verifiedNativeScore,
+						context.nativeInflightFrames ?? 1,
+						signal,
+					)
+				) {
+					await writeFile(options.logPath, JSON.stringify(prior.log));
+					signal?.throwIfAborted();
+					return {
+						run: { code: 0, stdout: "", stderr: "" },
+						resourceSnapshot: undefined,
+						...prior,
+					};
+				}
+				// Score fresh without issuing a certificate for this rejected candidate.
+				lookupKey = undefined;
+			}
+		}
+		// A decoder-only probe negotiates attestation for fresh scoring without
+		// initializing a device. The score supplies its actual device evidence.
+		const decoderRuntimeSha256 = lookupKey
+			? await probeNativeDecoderRuntime(native, sourceSha256, signal)
+			: undefined;
 		const args = [
 			"--reference",
 			options.referencePath,
@@ -219,7 +391,7 @@ export async function runNativeVmafScore(
 			"--device",
 			String(scoring.device),
 			"--bit-depth",
-			"10",
+			String(bitDepth),
 			"--width",
 			String(size.width),
 			"--height",
@@ -229,6 +401,7 @@ export async function runNativeVmafScore(
 			"--decode-threads",
 			String(options.decoderThreads ?? 1),
 			"--verify-cpu",
+			...(decoderRuntimeSha256 ? ["--attest-decoder-runtime"] : []),
 			...(context.nativeInflightFrames === undefined
 				? []
 				: ["--inflight-frames", String(context.nativeInflightFrames)]),
@@ -240,23 +413,17 @@ export async function runNativeVmafScore(
 			abortKillAfterMs: 250,
 		});
 		signal?.throwIfAborted();
-		if (run.code !== 0)
-			throw new Error(`NATIVE_SCORING_FAILED (${run.code}): ${run.stderr}`);
-		const raw: unknown = JSON.parse(await readFile(receiptPath, "utf8"));
-		const verified = verifyNativeReceipt(raw, {
-			model: options.model,
-			modelSha256: model.modelSha256,
-			backend: scoring.backend,
-			device: scoring.device,
-			sourceSha256,
-			...size,
-			distortedOriginal: original,
-			referenceSha256,
-			distortedSha256,
-			frameCount: frameLimit ?? reference.frames ?? distorted.frames,
-			psnr:
-				options.psnr === true || options.features?.includes("psnr") === true,
-		});
+		if (run.code !== 0) {
+			const failure = `NATIVE_SCORING_FAILED (${run.code}): ${run.stderr}`;
+			throw SCORER_PAIR_REFUSALS.some((said) =>
+				run.stderr.includes(`bitovp-vmaf: ${said}`),
+			)
+				? new NativePairRefusal(failure, "GPU_PAIR_FRAME_TIMES")
+				: new Error(failure);
+		}
+		const receipt = await readFile(receiptPath, "utf8");
+		const raw: unknown = JSON.parse(receipt);
+		const verified = verifyNativeReceipt(raw, expected);
 		const metadata = raw as Record<string, unknown>;
 		if (
 			context.nativeInflightFrames !== undefined &&
@@ -291,12 +458,34 @@ export async function runNativeVmafScore(
 			scoring: verified.scoring,
 			attempts: 1,
 		});
+		const scoreIdentity =
+			lookupKey &&
+			decoderRuntimeSha256 &&
+			metadata.decoderRuntimeSha256 === decoderRuntimeSha256 &&
+			metadata.selfContainedMovInputs === true &&
+			verified.scoring.device.uuid === reuse?.selection.identity.deviceUuid
+				? completedNativeScoreIdentity(
+						lookupKey,
+						decoderRuntimeSha256,
+						metadata.scoringRuntimeSha256,
+						verified.scoring.device,
+						metadata.gpuDriver,
+					)
+				: undefined;
 		await writeFile(options.logPath, JSON.stringify(verified.log));
 		signal?.throwIfAborted();
 		return {
 			run,
 			execution,
 			log: verified.log,
+			...(scoreIdentity
+				? {
+						verifiedNativeScore: {
+							...scoreIdentity,
+							receiptSha256: createHash("sha256").update(receipt).digest("hex"),
+						},
+					}
+				: {}),
 			...(resourceSnapshot ? { resourceSnapshot } : {}),
 		};
 	} finally {

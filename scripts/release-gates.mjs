@@ -16,10 +16,12 @@ import { fileURLToPath } from "node:url";
 export const COMMANDS = Object.freeze(
 	[
 		["pnpm", "install", "--frozen-lockfile"],
-		["pnpm", "audit", "--audit-level", "low"],
+		["node", "scripts/dependency-audit.mjs"],
 		["pnpm", "typecheck"],
 		["pnpm", "check"],
 		["pnpm", "test"],
+		// Every change checks the census content; a release also pins its source.
+		["node", "scripts/api-coverage-current.mjs", "--check-exact"],
 		["pnpm", "build"],
 		["pnpm", "--filter", "@bitovp/worker", "smoke"],
 	].map(Object.freeze),
@@ -88,7 +90,8 @@ export function childEnvironment(env) {
 	]) {
 		if (env[key]) clean[key] = env[key];
 	}
-	return { ...clean, CI: "1", TURBO_FORCE: "true" };
+	// Each package has its own worker pool; release checks share one host.
+	return { ...clean, CI: "1", TURBO_FORCE: "true", TURBO_CONCURRENCY: "1" };
 }
 const digest = (value) => {
 	const bytes = Buffer.from(value ?? "");
@@ -183,9 +186,10 @@ export function runGates(
 	return report;
 }
 
+// The real path: a symlinked invocation must run, not exit 0 having done nothing.
 if (
 	process.argv[1] &&
-	resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+	realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
 	if (process.argv.length === 2)
 		console.log(

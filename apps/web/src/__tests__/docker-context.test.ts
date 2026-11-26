@@ -110,6 +110,7 @@ describe("security maintenance images", () => {
 		"pages.yml",
 		"installed-gui.yml",
 		"offline-media.yml",
+		"ffmpeg-source-build.yml",
 	])("%s installs the committed package-manager identity with Corepack", (file) => {
 		const workflow = readFileSync(
 			join(root, ".github/workflows", file),

@@ -1,4 +1,4 @@
-import type { LocalVmafExecution } from "@bitovp/core";
+import { type LocalVmafExecution, VMAF_GPU_PAIR_REASONS } from "@bitovp/core";
 import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { renderLocalized } from "@/test/render";
@@ -174,6 +174,68 @@ it.each([
 	expect(
 		screen.getByText("CUDA_UNSUPPORTED_CODEC").parentElement,
 	).not.toHaveTextContent(reason);
+});
+it.each([
+	[
+		"GPU_PAIR_PIXEL_FORMAT",
+		"GPU scoring does not compare the pixel formats of these two files, so CPU scored this pair.",
+		"このペアのピクセル形式はGPUでは比較できないため、CPUで計算しました。",
+	],
+	[
+		"GPU_PAIR_COLOR_RANGE",
+		"One of the two files is full range and the other is not, so CPU scored this pair.",
+		"片方の映像だけがフルレンジのため、CPUで計算しました。",
+	],
+	[
+		"GPU_PAIR_COLOR_MATRIX",
+		"The two files do not name the same colour matrix, so CPU scored this pair.",
+		"2つの映像でカラーマトリクス（色変換行列）の指定が一致しないため、CPUで計算しました。",
+	],
+	[
+		"GPU_PAIR_FRAME_TIMES",
+		"GPU scoring does not take the frame rates or frame times of these two files, so CPU scored this pair.",
+		"2つの映像のフレームレートまたはタイムスタンプの組み合わせをGPUでは扱えないため、CPUで計算しました。",
+	],
+	[
+		"GPU_PAIR_INPUT",
+		"GPU scoring does not take one of the two files, so CPU scored this pair.",
+		"GPUでは計算できない映像が含まれるため、CPUで計算しました。",
+	],
+])("says why CPU scored a pair of a GPU measurement: %s", (reason, english, japanese) => {
+	const execution: LocalVmafExecution = {
+		...cpu,
+		selection: { requested: "AUTO", reason },
+	};
+	const view = renderLocalized(<LocalExecutionSummary execution={execution} />);
+	expect(
+		screen.getByText("Requested processing: Local (GPU if available)"),
+	).toBeInTheDocument();
+	expect(
+		screen.getByText(`Processing selection: ${english}`),
+	).toBeInTheDocument();
+	expect(
+		screen.getByText("VMAF processing: CPU (libvmaf)"),
+	).toBeInTheDocument();
+	expect(screen.queryByText(new RegExp(reason))).not.toBeInTheDocument();
+	view.unmount();
+	renderLocalized(<LocalExecutionSummary execution={execution} />, "ja");
+	expect(
+		screen.getByText(`処理方法の選択理由: ${japanese}`),
+	).toBeInTheDocument();
+	expect(screen.getByText("VMAFの計算: CPU (libvmaf)")).toBeInTheDocument();
+});
+it("names every kind of pair that GPU scoring does not take", () => {
+	// A kind without words would be shown as its code.
+	for (const reason of VMAF_GPU_PAIR_REASONS) {
+		const view = renderLocalized(
+			<LocalExecutionSummary
+				execution={{ ...cpu, selection: { requested: "AUTO", reason } }}
+			/>,
+		);
+		expect(view.container).not.toHaveTextContent(reason);
+		expect(view.container).toHaveTextContent("so CPU scored");
+		view.unmount();
+	}
 });
 it("keeps unknown safe selection codes visible without interpreting them", () => {
 	renderLocalized(

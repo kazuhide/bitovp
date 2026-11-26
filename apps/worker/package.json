@@ -1,16 +1,19 @@
 {
 	"name": "@bitovp/worker",
-	"version": "1.2.0",
+	"version": "1.3.5",
 	"private": true,
 	"type": "module",
 	"scripts": {
 		"dev": "tsx watch src/index.ts",
 		"build": "tsc --noEmit",
 		"start": "tsx src/index.ts",
+		"experiments:worker": "tsx src/encoding-experiments/worker.ts",
+		"experiments:register-source": "tsx src/encoding-experiments/register-source.ts",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit",
 		"smoke": "tsx scripts/sdk-interop-smoke.ts",
-		"verify": "tsx scripts/verify.ts"
+		"verify": "tsx scripts/verify.ts",
+		"native:preflight": "tsx scripts/native-editing-preflight.ts"
 	},
 	"dependencies": {
 		"@aws-sdk/client-batch": "^3.1161.0",
@@ -19,13 +22,13 @@
 		"@aws-sdk/s3-request-presigner": "^3.1161.0",
 		"@azure/identity": "^4.13.3",
 		"@azure/storage-blob": "^12.33.0",
-		"@bitmovin/api-sdk": "1.287.0",
+		"@bitmovin/api-sdk": "1.288.0",
 		"@bitovp/core": "workspace:*",
 		"@bitovp/db": "workspace:*",
 		"@bitovp/storage": "workspace:*",
 		"@google-cloud/storage": "^7.21.0",
 		"bullmq": "5.78.1",
-		"fast-xml-parser": "5.11.2",
+		"fast-xml-parser": "5.12.0",
 		"google-auth-library": "^11.1.0",
 		"ioredis": "^5.4.1",
 		"m3u8-parser": "^7.2.0",
@@ -36,6 +39,7 @@
 	"devDependencies": {
 		"@types/node": "catalog:",
 		"dashjs": "5.2.0",
+		"fast-check": "3.23.2",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
 	}

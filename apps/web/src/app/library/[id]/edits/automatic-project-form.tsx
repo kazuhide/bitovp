@@ -1,5 +1,6 @@
 "use client";
 
+import type { LocalStoryTrailerIntent } from "@bitovp/core";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -11,6 +12,7 @@ import { GenerationControls } from "./generation-controls";
 import { wholeFramesForDuration } from "./generation-settings";
 import { PrepareGenerationControls } from "./prepare-generation-controls";
 import { useProductionCopy } from "./production-copy";
+import { TrailerBriefEditor } from "./trailer-brief-editor";
 
 export function AutomaticProjectForm({
 	contentId,
@@ -31,6 +33,8 @@ export function AutomaticProjectForm({
 		{ t } = useT(),
 		id = useId();
 	const [seconds, setSeconds] = useState("30"),
+		[trailerActive, setTrailerActive] = useState(false),
+		[trailer, setTrailer] = useState<LocalStoryTrailerIntent>(),
 		[busy, setBusy] = useState(false),
 		[reserved, setReserved] = useState<{
 			context: AutomaticEditingContext;
@@ -78,6 +82,9 @@ export function AutomaticProjectForm({
 			(file) => file.key === selected.preparation?.fileKey,
 		);
 	const available = ready || prepare;
+	const trailerAvailable = selectedEligibility.localStoryAvailable === true;
+	const submitDisabled =
+		disabled || (trailerActive && (!trailer || !trailerAvailable));
 	const contextHelp =
 		selected.status === "PREPARING"
 			? c.contextPreparing
@@ -129,6 +136,18 @@ export function AutomaticProjectForm({
 					)}
 				</dl>
 			)}
+			<TrailerBriefEditor
+				active={trailerActive}
+				intent={trailer}
+				available={trailerAvailable}
+				disabled={disabled || busy || !available}
+				onActiveChange={(active) => {
+					setTrailerActive(active);
+					setTrailer(undefined);
+				}}
+				onIntentChange={setTrailer}
+				onDurationChange={setSeconds}
+			/>
 			<Field
 				label={t("editing.autoPortrait.duration")}
 				htmlFor={`${id}-seconds`}
@@ -179,8 +198,9 @@ export function AutomaticProjectForm({
 				mediaVersionId={media.id}
 				analysisRevisionId={analysis.id}
 				targetDurationFrames={frames}
-				disabled={disabled}
+				disabled={submitDisabled}
 				renderMode="DRAFT"
+				trailer={trailer}
 				localStoryAvailable={selectedEligibility.localStoryAvailable === true}
 				captionTranslationAvailable={
 					selectedEligibility.captionTranslationAvailable === true
@@ -198,8 +218,9 @@ export function AutomaticProjectForm({
 				eligibility={selectedEligibility}
 				analysisRevisionId={analysis.id}
 				targetDurationFrames={frames}
-				disabled={disabled}
+				disabled={submitDisabled}
 				renderMode="DRAFT"
+				trailer={trailer}
 				preparationTarget={selected.preparation}
 				hasAudio={selected.hasAudio ?? undefined}
 				onBusyChange={onBusyChange}

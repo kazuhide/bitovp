@@ -119,11 +119,47 @@ describe("catalogue parity", () => {
 			expect(actual).toBe(expected);
 		};
 		/* Assert the measured number of unique long Japanese strings. Update the count only after inspecting the catalog change that crosses the length threshold. */
-		// Runtime measurement of the merged clip, CAMBI and AISA Live catalogs.
-		pinWithDriftAid(long.length, 1583, "long");
+		// Runtime measurement includes synchronized-output and separated-QC guidance.
+		// MoQ adds Custom Live output guidance and two credential refusals (measured).
+		// MoQ recording, Analytics and heartbeat history guidance (runtime measured).
+		// Canvas provenance adds one long value (catalog instrument: 1672).
+		// Compact MoQ correlation label adds one long value (instrument: 1673).
+		// Bounded heartbeat correlation adds three long values (instrument: 1676).
+		// Window-scoped event absence adds one long value (instrument: 1677).
+		// Historical client-clock reconstruction adds one long explanation (instrument: 1678).
+		// Integrated QC deadline and desktop navigation guidance (runtime measured: 1681).
+		// Shortened Live diagnostics and terminal guidance (runtime measured: 1678).
+		// MoQ preflight and playback stages (runtime measured: 1685).
+		// Availability wording and MoQ measurement sources (runtime measured: 1687).
+		// Source explanations for the MoQ graphs (runtime measured: 1689).
+		// Compact lifecycle and HDR measurement wording (runtime measured: 1688).
+		// Operation analytics adds report guidance (runtime measured: 1691).
+		pinWithDriftAid(long.length, 1691, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
-		// Measured from the merged catalog; duplicate Japanese values count once.
-		pinWithDriftAid(short.size, 3150, "short");
+		// Runtime measurement includes three-way output labels (deduplicated).
+		// The two MoQ authorization labels add two unique short Japanese values.
+		// Canvas provenance adds five unique short values (instrument: 3361).
+		// Two compact disclosure labels are new; 設定 already exists (instrument: 3363).
+		// Whole-run export adds one short value (instrument: 3364).
+		// Live and estimated historical client-clock labels add two short values (instrument: 3366).
+		// Integrated navigation resize and restore labels (runtime measured: 3368).
+		// MoQ cleanup and unconfirmed recording states (runtime measured: 3370).
+		// Live diagnostics, run outcomes and rendition labels (runtime measured: 3390).
+		// MoQ preflight and playback stages (runtime measured: 3410).
+		// Saved clip settings and re-edit actions (runtime measured: 3422).
+		// The Live list reuses the shared delete affordance (runtime measured: 3420).
+		// Availability wording and measurement sources (runtime measured: 3421).
+		// Source, session, and player controls for MoQ (runtime measured: 3428).
+		// Report origin, run details and comparison conditions (runtime measured: 3431).
+		// Live input availability and Push read failure (runtime measured: 3433).
+		// Operation analytics adds report and collection labels (runtime measured: 3451).
+		// Encoding experiments add campaign, trial, and token controls (3486).
+		// Measuring and selecting the additional VMAF profile add two labels.
+		// NVENC settings add picker labels and a load error (runtime measured: 3498).
+		// The Live wizard adds four MoQ labels and descriptions (runtime measured: 3502).
+		// Four short labels cover instance queue usage and availability.
+		// MoQ playback controls add five unique short labels (runtime measured: 3511).
+		pinWithDriftAid(short.size, 3511, "short");
 	});
 
 	/**
@@ -284,6 +320,13 @@ describe("catalogue parity", () => {
 		"usage.vod",
 		"usage.liveUnits", // Bitmovin billing unit name, not a translated minute count.
 		"qc.measurePsnr", // Standard metric acronym.
+		// Standard transfer-domain abbreviations, rather than untranslated prose.
+		"qc.measurementSdr",
+		"qc.measurementHdrPq",
+		// Percentile labels and the millisecond symbol are the same in both locales.
+		"operationAnalytics.p50",
+		"operationAnalytics.p95",
+		"operationAnalytics.milliseconds",
 	]);
 
 	it("translates every string that is not exempt", () => {

@@ -729,16 +729,21 @@ test("real gen6 worker validates aperture and anamorphic display geometry for v0
 	const command = promisify(execFile),
 		ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg",
 		ffprobePath = process.env.FFPROBE_PATH ?? "ffprobe";
-	const root = "/opt/homebrew/Cellar/libvmaf/3.2.1/share/libvmaf/model";
+	// The worker image keeps every model in VMAF_MODEL_DIR; Homebrew keeps
+	// the v1 models in a directory of their own.
+	const homebrew = "/opt/homebrew/Cellar/libvmaf/3.2.1/share/libvmaf/model";
+	const [root, v1] = process.env.VMAF_MODEL_DIR
+		? [process.env.VMAF_MODEL_DIR, process.env.VMAF_MODEL_DIR]
+		: [homebrew, join(homebrew, "vmaf_v1.0.16")];
 	const models = [
 		{ name: "vmaf_v0.6.1", path: join(root, "vmaf_v0.6.1.json") },
 		{
 			name: "vmaf_v1.0.16_3d0h",
-			path: join(root, "vmaf_v1.0.16/vmaf_v1.0.16_3d0h.json"),
+			path: join(v1, "vmaf_v1.0.16_3d0h.json"),
 		},
 		{
 			name: "vmaf_v1.0.16_3d0h",
-			path: join(root, "vmaf_v1.0.16/vmaf_v1.0.16_3d0h.json"),
+			path: join(v1, "vmaf_v1.0.16_3d0h.json"),
 			anamorphic: true,
 		},
 	];

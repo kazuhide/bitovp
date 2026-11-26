@@ -26,6 +26,16 @@ export type ForbiddenTerm = {
 
 export const FORBIDDEN_CUSTOMER_TERMS: readonly ForbiddenTerm[] = [
 	{
+		id: "unretrieved-ja",
+		pattern: /未取得/,
+		why: "use the context-specific state, such as awaiting data or no saved record",
+	},
+	{
+		id: "unconfirmed-ja",
+		pattern: /未確認/,
+		why: "name the missing evidence or the operation in progress",
+	},
+	{
 		id: "status-number",
 		pattern: /STATUS #/,
 		why: "internal work-log pointer",
@@ -152,6 +162,12 @@ const DOLBY_VISION_PROFILE_TITLES = [
 
 /* Allow specific profile-name keys only; internal evidence copy must not appear on operator-facing surfaces. */
 export const CATALOGUE_ALLOWLIST: readonly AllowlistEntry[] = [
+	{
+		key: "qc.hdrReferenceP3",
+		terms: ["phase-badge"],
+		surface:
+			"QC reference color declaration — P3-D65 is a color gamut, not a roadmap phase",
+	},
 	...DOLBY_VISION_PROFILE_TITLES.map((key) => ({
 		key,
 		terms: ["phase-badge"],

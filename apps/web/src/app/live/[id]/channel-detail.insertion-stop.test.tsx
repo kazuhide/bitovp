@@ -224,7 +224,7 @@ describe("row #277 — reservations and emergency stop retain separate sections 
 		mockOnAirChannel();
 		const user = userEvent.setup();
 		wrap(<ChannelDetail id={CHANNEL} />, locale);
-		await screen.findByRole("region", { name: /next action|次にやること/i });
+		await screen.findByRole("heading", { name: /Delivery status|配信状態/ });
 
 		const operations = document.getElementById(
 			"layer-operations",

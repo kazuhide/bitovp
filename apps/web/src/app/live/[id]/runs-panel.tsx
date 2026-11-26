@@ -95,6 +95,9 @@ export function RunsPanel({
 							{t("runs.seq", { n: run.seq })}
 						</span>
 						<Badge tone={LIVE_STATUS_TONE[run.status]}>{run.status}</Badge>
+						{run.error && run.status !== "ERROR" ? (
+							<Badge tone="error">{t("live.runErrorRecorded")}</Badge>
+						) : null}
 						<span className="ml-auto text-xs text-zinc-500">
 							{formatDateTime(run.createdAt)}
 						</span>
@@ -107,7 +110,10 @@ export function RunsPanel({
 							})}
 						</span>
 						{run.bitmovinEncodingId ? (
-							<CopyableId value={run.bitmovinEncodingId} />
+							<CopyableId
+								value={run.bitmovinEncodingId}
+								label={t("live.encodingId")}
+							/>
 						) : null}
 						{typeof run.queueSeconds === "number" ? (
 							<span>{t("runs.queueSeconds", { s: run.queueSeconds })}</span>
@@ -139,9 +145,6 @@ export function RunsPanel({
 								{t("aisaLive.viewRunResults", { n: run.seq })}
 							</Button>
 						</div>
-					) : null}
-					{run.error ? (
-						<p className="text-rose-400 text-xs">{t("live.recordedFailure")}</p>
 					) : null}
 				</li>
 			))}

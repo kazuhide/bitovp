@@ -768,6 +768,18 @@ export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
 				},
 				refs: {},
 			});
+		} else if (output.kind === "MOQ") {
+			ops.push({
+				step: `output:${output.key}`,
+				kind: "CREATE_OUTPUT_MOQ",
+				payload: {
+					name: output.name,
+					credentialId: output.credentialId,
+					trackNamespace: output.trackNamespace,
+					draftVersion: output.draftVersion,
+				},
+				refs: {},
+			});
 		} else if (output.kind === "LIVE_MEDIA_INGEST") {
 			ops.push({
 				step: `output:${output.key}`,

@@ -16,17 +16,27 @@ import { liveStatusPresentation } from "./live-shared";
 export function LiveStatusBadge({
 	status,
 	providerLifecycle,
+	encoderEndUnconfirmed = false,
 }: {
 	status: LiveChannelDerivedStatus;
 	providerLifecycle: ProviderLifecycleView;
+	encoderEndUnconfirmed?: boolean;
 }) {
 	const { t } = useT();
 	const presentation = liveStatusPresentation(status, providerLifecycle);
 	return (
-		<Badge tone={presentation.tone}>
-			{presentation.providerUnconfirmed
-				? t("live.providerStatusUnconfirmed", { status })
-				: status}
+		<Badge tone={encoderEndUnconfirmed ? "warn" : presentation.tone}>
+			{status === "STOPPED" && providerLifecycle === "TERMINAL"
+				? t("live.encoderStopped")
+				: encoderEndUnconfirmed
+					? t(
+							providerLifecycle === "RUNNING"
+								? "live.encoderActive"
+								: "live.encoderStatusUnverified",
+						)
+					: presentation.providerUnconfirmed
+						? t("live.recordedStatus", { status })
+						: status}
 		</Badge>
 	);
 }

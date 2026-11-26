@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LayoutGrid, List } from "lucide-react";
+import { History, LayoutGrid, List } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { InfoHint } from "@/components/ui/info-hint";
@@ -14,6 +15,8 @@ import type { LibrarySceneResults as SceneResults } from "@/lib/library-scenes";
 import { LibraryCatalogResults } from "./library-catalog-results";
 import { LibrarySceneResults } from "./library-scene-results";
 import {
+	browserLibraryBrowseLocation,
+	type LibraryBrowseLocation,
 	type LibraryBrowseState,
 	type LibraryView,
 	libraryBrowseSearch,
@@ -36,11 +39,13 @@ type Result = { scope: string; offset: number } & (
 export function LibraryClient({
 	initialQuery = readLibraryBrowseState({}),
 	clipEditingAvailable = false,
+	browseLocation = browserLibraryBrowseLocation,
 }: {
 	initialQuery?: LibraryBrowseState;
 	clipEditingAvailable?: boolean;
+	browseLocation?: LibraryBrowseLocation;
 }) {
-	const { t } = useT();
+	const { locale: language, t } = useT();
 	const [state, setState] = useState(initialQuery);
 	const {
 		q,
@@ -61,23 +66,25 @@ export function LibraryClient({
 		return () => clearTimeout(timer);
 	}, [q]);
 	useEffect(() => {
-		window.history.replaceState(
-			window.history.state,
-			"",
-			`${window.location.pathname}${libraryBrowseSearch(state)}`,
-		);
-	}, [state]);
+		const location = browseLocation();
+		if (!location) return;
+		const url = location.pathname + libraryBrowseSearch(state);
+		if (url !== location.pathname + location.search)
+			location.replaceUrl(url, window.history.state);
+	}, [state, browseLocation]);
 	useEffect(() => {
 		const restore = () => {
+			const location = browseLocation();
+			if (!location) return;
 			const next = readLibraryBrowseState(
-				Object.fromEntries(new URLSearchParams(window.location.search)),
+				Object.fromEntries(new URLSearchParams(location.search)),
 			);
 			setState(next);
 			setDebouncedQ(next.q);
 		};
 		window.addEventListener("popstate", restore);
 		return () => window.removeEventListener("popstate", restore);
-	}, []);
+	}, [browseLocation]);
 	const search = new URLSearchParams({
 		q: debouncedQ,
 		archived: String(archived),
@@ -175,10 +182,19 @@ export function LibraryClient({
 		>
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<h1 className="font-semibold text-2xl">{t("library.title")}</h1>
-				<TabsList aria-label={t("library.title")}>
-					<TabsTrigger value="content">{t("library.contentTab")}</TabsTrigger>
-					<TabsTrigger value="scenes">{t("library.scenesTab")}</TabsTrigger>
-				</TabsList>
+				<div className="flex flex-wrap items-center gap-2">
+					<TabsList aria-label={t("library.title")}>
+						<TabsTrigger value="content">{t("library.contentTab")}</TabsTrigger>
+						<TabsTrigger value="scenes">{t("library.scenesTab")}</TabsTrigger>
+					</TabsList>
+					<Link
+						href="/library/generations"
+						className="inline-flex min-h-9 items-center gap-2 rounded-md border border-zinc-700 px-3 font-medium text-sm hover:bg-zinc-900 focus-visible:outline-2 focus-visible:outline-emerald-500 focus-visible:outline-offset-2"
+					>
+						<History aria-hidden="true" className="size-4" />
+						{language === "ja" ? "生成履歴" : "Generation history"}
+					</Link>
+				</div>
 			</div>
 			<TabsContent value={mode} className="mt-0 space-y-4">
 				{!clipEditingAvailable && (
@@ -327,6 +343,9 @@ export function LibraryClient({
 										items={result.data.items}
 										view={view}
 										clipEditingAvailable={clipEditingAvailable}
+										onContentChanged={() =>
+											setState((previous) => ({ ...previous, offset: 0 }))
+										}
 									/>
 								) : (
 									<LibrarySceneResults items={result.data.items} />

@@ -117,7 +117,13 @@ export function outputKindForProvider(
  */
 export function liveOutputKindForProvider(
 	provider: string | undefined,
-): WizardState["output"]["kind"] | "AKAMAI_MSL" | "LIVE_MEDIA_INGEST" | null {
+):
+	| WizardState["output"]["kind"]
+	| "AKAMAI_MSL"
+	| "LIVE_MEDIA_INGEST"
+	| "MOQ"
+	| null {
+	if (provider === "MOQ") return "MOQ";
 	if (provider === "LIVE_MEDIA_INGEST") return "LIVE_MEDIA_INGEST";
 	return provider === "AKAMAI_MSL"
 		? "AKAMAI_MSL"
@@ -164,9 +170,10 @@ export function outputKindHasAcl(kind: WizardState["output"]["kind"]): boolean {
 
 /** Output kinds whose location is browsable via the StoragePicker. */
 export function outputKindIsBrowsable(
-	kind: WizardState["output"]["kind"] | "LIVE_MEDIA_INGEST",
+	kind: WizardState["output"]["kind"] | "LIVE_MEDIA_INGEST" | "MOQ",
 ): boolean {
 	return (
+		kind !== "MOQ" &&
 		kind !== "LIVE_MEDIA_INGEST" &&
 		kind !== "AZURE" &&
 		kind !== "SFTP" &&

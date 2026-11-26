@@ -14,12 +14,17 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
+import { useT } from "@/lib/i18n/context";
 import {
 	productionFailure,
 	productionPhase,
 	productionWarning,
 	useProductionCopy,
 } from "../../[id]/edits/production-copy";
+import {
+	editingErrorMessage,
+	editingFailureCode,
+} from "../../edits/editing-errors";
 
 const terminal = (task: MediaTaskView | undefined) =>
 	!!task && ["SUCCEEDED", "ERROR", "CANCELED"].includes(task.state);
@@ -60,28 +65,42 @@ function phaseSegmentCounts(task: MediaTaskView | undefined) {
 export function GenerationProgress({
 	id,
 	clipEditingAvailable = true,
+	showJobDetails = false,
 }: {
 	id: string;
 	clipEditingAvailable?: boolean;
+	showJobDetails?: boolean;
 }) {
 	return (
 		<GenerationProgressView
 			key={id}
 			id={id}
 			clipEditingAvailable={clipEditingAvailable}
+			showJobDetails={showJobDetails}
 		/>
 	);
 }
 function GenerationProgressView({
 	id,
 	clipEditingAvailable,
+	showJobDetails,
 }: {
 	id: string;
 	clipEditingAvailable: boolean;
+	showJobDetails: boolean;
 }) {
 	const c = useProductionCopy(),
 		router = useRouter(),
 		client = useQueryClient();
+	const { t } = useT();
+	const failureMessage = (failure: unknown) => {
+		const fallback = editingErrorMessage(failure, t);
+		return failure instanceof ApiError &&
+			failure.status !== 401 &&
+			failure.status !== 403
+			? productionFailure(editingFailureCode(failure), c, fallback)
+			: fallback;
+	};
 	const canMutate = useMutationAccess("library.edits.edit"),
 		queryKey = ["library-media-task", id];
 	const query = useQuery({
@@ -140,7 +159,7 @@ function GenerationProgressView({
 			}
 		} catch (failure) {
 			if (mounted.current && !terminal(latest.current)) {
-				setError(c.error);
+				setError(failureMessage(failure));
 				setUncertain(!(failure instanceof ApiError) || failure.status >= 500);
 			}
 		} finally {
@@ -172,14 +191,16 @@ function GenerationProgressView({
 			);
 			if (response.taskId === id) throw new Error("TASK_RETRY_INVALID");
 			if (mounted.current) {
-				router.push(`/library/generations/${response.taskId}`);
+				router.push(
+					`/library/generations/${response.taskId}${showJobDetails ? "?view=details" : ""}`,
+				);
 				navigating = true;
 			}
 		} catch (failure) {
 			const unknown = !(failure instanceof ApiError) || failure.status >= 500;
 			if (!unknown) retryKey.current = null;
 			if (mounted.current) {
-				setError(c.error);
+				setError(failureMessage(failure));
 				setUncertain(unknown);
 			}
 		} finally {
@@ -198,6 +219,7 @@ function GenerationProgressView({
 	const openedProject = useRef<string | null>(null);
 	useEffect(() => {
 		if (
+			showJobDetails ||
 			!clipEditingAvailable ||
 			!mounted.current ||
 			!result?.success ||
@@ -208,7 +230,7 @@ function GenerationProgressView({
 			return;
 		openedProject.current = result.data.projectId;
 		router.replace(`/library/edits/${result.data.projectId}`);
-	}, [result, router, clipEditingAvailable]);
+	}, [result, router, clipEditingAvailable, showJobDetails]);
 	const phase =
 		task?.state === "ERROR"
 			? draftMode
@@ -239,7 +261,7 @@ function GenerationProgressView({
 			{!canMutate && <p className="text-sm text-zinc-400">{c.readOnly}</p>}
 			{(query.error || !z.uuid().safeParse(id).success) && (
 				<p role="alert" className="text-amber-300 text-sm">
-					{c.error}
+					{query.error ? failureMessage(query.error) : c.error}
 				</p>
 			)}
 			<div className="space-y-1">
@@ -263,7 +285,7 @@ function GenerationProgressView({
 			</div>
 			{task?.state === "ERROR" && (
 				<p className="text-sm text-zinc-400">
-					{productionFailure(task.error, c)}
+					{productionFailure(task.error, c, editingErrorMessage(task.error, t))}
 				</p>
 			)}
 			{result && !result.success && (

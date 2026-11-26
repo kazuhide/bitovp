@@ -2,6 +2,7 @@ import { useMemo, useSyncExternalStore } from "react";
 import { localePath, type SiteLocale } from "../site-config";
 
 const PREFIX = "#/demo";
+const BROWSE_REPLACE = "bitovp:demo-browse-replace";
 
 /** Locale links navigate between static documents and retain the active demo screen. */
 export function demoLocaleHref(
@@ -14,6 +15,30 @@ export function demoLocaleHref(
 function subscribe(listener: () => void) {
 	window.addEventListener("hashchange", listener);
 	return () => window.removeEventListener("hashchange", listener);
+}
+
+export function replaceDemoBrowseUrl(url: string, state: unknown) {
+	window.history.replaceState(state, "", url);
+	// Update the locale links without remounting the active screen.
+	window.dispatchEvent(new Event(BROWSE_REPLACE));
+}
+
+function subscribeLocation(listener: () => void) {
+	const unsubscribe = subscribe(listener);
+	window.addEventListener(BROWSE_REPLACE, listener);
+	return () => {
+		window.removeEventListener(BROWSE_REPLACE, listener);
+		unsubscribe();
+	};
+}
+
+const currentHref = () =>
+	globalThis.window?.location.href ?? "https://demo.invalid/";
+
+export function useDemoLocation() {
+	return new URL(
+		useSyncExternalStore(subscribeLocation, currentHref, currentHref),
+	);
 }
 
 function currentRoute() {

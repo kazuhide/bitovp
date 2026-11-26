@@ -6,11 +6,12 @@ import {
 	RESET_GLOBAL_MODELS,
 	RESET_INTERNAL_MODELS,
 	RESET_PROTECTED_EDITING_MODELS,
+	RESET_RETAINED_EXPERIMENT_MODELS,
 	requiredResetCategories,
 } from "./reset-selection";
 
 describe("reset selection", () => {
-	it("offers every customer model, including all Library rows and settings", () => {
+	it("classifies every model for selected Application data reset", () => {
 		const schema = readFileSync(
 			join(__dirname, "../../../../packages/db/prisma/schema.prisma"),
 			"utf8",
@@ -26,10 +27,11 @@ describe("reset selection", () => {
 			...customerModels,
 			...RESET_GLOBAL_MODELS,
 			...RESET_INTERNAL_MODELS,
+			...RESET_RETAINED_EXPERIMENT_MODELS,
 		];
 		expect(new Set(classified).size).toBe(classified.length);
 		expect(classified.sort()).toEqual(models.sort());
-		expect(models).toHaveLength(62);
+		expect(models).toHaveLength(67);
 		expect(RESET_PROTECTED_EDITING_MODELS).toContain("libraryFlowEvidencePin");
 		expect(RESET_GLOBAL_MODELS).toEqual([
 			"user",
@@ -38,7 +40,16 @@ describe("reset selection", () => {
 			"membership",
 			"platformSetting",
 		]);
-		for (const model of [...RESET_GLOBAL_MODELS, ...RESET_INTERNAL_MODELS])
+		expect(RESET_RETAINED_EXPERIMENT_MODELS).toEqual([
+			"encodingExperimentCampaign",
+			"encodingExperimentTrial",
+			"encodingExperimentBatch",
+		]);
+		for (const model of [
+			...RESET_GLOBAL_MODELS,
+			...RESET_INTERNAL_MODELS,
+			...RESET_RETAINED_EXPERIMENT_MODELS,
+		])
 			expect(customerModels).not.toContain(model);
 		expect(RESET_PROTECTED_EDITING_MODELS[0]).toBe("libraryAnalysisBinding");
 		expect(

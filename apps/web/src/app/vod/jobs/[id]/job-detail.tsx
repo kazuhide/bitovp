@@ -15,7 +15,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
 	JobAnalysisPanel,
 	useJobAnalysis,
@@ -25,15 +25,16 @@ import { isActiveVmafStatus, VMAF_STATUS_TONE } from "@/app/qc/vmaf-shared";
 import type { JobListItem } from "@/app/vod/jobs/jobs-client";
 import { isActiveJobStatus, STATUS_TONE } from "@/app/vod/jobs/jobs-client";
 import { DeleteResourceButton } from "@/components/delete-resource-button";
+import { EncodingErrorDefinitionsLink } from "@/components/encoding-error-definitions-link";
 import { SaveAsTemplateButton } from "@/components/save-as-template";
 import { StepTimeline } from "@/components/step-timeline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError, apiFetch } from "@/lib/api";
 import { RoleAccess } from "@/lib/auth/use-role-access";
 import { useQcVmafEnabled } from "@/lib/feature-flags/context";
 import { useT } from "@/lib/i18n/context";
-import { cn } from "@/lib/utils";
 import { InternalHevcV2Badge } from "../../internal-hevc-v2-badge";
 import { AuxOutputsPanel } from "./aux-outputs-panel";
 import { InputFilesPanel } from "./input-files-panel";
@@ -103,6 +104,7 @@ export function JobDetail({
 	const { t } = useT();
 	const queryClient = useQueryClient();
 	const router = useRouter();
+	const playbackTrigger = useRef<HTMLButtonElement | null>(null);
 	const [playback, setPlayback] = useState<{
 		url: string;
 		kind: "HLS" | "DASH";
@@ -395,23 +397,29 @@ export function JobDetail({
 
 	return (
 		<section>
-			<header className="flex flex-wrap items-center gap-3">
-				<h1 className="font-semibold text-xl text-zinc-50">{row.name}</h1>
-				<InternalHevcV2Badge plan={plan.success ? plan.data : undefined} />
-				<Badge tone={STATUS_TONE[row.status]}>{row.status}</Badge>
-				{canceling ? (
-					<Badge tone="neutral">{t("jobDetail.canceling")}</Badge>
-				) : null}
-				{entries.success ? (
-					<span className="text-xs text-zinc-500">
-						{t("uiX.stepsProgress", {
-							done: doneCount,
-							total: entries.data.length,
-						})}
-					</span>
-				) : null}
-				<div className="ml-auto flex flex-wrap items-center gap-2">
-					<RoleAccess control="vod.job.detail">
+			<header className="space-y-3">
+				<div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
+					<h1 className="min-w-0 wrap-anywhere font-semibold text-xl text-zinc-50">
+						{row.name}
+					</h1>
+					<InternalHevcV2Badge plan={plan.success ? plan.data : undefined} />
+					<Badge tone={STATUS_TONE[row.status]}>{row.status}</Badge>
+					{canceling ? (
+						<Badge tone="neutral">{t("jobDetail.canceling")}</Badge>
+					) : null}
+					{entries.success &&
+					entries.data.length > 0 &&
+					(row.status !== "FINISHED" || doneCount < entries.data.length) ? (
+						<span className="text-xs text-zinc-400">
+							{t("uiX.stepsProgress", {
+								done: doneCount,
+								total: entries.data.length,
+							})}
+						</span>
+					) : null}
+				</div>
+				<RoleAccess control="vod.job.detail">
+					<div className="flex flex-wrap items-center gap-2">
 						<Button
 							variant="secondary"
 							size="sm"
@@ -434,6 +442,11 @@ export function JobDetail({
 									: t("jobDetail.rerunAsNew")}
 							</Button>
 						) : null}
+						<SaveAsTemplateButton
+							kind="FULL_PLAN"
+							plan={row.plan}
+							defaultName={row.name}
+						/>
 						<DeleteResourceButton
 							resourceLabel={t("ui.job")}
 							disabled={isActive}
@@ -454,7 +467,6 @@ export function JobDetail({
 							<Button
 								variant="destructive"
 								size="sm"
-								className="ml-2"
 								disabled={cancel.isPending}
 								onClick={() => cancel.mutate()}
 							>
@@ -463,14 +475,19 @@ export function JobDetail({
 									: t("common.cancel")}
 							</Button>
 						) : null}
-					</RoleAccess>
-				</div>
+					</div>
+				</RoleAccess>
 			</header>
 
 			{row.error ? (
-				<p role="alert" className="mt-2 text-red-400 text-sm">
-					{row.error}
-				</p>
+				<div className="mt-2">
+					<p role="alert" className="text-red-400 text-sm">
+						{row.error}
+					</p>
+					<EncodingErrorDefinitionsLink
+						bitmovinAccountId={row.bitmovinAccountId}
+					/>
+				</div>
 			) : null}
 
 			{/* Cancel outcome. A 409 (the route's "not cancelable") means the job
@@ -509,104 +526,68 @@ export function JobDetail({
 				</p>
 			) : null}
 
-			{/* The encoding id MOVED into the overview strip (design §5 clause 1). It
-			    was rendered here as well, so Overview showed it twice — the strip's
-			    labelled field and this bare line (review finding). `uiX.encodingIdLine`
-			    stays in the catalogue: the live channel detail still uses it. */}
-
-			{/*  §5: the plan is on the row — hardening this job into
-			    a launchable template is one click + a name. */}
-			<div className="mt-3 flex items-center gap-2">
-				<RoleAccess control="vod.job.detail">
-					<SaveAsTemplateButton
-						kind="FULL_PLAN"
-						plan={row.plan}
-						defaultName={row.name}
-					/>
-				</RoleAccess>
-			</div>
-
-			{/* Tabs: keep the existing detail (manifests / VMAF / timeline) on
-			    Overview; Resources is the bm-xray-style resource tree. */}
-			<div className="mt-6 flex gap-1 border-zinc-800 border-b" role="tablist">
-				{(
-					[
-						["overview", t("ui.overview")],
-						["resources", t("ui.resources")],
-					] as const
-				).map(([value, label]) => (
-					<button
-						key={value}
-						type="button"
-						role="tab"
-						aria-selected={tab === value}
-						onClick={() => setTab(value)}
-						className={cn(
-							"-mb-px border-b-2 px-3 py-2 font-medium text-sm transition-colors",
-							tab === value
-								? "border-emerald-500 text-zinc-50"
-								: "border-transparent text-zinc-500 hover:text-zinc-300",
-						)}
-					>
-						{label}
-					</button>
-				))}
-			</div>
-
-			{/*
-			 * Two columns from `lg` up: job detail left, playback rail right.
-			 *
-			 * The rail sits OUTSIDE the tab switch because playback is orthogonal to
-			 * which tab is open — an operator checking the resource tree should not
-			 * lose the player. 380px keeps a 16:9 surface at ~214px, enough to see
-			 * decode.
-			 *
-			 * The rail is FIRST in DOM and placed into column 2 explicitly on `lg`.
-			 * The obvious alternative — detail first, `order-first` on the rail —
-			 * displays correctly and READS wrongly: below `lg` the player appears
-			 * above the detail while a keyboard or screen reader still traverses the
-			 * whole left column to reach it. Explicit `col-start` keeps the desktop
-			 * arrangement without making the two orders disagree (found by asserting
-			 * DOM order rather than the class).
-			 */}
-			<div className="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
-				<div className="lg:col-start-2 lg:row-start-1">
-					<PreviewRail
-						player={player}
-						sceneAnalysis={sceneAnalysis}
-						seekRequest={analysisSeek}
-						analyticsMeta={{
-							// UI-DESIGN §2: videoId = encodingId — the dashboard's first-class
-							// filter; the local job id rides customData5.
-							videoId: row.bitmovinEncodingId ?? id,
-							title: row.name,
-							customData5: id,
-						}}
-						jobId={id}
-						links={links}
-						playable={playable}
-						playableKeys={playableKeys}
-						live={row.status === "RUNNING"}
-						pending={row.status === "QUEUED" || row.status === "RUNNING"}
-						// One player at a time: the rail's preview unmounts while the
-						// enlarged dialog is open, so the two never buffer in parallel.
-						showPlayer={playback === null}
-						onPlay={(link) =>
-							setPlayback({
-								url: link.url as string,
-								manifestKey: link.key,
-								// SMOOTH never reaches here: `playableLinks` excludes it.
-								kind: link.kind === "DASH" ? "DASH" : "HLS",
-							})
+			<div className="@container/vod-detail mt-5">
+				{/* Reserve the desktop rail even while the job has no playback links. */}
+				<div className="grid min-w-0 grid-cols-1 gap-6 @min-[66rem]/vod-detail:grid-cols-[minmax(0,1fr)_380px] @min-[66rem]/vod-detail:gap-8">
+					{/* The preview stays mounted while switching tabs or opening a resource. */}
+					{links.length > 0 ? (
+						<div className="min-w-0 @min-[66rem]/vod-detail:col-start-2 @min-[66rem]/vod-detail:row-start-1">
+							<PreviewRail
+								player={player}
+								sceneAnalysis={sceneAnalysis}
+								seekRequest={analysisSeek}
+								analyticsMeta={{
+									// UI-DESIGN §2: videoId = encodingId — the dashboard's first-class
+									// filter; the local job id rides customData5.
+									videoId: row.bitmovinEncodingId ?? id,
+									title: row.name,
+									customData5: id,
+								}}
+								jobId={id}
+								links={links}
+								playable={playable}
+								playableKeys={playableKeys}
+								live={row.status === "RUNNING"}
+								pending={row.status === "QUEUED" || row.status === "RUNNING"}
+								// One player at a time: the rail's preview unmounts while the
+								// enlarged dialog is open, so the two never buffer in parallel.
+								showPlayer={playback === null}
+								onPlay={(link, trigger) => {
+									playbackTrigger.current = trigger;
+									setPlayback({
+										url: link.url as string,
+										manifestKey: link.key,
+										// SMOOTH never reaches here: `playableLinks` excludes it.
+										kind: link.kind === "DASH" ? "DASH" : "HLS",
+									});
+								}}
+							/>
+						</div>
+					) : null}
+					<Tabs
+						id="job-detail-content"
+						tabIndex={-1}
+						className="min-w-0 scroll-mt-4 @min-[66rem]/vod-detail:col-start-1 @min-[66rem]/vod-detail:row-start-1"
+						value={tab}
+						onValueChange={(value) =>
+							setTab(value === "resources" ? "resources" : "overview")
 						}
-					/>
-				</div>
-				<div
-					id="job-detail-content"
-					className="min-w-0 lg:col-start-1 lg:row-start-1"
-				>
-					{tab === "overview" ? (
-						<>
+					>
+						<TabsList
+							aria-label={t("pageTitles.vodJob")}
+							className="flex rounded-none border-0 border-zinc-800 border-b bg-transparent p-0"
+						>
+							{(["overview", "resources"] as const).map((value) => (
+								<TabsTrigger
+									key={value}
+									value={value}
+									className="-mb-px rounded-none border-transparent border-b-2 py-2 text-sm data-[state=active]:border-emerald-500 data-[state=active]:bg-transparent"
+								>
+									{t(value === "overview" ? "ui.overview" : "ui.resources")}
+								</TabsTrigger>
+							))}
+						</TabsList>
+						<TabsContent value="overview" className="mt-0">
 							{/* What was encoded — the answer this page did not have. All
 							    three panels derive from the persisted plan + step log, so
 							    they render for a DRAFT job and after Bitmovin's ~90-day
@@ -631,6 +612,137 @@ export function JobDetail({
 								presetRevision={row.presetRevision ?? null}
 								preset={row.preset ?? null}
 							/>
+
+							{detail?.plan.qc?.gate ? (
+								<QcGatePanel
+									gate={detail.plan.qc.gate}
+									verdict={row.qcVerdict ?? null}
+									status={row.status}
+									jobId={id}
+									vmafJobId={vmaf.data?.items[0]?.id ?? null}
+									measurementStatus={vmaf.data?.items[0]?.status ?? null}
+									overriddenAt={row.qcOverriddenAt ?? null}
+								/>
+							) : null}
+
+							{qcVmafEnabled && vmaf.isError ? (
+								<div className="mt-4 flex flex-wrap items-center gap-3">
+									<p role="alert" className="text-red-400 text-sm">
+										{t("jobDetail.vmafLoadFailed")}
+									</p>
+									<Button
+										variant="secondary"
+										size="sm"
+										disabled={vmaf.isFetching}
+										onClick={() => vmaf.refetch()}
+									>
+										{t("common.retry")}
+									</Button>
+								</div>
+							) : null}
+
+							<RoleAccess control="vod.job.detail">
+								{qcVmafEnabled && row.status === "FINISHED" ? (
+									<div className="mt-4 flex flex-wrap items-center gap-3">
+										<Button
+											variant="secondary"
+											size="sm"
+											disabled={
+												measureVmaf.isPending ||
+												retryVmaf.isPending ||
+												vmafBusy ||
+												vmaf.isPending ||
+												vmaf.isError
+											}
+											onClick={() => measureVmaf.mutate()}
+										>
+											{measureVmaf.isPending
+												? t("common.saving")
+												: t("jobDetail.measureVmaf")}
+										</Button>
+										{measureVmaf.isError ? (
+											<p role="alert" className="text-red-400 text-xs">
+												{measureVmaf.error instanceof ApiError
+													? measureVmaf.error.message
+													: String(measureVmaf.error)}
+											</p>
+										) : null}
+									</div>
+								) : null}
+							</RoleAccess>
+							{vmafBusy ? (
+								<p role="status" className="mt-2 text-xs text-zinc-400">
+									{t("jobDetail.vmafRunning")}
+								</p>
+							) : null}
+							{retryVmaf.isSuccess ? (
+								<p role="status" className="mt-2 text-xs text-emerald-400">
+									{t("jobDetail.vmafRetryQueued")}
+								</p>
+							) : null}
+							{retryVmaf.isError ? (
+								<p role="alert" className="mt-2 text-xs text-red-400">
+									{retryVmaf.error instanceof Error
+										? retryVmaf.error.message
+										: String(retryVmaf.error)}
+								</p>
+							) : null}
+							{qcVmafEnabled && vmaf.data && vmaf.data.items.length > 0 ? (
+								<>
+									<h2 className="mt-5 font-medium text-sm text-zinc-200">
+										{t("jobDetail.vmafReports")}
+									</h2>
+									<ul className="mt-2 space-y-2">
+										{vmaf.data.items.map((report) => (
+											<li
+												key={report.id}
+												className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-zinc-800 px-3 py-2"
+											>
+												<div className="flex min-w-0 grow basis-44 flex-wrap items-center gap-x-2 gap-y-1">
+													<Badge tone={VMAF_STATUS_TONE[report.status]}>
+														{report.status}
+													</Badge>
+													<span
+														id={`vod-qc-report-${report.id}`}
+														className="min-w-0 wrap-anywhere text-sm text-zinc-200"
+													>
+														{report.model} · {report.mode}
+													</span>
+												</div>
+												<div className="flex flex-wrap items-center gap-2">
+													<Link
+														href={`/qc/${report.id}`}
+														aria-describedby={`vod-qc-report-${report.id}`}
+														className="rounded text-emerald-400 text-xs underline underline-offset-2 hover:text-emerald-300 focus-visible:outline-2 focus-visible:outline-emerald-500 focus-visible:outline-offset-2"
+													>
+														{t("jobDetail.viewReport")}
+													</Link>
+													{report.localRetryAvailable &&
+													(row.status === "FINISHED" ||
+														row.status === "QC_FAILED") ? (
+														<RoleAccess control="vod.job.detail">
+															<Button
+																variant="secondary"
+																size="sm"
+																title={t("jobDetail.retryVmafOnlyHint")}
+																disabled={
+																	vmafBusy ||
+																	retryVmaf.isPending ||
+																	measureVmaf.isPending ||
+																	vmaf.isError
+																}
+																onClick={() => retryVmaf.mutate(report.id)}
+															>
+																{t("jobDetail.retryVmafOnly")}
+															</Button>
+														</RoleAccess>
+													) : null}
+												</div>
+											</li>
+										))}
+									</ul>
+								</>
+							) : null}
 
 							{detail ? (
 								<>
@@ -694,129 +806,6 @@ export function JobDetail({
 								}
 							/>
 
-							{detail?.plan.qc?.gate ? (
-								<QcGatePanel
-									gate={detail.plan.qc.gate}
-									verdict={row.qcVerdict ?? null}
-									status={row.status}
-									jobId={id}
-									vmafJobId={vmaf.data?.items[0]?.id ?? null}
-									measurementStatus={vmaf.data?.items[0]?.status ?? null}
-									overriddenAt={row.qcOverriddenAt ?? null}
-								/>
-							) : null}
-
-							{qcVmafEnabled && vmaf.isError ? (
-								<div className="mt-4 flex items-center gap-3">
-									<p role="alert" className="text-red-400 text-sm">
-										{t("jobDetail.vmafLoadFailed")}
-									</p>
-									<Button
-										variant="secondary"
-										size="sm"
-										disabled={vmaf.isFetching}
-										onClick={() => vmaf.refetch()}
-									>
-										{t("common.retry")}
-									</Button>
-								</div>
-							) : null}
-
-							<RoleAccess control="vod.job.detail">
-								{qcVmafEnabled && row.status === "FINISHED" ? (
-									<div className="mt-8 flex items-center gap-3">
-										<Button
-											variant="secondary"
-											size="sm"
-											disabled={
-												measureVmaf.isPending ||
-												retryVmaf.isPending ||
-												vmafBusy ||
-												vmaf.isPending ||
-												vmaf.isError
-											}
-											onClick={() => measureVmaf.mutate()}
-										>
-											{measureVmaf.isPending
-												? t("common.saving")
-												: t("jobDetail.measureVmaf")}
-										</Button>
-										{measureVmaf.isError ? (
-											<p role="alert" className="text-red-400 text-xs">
-												{measureVmaf.error instanceof ApiError
-													? measureVmaf.error.message
-													: String(measureVmaf.error)}
-											</p>
-										) : null}
-									</div>
-								) : null}
-							</RoleAccess>
-							{vmafBusy ? (
-								<p role="status" className="mt-2 text-xs text-zinc-400">
-									{t("jobDetail.vmafRunning")}
-								</p>
-							) : null}
-							{retryVmaf.isSuccess ? (
-								<p role="status" className="mt-2 text-xs text-emerald-400">
-									{t("jobDetail.vmafRetryQueued")}
-								</p>
-							) : null}
-							{retryVmaf.isError ? (
-								<p role="alert" className="mt-2 text-xs text-red-400">
-									{retryVmaf.error instanceof Error
-										? retryVmaf.error.message
-										: String(retryVmaf.error)}
-								</p>
-							) : null}
-							{qcVmafEnabled && vmaf.data && vmaf.data.items.length > 0 ? (
-								<>
-									<h2 className="mt-8 font-medium text-sm text-zinc-200">
-										{t("jobDetail.vmafReports")}
-									</h2>
-									<ul className="mt-2 space-y-2">
-										{vmaf.data.items.map((report) => (
-											<li
-												key={report.id}
-												className="flex items-center gap-3 rounded-md border border-zinc-800 px-3 py-2"
-											>
-												<Badge tone={VMAF_STATUS_TONE[report.status]}>
-													{report.status}
-												</Badge>
-												<Link
-													href={`/qc/${report.id}`}
-													className="min-w-0 flex-1 truncate text-sm text-zinc-200 hover:text-emerald-400"
-												>
-													{report.model} · {report.mode}
-												</Link>
-												<span className="text-xs text-zinc-500">
-													{t("jobDetail.viewReport")}
-												</span>
-												{report.localRetryAvailable &&
-												(row.status === "FINISHED" ||
-													row.status === "QC_FAILED") ? (
-													<RoleAccess control="vod.job.detail">
-														<Button
-															variant="secondary"
-															size="sm"
-															title={t("jobDetail.retryVmafOnlyHint")}
-															disabled={
-																vmafBusy ||
-																retryVmaf.isPending ||
-																measureVmaf.isPending ||
-																vmaf.isError
-															}
-															onClick={() => retryVmaf.mutate(report.id)}
-														>
-															{t("jobDetail.retryVmafOnly")}
-														</Button>
-													</RoleAccess>
-												) : null}
-											</li>
-										))}
-									</ul>
-								</>
-							) : null}
-
 							{/*
 							 * Collapsed by default: the progress header and the Resources tab
 							 * already carry what the timeline says, so at full height it pushed
@@ -858,9 +847,8 @@ export function JobDetail({
 									</p>
 								)}
 							</details>
-						</>
-					) : (
-						<div className="mt-2">
+						</TabsContent>
+						<TabsContent value="resources" className="mt-0">
 							{entries.success ? (
 								<ResourcesTab entries={entries.data} />
 							) : (
@@ -868,8 +856,8 @@ export function JobDetail({
 									{t("jobDetail.stepLogUnavailable")}
 								</p>
 							)}
-						</div>
-					)}
+						</TabsContent>
+					</Tabs>
 				</div>
 			</div>
 
@@ -896,6 +884,14 @@ export function JobDetail({
 						}
 					: {})}
 				onClose={() => setPlayback(null)}
+				onCloseAutoFocus={(event) => {
+					const trigger = playbackTrigger.current;
+					playbackTrigger.current = null;
+					if (trigger?.isConnected) {
+						event.preventDefault();
+						trigger.focus();
+					}
+				}}
 			/>
 		</section>
 	);

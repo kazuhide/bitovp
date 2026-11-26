@@ -3,6 +3,7 @@
 #pragma once
 #include "model_oracle.hpp"
 #include <filesystem>
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -23,8 +24,9 @@ struct Options {
     std::vector<ModelInput> models;
     unsigned width = 0, height = 0, bits = 8, threads = 1, decode_threads = 1, max_frames = 0;
     unsigned inflight_frames = 1;
+    unsigned reference_start_frame = 0, frame_count = 0;
     BackendOptions device;
-    bool verify = false, device_info = false;
+    bool verify = false, device_info = false, attest_decoder_runtime = false, experiment_window = false;
 };
 inline Options parse(int argc, char **argv) {
     Options out;
@@ -41,9 +43,19 @@ inline Options parse(int argc, char **argv) {
             out.device.profile = true;
             continue;
         }
+        if (key == "--attest-decoder-runtime") {
+            if (out.attest_decoder_runtime) throw std::invalid_argument("Duplicate --attest-decoder-runtime");
+            out.attest_decoder_runtime = true;
+            continue;
+        }
         if (key == "--verify-cpu") {
             if (out.verify) throw std::invalid_argument("Duplicate --verify-cpu");
             out.verify = true;
+            continue;
+        }
+        if (key == "--experiment-window") {
+            if (out.experiment_window) throw std::invalid_argument("Duplicate --experiment-window");
+            out.experiment_window = true;
             continue;
         }
         if (i + 1 >= argc) throw std::invalid_argument("Missing value for " + key);
@@ -61,6 +73,8 @@ inline Options parse(int argc, char **argv) {
         else if (key == "--threads") out.threads = integer(value, key, 256);
         else if (key == "--decode-threads") out.decode_threads = integer(value, key, 256);
         else if (key == "--max-frames") out.max_frames = integer(value, key, 10000000);
+        else if (key == "--reference-start-frame") out.reference_start_frame = integer(value, key, std::numeric_limits<int>::max());
+        else if (key == "--frame-count") out.frame_count = integer(value, key, 3600);
         else if (key == "--inflight-frames") out.inflight_frames = integer(value, key, 4);
         else if (key == "--device") out.device.device_index = int(integer(value, key, 256));
         else if (key == "--vendor") {
@@ -77,6 +91,8 @@ inline Options parse(int argc, char **argv) {
         } else throw std::invalid_argument("Unknown option " + key);
     }
     if (out.device_info) {
+        if (out.experiment_window && (out.backend != "cuda" || out.attest_decoder_runtime))
+            throw std::invalid_argument("Experiment window device-info requires CUDA without decoder attestation");
         if (out.backend != "cuda" && out.backend != "vulkan")
             throw std::invalid_argument("--device-info requires --backend cuda or vulkan");
         if (out.backend == "cuda" && out.device.vendor_id && out.device.vendor_id != 0x10de)
@@ -88,6 +104,19 @@ inline Options parse(int argc, char **argv) {
             throw std::invalid_argument("Scoring options are not valid with --device-info");
         return out;
     }
+    if (out.experiment_window) {
+        if (!used.count("--reference-start-frame") || !out.frame_count ||
+            out.reference_start_frame > std::numeric_limits<int>::max() - out.frame_count)
+            throw std::invalid_argument("Experiment window requires a bounded --reference-start-frame and --frame-count");
+        if (!out.metric.empty() || used.count("--max-frames") || out.attest_decoder_runtime ||
+            (out.backend != "cpu" && out.backend != "cuda") || out.backend != out.decode)
+            throw std::invalid_argument("Experiment window requires VMAF with matching CPU or CUDA backend and decode options");
+        if (out.bits != 8 || ((out.width || out.height) && (out.width != 1920 || out.height != 1080)))
+            throw std::invalid_argument("Experiment window requires unchanged 1920x1080 8-bit pictures");
+    } else if (used.count("--reference-start-frame") || used.count("--frame-count"))
+        throw std::invalid_argument("Frame range options require --experiment-window");
+    if (out.attest_decoder_runtime && (out.decode != "cpu" || !out.metric.empty() || out.max_frames))
+        throw std::invalid_argument("--attest-decoder-runtime requires a full CPU-decoded VMAF comparison");
     if (used.count("--metric") && out.metric != "cambi")
         throw std::invalid_argument("--metric must be cambi");
     if (out.metric == "cambi") {

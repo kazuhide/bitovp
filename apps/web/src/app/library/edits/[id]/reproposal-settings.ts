@@ -29,19 +29,30 @@ export function reproposalDefaults(
 		document.autoGeneration?.requestedDurationFrames ??
 		compositionDurationFrames(document);
 	const targetDurationFrames = Math.max(30, Math.min(5400, requested));
-	const story = document.autoGeneration?.localStoryEvidence
-		? describeLocalStorySelection(document.autoGeneration.localStoryEvidence)
+	const { autoGeneration } = document;
+	const trailer = autoGeneration?.trailer;
+	const storySceneId = autoGeneration?.localStoryEvidence?.sceneScope?.sceneId;
+	const story = autoGeneration?.localStoryEvidence
+		? describeLocalStorySelection(autoGeneration.localStoryEvidence)
 		: undefined;
 	const policy =
-		savedPolicies[document.autoGeneration?.policyVersion ?? ""] ??
-		(available.localStory ? "LOCAL_STORY" : "AUTO");
+		trailer || storySceneId
+			? "LOCAL_STORY"
+			: (savedPolicies[autoGeneration?.policyVersion ?? ""] ??
+				(available.localStory ? "LOCAL_STORY" : "AUTO"));
 	return {
 		targetDurationFrames,
 		settings: {
 			policy,
-			...(policy === "LOCAL_STORY" ? { storyMode: story?.mode ?? "AUTO" } : {}),
-			...(policy === "COHESION" && document.autoGeneration?.query
-				? { query: document.autoGeneration.query }
+			...(trailer ? { trailer } : {}),
+			...(policy === "LOCAL_STORY" && !trailer
+				? {
+						storyMode: story?.mode ?? "AUTO",
+						...(storySceneId ? { storySceneId } : {}),
+					}
+				: {}),
+			...(policy === "COHESION" && autoGeneration?.query
+				? { query: autoGeneration.query }
 				: {}),
 			templateId:
 				document.canvas.width === document.canvas.height

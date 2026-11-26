@@ -53,6 +53,219 @@ vi.mock("@/lib/server/queue", () => ({
 
 import { GET, POST } from "./route";
 
+function hdrHlsPlan(rate: number | null = 24) {
+	return {
+		planVersion: 1,
+		name: "Sol Levante Dolby Vision",
+		generation: { timing: "POST_ENCODING" },
+		bitmovin: { accountId: "00000000-0000-4000-8000-000000000001" },
+		inputs: [
+			{
+				key: "in",
+				kind: "S3",
+				credentialId: "00000000-0000-4000-8000-000000000002",
+				bucket: "input",
+			},
+		],
+		outputs: [
+			{
+				key: "out",
+				kind: "S3",
+				credentialId: "00000000-0000-4000-8000-000000000002",
+				bucket: "output",
+			},
+		],
+		dolbyStreams: [
+			{
+				key: "dv",
+				kind: "VISION",
+				inputKey: "in",
+				videoInputPath: "source/video.mxf",
+			},
+		],
+		renditions: [
+			{
+				key: "v",
+				codec: "AV1",
+				ingestKey: "dv",
+				width: 3840,
+				height: 2160,
+				bitrate: 8000000,
+				...(rate === null ? {} : { rate }),
+				dynamicRangeFormat: "DOLBY_VISION_PROFILE_10_1",
+				pixelFormat: "YUV420P10LE",
+			},
+		],
+		muxings: [
+			{
+				key: "fmp4",
+				kind: "FMP4",
+				streamKey: "v",
+				segmentLength: 2,
+				segmentNaming: "seg_%number%.m4s",
+				initSegmentName: "init.mp4",
+				destination: { outputKey: "out", path: "run/video/" },
+			},
+		],
+		manifests: [
+			{
+				key: "hls",
+				kind: "HLS",
+				destination: { outputKey: "out", path: "run/" },
+				manifestName: "stream.m3u8",
+			},
+		],
+	};
+}
+
+describe("manual HDR existing HLS QC", () => {
+	const body = {
+		encodingJobId: "00000000-0000-4000-8000-000000000004",
+		source: "OUTPUT_HLS",
+		model: "hdr_vmaf_v1.1.8_3d0h_2160",
+		banding: true,
+		hdrReferenceColor: "P3_D65_PQ_RGB_FULL",
+		execution: { backend: "LOCAL", localMode: "CPU" },
+	};
+	const postHdr = (patch: Record<string, unknown> = {}) =>
+		POST(
+			new Request("http://localhost/api/vmaf-jobs", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ ...body, ...patch }),
+			}),
+		);
+	beforeEach(() => {
+		jobFindUnique.mockReset().mockResolvedValue({
+			id: body.encodingJobId,
+			status: "FINISHED",
+			plan: hdrHlsPlan(),
+		});
+		vmafCount.mockReset().mockResolvedValue(0);
+		vmafCreate
+			.mockReset()
+			.mockResolvedValue({ id: "00000000-0000-4000-8000-000000000005" });
+	});
+	it("persists an explicit absolute local deadline without replacing it with a duration", async () => {
+		const execution = {
+			backend: "LOCAL",
+			localMode: "CPU",
+			deadlineAt: "2099-01-01T10:00:00+09:00",
+		};
+		expect((await postHdr({ execution })).status).toBe(201);
+		expect(vmafCreate.mock.calls[0]?.[0].data.params.execution).toEqual(
+			execution,
+		);
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+	it("persists explicit HDR source and color intent as a new manual report without changing the plan", async () => {
+		const saved = hdrHlsPlan(),
+			before = JSON.stringify(saved);
+		jobFindUnique.mockResolvedValue({
+			id: body.encodingJobId,
+			status: "FINISHED",
+			plan: saved,
+		});
+		const response = await postHdr();
+		expect(response.status).toBe(201);
+		expect(vmafCreate.mock.calls[0]?.[0].data).toMatchObject({
+			scoringVersion: 14,
+			model: body.model,
+			params: {
+				source: "OUTPUT_HLS",
+				hdrReferenceColor: "P3_D65_PQ_RGB_FULL",
+				execution: body.execution,
+				banding: true,
+				psnr: false,
+			},
+		});
+		expect(queueAdd).toHaveBeenCalledOnce();
+		expect(JSON.stringify(saved)).toBe(before);
+	});
+	it.each([
+		[24, "hdr_vmaf_v1.1.8_hfr_3d0h_2160"],
+		[30, "hdr_vmaf_v1.1.8_hfr_1d5h_2160"],
+		[50, "hdr_vmaf_v1.1.8_3d0h_2160"],
+		[60, "hdr_vmaf_v1.1.8_1d5h_2160"],
+		[48, "hdr_vmaf_v1.1.8_hfr_3d0h_2160"],
+	] as const)("refuses known %s fps with incompatible HDR model %s before creating work", async (rate, model) => {
+		jobFindUnique.mockResolvedValue({
+			id: body.encodingJobId,
+			status: "FINISHED",
+			plan: hdrHlsPlan(rate),
+		});
+		const response = await postHdr({ model });
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({
+			error: expect.stringMatching(/frame rate/i),
+		});
+		expect(vmafCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it.each([
+		[50, "hdr_vmaf_v1.1.8_hfr_3d0h_2160"],
+		[60, "hdr_vmaf_v1.1.8_hfr_1d5h_2160"],
+		[undefined, "hdr_vmaf_v1.1.8_hfr_3d0h_2160"],
+	] as const)("accepts compatible or undeclared %s fps with HDR model %s for worker verification", async (rate, model) => {
+		const plan = hdrHlsPlan(rate ?? null);
+		jobFindUnique.mockResolvedValue({
+			id: body.encodingJobId,
+			status: "FINISHED",
+			plan,
+		});
+		expect((await postHdr({ model })).status).toBe(201);
+		expect(vmafCreate.mock.calls[0]?.[0].data).toMatchObject({ model });
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+	it.each([
+		{ execution: { backend: "LOCAL", localMode: "AUTO" } },
+		{ execution: { backend: "LOCAL" } },
+		{ execution: { backend: "CLOUD", profileId: "cloud", budgetUsd: 2 } },
+		{ execution: undefined },
+		{ model: "vmaf_v0.6.1" },
+		{ source: "QC_MIRROR" },
+		{ source: "OUTPUT_MP4" },
+		{ kind: "BANDING" },
+		{ psnr: true },
+		{ measurementMethod: "FRAME_INDEX_BT709_10BIT" },
+		{ referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX" },
+	])("refuses unsupported HDR intent %j before creating or queueing work", async (patch) => {
+		expect((await postHdr(patch)).status).toBe(400);
+		expect(vmafCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it("refuses an ambiguous FMP4 source population before creating work", async () => {
+		const plan = hdrHlsPlan();
+		plan.muxings.push({
+			...plan.muxings[0],
+			key: "other",
+		} as (typeof plan.muxings)[number]);
+		jobFindUnique.mockResolvedValue({
+			id: body.encodingJobId,
+			status: "FINISHED",
+			plan,
+		});
+		expect((await postHdr()).status).toBe(409);
+		expect(vmafCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it("refuses a read-only storage driver before queuing a retained HLS report", async () => {
+		const plan = hdrHlsPlan();
+		plan.outputs[0] = {
+			...plan.outputs[0],
+			kind: "GCS",
+		} as (typeof plan.outputs)[number];
+		jobFindUnique.mockResolvedValue({
+			id: body.encodingJobId,
+			status: "FINISHED",
+			plan,
+		});
+		expect((await postHdr()).status).toBe(409);
+		expect(vmafCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+});
+
 beforeEach(() => {
 	qcVmafEnabled = true;
 	vi.clearAllMocks();
@@ -872,6 +1085,71 @@ describe("POST /api/vmaf-jobs (ledger #122)", () => {
 	}
 
 	it.each([
+		{},
+		{ execution: { backend: "LOCAL" } },
+		{ execution: { backend: "LOCAL", localMode: "CPU" } },
+		{
+			execution: { backend: "CLOUD", profileId: "approved", budgetUsd: 10 },
+		},
+		{ execution: { backend: "LOCAL", localMode: "AUTO" }, kind: "BANDING" },
+		{
+			execution: { backend: "LOCAL", localMode: "AUTO" },
+			measurementMethod: "FRAME_INDEX_BT709_10BIT",
+		},
+	])("rejects reference preparation outside explicit local AUTO VMAF: %j", async (changes) => {
+		const response = await post({
+			encodingJobId: JOB,
+			referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			...changes,
+		});
+		expect(response.status).toBe(400);
+		expect(jobFindUnique).not.toHaveBeenCalled();
+		expect(vmafCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it("persists manual display-scale preparation while preserving the encoding plan", async () => {
+		const before = JSON.stringify(qcPlan);
+		jobFindUnique.mockResolvedValueOnce({
+			id: JOB,
+			status: "FINISHED",
+			plan: qcPlan,
+		});
+		vmafCount.mockResolvedValueOnce(0);
+		vmafCreate.mockResolvedValueOnce({ id: "prepared-report" });
+		const response = await post({
+			encodingJobId: JOB,
+			model: "vmaf_v1.0.16_3d0h",
+			banding: true,
+			execution: { backend: "LOCAL", localMode: "AUTO" },
+			referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+		});
+		expect(response.status).toBe(201);
+		expect(vmafCreate.mock.calls[0]?.[0].data.params).toMatchObject({
+			referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			execution: { backend: "LOCAL", localMode: "AUTO" },
+			banding: true,
+		});
+		expect(JSON.stringify(qcPlan)).toBe(before);
+		expect(queueAdd).toHaveBeenCalledOnce();
+	});
+
+	it("rejects unknown preparation methods before reading the encoding", async () => {
+		expect(
+			(
+				await post({
+					encodingJobId: JOB,
+					execution: { backend: "LOCAL", localMode: "AUTO" },
+					referencePreparation: "RESCALE",
+				})
+			).status,
+		).toBe(400);
+		expect(jobFindUnique).not.toHaveBeenCalled();
+		expect(vmafCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it.each([
 		{ backend: "CLOUD", profileId: "approved" },
 		{ backend: "CLOUD", profileId: "approved", budgetUsd: 0 },
 		{ backend: "CLOUD", profileId: "approved", budgetUsd: -1 },
@@ -913,6 +1191,9 @@ describe("POST /api/vmaf-jobs (ledger #122)", () => {
 			model: "vmaf_v1.0.16_3d0h",
 			params: { execution },
 		});
+		expect(vmafCreate.mock.calls[0]?.[0].data.params).not.toHaveProperty(
+			"referencePreparation",
+		);
 		expect(queueAdd).toHaveBeenCalledOnce();
 	});
 

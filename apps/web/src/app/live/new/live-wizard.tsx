@@ -6,7 +6,10 @@ import {
 	type CredentialProviderId,
 	type CredentialSummaryWire,
 	isAisaManagedLivePlan,
+	liveChannelPlanSchema,
+	moqDraftVersionSchema,
 } from "@bitovp/core";
+import { plansDeepEqual } from "@bitovp/core/wizard";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -43,6 +46,10 @@ import {
 } from "@/lib/output-path";
 import { draftFingerprint, mergeWizardDraft } from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
+import {
+	MoqPreviewReadiness,
+	useMoqPreviewReadiness,
+} from "../moq-preview-readiness";
 import { AisaOutputSection } from "./aisa-output-section";
 import { setAisaLiveEnabled } from "./aisa-settings-model";
 import {
@@ -61,6 +68,7 @@ import { InputSection } from "./input-section";
 import { LiveLadderSection } from "./ladder-section";
 import {
 	type ImportedLivePlan,
+	importLivePlanDocument,
 	parseImportedLivePlan,
 } from "./live-plan-import";
 import {
@@ -174,6 +182,10 @@ export function LiveWizard({
 	// Duplicate: ?from=<id> prefills the form from an existing channel's plan
 	// (the clean retry for a failed channel — a fresh provision, no stale ids).
 	const [appliedDuplicate, setAppliedDuplicate] = useState<string | null>(null);
+	const moqFormSource = useRef<{
+		duplicateFrom: string | undefined;
+		raw: Record<string, unknown>;
+	} | null>(null);
 	const [duplicatedFrom, setDuplicatedFrom] = useState<string | null>(null);
 	const [duplicateError, setDuplicateError] = useState<string | null>(null);
 	const validDuplicate = z.uuid().safeParse(duplicateFrom).success;
@@ -233,39 +245,40 @@ export function LiveWizard({
 			setDuplicateError(t("aisaLive.previewUnavailable"));
 			return;
 		}
-		/**
-		 * GATED, not just parsed .
-		 *
-		 * This used to be `setState(planToLiveWizardState(parsed.data))` on a
-		 * successful parse. Parsing only proves the plan is well-formed; it says
-		 * nothing about whether the FORM can carry it back. Anything the
-		 * readback could not represent was dropped here in silence, and the
-		 * operator duplicated a channel that differed from the one they clicked
-		 * — measured three ways, each validating with zero errors. The gate
-		 * rebuilds the plan from the reconstructed state and refuses unless it
-		 * comes back identical, so a channel the form cannot express fails
-		 * loudly instead of going on air changed.
-		 */
-		const imported = tryImportLiveChannelIntoWizard(duplicate.data.plan);
-		if (imported.ok) {
-			setState(imported.state);
-			draftBase.current = imported.state;
+		const name = duplicate.data.name ?? duplicateFrom;
+		const form = tryImportLiveChannelIntoWizard(duplicate.data.plan);
+		if (form.ok) {
+			moqFormSource.current =
+				form.state.output.kind === "MOQ"
+					? {
+							duplicateFrom,
+							raw: duplicate.data.plan as Record<string, unknown>,
+						}
+					: null;
+			setState(form.state);
+			draftBase.current = form.state;
 			setAppliedDraftContext(
 				`from:${duplicateFrom}:${draftFingerprint(duplicate.data.plan)}`,
 			);
 			setStep(0);
-			setDuplicatedFrom(duplicate.data.name ?? duplicateFrom);
-			// Keep the source URL so refreshing never silently becomes a blank
-			// new-channel form. appliedDuplicate freezes this editing session.
 		} else {
-			// Either an older/edited stored plan that no longer parses as a live
-			// plan, or one the form cannot rebuild exactly — the gate says which.
-			setDuplicateError(
-				t(imported.reasonKey, {
-					name: duplicate.data.name ?? duplicateFrom,
-				}),
-			);
+			// If the form cannot round-trip the plan, keep the original JSON.
+			const expert = importLivePlanDocument(duplicate.data.plan, t);
+			if (
+				!expert.ok ||
+				!expert.imported.evaluation.ok ||
+				expert.imported.evaluation.issues.some(
+					(issue) => issue.level === "error",
+				)
+			) {
+				setDuplicateError(t(form.reasonKey, { name }));
+				return;
+			}
+			setImported(expert.imported);
 		}
+		// Keep the source URL so refreshing repeats the copy. appliedDuplicate
+		// keeps refetches from overwriting the edits in this session.
+		setDuplicatedFrom(name);
 	}, [
 		// `t` formats the two duplicate-failure messages this effect can set; it is
 		// stable per locale, so listing it does not re-run the duplication.
@@ -284,6 +297,10 @@ export function LiveWizard({
 		featureSession.fetchStatus,
 	]);
 	const allCredentials = credentials.data ?? [];
+	const isMoq = state.output.kind === "MOQ";
+	const hasStorageMirrors = Boolean(
+		state.mirror || state.additionalMirrors?.length,
+	);
 	const validationOptions = {
 		credentialProviders: new Map(
 			(credentials.data ?? []).map((c) => [c.id, c.provider]),
@@ -309,6 +326,18 @@ export function LiveWizard({
 			}
 		: rawEvaluation;
 	const planAccount = imported ? importedAccountId(imported) : undefined;
+	const moqOutput = evaluation.ok
+		? evaluation.plan.outputs.find((output) => output.kind === "MOQ")
+		: undefined;
+	const moqReadiness = useMoqPreviewReadiness(
+		moqOutput
+			? {
+					credentialId: moqOutput.credentialId,
+					draftVersion: moqOutput.draftVersion,
+					namespaceComponents: moqOutput.trackNamespace.length,
+				}
+			: undefined,
+	);
 
 	/**
 	 * the auto-shutdown that will actually be POSTed, from
@@ -375,10 +404,20 @@ export function LiveWizard({
 					t(verdict.errorKey as MessageKey, verdict.params),
 				);
 			}
+			let plan = imported
+				? buildSubmissionPlan(imported, state.accountId)
+				: buildLiveChannelPlan(state);
+			const source = moqFormSource.current;
+			if (!imported && source && source.duplicateFrom === duplicateFrom) {
+				// An unchanged plan must replay an outstanding expert-mode
+				// request with the same body and idempotency key.
+				const original = buildSubmissionPlan(source, state.accountId);
+				const parsed = liveChannelPlanSchema.safeParse(original);
+				if (parsed.success && plansDeepEqual(parsed.data, current.plan))
+					plan = original;
+			}
 			return creation.submit<{ id: string }>({
-				plan: imported
-					? buildSubmissionPlan(imported, state.accountId)
-					: buildLiveChannelPlan(state),
+				plan,
 				...(verdict.schedule ? { schedule: verdict.schedule } : {}),
 			});
 		},
@@ -413,6 +452,23 @@ export function LiveWizard({
 	// account) / Azure / SFTP per the plan output union.
 	const outputSelectable = (provider: string) =>
 		liveOutputKindForProvider(provider) !== null;
+
+	function patchMoqOutput(
+		partial: Partial<NonNullable<LiveWizardState["output"]["moq"]>>,
+	) {
+		patch({
+			output: {
+				...state.output,
+				moq: {
+					key: "origin",
+					draftVersion: "DRAFT_16",
+					trackNamespace: [],
+					...state.output.moq,
+					...partial,
+				},
+			},
+		});
+	}
 
 	function selectOutputCredential(id: string) {
 		if (!id) {
@@ -515,6 +571,7 @@ export function LiveWizard({
 		!evaluation.ok ||
 		(!state.accountId && !planAccount) ||
 		evaluation.issues.some((i) => i.level === "error") ||
+		moqReadiness.checking ||
 		submit.isPending;
 
 	const submitButton = (label: string) => (
@@ -562,7 +619,7 @@ export function LiveWizard({
 					<h1 className="font-semibold text-xl text-zinc-50">
 						{t("ui.newLiveChannel")}
 					</h1>
-					{!imported ? (
+					{!imported || showImport ? (
 						<Button
 							variant="secondary"
 							size="sm"
@@ -594,7 +651,7 @@ export function LiveWizard({
 					</p>
 				) : null}
 
-				{showImport && !imported ? (
+				{showImport ? (
 					<div className="mt-4 space-y-2">
 						<Field
 							label={t("ui.liveChannelPlanJson")}
@@ -645,17 +702,21 @@ export function LiveWizard({
 									result.imported.raw,
 								);
 								if (editable.ok) {
+									moqFormSource.current =
+										editable.state.output.kind === "MOQ"
+											? { duplicateFrom, raw: result.imported.raw }
+											: null;
 									setState(editable.state);
 									draftBase.current = editable.state;
 									setScheduleDraft(EMPTY_SCHEDULE_DRAFT);
 									setStep(0);
-									setShowImport(false);
 									setImported(null);
 									setImportLoadedForEditing(true);
 								} else {
 									// Keep the original payload when form conversion would lose options.
 									setImported(result.imported);
 								}
+								setShowImport(false);
 							}}
 						>
 							{t("ui.loadPlan")}
@@ -663,7 +724,7 @@ export function LiveWizard({
 					</div>
 				) : null}
 
-				{imported ? (
+				{imported && !showImport ? (
 					<div className="mt-6 space-y-3">
 						<p className="text-sm text-zinc-400">
 							{t("wizardX.importCannotEditWithoutLoss")}
@@ -707,6 +768,7 @@ export function LiveWizard({
 								{wizardSubmitError(t, submit.error)}
 							</p>
 						) : null}
+						{moqOutput ? <MoqPreviewReadiness {...moqReadiness} /> : null}
 						<div className="flex gap-2">
 							{submitButton(t("ui.createChannelImportedPlan"))}
 							<RoleAccess control="live.new.template">
@@ -731,7 +793,7 @@ export function LiveWizard({
 								variant="secondary"
 								onClick={() => {
 									setImportText(JSON.stringify(imported.raw, null, 2));
-									setImported(null);
+									setImportError(null);
 									setShowImport(true);
 								}}
 							>
@@ -938,7 +1000,9 @@ export function LiveWizard({
 							<Field
 								label={t("wizard.credential")}
 								htmlFor="lw-out-cred"
-								help={t("ui.s3AzureBlobSftpLiveSegmentsAnd")}
+								help={
+									isMoq ? undefined : t("ui.s3AzureBlobSftpLiveSegmentsAnd")
+								}
 							>
 								<SelectNative
 									id="lw-out-cred"
@@ -976,6 +1040,48 @@ export function LiveWizard({
 								</SelectNative>
 							</Field>
 							<NewCredentialLink />
+							{isMoq ? (
+								<>
+									<Field
+										label={t("liveWizard.moqDraft")}
+										htmlFor="lw-moq-draft"
+									>
+										<SelectNative
+											id="lw-moq-draft"
+											value={state.output.moq?.draftVersion ?? "DRAFT_16"}
+											onChange={(e) => {
+												const draft = moqDraftVersionSchema.safeParse(
+													e.target.value,
+												);
+												if (draft.success)
+													patchMoqOutput({ draftVersion: draft.data });
+											}}
+										>
+											{moqDraftVersionSchema.options.map((draft) => (
+												<option key={draft} value={draft}>
+													{draft}
+												</option>
+											))}
+										</SelectNative>
+									</Field>
+									<Field
+										label={t("liveWizard.moqNamespace")}
+										htmlFor="lw-moq-namespace"
+										tooltip={t("liveWizard.moqNamespaceHelp")}
+									>
+										<Textarea
+											id="lw-moq-namespace"
+											rows={2}
+											value={state.output.moq?.trackNamespace?.join("\n") ?? ""}
+											onChange={(e) =>
+												patchMoqOutput({
+													trackNamespace: e.target.value.split("\n"),
+												})
+											}
+										/>
+									</Field>
+								</>
+							) : null}
 							{state.output.kind === "LIVE_MEDIA_INGEST" ? (
 								<Field
 									label={t("fields.lmiScte35Passthrough")}
@@ -1090,7 +1196,8 @@ export function LiveWizard({
 							 * credential and a streamFormat and NO bucket, so asking for one
 							 * invites a value the plan has no field to put it in. Only the
 							    Browse BUTTON was guarded — the box itself still rendered. */}
-							{state.output.kind !== "SFTP" &&
+							{!isMoq &&
+							state.output.kind !== "SFTP" &&
 							state.output.kind !== "AKAMAI_MSL" &&
 							state.output.kind !== "LIVE_MEDIA_INGEST" &&
 							state.output.kind !== "AKAMAI_NETSTORAGE" ? (
@@ -1129,32 +1236,35 @@ export function LiveWizard({
 									</div>
 								</Field>
 							) : null}
-							<Field
-								label={t("uiX.outputFolderLabel")}
-								htmlFor="lw-out-base"
-								help={t("ui.theChannelNameIsAppendedAutomaticallyOutputs", {
-									heightToken: "{height}",
-									bitrateToken: "{bitrate}",
-								})}
-							>
-								<Input
-									id="lw-out-base"
-									placeholder="output"
-									value={
-										splitOutputFolder(state.output.basePath, state.name) ??
-										state.output.basePath
-									}
-									onChange={(e) =>
-										patch({
-											output: {
-												...state.output,
-												basePath: joinOutputName(e.target.value, state.name),
-											},
-										})
-									}
-								/>
-							</Field>
-							{state.output.kind !== "SFTP" &&
+							{!isMoq ? (
+								<Field
+									label={t("uiX.outputFolderLabel")}
+									htmlFor="lw-out-base"
+									help={t("ui.theChannelNameIsAppendedAutomaticallyOutputs", {
+										heightToken: "{height}",
+										bitrateToken: "{bitrate}",
+									})}
+								>
+									<Input
+										id="lw-out-base"
+										placeholder="output"
+										value={
+											splitOutputFolder(state.output.basePath, state.name) ??
+											state.output.basePath
+										}
+										onChange={(e) =>
+											patch({
+												output: {
+													...state.output,
+													basePath: joinOutputName(e.target.value, state.name),
+												},
+											})
+										}
+									/>
+								</Field>
+							) : null}
+							{!isMoq &&
+							state.output.kind !== "SFTP" &&
 							state.output.kind !== "LIVE_MEDIA_INGEST" &&
 							state.output.kind !== "AKAMAI_NETSTORAGE" ? (
 								<label
@@ -1181,7 +1291,7 @@ export function LiveWizard({
 						</>
 					) : null}
 
-					{step === 3 && !aisaEnabled ? (
+					{step === 3 && !aisaEnabled && (!isMoq || hasStorageMirrors) ? (
 						<LiveMirrorListSection
 							state={state}
 							credentials={allCredentials}
@@ -1196,7 +1306,13 @@ export function LiveWizard({
 						/>
 					) : null}
 					{step === 6 && !aisaEnabled ? (
-						<LiveManifestListSection state={state} onPatch={patch} />
+						isMoq && !hasStorageMirrors && !state.scte35AdMarkers ? (
+							<p className="text-sm text-zinc-400">
+								{t("liveWizard.moqCatalog")}
+							</p>
+						) : (
+							<LiveManifestListSection state={state} onPatch={patch} />
+						)
 					) : null}
 
 					{step === 5 && aisaPreviewEnabled ? (
@@ -1258,6 +1374,7 @@ export function LiveWizard({
 					) : null}
 					{step === 8 ? (
 						<div className="space-y-3">
+							{moqOutput ? <MoqPreviewReadiness {...moqReadiness} /> : null}
 							<p className="text-sm text-zinc-400">
 								{t("ui.reviewThePlanOnTheRightThe")}
 							</p>

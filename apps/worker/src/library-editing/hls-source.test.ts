@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
 	parseEditingHlsPlaylist,
@@ -24,6 +25,10 @@ a.m4s
 b.m4s
 #EXT-X-ENDLIST
 `;
+const cueMarked = (text: string, duration = "0.0") =>
+	text
+		.replace("#EXTINF:", `#EXT-X-CUE-OUT:${duration}\n#EXTINF:`)
+		.replace("#EXT-X-ENDLIST", "#EXT-X-CUE-IN\n#EXT-X-ENDLIST");
 describe("bounded local-only editing HLS parser", () => {
 	it("selects a deterministic video and exact default audio group without treating quoted commas as separators", () => {
 		const parsed = parseEditingHlsPlaylist(master);
@@ -43,6 +48,76 @@ describe("bounded local-only editing HLS parser", () => {
 				{ uri: "b.m4s", duration: 1.5 },
 			],
 		});
+	});
+	it.each([
+		"0",
+		"0.0",
+		"30.5",
+		"3600",
+	])("discards paired numeric cue metadata without changing media at duration %s", (duration) => {
+		expect(parseEditingHlsPlaylist(cueMarked(vod, duration))).toEqual(
+			parseEditingHlsPlaylist(vod),
+		);
+	});
+	it.each([
+		["bbb-demo-video-cues.m3u8", 105, 596.4583333333334],
+		["bbb-demo-audio-cues.m3u8", 304, 596.5226666666666],
+	] as const)("accepts the captured BBB %s with its original segment clock", (name, count, duration) => {
+		const text = readFileSync(
+			new URL(`./__fixtures__/${name}`, import.meta.url),
+			"utf8",
+		);
+		expect(text.match(/^#EXT-X-CUE-OUT:0\.0$/gm)).toHaveLength(5);
+		expect(text.match(/^#EXT-X-CUE-IN$/gm)).toHaveLength(5);
+		const parsed = parseEditingHlsPlaylist(text);
+		expect(parsed.kind).toBe("MEDIA");
+		if (parsed.kind !== "MEDIA") throw new Error("Expected BBB media");
+		expect(parsed.segments).toHaveLength(count);
+		expect(parsed.durationSeconds).toBeCloseTo(duration, 8);
+		expect(parsed).toEqual(
+			parseEditingHlsPlaylist(
+				text.replace(/^#EXT-X-CUE-(?:OUT:0\.0|IN)\r?\n/gm, ""),
+			),
+		);
+	});
+	it("retains the captured BBB master selection", () => {
+		const master = readFileSync(
+			new URL("./__fixtures__/bbb-demo-master.m3u8", import.meta.url),
+			"utf8",
+		);
+		expect(
+			selectEditingHlsVariant(parseEditingHlsPlaylist(master)),
+		).toMatchObject({
+			video: {
+				uri: "video_3938788.m3u8",
+				width: 1920,
+				height: 1080,
+				frameRate: "24.0",
+			},
+			audio: { uri: "audio_128000.m3u8" },
+		});
+	});
+	it.each([
+		cueMarked(vod, "-1"),
+		cueMarked(vod, "3601"),
+		cueMarked(vod, "NaN"),
+		cueMarked(vod, '0.0,URI="https://external.invalid/ad"'),
+		cueMarked(vod).replace("#EXT-X-CUE-IN", "#EXT-X-CUE-IN:unexpected"),
+		cueMarked(vod).replace("#EXT-X-CUE-IN", ""),
+		vod.replace("#EXT-X-ENDLIST", "#EXT-X-CUE-IN\n#EXT-X-ENDLIST"),
+		cueMarked(vod).replace(
+			"#EXT-X-CUE-OUT:0.0",
+			"#EXT-X-CUE-OUT:0.0\n#EXT-X-CUE-OUT:0.0",
+		),
+		cueMarked(vod).replace(
+			"#EXT-X-CUE-IN",
+			"#EXT-X-CUE-OUT-CONT:0.0\n#EXT-X-CUE-IN",
+		),
+		`${master}#EXT-X-CUE-OUT:0.0\n#EXT-X-CUE-IN\n`,
+	])("rejects malformed, unmatched or unrecognized cue metadata %#", (text) => {
+		expect(() => parseEditingHlsPlaylist(text)).toThrow(
+			expect.objectContaining({ code: "HLS_UNSUPPORTED" }),
+		);
 	});
 	it("resolves relative siblings inside a retained output root", () => {
 		expect(

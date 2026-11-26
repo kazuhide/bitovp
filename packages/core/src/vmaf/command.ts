@@ -6,8 +6,9 @@
  *
  * Geometry contract: libvmaf requires the distorted and reference frames
  * to share identical dimensions AND frame rate. The distorted input is
- * therefore scale/fps-conformed to the reference before the comparison —
- * callers pass the reference geometry in `scaleToReference` / `fpsConform`.
+ * therefore scaled to the reference before the comparison, and both inputs
+ * get one frame per slot of the reference's frame rate — callers pass the
+ * reference geometry in `scaleToReference` / `fpsConform`.
  *
  * Input order (verified against the ffmpeg libvmaf docs): the FIRST input
  * is the distorted video, the SECOND is the reference. So distortedPath →
@@ -58,6 +59,54 @@
  * with different subsample settings are still not strictly comparable on their
  * minima — recorded here rather than pretended away, because a version number
  * invites exactly that assumption.
+ *
+ * Nor does it capture two changes of 2026-11-14 to the frame times. The
+ * encode has had the `fps` filter since the first commit, and the reference
+ * got it as well, so that a reference that leaves frames out is compared slot
+ * by slot with its encode; its frames were numbered as they came before. Then
+ * both inputs got `setpts=PTS-STARTPTS` before the filter, which counts each
+ * input's slots from its own first frame instead of from the start of its
+ * file. The generation stays 3, because a new generation would mark every
+ * stored report as outdated, and the two leave the score of two files with a
+ * frame in every slot whose video starts with the file as it was: in 579 such
+ * comparisons (12 to 120 frames a second; MP4, fragmented MP4, QuickTime,
+ * Matroska, WebM and MPEG-TS; first frames a part of a slot after zero; with
+ * and without audio) the score and the frame count were those of v1.2.1,
+ * except in four whose score moves from run to run with four libvmaf threads
+ * (pictures 216 pixels wide), and which gave one score with one thread. These
+ * kinds of file score otherwise:
+ *
+ * - A reference that leaves frames out. With an encode that leaves out the
+ *   same frames: 19.31 before, 44.01 after. With an encode that has every
+ *   frame: 18.26 before, 28.53 after. A reference whose last frame lasts
+ *   several slots leaves out the slots after it: that frame is now repeated
+ *   for each of them, as an encode's has been since the first commit
+ *   (86.963109 over 72 frames before, 86.846459 over 74 after, for 72 frames
+ *   at 24 a second whose last lasts three slots).
+ * - A reference whose frames lie more than half a slot from where its frame
+ *   rate puts them, which the filter now drops and repeats: 66.43 before,
+ *   85.32 after, for frames moved by up to 0.6 of a slot.
+ * - A reference whose frame rate, as ffprobe gives it, is not that of its
+ *   frames: a Matroska file of 25 frames a second whose track header gives a
+ *   frame duration of 20 ms, that of 50 a second. Its frames were numbered
+ *   at that rate while the encode was conformed to it, so frames of other
+ *   moments were compared (1.63); now both have each frame twice (85.89;
+ *   87.57 frame by frame).
+ * - A file whose video starts later than the file does, as in a Matroska file
+ *   whose audio starts first. The filter sent each frame to the slot nearest
+ *   its time from the start of the file, and where the delay is about half a
+ *   slot, or that plus whole slots, the rounding of the times to milliseconds
+ *   sent neighbouring frames to one slot. An encode was compared so since the
+ *   first commit: one of 24 frames a second whose video starts 21
+ *   milliseconds late scored 69.01, and scores 90.51, the score of the same
+ *   encode without the delay. A reference was compared so between the two
+ *   changes only. In 95 comparisons with such a file (delays of 4 to 146
+ *   milliseconds; FLV, MP4, Matroska, WebM, MPEG-PS and MPEG-TS) each score
+ *   is that of the same files without the delay; v1.2.1 gave that score in 67
+ *   of them, the command between the two changes in 39.
+ *
+ * "The reference's frame times" in docs/FFMPEG-BUILD.md records the
+ * measurements.
  */
 export const VMAF_SCORING_VERSION = 3;
 /** Explicit frame-index method: generation 6 ignores container clean aperture
@@ -68,10 +117,40 @@ export const VMAF_FRAME_INDEX_SCORING_VERSION = 6;
 export const VMAF_EXPERIMENTAL_GPU_SCORING_VERSION = 7;
 /** NVDEC with legacy CPU scoring, retained independently of native GPU scoring. */
 export const VMAF_EXPERIMENTAL_GPU_DECODE_SCORING_VERSION = 8;
-/** Owned CUDA extraction with native 10-bit preprocessing and official prediction. */
-export const VMAF_OWNED_CUDA_SCORING_VERSION = 9;
-/** Owned Vulkan extraction has its own qualification and measurement generation. */
-export const VMAF_OWNED_VULKAN_SCORING_VERSION = 10;
+/**
+ * Retired generations of owned GPU scoring, CUDA and Vulkan: readable
+ * historical results only. They compared 10-bit pictures whatever the
+ * reference was and declared the encode's size and bit depth to CAMBI, which
+ * the ordinary method does not: an encode that was scaled up scored 0.96 to
+ * 1.50 higher than in generation 3 with a VMAF v1 model (15 comparisons on an
+ * NVIDIA GPU, 2026-11-12).
+ */
+export const VMAF_RETIRED_OWNED_CUDA_SCORING_VERSION = 9;
+export const VMAF_RETIRED_OWNED_VULKAN_SCORING_VERSION = 10;
+/**
+ * Owned GPU scoring that gives the numbers of generation 3 (2026-11-13): CUDA
+ * or Vulkan extraction of the features, and libvmaf's own prediction. It
+ * compares at the reference's bit depth and declares nothing to CAMBI, as the
+ * ordinary method does, it refuses every pair that it cannot compare so
+ * (`vmafNativeComparison`), and each run is checked against libvmaf's CPU
+ * features. The two backends keep a generation each, because each has its own
+ * qualification. Number 11 is not free: it is the family of banding jobs
+ * (`BANDING_JOB_SCORING_VERSION`).
+ */
+export const VMAF_OWNED_CUDA_SCORING_VERSION = 12;
+export const VMAF_OWNED_VULKAN_SCORING_VERSION = 13;
+
+/**
+ * The generation with whose numbers those of a stored generation can be
+ * compared: generation 3 for owned GPU scoring of generations 12 and 13, and
+ * the generation itself for every other.
+ */
+export function vmafComparableScoringVersion(version: number): number {
+	return version === VMAF_OWNED_CUDA_SCORING_VERSION ||
+		version === VMAF_OWNED_VULKAN_SCORING_VERSION
+		? VMAF_SCORING_VERSION
+		: version;
+}
 export const VMAF_FRAME_INDEX_CROP_POLICY =
 	"codec-only-ignore-container-aperture-v1";
 
@@ -163,7 +242,14 @@ export type VmafCommandOptions = {
 	logPath: string;
 	/** Conform the distorted frame size to the reference's W×H. */
 	scaleToReference?: { width: number; height: number };
-	/** Conform the distorted frame rate to the reference's fps. */
+	/**
+	 * The reference's frame rate. Both inputs get one frame per slot of it
+	 * (FFmpeg's `fps` filter), the reference as well as the encode, with each
+	 * input's slots counted from its own first frame: a file with a frame in
+	 * every slot passes unchanged, and one that leaves slots out, or has another
+	 * frame rate, has frames repeated or dropped, so that frame N of the two is
+	 * the same moment.
+	 */
 	fpsConform?: number;
 	/** libvmaf worker threads (n_threads); omitted ⇒ libvmaf default. */
 	threads?: number;
@@ -311,6 +397,23 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 			);
 	}
 
+	// One frame per slot of the reference's frame rate, on BOTH pads. The pads
+	// are re-timed by frame number below, so frame N of the encode is compared
+	// with frame N of the reference, and that is the same moment only when
+	// both went through this filter. On the encode alone, as it was until
+	// 2026-11-14, a reference that leaves slots out had its frame N compared
+	// with another moment of the encode (see `VMAF_SCORING_VERSION`).
+	//
+	// Each pad's slots count from its own first frame (`setpts=PTS-STARTPTS`).
+	// FFmpeg times a file from the start of its earliest stream, and the filter
+	// sends a frame to the slot nearest its time: a video that starts half a
+	// slot after its file, with times in whole milliseconds as Matroska keeps
+	// them, had two frames sent to one slot and none to the next.
+	const frameTimes =
+		opts.fpsConform !== undefined
+			? ["setpts=PTS-STARTPTS", `fps=${opts.fpsConform}`]
+			: [];
+
 	// Distorted-side conform chain feeding libvmaf's [main] pad. flags=bicubic
 	// keeps the resampled distorted frame faithful; fps re-times so frame
 	// counts line up with the reference. Both are conditional — an already
@@ -321,9 +424,7 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 			`scale=${opts.scaleToReference.width}:${opts.scaleToReference.height}:flags=bicubic`,
 		);
 	}
-	if (opts.fpsConform !== undefined) {
-		conform.push(`fps=${opts.fpsConform}`);
-	}
+	conform.push(...frameTimes);
 
 	// libvmaf model selector: a custom file (path=) wins over the built-in
 	// version (version=); exactly one is emitted. Both are verified against the
@@ -419,6 +520,7 @@ export function buildVmafCommand(opts: VmafCommandOptions): string[] {
 	 */
 	const refChain = [
 		...downloadChain(opts.decode?.reference),
+		...frameTimes,
 		align > 0 ? dropLeading(align) : REBASE_PTS,
 	].join(",");
 	const filterComplex =

@@ -1,7 +1,10 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { issueSession, SESSION_COOKIE, signSession } from "@/lib/auth/session";
-import { resolveAuthenticatedContext } from "@/lib/auth/tenancy";
+import {
+	type AuthenticatedContext,
+	resolveAuthenticatedContext,
+} from "@/lib/auth/tenancy";
 import type { ResolvedUser } from "@/lib/auth/users";
 
 const { freshUser, populated } = vi.hoisted(() => ({
@@ -154,4 +157,27 @@ describe("forced password rotation identity paths", () => {
 		});
 		expect(resolveAuthenticatedContext).not.toHaveBeenCalled();
 	});
+});
+
+it("does not renew a users-mode session on operation analytics intake", async () => {
+	freshUser.mockResolvedValue(user({ mustChangePassword: false }));
+	const context = {
+		organizationId: ORG,
+		role: "OPERATOR",
+		actorRole: "OPERATOR",
+		actor: `user:${SUB}`,
+		isImpersonating: false,
+	} as AuthenticatedContext;
+	vi.mocked(resolveAuthenticatedContext)
+		.mockResolvedValueOnce(context)
+		.mockResolvedValueOnce(context);
+	const session = cookie();
+	const ordinary = await proxy(request("/api/live-channels", "POST", session));
+	expect(ordinary.status).toBe(200);
+	expect(ordinary.headers.getSetCookie()).toHaveLength(1);
+	const telemetry = await proxy(
+		request("/api/operation-attempts", "POST", session),
+	);
+	expect(telemetry.status).toBe(200);
+	expect(telemetry.headers.getSetCookie()).toEqual([]);
 });

@@ -5,6 +5,7 @@ export type LiveEncodingOptionReasonCode =
 	| "CUSTOM_REQUESTED"
 	| "CODEC_UNSUPPORTED"
 	| "INPUT_PROTOCOL"
+	| "OUTPUT_PROTOCOL"
 	| "INPUT_DEPENDENT"
 	| "VIDEO_COUNT"
 	| "HD_VIDEO_COUNT"
@@ -96,6 +97,8 @@ export function resolveLiveEncodingOption(
 			reasons: [{ code: "CUSTOM_REQUESTED" }],
 		};
 	const reasons: LiveEncodingOptionReason[] = [];
+	if (plan.outputs.some((output) => output.kind === "MOQ"))
+		reasons.push({ code: "OUTPUT_PROTOCOL", actual: "MOQ" });
 	// Public HD support names RTMP (including backup) and SRT. Other inputs
 	// remain Custom unless support is confirmed; this is not a runtime probe.
 	if (

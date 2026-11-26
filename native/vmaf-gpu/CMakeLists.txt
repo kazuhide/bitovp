@@ -38,9 +38,9 @@ target_include_directories(bitovp_oracle PUBLIC include src
 target_link_libraries(bitovp_oracle PUBLIC official_vmaf Threads::Threads ${CMAKE_DL_LIBS} m)
 target_compile_options(bitovp_oracle PRIVATE -Wall -Wextra -Werror)
 
-add_library(bitovp_decode STATIC src/decoder.cpp)
+add_library(bitovp_decode STATIC src/decoder.cpp src/decoder_runtime.cpp)
 target_include_directories(bitovp_decode PUBLIC include src)
-target_link_libraries(bitovp_decode PUBLIC PkgConfig::AV)
+target_link_libraries(bitovp_decode PUBLIC PkgConfig::AV ${CMAKE_DL_LIBS})
 target_compile_options(bitovp_decode PRIVATE -Wall -Wextra -Werror)
 
 add_executable(bitovp-vmaf src/main.cpp src/banding.cpp)
@@ -51,7 +51,7 @@ target_compile_options(bitovp-vmaf PRIVATE -Wall -Wextra -Werror)
 file(GLOB_RECURSE OWNED_SOURCES CONFIGURE_DEPENDS
   LIST_DIRECTORIES false RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
   include/*.hpp src/*.hpp src/*.h src/*.cpp src/*.c src/*.cu src/*.cuh
-  src/*.comp src/*.glsl src/*.json src/*.py tests/*.cpp tests/*.cu tests/*.py
+  src/*.comp src/*.glsl src/*.json src/*.py tests/*.c tests/*.cpp tests/*.cu tests/*.py
   tests/*.hpp tests/*.h tests/*.cuh)
 list(APPEND OWNED_SOURCES build.py benchmark.py upstream.lock.json)
 list(SORT OWNED_SOURCES)
@@ -173,6 +173,18 @@ if(BITOVP_TESTS)
   target_compile_options(supervisor_contract_test PRIVATE -Wall -Wextra -Werror)
   add_test(NAME native_supervisor_contract COMMAND supervisor_contract_test)
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_library(decoder_runtime_fixture MODULE tests/decoder_runtime_fixture.c)
+    target_include_directories(decoder_runtime_fixture PRIVATE ${AV_INCLUDE_DIRS})
+    add_executable(decoder_runtime_test tests/decoder_runtime_test.cpp)
+    target_link_libraries(decoder_runtime_test PRIVATE bitovp_decode)
+    target_compile_options(decoder_runtime_test PRIVATE -Wall -Wextra -Werror)
+    add_test(NAME native_decoder_runtime_identity COMMAND decoder_runtime_test "$<TARGET_FILE:decoder_runtime_fixture>")
+    add_test(NAME native_decoder_runtime_audit_refusal COMMAND
+      "${CMAKE_COMMAND}" -E env "LD_AUDIT=" "$<TARGET_FILE:decoder_runtime_test>" --assert-audit-refused)
+    add_test(NAME native_decoder_runtime_preload_order COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/decoder_runtime_preload_test.py"
+      "$<TARGET_FILE:decoder_runtime_test>" "$<TARGET_FILE:decoder_runtime_fixture>")
+    set_tests_properties(native_decoder_runtime_preload_order PROPERTIES SKIP_RETURN_CODE 77)
     add_test(NAME native_supervisor_lifecycle COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/supervisor_lifecycle_test.py"
       --guardian "$<TARGET_FILE:bitovp-vmaf-supervisor>")
@@ -216,6 +228,8 @@ if(BITOVP_TESTS)
   add_executable(decoder_retention_test tests/decoder_retention_test.cpp)
   target_link_libraries(decoder_retention_test PRIVATE bitovp_decode Threads::Threads)
   target_compile_options(decoder_retention_test PRIVATE -Wall -Wextra -Werror)
+  # Without a file the test checks only the comparison's frame-time limits.
+  add_test(NAME decoder_frame_time_boundaries COMMAND decoder_retention_test)
   if(VMAF_DECODE_FIXTURE_DIR)
     add_test(NAME decoder_cpu_retention COMMAND decoder_retention_test
       "${VMAF_DECODE_FIXTURE_DIR}/bbb-10s-ref.mp4")
@@ -233,9 +247,12 @@ if(BITOVP_TESTS)
     add_test(NAME cuda_banding_runner COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/banding_runner_test.py" --binary "$<TARGET_FILE:bitovp-vmaf>"
       --backend cuda --vendor nvidia)
+    if(TARGET decoder_runtime_fixture)
+      set(nvdec_probe_test_args --nvdec-library-fixture "$<TARGET_FILE:decoder_runtime_fixture>")
+    endif()
     add_test(NAME cuda_device_info COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/device_probe_test.py" --binary "$<TARGET_FILE:bitovp-vmaf>"
-      --backend cuda --vendor nvidia)
+      --backend cuda --vendor nvidia ${nvdec_probe_test_args})
     add_executable(cuda_picture_ready_test tests/cuda_picture_ready_test.cpp)
     target_include_directories(cuda_picture_ready_test PRIVATE include)
     target_link_libraries(cuda_picture_ready_test PRIVATE bitovp_cuda Threads::Threads)

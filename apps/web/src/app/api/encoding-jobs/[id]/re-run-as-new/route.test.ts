@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { encodingPlanSchema, validatePlan } from "@bitovp/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const profileFindMany = vi.fn(async () => []);
@@ -194,6 +195,37 @@ describe("POST /api/encoding-jobs/[id]/re-run-as-new", () => {
 			expect.objectContaining({ jobId: NEW_ID }),
 		);
 		expect(update).not.toHaveBeenCalled();
+	});
+
+	it("re-runs a job that writes one file twice, which a new submission may not", async () => {
+		// Two whole files under one name in one folder, beside the ladder.
+		const twice = {
+			...planWithAccount(),
+			muxings: [
+				...(basePlan.muxings as object[]),
+				...["v360", "v540"].map((streamKey) => ({
+					key: `file-${streamKey}`,
+					kind: "PROGRESSIVE_TS",
+					streamKey,
+					filename: "clip.ts",
+					destination: { outputKey: "origin", path: "files" },
+				})),
+			],
+		};
+		// The rule that came after such a job is an error for every other door.
+		expect(
+			validatePlan(encodingPlanSchema.parse(twice))
+				.filter((issue) => issue.level === "error")
+				.map((issue) => issue.code),
+		).toEqual(["PLAN_OUTPUT_FILE_COLLISION"]);
+
+		findUnique.mockResolvedValueOnce({ id: SOURCE_ID, plan: twice });
+		const res = await POST(req(), params);
+		// Lowered at the check before the pipeline and in the pipeline: at one
+		// alone, the other refuses and no job is created.
+		expect(res.status).toBe(201);
+		expect(create).toHaveBeenCalledOnce();
+		expect(queueAdd).toHaveBeenCalledOnce();
 	});
 
 	it("400s when the source plan is invalid", async () => {

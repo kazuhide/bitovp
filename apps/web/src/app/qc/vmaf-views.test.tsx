@@ -93,44 +93,181 @@ afterEach(() => {
 });
 
 describe("VmafReport", () => {
-	it("confirms stopping only the selected cloud measurement", async () => {
+	it("scopes the pooled summary to VMAF and restores its disclosure after switching metrics", async () => {
+		const base = detail();
+		const result = base.results[0];
+		if (!result) throw new Error("Combined fixture requires a rendition");
+		const job = detail({
+			banding: true,
+			results: [
+				{
+					...result,
+					preview: { url: "/vmaf.mp4" },
+					pooled: {
+						...result.pooled,
+						banding: {
+							mean: 3,
+							min: 3,
+							max: 3,
+							frameCount: 1,
+							durationSeconds: 0.04,
+						},
+					},
+					bandingFrames: [
+						{
+							frameNum: 0,
+							timestampSeconds: 0,
+							durationSeconds: 0.04,
+							cambi: 3,
+						},
+					],
+					bandingPreview: { url: "/cambi.mp4" },
+				},
+			],
+		});
+		apiFetch.mockResolvedValue(job);
+		wrap(<VmafReport id={job.id} />);
+		const vmafTab = await screen.findByRole("tab", {
+			name: "VMAF",
+		});
+		expect(vmafTab).toHaveAttribute("aria-selected", "true");
+		expect(
+			screen.getAllByRole("button", { name: "Open comparison preview" }),
+		).toHaveLength(1);
+		const summary = screen.getByText("Pooled summary").closest("details");
+		expect(summary).not.toHaveAttribute("open");
+		expect(summary?.querySelector("table")).toBeInTheDocument();
+		await userEvent.click(screen.getByText("Pooled summary"));
+		await waitFor(() => expect(summary).toHaveAttribute("open"));
+		expect(
+			screen.getByRole("figure", { name: "VMAF distribution" }),
+		).toBeInTheDocument();
+		await userEvent.click(screen.getByRole("tab", { name: "CAMBI" }));
+		expect(screen.getByRole("tabpanel", { name: "CAMBI" })).toBeInTheDocument();
+		expect(screen.queryByText("Pooled summary")).not.toBeInTheDocument();
+		expect(
+			screen.getAllByRole("button", { name: "Open comparison preview" }),
+		).toHaveLength(1);
+		expect(
+			screen.queryByRole("figure", { name: "VMAF distribution" }),
+		).not.toBeInTheDocument();
+		await userEvent.click(vmafTab);
+		expect(
+			screen.getByText("Pooled summary").closest("details"),
+		).toHaveAttribute("open");
+		expect(
+			screen.getByRole("figure", { name: "VMAF distribution" }),
+		).toBeInTheDocument();
+	});
+
+	it.each([
+		{ backend: "LOCAL" as const },
+		undefined,
+		{ backend: "CLOUD" as const, profileId: "aws-test", budgetUsd: 12 },
+	])("requests cancellation of the selected VOD measurement with %j execution", async (execution) => {
 		const job = detail({
 			status: "RUNNING",
-			execution: { backend: "CLOUD", profileId: "aws-test", budgetUsd: 12 },
+			execution,
 		});
 		apiFetch.mockImplementation(
 			async (_url: string, options?: { method?: string }) =>
 				options?.method === "POST"
-					? { id: job.id, cancelRequested: true }
+					? { id: job.id, cancelRequested: true, stopped: false }
 					: job,
 		);
 		wrap(<VmafReport id={job.id} />);
 		const user = userEvent.setup();
 		await user.click(
-			await screen.findByRole("button", { name: "Stop cloud measurement" }),
+			await screen.findByRole("button", { name: "Request cancellation" }),
 		);
 		expect(
 			apiFetch.mock.calls.some(([, options]) => options?.method === "POST"),
 		).toBe(false);
 		const dialog = screen.getByRole("dialog");
-		expect(
-			within(dialog).getByText(/charges may continue until cleanup completes/),
-		).toBeInTheDocument();
+		expect(within(dialog).getByText(/bbb-pte-crf-17/)).toBeInTheDocument();
+		if (execution?.backend === "CLOUD") {
+			expect(
+				within(dialog).getByText(
+					/charges may continue until cleanup completes/,
+				),
+			).toBeInTheDocument();
+		} else {
+			expect(
+				within(dialog).getByText(/Measured results are retained/),
+			).toBeInTheDocument();
+			expect(within(dialog).queryByText(/charges/)).not.toBeInTheDocument();
+		}
 		await user.click(
-			within(dialog).getByRole("button", { name: "Stop cloud measurement" }),
+			within(dialog).getByRole("button", { name: "Request cancellation" }),
 		);
 		await waitFor(() =>
 			expect(apiFetch).toHaveBeenCalledWith(`/api/vmaf-jobs/${job.id}/cancel`, {
 				method: "POST",
 			}),
 		);
+		expect(
+			await screen.findByText(
+				"Cancellation requested. Stopping is not yet confirmed.",
+			),
+		).toBeInTheDocument();
+		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+		expect(screen.getByText("RUNNING")).toBeInTheDocument();
 	});
+
+	it.each([
+		{ backend: "LOCAL" as const },
+		undefined,
+		{ backend: "CLOUD" as const, profileId: "aws-test", budgetUsd: 12 },
+	])("offers cancellation while the VOD measurement is pending with %j execution", async (execution) => {
+		const job = detail({ status: "PENDING", execution });
+		apiFetch.mockResolvedValue(job);
+		wrap(<VmafReport id={job.id} />);
+		expect(
+			await screen.findByRole("button", { name: "Request cancellation" }),
+		).toBeEnabled();
+	});
+
+	it("refreshes a completed report without claiming that cancellation was accepted", async () => {
+		const job = detail({ status: "RUNNING", execution: { backend: "LOCAL" } });
+		let completed = false;
+		apiFetch.mockImplementation(
+			async (_url: string, options?: { method?: string }) => {
+				if (options?.method === "POST") {
+					completed = true;
+					return { id: job.id, cancelRequested: false, stopped: false };
+				}
+				return completed ? { ...job, status: "FINISHED" } : job;
+			},
+		);
+		wrap(<VmafReport id={job.id} />);
+		const user = userEvent.setup();
+		await user.click(
+			await screen.findByRole("button", { name: "Request cancellation" }),
+		);
+		await user.click(
+			within(screen.getByRole("dialog")).getByRole("button", {
+				name: "Request cancellation",
+			}),
+		);
+		expect(await screen.findByText("FINISHED")).toBeInTheDocument();
+		expect(
+			screen.queryByText(/Cancellation requested/),
+		).not.toBeInTheDocument();
+	});
+
 	it.each([
 		{
-			status: "RUNNING" as const,
+			status: "FINISHED" as const,
 			mode: "VOD" as const,
 			execution: { backend: "LOCAL" as const },
 		},
+		{
+			status: "ERROR" as const,
+			mode: "VOD" as const,
+			execution: { backend: "LOCAL" as const },
+		},
+		{ status: "FINISHED" as const, mode: "VOD" as const },
+		{ status: "ERROR" as const, mode: "VOD" as const },
 		{
 			status: "FINISHED" as const,
 			mode: "VOD" as const,
@@ -141,6 +278,21 @@ describe("VmafReport", () => {
 			},
 		},
 		{
+			status: "ERROR" as const,
+			mode: "VOD" as const,
+			execution: {
+				backend: "CLOUD" as const,
+				profileId: "aws-test",
+				budgetUsd: 12,
+			},
+		},
+		{
+			status: "RUNNING" as const,
+			mode: "LIVE" as const,
+			execution: { backend: "LOCAL" as const },
+		},
+		{ status: "PENDING" as const, mode: "LIVE" as const },
+		{
 			status: "RUNNING" as const,
 			mode: "LIVE" as const,
 			execution: {
@@ -149,12 +301,12 @@ describe("VmafReport", () => {
 				budgetUsd: 12,
 			},
 		},
-	])("does not offer cloud cancellation for unsupported or terminal jobs", async (job) => {
+	])("does not offer VOD cancellation for LIVE or terminal jobs: %j", async (job) => {
 		apiFetch.mockResolvedValue(detail(job));
 		wrap(<VmafReport id="job-1" />);
 		await screen.findByText("bbb-pte-crf-17");
 		expect(
-			screen.queryByRole("button", { name: "Stop cloud measurement" }),
+			screen.queryByRole("button", { name: "Request cancellation" }),
 		).not.toBeInTheDocument();
 	});
 
@@ -176,12 +328,11 @@ describe("VmafReport", () => {
 			}),
 		);
 		wrap(<VmafReport id="job-1" />);
-		expect(
-			await screen.findByText(/Cloud · aws-test · budget USD 12/),
-		).toBeInTheDocument();
-		await userEvent.click(screen.getByText("Cloud task status"));
-		expect(screen.getByText(/Cleanup pending/)).toBeInTheDocument();
-		expect(screen.getByText("Operator attention required")).toBeInTheDocument();
+		expect(await screen.findByText("Cleanup pending")).toBeVisible();
+		await userEvent.click(screen.getByText("Run details"));
+		expect(screen.getByText(/Cloud · aws-test · budget USD 12/)).toBeVisible();
+		expect(screen.getByText(/Reserved USD 2\.00/)).toBeVisible();
+		expect(screen.getByText("Operator attention required")).toBeVisible();
 	});
 
 	it.each([
@@ -231,11 +382,11 @@ describe("VmafReport", () => {
 	] as const)("does not offer empty diagnostics for %s without Live metadata", async (mode) => {
 		const job = detail({ mode });
 		apiFetch.mockResolvedValue(job);
-		const { container } = wrap(<VmafReport id={job.id} />);
+		wrap(<VmafReport id={job.id} />);
 		await screen.findByText(
 			mode === "LIVE" ? "Windowed VMAF" : "Pooled summary",
 		);
-		expect(container.querySelector("details")).toBeNull();
+		expect(screen.queryByText(/Alignment diagnostics/)).not.toBeInTheDocument();
 	});
 
 	it.each([
@@ -296,8 +447,11 @@ describe("VmafReport", () => {
 		expect(csv?.getAttribute("href")).toMatch(/\/export\?format=csv/);
 		// link back to the encoding job.
 		expect(
-			screen.getByText("00000000-0000-4000-8000-0000000000e2"),
-		).toBeInTheDocument();
+			screen.getByRole("link", { name: "Open source VOD job" }),
+		).toHaveAttribute("href", "/vod/jobs/00000000-0000-4000-8000-0000000000e2");
+		expect(
+			screen.getByRole("link", { name: "Back to the VMAF Lab" }),
+		).toHaveAttribute("href", "/qc");
 	});
 
 	it("marks a pre-fix report as understated", async () => {
@@ -419,7 +573,10 @@ describe("VmafReport", () => {
 			}),
 		);
 		wrap(<VmafReport id="00000000-0000-4000-8000-0000000000a4" />);
-		expect(await screen.findByText(/Scored 3\/3 units/)).toBeInTheDocument();
+		const resources = await screen.findByText(/Scored 3\/3 units/);
+		expect(resources).not.toBeVisible();
+		await userEvent.click(screen.getByText("Run details"));
+		expect(resources).toBeVisible();
 		expect(
 			screen.getByText(/6 cores · 3 libvmaf threads · 2 concurrent/i),
 		).toBeInTheDocument();
@@ -666,6 +823,119 @@ describe("VmafLabClient (index)", () => {
 		// Two selected → enabled; clicking routes to /qc/compare with both ids.
 		expect(compareBtn).not.toBeDisabled();
 		await user.click(compareBtn);
+		expect(routerPush).toHaveBeenCalledWith(`/qc/compare?jobs=${a},${b}`);
+	});
+
+	it.each([
+		2, 6,
+	])("compares %i FINISHED CAMBI-only reports from the Lab", async (count) => {
+		const rows = Array.from({ length: count }, (_, i) =>
+			listItem({
+				id: `${i + 1}1111111-1111-4111-8111-111111111111`,
+				kind: "BANDING",
+				detector: "CAMBI",
+				model: null,
+				renditionMeans: [],
+				renditionBanding: [{ label: "360p", mean: 3, max: 5 }],
+			}),
+		);
+		apiFetch.mockResolvedValue(page(rows));
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeEnabled();
+		await userEvent.setup().click(compare);
+		expect(routerPush).toHaveBeenCalledWith(
+			`/qc/compare?jobs=${rows.map((row) => row.id).join(",")}`,
+		);
+	});
+
+	it("disables mixed metric selection even when two VMAF reports alone could compare", async () => {
+		apiFetch.mockResolvedValue(
+			page([
+				listItem({ id: "11111111-1111-4111-8111-111111111111" }),
+				listItem({ id: "22222222-2222-4222-8222-222222222222" }),
+				listItem({
+					id: "33333333-3333-4333-8333-333333333333",
+					kind: "BANDING",
+					detector: "CAMBI",
+					model: null,
+					renditionMeans: [],
+				}),
+			]),
+		);
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeDisabled();
+		expect(compare).toHaveAttribute(
+			"title",
+			"Compare VMAF reports together, or CAMBI-only reports together.",
+		);
+	});
+
+	it("keeps the six-report limit for CAMBI-only selection", async () => {
+		apiFetch.mockResolvedValue(
+			page(
+				Array.from({ length: 7 }, (_, i) =>
+					listItem({
+						id: `${i + 1}1111111-1111-4111-8111-111111111111`,
+						kind: "BANDING",
+						detector: "CAMBI",
+						model: null,
+						renditionMeans: [],
+					}),
+				),
+			),
+		);
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeDisabled();
+		expect(compare).toHaveAttribute(
+			"title",
+			expect.stringMatching(/Up to 6 reports/),
+		);
+	});
+
+	it("ignores an errored CAMBI report when comparing two finished VMAF reports", async () => {
+		const a = "11111111-1111-4111-8111-111111111111";
+		const b = "22222222-2222-4222-8222-222222222222";
+		apiFetch.mockResolvedValue(
+			page([
+				listItem({ id: a }),
+				listItem({ id: b }),
+				listItem({
+					id: "33333333-3333-4333-8333-333333333333",
+					status: "ERROR",
+					kind: "BANDING",
+					detector: "CAMBI",
+					model: null,
+					renditionMeans: [],
+				}),
+			]),
+		);
+		wrap(<VmafLabClient />);
+		await userEvent.setup().click(
+			await screen.findByRole("checkbox", {
+				name: "Select all loaded reports",
+			}),
+		);
+		const compare = screen.getByRole("button", { name: "Compare selected" });
+		expect(compare).toBeEnabled();
+		await userEvent.setup().click(compare);
 		expect(routerPush).toHaveBeenCalledWith(`/qc/compare?jobs=${a},${b}`);
 	});
 

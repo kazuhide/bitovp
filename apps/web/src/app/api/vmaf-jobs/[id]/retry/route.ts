@@ -67,7 +67,26 @@ export async function POST(_req: Request, { params }: RouteParams) {
 					throw new RetryConflict(
 						"Retry cloud measurements from VMAF Lab with an explicit compute budget",
 					);
+				if (
+					execution.data.deadlineAt &&
+					Date.parse(execution.data.deadlineAt) <= Date.now()
+				)
+					throw new RetryConflict(
+						"The measurement deadline has expired; submit a new measurement with an explicit deadline",
+					);
 				const automatic = row.triggerKey === autoTriggerKey(encodingJobId);
+				const referencePreparation = stored.referencePreparation;
+				if (
+					referencePreparation !== undefined &&
+					(referencePreparation !== "LOSSLESS_DISPLAY_SCALE_REMUX" ||
+						automatic ||
+						bandingOnly ||
+						execution.data.localMode !== "AUTO" ||
+						stored.measurementMethod !== undefined)
+				)
+					throw new RetryConflict(
+						"Reference preparation requires a supported manual local AUTO measurement",
+					);
 				if (
 					!automatic &&
 					!row.triggerKey?.startsWith(labManualTriggerPrefix(encodingJobId))
@@ -146,6 +165,7 @@ export async function POST(_req: Request, { params }: RouteParams) {
 								? { banding: stored.banding }
 								: {}),
 							execution: execution.data,
+							...(referencePreparation ? { referencePreparation } : {}),
 							retryOf: id,
 							...(stored.source === "OUTPUT_MP4" ||
 							stored.source === "QC_MIRROR"

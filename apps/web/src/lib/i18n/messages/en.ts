@@ -27,6 +27,57 @@ const PROVISIONS_AT_CREATE =
 	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
+	outputCompare: {
+		title: "Compare outputs",
+		pickTwo:
+			"Select two or three finished jobs from the VOD list to compare their outputs.",
+		loading: "Loading outputs",
+		unavailable:
+			"This output is unavailable. Open the job to check its status and playback links.",
+		missing: "Unavailable output",
+		loadFailed: "Could not load this job.",
+		output: "Output",
+		quality: "Video quality",
+		auto: "Auto (adaptive)",
+		fixed: "{height}p · fixed",
+		audio: "Audio",
+		left: "Left",
+		center: "Center",
+		right: "Right",
+		muted: "Muted",
+		play: "Play both",
+		pause: "Pause both",
+		playAll: "Play together",
+		pauseAll: "Pause together",
+		seek: "Playback position (seconds)",
+		waiting: "Waiting for both outputs",
+		waitingAll: "Waiting for all outputs",
+		ready: "Ready",
+		playing: "Playing together",
+		failed:
+			"Playback stopped. Retry the failed output before playing together.",
+		format: "Output settings: {format}",
+		formatUnknown: "Format not specified",
+		displayNotice:
+			"HDR / Dolby Vision output settings do not verify the display mode. Playback depends on this browser and display.",
+		syncNotice:
+			"Playback time is synchronized. Use outputs with the same content timeline.",
+	},
+	vodTimeline: {
+		singleTs: "TS (single file)",
+		singleMov: "MOV (single file)",
+		singleWebm: "WebM (single file)",
+		edit: "Edit on timeline",
+		ordinary: "Use ordinary inputs",
+		title: "Input sequence",
+		sourceSettings: "Source settings",
+		invalid: "Add valid clips to the input timeline.",
+		notReady:
+			"Input media is being prepared. Open Inputs to resolve unavailable sources.",
+		help: "Edit video and audio together or independently, and replace selected intervals with another source. Preview runs on the CPU and does not create an encoding job.",
+		graphUnsupported:
+			"Timeline editing is available for a single encoding. Keep advanced multi-encoding plans in the source editor.",
+	},
 	clipDiagnostics: {
 		unavailable:
 			"Clip creation is unavailable because a usable GPU-backed local model has not been verified.",
@@ -37,11 +88,32 @@ export const en = {
 		configuration: "Configuration",
 		worker: "Editing service",
 		gateway: "Local model",
+		native: "Native editing dependencies",
+		nativeRecovery:
+			"Check the missing executables, models, fonts and writable paths as the editing service user. Existing projects can still be edited.",
+		nativeComponents: {
+			MEDIA_TOOLS: "Media processing tools",
+			ASR_RUNTIME: "Speech recognition runtime",
+			ASR_MODEL: "Speech model",
+			VAD_MODEL: "Speech detection model",
+			CAPTION_ALIGNMENT: "Caption timing runtime",
+			CAPTION_FONT: "Caption font",
+			SCRATCH: "Temporary storage",
+			VOD_PREVIEW_STORAGE: "Input preview storage",
+		},
+		nativeStates: {
+			READY: "Available",
+			MISSING: "Not installed",
+			ACCESS_DENIED: "Access denied",
+			MISMATCH: "File or version mismatch",
+			FAILED: "Could not verify",
+		},
 		details: "Diagnosis details and recovery",
 		scope:
-			"Checks configuration, service initialization, model identity and GPU capability. It does not load a model or run inference.",
+			"Checks configuration, service initialization, model identity, GPU capability, native dependencies and writable paths. It does not load a model or run inference.",
 		counts: "Ready: {ready}; initialization failed: {failed}",
 		checkedAt: "Checked: {time}",
+		stale: "Diagnosis expired",
 		failed: "Could not complete the diagnosis. Try again.",
 		workerRecovery:
 			"Check the editing service log and deployment settings, then restart the service. Status expires after 45 seconds without a heartbeat.",
@@ -58,6 +130,7 @@ export const en = {
 			NOT_CHECKED: "Not checked",
 			MISSING: "No recent service status",
 			READY: "Ready",
+			NATIVE_UNAVAILABLE: "Some dependencies are unavailable",
 			MIXED: "Some services are unavailable",
 			INITIALIZATION_FAILED: "Initialization failed",
 			REGISTRY_UNAVAILABLE: "Service status unavailable",
@@ -163,6 +236,17 @@ export const en = {
 		generatedPreviewStale:
 			"This generated preview belongs to an earlier edit. Save a confirmed revision and generate again to update it.",
 		errors: {
+			nativePrerequisites:
+				"{component} is unavailable. Check the diagnosis under Settings → Clip editing.",
+			hlsUnsupported:
+				"This HLS format cannot be prepared for editing. Choose an MP4 output or another content item.",
+			hlsLimit:
+				"This HLS source exceeds the preparation limits. Choose an MP4 output or a shorter content item.",
+			clipUnavailable:
+				"The clip editing service is unavailable. Check its connection in Settings or contact the administrator.",
+			signIn: "Sign in again before retrying this operation.",
+			permission:
+				"You do not have permission for this operation. Contact the administrator.",
 			sourceChanged:
 				"The source changed. Prepare a new material version before continuing.",
 			sourceLarge:
@@ -203,6 +287,25 @@ export const en = {
 		draftOnly: "Draft",
 		earlierExport: "Earlier version",
 		watchExport: "Watch export",
+		exportSettings: {
+			title: "Editing settings",
+			resolution: "Resolution",
+			frameRate: "Frame rate",
+			length: "Duration",
+			captions: "Captions",
+			addedAudioTracks: "Additional audio tracks",
+			source: "Source {number}",
+			secondsRange: "{from}–{to} s",
+			muted: "Muted",
+			unavailable: "Editing settings are unavailable for this export.",
+			reedit: "Re-edit",
+			preparing: "Opening edit…",
+			reeditTitleSuffix: " (re-edit)",
+			reeditUnavailable: "Re-editing requires the editing service.",
+			reeditStorageUnavailable:
+				"Re-editing requires browser storage for this tab.",
+			originalEdit: "Open original edit",
+		},
 		downloadClip: "Download MP4",
 		originalContent: "Original content",
 		prepare: "Prepare editing material",
@@ -561,6 +664,12 @@ export const en = {
 			"The video does not cover the complete selected interval.",
 		previewCaveat:
 			"Time-based visual inspection. Seeking can show an adjacent frame; playback does not change the measured scores.",
+		previewTime: "Presentation time (s)",
+		previewPrevious: "Previous measured point",
+		previewNext: "Next measured point",
+		previewTiming: "{seconds}s · presentation time",
+		compareMixedKinds:
+			"Compare VMAF reports together, or CAMBI-only reports together.",
 		affected: "Affected duration: {value} s",
 		bounds: "Configured limits",
 		cpu: "Actual execution: CPU · official libvmaf CAMBI",
@@ -572,8 +681,6 @@ export const en = {
 		autoNoRuntime: "AUTO used CPU because the GPU runtime was unavailable.",
 		running: "Measuring banding… {done} / {total} renditions",
 		unavailable: "Banding evidence is unavailable for this result.",
-		compareUnsupported:
-			"VMAF comparison requires reports containing VMAF scores.",
 	},
 	liveProtection: {
 		add: "Add",
@@ -694,6 +801,10 @@ export const en = {
 		noMembers: "No active members",
 		active: "Active",
 		ownerOnly: "Available to the platform owner",
+		redisMemory: "Queue service memory (entire instance)",
+		redisCapped: "Used {used} · Limit {limit}",
+		redisUnlimited: "Used {used} · No service memory limit configured",
+		redisUnavailable: "Service memory usage is unavailable.",
 		usersRequired: "User accounts are required",
 		loading: "Loading…",
 	},
@@ -716,8 +827,128 @@ export const en = {
 		system: "Follow system",
 		hint: "Saved in this browser.",
 	},
+	vodFlow: {
+		label: "What to create",
+		streaming: "Package for streaming",
+		file: "Export files",
+		streamingHint:
+			"A rendition ladder with HLS or DASH manifests, for playback in a player.",
+		fileHint:
+			"MP4 or similar files with the audio inside, for editing or hand-off. No manifests.",
+		preferenceLabel: "New VOD job flow",
+		preferenceHint:
+			"The flow a new VOD job opens in. Saved in this browser; switching on the New VOD job page changes it too.",
+		stepFormat: "Format",
+		stepDestination: "Destination",
+		showAll: "Show all settings",
+		backToSimple: "Back to simple view",
+		simpleBlocked:
+			"Settings the simple view does not show are in use in: {steps}.",
+		files: "Output files",
+		addFile: "Add file",
+		fileN: "File {n}",
+		removeFileN: "Remove file {n}",
+		container: "Container",
+		unmeasuredContainer:
+			"Some codec combinations for this container remain unverified. Inspect an initial output.",
+		fileName: "File name",
+		fileNameRequired: "Enter a file name.",
+		sameFileName:
+			"Another file has this name, and one would replace the other.",
+		sameSettings:
+			"Another file has the same height and codec, and the same bitrate once both are rounded to kbps. Two files made in this view have to differ in one of the three. Change one on either file.",
+		sourceHeight: "Same as source",
+		bitrateOrCrf: "Enter a bitrate, or set CRF in the advanced options.",
+		bitrateRequired: "Enter a bitrate.",
+		hevcV2WholeJob:
+			"HEVCv2 takes the whole job. Choose it for every file, and leave “BCF override” on in the Basics step.",
+		oneModeForCodecs:
+			"The files use more than one video codec, and a job runs in one encoding mode. Choose a mode other than “(default)”, the same one for every file, or the job will be rejected.",
+		hevcV2NeedsHeight: "HEVCv2 needs a height. Enter one.",
+		hevcV2NeedsBitrate: "HEVCv2 needs a bitrate. Enter one.",
+		bcfOverrideAlone:
+			"“BCF override” is for HEVCv2, and no file uses it. Choose HEVCv2 for every file in the Format step, or switch this off: the job cannot start as it is.",
+		unverifiedCodec:
+			"The container's format defines this codec, but no Bitmovin document was found that lists the combination. The job may be refused: check the first file it writes.",
+		unverifiedDolbyVision:
+			"Bitmovin's documents name Dolby Vision for MP4 and not for this container. The job may be refused, or the file may not be marked as Dolby Vision: check the first file it writes.",
+		videoSource: "Video source",
+		includeAudio: "Include audio",
+		audioCodec: "Audio codec",
+		audioBitrate: "Audio bitrate (bps)",
+		codecNotHeld: "{container} cannot hold this codec.",
+		sampleRateRequired: "Enter a sample rate.",
+		atmosNeedsSource:
+			"Dolby Atmos is encoded from a Dolby Atmos stream. Add one in the Sources step, then choose it as this file's audio source.",
+		atmosStreamForAtmos:
+			"This is a Dolby Atmos stream, which only a Dolby Atmos track can read. Choose another source, or the job will be rejected.",
+		visionStreamForVideo:
+			"This is a Dolby Vision stream, which only H.264, H.265 or AV1 video can read. Choose another source, or the job will be rejected.",
+		sourceNotForVideo:
+			"A file's video cannot be made from this stream. Choose another source, or the job will be rejected.",
+		sourceNotForAudio:
+			"A file's audio cannot be made from this stream. Choose another source, or the job will be rejected.",
+		sourceUnusedWithSequence:
+			"Not used while the input sequence is on: every file is made from the sequence in the Sources step.",
+		sequenceWithoutAudio:
+			"The input sequence in the Sources step has no audio, so this file is written without audio. Switch audio on in the sequence and place audio clips, or return to ordinary inputs.",
+		av1DolbyVision:
+			"AV1 with Dolby Vision is written as fMP4 only, which is not a file of this screen. Choose another dynamic range in the options below, or the job will be rejected.",
+		dolbyVisionAudio:
+			"Bitmovin's rules name AAC and Dolby Atmos audio only beside Dolby Vision video in one file. The job may be refused: check the first file it writes, or use AAC.",
+		av1WebmAudio:
+			"Bitmovin's release notes say that a WebM file with AV1 video takes no other stream, and no later note was found that says otherwise. The job may be refused: to be sure, write this file without audio, or use MP4.",
+		noAudio: "This file is written without an audio track.",
+		audioSource: "Audio source",
+		folderHelp:
+			"Files are written directly into this folder. No subfolder is added for the job.",
+		reviewWrites: "What this job writes",
+		reviewAlsoMirrored:
+			"The files and the measured copies are also written to the additional destinations ({count}).",
+		reviewNotMirrored:
+			"The AI Scene Analysis result and the Kantar report are written to this destination only.",
+		reviewAnalysis: "AI Scene Analysis result",
+		reviewQcMirrors: "Copies measured for quality (folder)",
+		reviewKantarReport: "Kantar report (folder)",
+		reviewMeasureOnly:
+			"“{option}” is on: this job measures the video of each file and does not write the files.",
+		blockerEncodings: "Sources (multi-encoding partition)",
+		blockerPerTitle: "Encoding (Per-Title configuration)",
+		blockerQualityGate: "Encoding (a QC gate that blocks manifest generation)",
+		blockerGateTargets: "Encoding (a QC gate rule for selected renditions)",
+		qcGateHint:
+			"Threshold rules over what is measured (VMAF, PSNR, banding). PER_RENDITION holds every file to the bar; OVERALL judges the mean over the files. A failed rule is recorded on the job and sends the “QC gate failed” notification; it does not stop the files from being written.",
+		bandingGateHint:
+			"A CAMBI limit is an upper bound every file is held to. Start with a warning and review examples under your viewing conditions; 5 is a suggested starting point, not a universal visibility threshold.",
+		qcMirrorFolderHelp:
+			"Relative to the destination folder. The copies are written to qc/ inside it; empty puts qc/ straight into the destination folder. A copy is named after its file's video settings (v1080.mp4, for example) and not after the job, so jobs that write to one destination folder should each keep a folder of their own.",
+		relativeToDestination: "Relative to the destination folder",
+		kantarHelp:
+			"Embeds an inaudible Kantar watermark in the audio of the files. A job whose files have no audio has nothing to mark and is rejected. One configuration applies to the whole job. The Kantar service login and password are vault-only (managed in Settings → Credentials under “Kantar audio watermarking”) — the plan carries the credential reference, never the login itself.",
+		kantarReportPathHelp:
+			"Relative to the destination folder — where Kantar's processing report is written",
+		kantarReportPrivateHelp:
+			"The processing report is operational data, so it is normally written PRIVATE even when the files are public. Unchecked, the report is public or private as the files are.",
+		encodingModeFromFiles: "Use each file's encoding mode / preset",
+		encodingModeFromFilesHint:
+			"Set the encoding mode or preset of each file in the Format step. The job-level mode is omitted to avoid conflicting settings.",
+		kantarNeedsAudio:
+			"No file has an audio track. Turn on “Include audio” for a file in the Format step, or the job will be rejected (Kantar watermarks audio).",
+		qcHelp:
+			"Adds a copy of each file's video to measure (MP4, or WebM for a VP9 file), written to qc/ in the folder for the measured copies. After encoding finishes, libvmaf compares it with the source automatically. View the report in VMAF Lab (/qc).",
+		vmafOnly: "VMAF only (do not write the files)",
+		qcOnly: "QC only (do not write the files)",
+		measureOnlyHelp:
+			"Writes only the copies that are measured: one per file (MP4, or WebM for a VP9 file), in qc/ in the folder for the measured copies. The files set in the Format step are not written, and audio is left out. Use it to measure quality without keeping the files.",
+		measureOnlyFormatNote:
+			"“{option}” is on (Encoding → Quality control). This job writes only the copies it measures, which the Review step lists: the files below are not written, and audio is left out.",
+	},
 	shell: {
 		skipToContent: "Skip to content",
+		resizeNavigation: "Resize navigation",
+		resizeNavigationHint:
+			"Drag left to hide the menu. Use Left/Right arrows or Enter with the keyboard.",
+		showNavigation: "Show navigation",
 	},
 	autoShutdownUpdate: {
 		title: "Encoder automatic stop",
@@ -765,6 +996,184 @@ export const en = {
 		hint: "After applying the selected ingest points, reconnect your sender if needed and check the input status.",
 		queued: "Update queued",
 		failed: "Could not queue the RTMP update",
+	},
+	moqPlayback: {
+		clientPlaybackTime: "Client playback time",
+		archivedClientPlaybackTime: "Client playback time (original, estimated)",
+		archiveClockBasis:
+			"Estimated from the recording start and current position. Older recordings use the first observed frame.",
+		title: "MoQ playback",
+		viewerMetrics: "Player",
+		noLiveSamples: "Measurements appear during playback",
+		playerDetails: "Playback details",
+		play: "Play",
+		stop: "Stop",
+		idle: "Not playing",
+		loading: "Loading",
+		waiting: "Waiting for video",
+		frames: "Video frames received",
+		stopped: "Stopped",
+		unavailable: "MoQ playback unavailable",
+		failed: "MoQ playback failed",
+		stopping: "Stopping",
+		cleanupPending: "Previous player shutdown is unconfirmed",
+		statistics: "Video statistics",
+		configuration: "Configuration",
+		moreMeasurements: "More measurements",
+		moreObservations: "More observations",
+		encoderCorrelation: "Encoder Push / Heartbeat",
+		correlationUnavailable: "Requested run or UTC window is unavailable.",
+		correlationWindow:
+			"UTC window · Push received time / Poll observed time · loaded rows only",
+		correlationEmpty: "No loaded samples in this UTC window.",
+		correlationNoMatchedEvents:
+			"No loaded events can be matched to this UTC window.",
+		correlationExport: "Export full run JSON",
+		fps: "Video FPS",
+		renderingSource: "Rendering source",
+		renderingVideo: "Video element",
+		renderingCanvas: "Canvas (video-only capture)",
+		canvasUpdates: "Canvas image updates",
+		canvasMeasurement:
+			"The browser counts distinct images observed on the Player Web X Canvas each second. This is a browser observation of image changes.",
+		frameHistory: "Frame observations",
+		frameHistoryMeasurement:
+			"These rates use browser frame counts for the video element and observed image changes for Canvas. Older samples may omit the rendering source.",
+		resolution: "Resolution",
+		dropped: "Dropped frames",
+		buffer: "Buffer",
+		bufferPlayer: "Player buffer",
+		bufferVideo: "Video buffer ahead",
+		startup: "Startup to first frame",
+		decoded: "Decoded frames",
+		presented: "Presented frames",
+		totalFrames: "Total video frames",
+		latency: "Video latency (barcode)",
+		unmeasured: "Unmeasured",
+		latencyMethod: "Estimate from timestamps within the video image.",
+		draft: "Configured draft",
+		namespace: "Configured namespace",
+		catalog: "Catalog track",
+		settings: "Playback settings",
+		targetBuffer: "Target buffer (ms)",
+		applySetting: "Apply",
+		volume: "Volume",
+		videoQuality: "Video quality",
+		chooseQuality: "Choose quality",
+		invalidTargetBuffer: "Enter a whole number of milliseconds, 0 or greater.",
+		settingFailed: "Could not apply this playback setting.",
+		currentQuality: "Current quality",
+		availableQualities: "Available qualities",
+		openPlayer: "Open player",
+		backToChannel: "Back to Live channel",
+		relayConfigured: "Cloudflare Relay (configured)",
+		relayClaims: "Configured values from unverified token claims.",
+		relayOrigin: "Relay origin",
+		relayId: "Relay ID",
+		relayExpiry: "Configured token expiry",
+		relayOperations: "Configured token operations",
+		savedHistory: "Saved MoQ observations",
+		historyFailed: "Could not load saved observations",
+		noHistory: "No saved playback observations",
+		observationSession: "Observation session",
+		browserSource: "Browser observations · Player Web X / MoQ",
+		historyClock:
+			"Browser clock UTC · start time + elapsed time; clocks may differ.",
+		bufferHistory: "Playback buffer",
+		bufferMeasurement:
+			"Player Web X reports its buffer level when available. In video-element playback, the browser can also report the seconds buffered ahead. Earlier observations may lack a source label.",
+		noSamples: "No saved samples",
+		recordedScope:
+			"Recording covers received preview playback only, up to 90 seconds.",
+		receivedVideo: "Received MoQ video recording",
+		downloadRecording: "Download received video",
+		noRecording: "No received-video recording",
+		recording: {
+			idle: "Recording waits for received video",
+			recording: "Recording received video",
+			saving: "Saving received video",
+			saved: "Received video saved",
+			unsupported: "Recording cannot start in this browser",
+			empty: "Recording produced no media",
+			unconfirmed: "Recording save could not be confirmed",
+			failed: "Received-video recording failed",
+			unavailable: "Recording requires an owned observation session",
+		},
+		historySave: {
+			idle: "Observations have not started",
+			saving: "Saving observations",
+			saved: "Observations saved",
+			failed: "Could not save observations",
+			limit:
+				"Up to 5 observation sessions can be saved per run. Live playback continues.",
+		},
+		analyticsState: {
+			ready: "Analytics collector ready; barcode latency uses custom data",
+			unavailable: "Analytics unavailable",
+			"not-configured": "Analytics not configured",
+		},
+		stagesTitle: "Playback stages",
+		observationWindowEnded: "Observation window ended",
+		event: {
+			started: "Started",
+			"descriptor-ready": "Playback configuration loaded",
+			"subscribe-requested": "Subscription requested",
+			"first-frame": "First frame",
+			"frame-gap": "No new frame observed",
+			"frame-resumed": "New frames observed again",
+			"canvas-unchanged": "No Canvas changes observed",
+			"canvas-updated": "Canvas changed again",
+			"observation-limit": "Observation limit reached",
+			"recording-started": "Recording started",
+			stopped: "Stopped",
+			failed: "Failed",
+			ended: "Ended",
+		},
+	},
+	moqEncoder: {
+		title: "Encoder",
+		poll: "Heartbeat · Poll",
+		lastReport: "Heartbeat · Last run report",
+		sourceHelp:
+			"The input graphs use the API read time of Bitmovin Live Heartbeat (UTC).",
+		details: "Input packets",
+		ingestUnhealthy: "Input unhealthy",
+		ingest: {
+			CONNECTED: "Input connected",
+			DISCONNECTED: "Input disconnected",
+			WAITING_FOR_FIRST_CONNECT: "Waiting for input",
+			ERROR: "Input error",
+		},
+		source: "Encoder API · receipt time UTC",
+		empty: "No saved data",
+		yes: "Yes",
+		no: "No",
+		inputBitrate: "Input bitrate",
+		videoFps: "Input video FPS",
+		segmentProcessing: "Output segment processing time",
+		output: "Output",
+		outputHelp:
+			"Segment processing times reported by Bitmovin Live Heartbeat via Poll or signed Push. Times are UTC.",
+		pushReadFailed: "Could not load Push measurements.",
+		inputPackets: "Input packet errors (cumulative)",
+		video: "Video",
+		audio: "Audio",
+		mean: "Mean",
+		min: "Min",
+		max: "Max",
+		droppedVideo: "Video dropped",
+		droppedAudio: "Audio dropped",
+		corruptVideo: "Video corrupt",
+		corruptAudio: "Audio corrupt",
+		healthy: "Input healthy",
+		truncated: "The history retrieval limit was reached.",
+	},
+	moqAnalytics: {
+		title: "Bitmovin Analytics",
+		source: "customData1 · same barcode latency measurement as the Player.",
+		unavailable: "Could not verify Analytics records.",
+		pending: "No matching Analytics data yet.",
+		received: "{count} Analytics observations",
 	},
 	providerDiagnostics: {
 		title: "Provider diagnostics",
@@ -1155,6 +1564,17 @@ export const en = {
 		empty: "No content yet. Completed VOD jobs are registered automatically.",
 		search: "Search titles and tags",
 		archived: "Archived content",
+		remove: "Remove from Library",
+		removeAria: "Remove from Library: {title}",
+		removeTitle: "Remove “{title}” from Library?",
+		removeDescription:
+			"The entry moves to Archived content and can be restored there. Cloud media, encoding jobs and clip history are kept.",
+		restoreAria: "Restore to Library: {title}",
+		restoreTitle: "Restore “{title}” to Library?",
+		restoreDescription:
+			"The entry returns to the active Library with its existing clips and history.",
+		permissionDenied:
+			"You do not have permission to change this Library entry.",
 		active: "Active content",
 		previous: "Previous",
 		next: "Next",
@@ -1301,6 +1721,33 @@ export const en = {
 		submit: "Change password",
 		submitting: "Changing…",
 		failed: "Password change failed",
+	},
+	operationAnalytics: {
+		title: "Operation analytics",
+		caption: "Live MoQ preview outcomes and first-frame times",
+		collecting: "Collecting",
+		paused: "Collection paused",
+		collectionSettings: "Collection settings",
+		loadFailed: "Could not load operation analytics.",
+		period: "Live MoQ preview · Weeks start Monday in UTC",
+		attempts: "Playback attempts",
+		firstFrameTime: "Time to first frame",
+		noFirstFrame: "No first-frame measurements in this period.",
+		empty: "No recorded attempts in this period.",
+		table: "Weekly MoQ playback data",
+		week: "Week of (UTC)",
+		partial: "In progress",
+		started: "Starts",
+		firstFrame: "First frames",
+		failed: "Failed",
+		canceled: "Canceled",
+		unconfirmed: "Unconfirmed",
+		pending: "Pending",
+		share: "First-frame share",
+		p50: "p50",
+		p95: "p95",
+		milliseconds: "{value} ms",
+		shareNote: "The first-frame share excludes pending attempts.",
 	},
 	common: {
 		accessAdminOnly:
@@ -1538,8 +1985,7 @@ export const en = {
 		recoverBody:
 			"Review diagnostics, the end reason and the encoder state before choosing the next action.",
 		bootTitle: "Starting",
-		bootBody:
-			"Startup time varies by region and configuration. Open actions to cancel the start.",
+		bootBody: "Startup time varies by region and configuration.",
 		stoppingTitle: "Stopping — nothing to do",
 		stoppingBody:
 			"The encoder is shutting down. The step log below shows the stop steps; the channel becomes STOPPED when they finish.",
@@ -1571,7 +2017,6 @@ export const en = {
 		idleTitle: "Nothing to do",
 		idleBody:
 			"The channel is not running and nothing is armed. Start the channel, or schedule an action.",
-		goActions: "Actions",
 		goFeeders: "Feeders",
 		goSchedule: "Schedule",
 		goAlerts: "Alerts",
@@ -1700,7 +2145,32 @@ export const en = {
 		sharedFolder:
 			"Give each Live media container a separate output folder; this path overlaps another rendition.",
 	},
+	moqReadiness: {
+		checking: "Checking MoQ preview settings…",
+		ready: "MoQ preview configured",
+		"publisher-only": "Publishing only",
+		"needs-configuration": "MoQ preview needs configuration",
+		"binding-unverified": "MoQ preview unconfirmed for the existing output",
+		unavailable: "MoQ preview settings could not be checked",
+		advisory: "Relay connectivity and playback are checked after starting.",
+		recheck: "Check again",
+		"credential-unavailable": "Verify the MoQ relay credential.",
+		"namespace-unsupported": "Preview requires a single namespace component.",
+		"subscriber-url-missing": "Set a subscriber URL to enable preview.",
+		"subscriber-url-invalid": "Set a valid HTTPS subscriber URL.",
+		"subscribe-only-required": "Use a separate subscribe-only URL.",
+		"subscriber-expired":
+			"Renew the Cloudflare subscriber token. Its configured expiry has passed.",
+		"subscriber-draft-mismatch":
+			"Use a Cloudflare subscriber endpoint on the plan’s MoQT draft.",
+		"player-license-unavailable": "Verify your organization’s Player license.",
+		"player-bundle-unavailable": "Verify the Player Web X bundle.",
+	},
 	liveWizard: {
+		moqDraft: "MoQT draft",
+		moqNamespace: "Track namespace",
+		moqNamespaceHelp: "Enter one namespace component per line.",
+		moqCatalog: "MoQ publishes a catalog through the relay.",
 		outputWidth: "Width (px)",
 		outputWidthHint:
 			"Blank inherits the input aspect ratio; specifying both dimensions fixes the output size. A single dimension is judged for Live HD at 16:9.",
@@ -1711,6 +2181,7 @@ export const en = {
 			"This saved plan retains its original Custom Live start method.",
 		customRequested: "The imported plan explicitly selects Custom Live.",
 		customCodec: "Codec {actual} is outside Live HD (H264 / AAC).",
+		customOutputProtocol: "The selected output protocol uses Custom Live.",
 		customInputProtocol:
 			"Live HD support is not confirmed for {actual}; supported inputs are RTMP, redundant RTMP and SRT.",
 		customInput:
@@ -1770,6 +2241,7 @@ export const en = {
 		playable: "Playable",
 		never: "never",
 		unknown: "unknown",
+		awaitingData: "Waiting for data",
 		none: "None",
 		clockSkew: "clock skew",
 		secondsAgo: "{seconds}s ago",
@@ -1792,13 +2264,12 @@ export const en = {
 		// not a row about to fire — the same reading `overdueArmedCount` uses.
 		nextEventOverdue: "{action} overdue by {countdown}",
 		nextEventSlate: "slate {seconds}s",
-		runtime: "Runtime",
+		runtime: "Encoder runtime",
 		runtimeElapsed: "{elapsed} elapsed",
 		runtimeRemaining: "{elapsed} elapsed · {remaining} left",
 		runtimeCapReached: "{elapsed} elapsed · cap reached",
 		// The POST-MORTEM figure, frozen at the stop. Past tense on purpose:
 		// nothing about it is still running.
-		runtimeRan: "ran for {duration}",
 		summaryResolvedAlerts: "{count} resolved",
 	},
 	notFound: {
@@ -2265,11 +2736,32 @@ export const en = {
 		language: "Language",
 	},
 	qc: {
+		metricView: "Quality metric",
+		referencePreparationSummary:
+			"Coded-raster comparison · display scaling ignored",
+		referencePreparationDescription:
+			"Manual choice for the results below: display scaling was ignored and coded pixels were preserved. This does not validate the displayed presentation.",
 		measureAdvanced: "Measurement options",
 		measureSource: "Measurement source",
 		measureSourceAuto: "Automatic (use the job settings)",
 		measureSourceMirror: "QC mirror",
 		measureSourceMp4: "Existing MP4 outputs",
+		measureSourceHls: "Existing HDR HLS output",
+		hdrReferenceColor: "HDR reference color",
+		hdrReferenceMetadata: "Use media color tags",
+		hdrReferenceP3: "P3-D65 / PQ RGB, full range",
+		hdrProtocolHint: "HDR base layer · HLS · local CPU",
+		hdrPqContext: "HDR VMAF · PQ / ICtCp 16-bit",
+		hdrHlgContext: "HLG → PQ · 1000 nits",
+		hdrBaseLayerScope: "HDR base layer measured",
+		mixedHdrContexts:
+			"HDR/SDR or HLG normalization differs. These scores have different measurement conditions.",
+		separateHdrContexts:
+			"HDR/SDR or HLG measurement conditions differ. Scores and charts are shown separately.",
+		measurementSdr: "SDR",
+		measurementHdrPq: "HDR PQ",
+		measurementHdrHlg: "HDR HLG → PQ (1000 nit)",
+		measurementHdrUnverified: "HDR · unverified measurement",
 		measureSourceHint: "The selected job must have the chosen output type.",
 		measurePsnr: "PSNR",
 		measurePsnrInherit: "Use the job setting",
@@ -2291,6 +2783,8 @@ export const en = {
 		resultlessReports: "{count} reports contributed no renditions: {ids}",
 
 		previewOpen: "Open comparison preview",
+		previewReportsClock:
+			"Synchronized report previews require retained VOD videos with the same measured FPS. Score comparison remains available.",
 		previewClose: "Close comparison preview",
 		previewA: "Rendition A",
 		previewB: "Rendition B",
@@ -2315,11 +2809,14 @@ export const en = {
 		measureJob: "Finished job",
 		measureModel: "Model",
 		measureRun: "Measure",
-		cancelCloud: "Stop cloud measurement",
-		cancelCloudTitle: "Stop this cloud measurement?",
+		cancelMeasurement: "Request cancellation",
+		cancelMeasurementTitle: "Request cancellation of this measurement?",
+		cancelLocalConfirm:
+			"Request cancellation of “{name}”? Measured results are retained. Stopping may take a moment.",
 		cancelCloudConfirm:
-			"Stop “{name}”? The report is retained. Resource cleanup continues after cancellation; charges may continue until cleanup completes.",
-		cancelCloudFailed: "Could not stop the cloud measurement.",
+			"Request cancellation of “{name}”? The report is retained. Resource cleanup continues after cancellation; charges may continue until cleanup completes.",
+		cancelFailed: "Could not request cancellation.",
+		cancelRequested: "Cancellation requested. Stopping is not yet confirmed.",
 		computeTasks: "Cloud task status",
 		computeScoringFrames: "Frames {done}/{total} ({percent}%)",
 		computeStandard: "Standard VM",
@@ -2357,6 +2854,16 @@ export const en = {
 		gpuRuntimeUnavailable: "The GPU runtime is unavailable.",
 		gpuModelUnsupported: "This VMAF model uses CPU processing.",
 		gpuGateCpuOnly: "The current GPU validation gate requires CPU processing.",
+		gpuPairPixelFormat:
+			"GPU scoring does not compare the pixel formats of these two files, so CPU scored this pair.",
+		gpuPairColorRange:
+			"One of the two files is full range and the other is not, so CPU scored this pair.",
+		gpuPairColorMatrix:
+			"The two files do not name the same colour matrix, so CPU scored this pair.",
+		gpuPairFrameTimes:
+			"GPU scoring does not take the frame rates or frame times of these two files, so CPU scored this pair.",
+		gpuPairInput:
+			"GPU scoring does not take one of the two files, so CPU scored this pair.",
 		scoreProcessor: "VMAF processing",
 		experimentalGpuScoring: "GPU (VMAFx, experimental)",
 		ownedGpuScoring: "GPU (owned {backend}, experimental)",
@@ -2403,6 +2910,9 @@ export const en = {
 		bulkDeleteFailed: "Bulk delete failed",
 		loadMore: "Load more",
 		backToLab: "Back to the VMAF Lab",
+		sourceEncodingJob: "Open source VOD job",
+		runDetails: "Run details",
+		measurementConditions: "Comparison conditions",
 		pendingScore: "Pending",
 		mayHaveBeenDeleted: " They may have been deleted. ",
 		reportResourceLabel: "report {label}",
@@ -2496,6 +3006,12 @@ export const en = {
 		psnrMin: "PSNR min",
 		psnrMax: "PSNR max",
 		noFrameData: "No per-frame data for this report.",
+		violinTitle: "VMAF distribution",
+		violinHelp:
+			"Uses every stored measured score. A subsampled run represents only its measured samples.\n\nThe outline is an approximate Gaussian density from 64 bins, with a bandwidth of two bins and the same peak width per series.\n\nCounts, mean, minimum and maximum use measured data. The white line marks the mean.",
+		violinUnavailable: "Distribution unavailable",
+		violinFrameCount: "{count} measured frames",
+		violinSampleCount: "{count} measured samples (every {stride} frames)",
 		hidePsnr: "Hide PSNR (dB)",
 		showPsnr: "Show PSNR (dB)",
 		noSeriesFrame:
@@ -2777,6 +3293,7 @@ export const en = {
 			"Historical statistics are stored locally. Available history depends on the data returned by Bitmovin.",
 	},
 	pageTitles: {
+		errorDefinitions: "Error definitions",
 		verification: "Verification runs",
 		verificationRun: "Verification run",
 		playerSettings: "Player settings",
@@ -2819,7 +3336,7 @@ export const en = {
 	lifecycle: {
 		/* Lifecycle durations shown here must be measured and include their sample counts. */
 		aria: "Encoder lifecycle",
-		s1: "① Start requested",
+		s1: "Start requested",
 		s1Hint:
 			"Encoder not running. A manual start or the schedule's START row boots it.",
 		s1ErrorHint:
@@ -2827,25 +3344,26 @@ export const en = {
 		// Use amber while provider status is unconfirmed. Once the provider confirms an encoding has ended,
 		// the lifecycle hint must not imply that the encoder may still be running.
 		providerUnknownHint:
-			"Provider status cannot be confirmed — Bitmovin's status read for this run's encoding is failing (last confirmed {at}; unconfirmed since {since}). It is re-checked every 30 s. Stop remains available; start, restart, slate, SCTE-35, timeshift and new feeders wait for a fresh reading.",
-		providerUnobservedHint:
-			"Waiting for the first Bitmovin encoder status check. Until it arrives, this channel is not shown as confirmed on air.",
+			"Last Bitmovin reading {status} ({at}){unavailableSince}",
+		providerUnavailableSince: " (no update since {since})",
+		providerUnobservedHint: "No Bitmovin status recorded",
 		providerUnknownNever: "never",
 		providerTerminalHint:
-			"Bitmovin reported this run's encoding {status} at {at} — the encoder is gone and cannot be restarted. Start the channel for a fresh run (new encoder, new ingest coordinates).",
-		inputUnobserved: "Input status unconfirmed",
+			"Bitmovin reported this run's encoding {status} at {at}.",
+		inputUnobserved: "Waiting for input data",
+		inputUnavailable: "No input data",
 		inputUnobservedHint:
 			"Input connection status is not available for this run.",
-		s2: "② Instance booting",
+		s2: "Instance booting",
 		s2Hint:
 			"Bitmovin is provisioning the encoder instance. Startup time varies by region and configuration. View past measurements under Live in Settings. Input cannot be received yet.",
-		s3: "③ Waiting for input",
+		s3: "Waiting for input",
 		s3Hint:
 			"The encoder is up and listening. Nothing is broadcast yet — slates and output need a CONNECTED input. Connect your feed (or a feeder); slate content can already be registered.",
-		s4: "④ Input connected — encoding & delivering",
+		s4: "Input connected",
 		s4Hint:
-			"The pipeline is live: slates (蓋被せ) can be inserted from here on. On a running, fed channel a playback probe saw its first segment 31.8s in (n=1; connect-to-first-segment itself is unmeasured).",
-		s7: "⑦ Stopped",
+			"The encoder is receiving and encoding input. Check the generated output or open a preview to verify playback.",
+		s7: "Stopped",
 		s7Hint:
 			"While stopping, wait for completion. An ended encoding cannot be restarted. After stopping, Start new run creates a new encoder. Register insertable content again for that run.",
 	},
@@ -2856,7 +3374,6 @@ export const en = {
 		cancelStartPending: "Cancelling start",
 		cancelStart: "Cancel start",
 		title: "Live Channels",
-		providerStatusUnconfirmed: "{status} · Bitmovin status unconfirmed",
 		newChannel: "New Live Channel",
 		inventory: {
 			title: "Live encoder inventory",
@@ -2902,8 +3419,6 @@ export const en = {
 			scopeNote:
 				"Filtering and sorting apply to the {count} channels loaded so far — load more to include the rest.",
 			matchNone: "No channel matches this filter.",
-			rowMenu: "Actions for {name}",
-			openChannel: "Open channel",
 			countdownDue: "due now",
 			countdownIn: "in {duration}",
 			elapsed: "{duration} elapsed",
@@ -3015,7 +3530,7 @@ export const en = {
 			output: "Output",
 			ok: "Healthy",
 			down: "Not detected",
-			unobservable: "Not measurable (no HLS)",
+			unobservable: "No HLS data",
 			stale:
 				"No Poll status sample within 90 seconds. This is separate from Push reception or a broadcast stopping.",
 			timelineTitle: "Broadcast timeline",
@@ -3093,6 +3608,23 @@ export const en = {
 		// Name the operator task; the provider encoder is a secondary detail.
 		start: "Start channel",
 		startNewRun: "Start a new run",
+		retryAisaFinalization: "Retry finalization",
+		retryAisaFinalizationDescription:
+			"Retry the final processing for the ended run.",
+		encoderStopped: "Stopped",
+		encoderActive: "Encoder running",
+		encoderStatusUnverified: "Encoder state unverified",
+		recordedStatus: "Recorded {status}",
+		runOutputGenerated: "Output generated",
+		runErrorRecorded: "Error recorded",
+		runOutputUnverified: "Output unverified",
+		runPlaybackUnverified: "Playback unverified",
+		ladderConfigured: "Configured ladder",
+		ladderConfiguredSummary: "{count} configured",
+		ladderConfiguredUnavailable: "No ladder in the channel plan",
+		ladderObserved: "Observed ladder",
+		ladderObservedEmpty: "No encoded streams recorded",
+		ladderObservedUnavailable: "Output statistics unavailable",
 		//  — the Akamai MSL output editor in the live wizard's
 		// output step. Bitmovin authenticates the MSL output resource with the
 		// account API key rather than a storage credential, and MSL takes four
@@ -3173,21 +3705,22 @@ export const en = {
 	},
 	pushLog: {
 		title: "Push heartbeat receipts",
-		hint: "Newest received first; one row per verified receipt, including retries. Historical provider snapshots, not current health or playback proof. Details include only allowed telemetry fields; Poll history and export are separate below.",
+		hint: "Each verified receipt appears newest first, including retries. These records show past measurements. Details include the permitted telemetry fields. The latest page of the active run refreshes every two seconds while open in the foreground. Refresh pauses while inspecting details or viewing older or ended runs.",
 		sampledAt: "Provider sample time",
 		receivedAt: "App receipt time",
-		auto: "Latest receipts refresh every 2 seconds while this running log is open in the foreground.",
-		paused:
-			"Automatic refresh paused: closed, ended, historical, older page, or background.",
-		inspecting:
-			"Refresh paused while inspecting details. Close all details to resume.",
+		auto: "Auto-refreshing",
+		paused: "Auto-refresh paused",
+		inspecting: "Inspecting · refresh paused",
 		details: "Details",
-		empty: "No verified Push receipts are stored for this run.",
+		empty: "No Push receipts",
+		history: "History",
 		older: "Older receipts",
 		latest: "Latest receipts",
 		retry: "Retry",
 		current: "Current run (follow restarts)",
-		poll: "Poll history and export (approximately 30-second samples)",
+		followLatest: "Follow latest run",
+		latestEnded: "Run #{n} · Ended",
+		poll: "Poll history",
 	},
 	heartbeatLog: {
 		title: "Heartbeat log",
@@ -3201,7 +3734,7 @@ export const en = {
 		noEvents: "The encoder has reported no events for this run.",
 		export: "Export JSON (admin)",
 		summaryLine:
-			"Poll history summary: {samples} samples · input connected {connectedMinutes} min · {warnings} warning/error events (Push receipts shown separately)",
+			"Poll · {samples} samples · observed input {connectedMinutes} min · {warnings} warning/error events",
 		rowsPruned: "samples pruned before the summary",
 		time: "Time",
 		ingest: "Input",
@@ -3217,7 +3750,7 @@ export const en = {
 		rowsLoaded: "{count} rows loaded",
 		loadMore: "Load more",
 		columnsHint:
-			"In Mbps and fps are the first video stream's measured incomingBitrate and rate; keyframe figures are keyFrameIntervalAvg / Max; manifest age is the poll time minus the newest HLS manifest update; events list only what appeared at that poll. Open JSON for every provider field.",
+			"Poll samples are collected about every 30 seconds and can be exported as JSON. Bitrate, fps and keyFrameIntervalAvg / Max come from the first video stream. Manifest age is measured from the latest HLS update. Each row lists newly observed events. JSON details show all recorded fields.",
 	},
 	dvr: {
 		resetTitle: "Reset timeshift (RUNNING only)",
@@ -3533,6 +4066,8 @@ export const en = {
 		insert: "Insert media point",
 	},
 	liveToVod: {
+		recordingNotConfirmed:
+			"The encoding has ended. Recording completion is unconfirmed.",
 		stopFirst: "Stop the channel first — live-to-VOD publishes a ",
 		complete: "complete",
 		manifests: "Manifests",
@@ -3922,6 +4457,30 @@ export const en = {
 		webhookPayload: "Webhook payload",
 		workspaceConfiguration: "Workspace configuration.",
 	},
+	errorDefinitions: {
+		caption: "Codes, descriptions and retry guidance",
+		help: "General Bitmovin error definitions, not job history. Retry guidance is informational; check the cause before restarting a job.",
+		lookup: "Look up error codes",
+		account: "Bitmovin account",
+		chooseAccount: "Choose an account",
+		accountUnavailable: "The linked account is unavailable. Choose an account.",
+		addAccount: "Add a Bitmovin account",
+		loadingAccounts: "Loading accounts…",
+		accountsFailed: "Could not load accounts.",
+		search: "Search error definitions",
+		searchPlaceholder: "Code, category or description",
+		loading: "Loading error definitions…",
+		loadFailed: "Could not load error definitions.",
+		reload: "Reload",
+		empty: "No error definitions returned.",
+		noMatches: "No matching error definitions.",
+		count: "{count} of {total} definitions",
+		pagination: "Error definitions pages",
+		retrySuggested: "Retry suggested",
+		noRetry: "Do not retry unchanged",
+		otherRegion: "Try another region",
+		unknownRetry: "No recommendation",
+	},
 	apiCoverage: {
 		requestFields: {
 			title: "SDK request-body properties",
@@ -4048,7 +4607,6 @@ export const en = {
 			"This Web only. These values do not identify the worker, another Web service, or the Bitmovin encoder version.",
 		version: "App version",
 		commit: "Commit",
-		unknown: "Unknown",
 	},
 	settingsX: {
 		users: "Users",
@@ -4089,6 +4647,9 @@ export const en = {
 		featureQcVmaf: "VMAF lab and QC",
 		featureQcVmafHint:
 			"Off by default. When off, the VMAF lab, the wizard's QC gate editor and the per-job QC surfaces are hidden, no new measurements are created, and a plan carrying a qc block is refused. Jobs already parked or failed under an existing gate stay releasable — their QC panel, override and evidence export keep working.",
+		featureOperationAnalytics: "Live operation analytics",
+		featureOperationAnalyticsHint:
+			"Records the starts and outcomes of MoQ preview attempts for your organization. The weekly report stays available when collection is paused.",
 		featuresLoadFailed: "Could not load the feature settings.",
 		featuresSavedReloadHint:
 			"Saved. Reload the page for the navigation and the wizard to pick it up.",
@@ -4411,6 +4972,10 @@ export const en = {
 		lmiScte35Help:
 			"Pass SCTE-35 messages to the receiving Origin. The Origin generates playback manifests.",
 		lmiPublishingPoint: "Publishing point",
+		moqRelayUrl: "MoQ relay URL",
+		moqAuthToken: "Authorization token (optional)",
+		moqAuthTokenType: "Token type (optional)",
+		moqPlaybackUrl: "Playback URL (subscribe-only, optional)",
 		lmiPublishingPointHelp:
 			"Origin publishing URL, for example https://origin.example/live/channel.isml. Stored encrypted.",
 		lmiScte35Passthrough: "SCTE-35 passthrough",
@@ -4627,8 +5192,16 @@ export const en = {
 			"Could not load credentials. Retry to select your storage credentials.",
 		accountsLoadFailed:
 			"Could not load Bitmovin accounts. Retry to select an account.",
-		aisaDisabledQcOnly:
-			"VMAF-only encoding skips AI Scene Analysis. Turn off VMAF-only to use these saved settings.",
+		skippedWhileMeasureOnly:
+			"“{option}” is on, so {feature} is skipped. Turn that option off to use the settings saved here.",
+		qcMirrorOwnFolder: "Write the measured copies to one folder",
+		qcMirrorOwnFolderHelp:
+			"Unchecked, each copy is written beside its rendition, in qc/ under that rendition's output folder. Checked, every copy goes to qc/ under the folder named below. A copy is named by its rendition key and nothing else, so jobs whose renditions share an output folder should each name a folder of their own: otherwise a later job replaces the copies an earlier job is measured on.",
+		qcMirrorFolder: "Folder for the measured copies",
+		qcMirrorFolderHelp:
+			"Relative to the base output path. The copies are written to qc/ inside it; empty is the base output path itself.",
+		qcMeasurementMethodHelp:
+			"Set by the plan that was loaded; the wizard cannot choose it. Frame-index comparison requires cloud execution, and its scores are compared apart from the standard method's. Choosing Standard removes it.",
 		previewPlacementNeedsJit:
 			"Preview placement requires Just in time. Change the timing or reset Start placement to VOD (default).",
 		encodingModeFromLadder: "Use ladder encoding modes / presets",
@@ -4645,6 +5218,8 @@ export const en = {
 		muxedAudio: "Muxed-in audio",
 		muxedAudioHint:
 			"Audio tracks that travel INSIDE these segments. Each variant that carries its own audio needs no EXT-X-MEDIA group; the ones that carry none point at a standalone audio container instead.",
+		muxedAudioFileHint:
+			"The audio track written into this file together with the video.",
 		ownContainer: "Standalone container",
 		ownContainerLabel: "Build one for this track",
 		ownContainerOnHint:
@@ -4848,6 +5423,14 @@ export const en = {
 		defaultEnWebvttSegNumberVtt: "Default en_webvtt_seg_%number%.vtt",
 		defaultInitHdr: "Default init.hdr",
 		defaultInitMp4: "Default init.mp4",
+		defaultOutputMov: "Default output.mov",
+		defaultOutputTs: "Default output.ts",
+		defaultOutputWebm: "Default output.webm",
+		encoderDefaultWhenEmpty:
+			"Optional. Leave empty to use the encoder's default.",
+		startOffsetS: "Start offset (s)",
+		startOffsetHint:
+			"Offsets the MPEG-TS timestamps by this many whole seconds. Leave empty to use the encoder's default.",
 		defaultSegNumberChk: "Default seg_%number%.chk",
 		defaultSegNumberTs: "Default seg_%number%.ts",
 		addDeliveryMirror: "Add delivery mirror",
@@ -4888,6 +5471,8 @@ export const en = {
 			"When using a quality preset, set Encoding start options > Encoding mode back to (default).",
 		mixedEncodingModeGuidance:
 			"Prefer one video codec per job. Advanced mixed-codec jobs require explicit settings without presets and a common encoding mode.",
+		concatAvQualificationError:
+			"Use matching video/audio sources, trim ranges, positions and padding for cloud concatenation.",
 		onDemandClearDrmGuidance:
 			"For clear OnDemand DASH, use MP4 muxings without DRM. Put clear and encrypted MP4 outputs in separate encoding plans.",
 		encryptionMode: "Encryption mode",
@@ -5322,6 +5907,7 @@ export const en = {
 			"The wizard cannot preserve every setting in this plan. The original JSON remains active; use Edit JSON to change it.",
 		importEditJson: "Edit JSON",
 		muxedAudioCarrying: "Carrying {key} inside these segments.",
+		muxedAudioCarryingFile: "Carrying {key} inside this file.",
 		qcDisabledCarriedBlock:
 			"This plan carries a QC/VMAF block, but QC/VMAF is turned off for this deployment — starting it will be refused. Remove the block to continue, or enable QC/VMAF in Settings.",
 		qcDisabledRemoveBlock: "Remove the QC block",
@@ -5378,6 +5964,8 @@ export const en = {
 			"Every rendition and manifest is ALSO written to each mirror, at the same paths and ACL — one encode, several storages.",
 		derivedPathHint:
 			'Relative to the base output path — empty = derived "{path}". Per-title outputs need {uuidToken}/{bitrateToken} placeholders.',
+		destinationBasePathHint:
+			"Relative to the base output path — empty = that path itself, with no subfolder.",
 		enableCodecPerTitle: "Enable {codec} per-title configuration",
 		encryptionDrmCount: "Encryption / DRM ({count})",
 		extraContainerOf: "extra container of {key}",
@@ -5450,7 +6038,69 @@ export const en = {
 		videoWord: "video",
 		vmafV1DockerWorker: "{model} (VMAF v1 — bundled model)",
 	},
+	experiments: {
+		alsoMeasureVmafV1: "Also measure VMAF v1.0.16",
+		sdkSettings: "NVENC settings",
+		sdkFilter: "Filter settings",
+		sdkField: "Setting",
+		sdkSelectField: "Select a setting",
+		sdkSession: "Session",
+		sdkPicture: "Picture",
+		sdkFrame: "Frame index (zero-based)",
+		sdkValue: "Value",
+		sdkSelectValue: "Select a value",
+		sdkApply: "Apply setting",
+		sdkCatalogUnavailable: "Could not load NVENC settings.",
+		scoringProfile: "Quality scoring profile",
+		reference: "Selection source and window",
+		bitrateCeiling: "Bitrate ceiling (bps)",
+		timeCeiling: "Time ceiling (ms)",
+		selectBest: "Select best quality",
+		selectedTrial: "Selected trial {id}",
+		encodeTime: "Encode time (ms)",
+		selectionStatus: {
+			no_feasible_candidate: "No measured trial satisfies the constraints.",
+			insufficient_evidence: "More measurement evidence is needed.",
+		},
+		title: "Encoding experiments",
+		workerUnavailable: "NVENC is unavailable",
+		campaigns: "Campaigns",
+		selectCampaign: "Select a campaign",
+		campaignName: "Campaign name",
+		createCampaign: "Create campaign",
+		moreCampaigns: "More campaigns",
+		source: "Registered source",
+		selectSource: "Select a source",
+		trialJson: "Trial configuration (JSON)",
+		queueTrial: "Queue trial",
+		invalidJson: "Enter valid trial JSON.",
+		sealed: "Sealed",
+		pause: "Pause",
+		resume: "Resume",
+		seal: "Seal",
+		cancel: "Cancel campaign",
+		confirmCancel: "Confirm cancellation",
+		codec: "Codec",
+		status: "Status",
+		measuredRate: "Measured video bitrate",
+		moreTrials: "More trials",
+		emptyTrials: "No trials queued.",
+		emptyCampaigns: "No campaigns yet.",
+		states: {
+			PENDING: "Queued",
+			RUNNING: "Running",
+			SUCCEEDED: "Succeeded",
+			FAILED: "Failed",
+			CANCELED: "Canceled",
+			REJECTED: "Rejected",
+			PAUSED: "Paused",
+		},
+	},
 	tokens: {
+		scope: "Access scope",
+		scopeGeneral: "General API · OPERATOR",
+		scopeExperimentsRead: "Encoding experiments · Read",
+		scopeExperimentsRun: "Encoding experiments · Run",
 		active: "Active",
 		dismissSecret: "I stored it — dismiss",
 		expired: "Expired",
@@ -6322,7 +6972,7 @@ export const en = {
 		newJobQueued: "New job queued.",
 		openJobId: "Open {id} →",
 		pickTwoReportsHead:
-			"Pick at least two finished VMAF reports to compare — open the",
+			"Pick at least two finished VMAF or CAMBI reports to compare — open the",
 		pidValue: "Process ID {pid}",
 		priorityRangeHint:
 			"{min}–{max} (default {dflt}). Higher priority runs first among your organisation's queued encodings, so it only has an effect while the run is still waiting for capacity.",
@@ -7106,6 +7756,10 @@ export const en = {
 		confirmDelete: "Delete rule + history?",
 	},
 	zerr: {
+		credMoqRelayUrl:
+			"Relay URL must be moqt://host[:port][/path] without user credentials, query or fragment",
+		credMoqTokenType:
+			"Authorization token type requires an authorization token",
 		spekeBasicPair: "Provide both Basic authentication username and password",
 		spekeGatewayRegion: "Gateway region is required with roleArn",
 		spekeRoleArn: "AWS role settings require roleArn",
@@ -7113,6 +7767,7 @@ export const en = {
 		spekeGeneratedExternalId:
 			"GENERATED external ID mode cannot set externalId",
 		diagnosticsSrtInputOnly: "srtInputId is only supported for SRT diagnostics",
+		diagnosticsTaskDownload: "Task text download requires task diagnostics",
 		diagnosticsHttpsDownload:
 			"Expected an HTTPS download URL without credentials",
 

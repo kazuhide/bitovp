@@ -1,0 +1,2951 @@
+{
+	"schemaVersion": 1,
+	"kind": "schemas",
+	"items": [
+		[
+			"encoding/configurations/audio/vorbis/VorbisAudioConfigurationListQueryParams.d.ts#VorbisAudioConfigurationListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/configurations/audio/vorbis/VorbisAudioConfigurationListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/audio/vorbis/VorbisAudioConfigurationListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "VorbisAudioConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/audio/vorbis/VorbisAudioConfigurationListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter configuration by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "VorbisAudioConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/audio/vorbis/VorbisAudioConfigurationListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "VorbisAudioConfigurationListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/configurations/video/vp8/Vp8VideoConfigurationListQueryParams.d.ts#Vp8VideoConfigurationListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/configurations/video/vp8/Vp8VideoConfigurationListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/video/vp8/Vp8VideoConfigurationListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Vp8VideoConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/video/vp8/Vp8VideoConfigurationListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter configuration by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "Vp8VideoConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/video/vp8/Vp8VideoConfigurationListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Vp8VideoConfigurationListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/configurations/video/vp9/Vp9VideoConfigurationListQueryParams.d.ts#Vp9VideoConfigurationListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/configurations/video/vp9/Vp9VideoConfigurationListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/video/vp9/Vp9VideoConfigurationListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Vp9VideoConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "string" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/video/vp9/Vp9VideoConfigurationListQueryParams.d.ts",
+							"line": 19
+						},
+						"documentation": "Filter configuration by name",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{
+								"name": "memberof",
+								"text": "Vp9VideoConfigurationListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/configurations/video/vp9/Vp9VideoConfigurationListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Vp9VideoConfigurationListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/dash/periods/adaptationsets/video/VideoAdaptationSetListQueryParams.d.ts#VideoAdaptationSetListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/dash/periods/adaptationsets/video/VideoAdaptationSetListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/video/VideoAdaptationSetListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "VideoAdaptationSetListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/dash/periods/adaptationsets/video/VideoAdaptationSetListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "VideoAdaptationSetListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/hls/media/video/VideoMediaInfoListQueryParams.d.ts#VideoMediaInfoListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/hls/media/video/VideoMediaInfoListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/hls/media/video/VideoMediaInfoListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoMediaInfoListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/hls/media/video/VideoMediaInfoListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoMediaInfoListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"encoding/manifests/hls/media/vtt/VttMediaInfoListQueryParams.d.ts#VttMediaInfoListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/manifests/hls/media/vtt/VttMediaInfoListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/hls/media/vtt/VttMediaInfoListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VttMediaInfoListQueryParams" }
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/manifests/hls/media/vtt/VttMediaInfoListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VttMediaInfoListQueryParams" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/VariantStreamDroppingMode.d.ts#VariantStreamDroppingMode",
+			{
+				"kind": "enum",
+				"values": ["STREAM", "AUDIO"],
+				"sdkEvidence": {
+					"file": "models/VariantStreamDroppingMode.d.ts",
+					"line": 6
+				}
+			}
+		],
+		[
+			"models/VerticalLowPassFilteringMode.d.ts#VerticalLowPassFilteringMode",
+			{
+				"kind": "enum",
+				"values": ["DISABLED", "LOW_PASS", "COMPLEX"],
+				"sdkEvidence": {
+					"file": "models/VerticalLowPassFilteringMode.d.ts",
+					"line": 6
+				}
+			}
+		],
+		[
+			"models/VideoAdaptationSet.d.ts#VideoAdaptationSet",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/VideoAdaptationSet.d.ts", "line": 7 },
+				"properties": [
+					{
+						"name": "accessibilities",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/Accessibility.d.ts#Accessibility" }
+						},
+						"sdkEvidence": { "file": "models/AdaptationSet.d.ts", "line": 37 },
+						"documentation": "Provide signaling of CEA 607 and CEA 708",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Accessibility[]}" },
+							{ "name": "memberof", "text": "AdaptationSet" }
+						]
+					},
+					{
+						"name": "customAttributes",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/CustomAttribute.d.ts#CustomAttribute" }
+						},
+						"sdkEvidence": { "file": "models/AdaptationSet.d.ts", "line": 25 },
+						"documentation": "Custom adaptation set attributes",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{CustomAttribute[]}" },
+							{ "name": "memberof", "text": "AdaptationSet" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "labels",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": { "ref": "models/Label.d.ts#Label" }
+						},
+						"sdkEvidence": { "file": "models/AdaptationSet.d.ts", "line": 43 },
+						"documentation": "List of labels",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Label[]}" },
+							{ "name": "memberof", "text": "AdaptationSet" }
+						]
+					},
+					{
+						"name": "roles",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "array",
+							"items": {
+								"ref": "models/AdaptationSetRole.d.ts#AdaptationSetRole"
+							}
+						},
+						"sdkEvidence": { "file": "models/AdaptationSet.d.ts", "line": 31 },
+						"documentation": "Roles of the adaptation set",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{AdaptationSetRole[]}" },
+							{ "name": "memberof", "text": "AdaptationSet" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/AdaptationSetType.d.ts#AdaptationSetType"
+						},
+						"sdkEvidence": {
+							"file": "models/VideoAdaptationSet.d.ts",
+							"line": 13
+						},
+						"documentation": "Discriminator property for AdaptationSet",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "VideoAdaptationSet" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/VideoFormat.d.ts#VideoFormat",
+			{
+				"kind": "enum",
+				"values": ["UNDEFINED", "COMPONENT", "PAL", "NTSC", "SECAM", "MAC"],
+				"sdkEvidence": { "file": "models/VideoFormat.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/VideoMediaInfo.d.ts#VideoMediaInfo",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/VideoMediaInfo.d.ts", "line": 6 },
+				"properties": [
+					{
+						"name": "assocLanguage",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 24 },
+						"documentation": "Identifies a language that is associated with the Rendition.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "autoselect",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 42 },
+						"documentation": "If set to true, the client MAY choose to play this Rendition in the absence of explicit user preference.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "characteristics",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "array", "items": { "kind": "string" } },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 48 },
+						"documentation": "Contains Uniform Type Identifiers",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string[]}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "drmId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 36
+						},
+						"documentation": "Id of the DRM.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "encodingId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 18
+						},
+						"documentation": "Id of the encoding. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "endSegmentNumber",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 48
+						},
+						"documentation": "Number of the last segment. Default is the last one that was encoded.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "groupId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 12 },
+						"documentation": "The value is a quoted-string which specifies the group to which the Rendition belongs. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "isDefault",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 36 },
+						"documentation": "If set to true, the client SHOULD play this Rendition of the content in the absence of information from the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "language",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 18 },
+						"documentation": "Primary language in the rendition.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "muxingId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 30
+						},
+						"documentation": "Id of the muxing. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 30 },
+						"documentation": "Human readable description of the rendition. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "segmentPath",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 12
+						},
+						"documentation": "Path to segments. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "startSegmentNumber",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 42
+						},
+						"documentation": "Number of the first segment. Default is 0.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "streamId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/SegmentsMediaInfo.d.ts",
+							"line": 24
+						},
+						"documentation": "Id of the stream. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "SegmentsMediaInfo" }
+						]
+					},
+					{
+						"name": "uri",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/StandardMediaInfo.d.ts",
+							"line": 12
+						},
+						"documentation": "The URI of the Rendition (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "StandardMediaInfo" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/VideoStream.d.ts#VideoStream",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/VideoStream.d.ts", "line": 6 },
+				"properties": [
+					{
+						"name": "bitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/VideoStream.d.ts", "line": 18 },
+						"documentation": "Bitrate in bps",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "VideoStream" }
+						]
+					},
+					{
+						"name": "codec",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/MediaStream.d.ts", "line": 24 },
+						"documentation": "Codec of the stream",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "MediaStream" }
+						]
+					},
+					{
+						"name": "duration",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/MediaStream.d.ts", "line": 18 },
+						"documentation": "Duration of the stream in seconds",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "MediaStream" }
+						]
+					},
+					{
+						"name": "fps",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/VideoStream.d.ts", "line": 12 },
+						"documentation": "Frame rate of the video",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "VideoStream" }
+						]
+					},
+					{
+						"name": "height",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/VideoStream.d.ts", "line": 36 },
+						"documentation": "Height of the video (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoStream" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "par",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/VideoStream.d.ts", "line": 42 },
+						"documentation": "Pixel aspect ratio of the video. Default is 1.0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoStream" }
+						]
+					},
+					{
+						"name": "position",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/MediaStream.d.ts", "line": 12 },
+						"documentation": "Position of the stream in the media, starting from 0.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "MediaStream" }
+						]
+					},
+					{
+						"name": "rate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/VideoStream.d.ts", "line": 24 },
+						"documentation": "Bitrate in bps (the same as bitrate, but represented as an integer value)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoStream" }
+						]
+					},
+					{
+						"name": "rotation",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/VideoStream.d.ts", "line": 48 },
+						"documentation": "Rotation of the video for mobile devices. Default is 0.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoStream" }
+						]
+					},
+					{
+						"name": "width",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": { "file": "models/VideoStream.d.ts", "line": 30 },
+						"documentation": "Width of the video (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoStream" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/VorbisAudioConfiguration.d.ts#VorbisAudioConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/VorbisAudioConfiguration.d.ts",
+					"line": 8
+				},
+				"properties": [
+					{
+						"name": "bitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/AudioConfiguration.d.ts",
+							"line": 12
+						},
+						"documentation": "Target bitrate for the encoded audio in bps (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "AudioConfiguration" }
+						]
+					},
+					{
+						"name": "channelLayout",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/VorbisChannelLayout.d.ts#VorbisChannelLayout"
+						},
+						"sdkEvidence": {
+							"file": "models/VorbisAudioConfiguration.d.ts",
+							"line": 20
+						},
+						"documentation": "Channel layout of the audio codec configuration",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{VorbisChannelLayout}" },
+							{ "name": "memberof", "text": "VorbisAudioConfiguration" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "rate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/AudioConfiguration.d.ts",
+							"line": 18
+						},
+						"documentation": "Audio sampling rate in Hz",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "AudioConfiguration" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CodecConfigType.d.ts#CodecConfigType" },
+						"sdkEvidence": {
+							"file": "models/VorbisAudioConfiguration.d.ts",
+							"line": 14
+						},
+						"documentation": "Discriminator property for CodecConfiguration",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "VorbisAudioConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/VorbisChannelLayout.d.ts#VorbisChannelLayout",
+			{
+				"kind": "enum",
+				"values": [
+					"NONE",
+					"MONO",
+					"STEREO",
+					"SURROUND",
+					"QUAD",
+					"2.1",
+					"2.2",
+					"3.1",
+					"4.0",
+					"5.1",
+					"5.1_BACK"
+				],
+				"sdkEvidence": { "file": "models/VorbisChannelLayout.d.ts", "line": 5 }
+			}
+		],
+		[
+			"models/Vp8ArnrType.d.ts#Vp8ArnrType",
+			{
+				"kind": "enum",
+				"values": ["BACKWARD", "FORWARD", "CENTERED"],
+				"sdkEvidence": { "file": "models/Vp8ArnrType.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/Vp8NoiseSensitivity.d.ts#Vp8NoiseSensitivity",
+			{
+				"kind": "enum",
+				"values": [
+					"OFF",
+					"ON_Y_ONLY",
+					"ON_YUV",
+					"ON_YUV_AGGRESSIVE",
+					"ADAPTIVE"
+				],
+				"sdkEvidence": { "file": "models/Vp8NoiseSensitivity.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/Vp8Quality.d.ts#Vp8Quality",
+			{
+				"kind": "enum",
+				"values": ["REALTIME", "GOOD", "BEST"],
+				"sdkEvidence": { "file": "models/Vp8Quality.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/Vp8VideoConfiguration.d.ts#Vp8VideoConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/Vp8VideoConfiguration.d.ts",
+					"line": 10
+				},
+				"properties": [
+					{
+						"name": "arnrMaxFrames",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 115
+						},
+						"documentation": "altref noise reduction max frame count.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "arnrStrength",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 121
+						},
+						"documentation": "altref noise reduction filter strength.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "arnrType",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/Vp8ArnrType.d.ts#Vp8ArnrType" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 126
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Vp8ArnrType}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "bitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 28
+						},
+						"documentation": "Target bitrate for the encoded video in bps. Either bitrate or crf is required.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "colorConfig",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/ColorConfig.d.ts#ColorConfig" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 45
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ColorConfig}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "cpuUsed",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 63
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "crf",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 22
+						},
+						"documentation": "Constant rate factor for quality-based variable bitrate. Either bitrate or crf is required.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "displayAspectRatio",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/DisplayAspectRatio.d.ts#DisplayAspectRatio"
+						},
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 63
+						},
+						"documentation": "Specifies a display aspect ratio (DAR) to be enforced. The sample aspect ratio (SAR) will be adjusted accordingly. If set then sampleAspectRatioNumerator and sampleAspectRatioDenominator are not allowed.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{DisplayAspectRatio}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "encodingMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/EncodingMode.d.ts#EncodingMode" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 69
+						},
+						"documentation": "The mode of the encoding. When this is set, `encodingMode` (`liveEncodingMode`) must not be set in the (live) encoding start request.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingMode}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "height",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 22
+						},
+						"documentation": "Height of the encoded video in pixels",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "lagInFrames",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 28
+						},
+						"documentation": "Number of frames to look ahead for alternate reference frame selection.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "maxGop",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 86
+						},
+						"documentation": "Maximum GOP length, the maximum distance between I-frames",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "maxIntraRate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 34
+						},
+						"documentation": "Maximum I-frame bitrate (percentage) 0=unlimited",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "maxKeyframeInterval",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 98
+						},
+						"documentation": "Maximum interval in seconds between key frames",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "minGop",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 80
+						},
+						"documentation": "Minimum GOP length, the minimum distance between I-frames.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "minKeyframeInterval",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 92
+						},
+						"documentation": "Minimum interval in seconds between key frames",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "noiseSensitivity",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/Vp8NoiseSensitivity.d.ts#Vp8NoiseSensitivity"
+						},
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 68
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Vp8NoiseSensitivity}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "pixelFormat",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/PixelFormat.d.ts#PixelFormat" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 40
+						},
+						"documentation": "Describes the color encoding, bit depth, and chroma subsampling of each pixel in the output image.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PixelFormat}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "qpMax",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 46
+						},
+						"documentation": "Maximum quantization factor.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "qpMin",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 40
+						},
+						"documentation": "Minimum quantization factor.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "quality",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/Vp8Quality.d.ts#Vp8Quality" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 103
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Vp8Quality}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "rate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 34
+						},
+						"documentation": "Target frame rate of the encoded video. Must be set for live encodings",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "rateOvershootPct",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 58
+						},
+						"documentation": "Datarate overshoot (max) target (percentage).",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "rateUndershootPct",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 52
+						},
+						"documentation": "Datarate undershoot (min) target (percentage).",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "sampleAspectRatioDenominator",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 57
+						},
+						"documentation": "The denominator of the sample aspect ratio (also known as pixel aspect ratio). Must be set if sampleAspectRatioNumerator is set. If set then displayAspectRatio is not allowed.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "sampleAspectRatioNumerator",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 51
+						},
+						"documentation": "The numerator of the sample aspect ratio (also known as pixel aspect ratio). Must be set if sampleAspectRatioDenominator is set. If set then displayAspectRatio is not allowed.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "sharpness",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 74
+						},
+						"documentation": "Loop filter sharpness.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "staticThresh",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 109
+						},
+						"documentation": "A change threshold on blocks below which they will be skipped by the encoder.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CodecConfigType.d.ts#CodecConfigType" },
+						"sdkEvidence": {
+							"file": "models/Vp8VideoConfiguration.d.ts",
+							"line": 16
+						},
+						"documentation": "Discriminator property for CodecConfiguration",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Vp8VideoConfiguration" }
+						]
+					},
+					{
+						"name": "width",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 16
+						},
+						"documentation": "Width of the encoded video in pixels",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/Vp9AqMode.d.ts#Vp9AqMode",
+			{
+				"kind": "enum",
+				"values": ["NONE", "VARIANCE", "COMPLEXITY", "CYCLIC"],
+				"sdkEvidence": { "file": "models/Vp9AqMode.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/Vp9ArnrType.d.ts#Vp9ArnrType",
+			{
+				"kind": "enum",
+				"values": ["BACKWARD", "FORWARD", "CENTERED"],
+				"sdkEvidence": { "file": "models/Vp9ArnrType.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/Vp9DynamicRangeFormat.d.ts#Vp9DynamicRangeFormat",
+			{
+				"kind": "enum",
+				"values": ["HLG", "SDR"],
+				"sdkEvidence": {
+					"file": "models/Vp9DynamicRangeFormat.d.ts",
+					"line": 6
+				}
+			}
+		],
+		[
+			"models/Vp9PerTitleConfiguration.d.ts#Vp9PerTitleConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/Vp9PerTitleConfiguration.d.ts",
+					"line": 6
+				},
+				"properties": [
+					{
+						"name": "autoRepresentations",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/AutoRepresentation.d.ts#AutoRepresentation"
+						},
+						"sdkEvidence": {
+							"file": "models/PerTitleConfiguration.d.ts",
+							"line": 36
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{AutoRepresentation}" },
+							{ "name": "memberof", "text": "PerTitleConfiguration" }
+						]
+					},
+					{
+						"name": "complexityFactor",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/PerTitleConfiguration.d.ts",
+							"line": 42
+						},
+						"documentation": "Will modify the assumed complexity for the Per-Title algorithm (> 0.0). Values higher than 1 will increase complexity and thus select smaller resolutions for given bitrates. This will also result in a higher bitrate for the top rendition. Values lower than 1 will decrease assumed complexity and thus select higher resolutions for given bitrates and also decrease the bitrate of the top rendition",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "PerTitleConfiguration" }
+						]
+					},
+					{
+						"name": "fixedResolutionAndBitrateConfiguration",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/PerTitleFixedResolutionAndBitrateConfiguration.d.ts#PerTitleFixedResolutionAndBitrateConfiguration"
+						},
+						"sdkEvidence": {
+							"file": "models/PerTitleConfiguration.d.ts",
+							"line": 48
+						},
+						"documentation": "Additional configuration for fixed resolution and bitrate templates",
+						"sdkDocTags": [
+							{
+								"name": "type",
+								"text": "{PerTitleFixedResolutionAndBitrateConfiguration}"
+							},
+							{ "name": "memberof", "text": "PerTitleConfiguration" }
+						]
+					},
+					{
+						"name": "maxBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/PerTitleConfiguration.d.ts",
+							"line": 19
+						},
+						"documentation": "The maximum bitrate that will be used by the Per-Title algorithm. It will not generate any rendition with a higher bitrate.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "PerTitleConfiguration" }
+						]
+					},
+					{
+						"name": "maxBitrateStepSize",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/PerTitleConfiguration.d.ts",
+							"line": 31
+						},
+						"documentation": "The maximum ratio between the bitrates of neighbouring renditions, e.g., if the first bitrate is 240,000, a maximum ratio of 1.9 will require the next higher bitrate to be at most 456,000",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "PerTitleConfiguration" }
+						]
+					},
+					{
+						"name": "minBitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/PerTitleConfiguration.d.ts",
+							"line": 13
+						},
+						"documentation": "The minimum bitrate that will be used by the Per-Title algorithm.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "PerTitleConfiguration" }
+						]
+					},
+					{
+						"name": "minBitrateStepSize",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/PerTitleConfiguration.d.ts",
+							"line": 25
+						},
+						"documentation": "The minimum ratio between the bitrates of generated renditions, e.g. if the first bitrate is 240,000, a minimum ratio of 1.5 will require the next higher bitrate to be at least 360,000",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "PerTitleConfiguration" }
+						]
+					},
+					{
+						"name": "resolutionScaleFactor",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/PerTitleConfiguration.d.ts",
+							"line": 54
+						},
+						"documentation": "This factor influences the resolution selection of the per-title algorithm. The default value is 0.0. negative values will lead to results where the algorithm will choose lower resolutions for given bitrates. A positive value will result in higher resolutions to be selected. The range of the factor is -15.0 to +15.0. Please note that changing this factor might also lead to slightly different bitrate selection by the algorithm.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "PerTitleConfiguration" }
+						]
+					},
+					{
+						"name": "targetQualityCrf",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9PerTitleConfiguration.d.ts",
+							"line": 12
+						},
+						"documentation": "Desired target quality of the highest representation expressed as CRF value",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9PerTitleConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/Vp9Quality.d.ts#Vp9Quality",
+			{
+				"kind": "enum",
+				"values": ["REALTIME", "GOOD", "BEST"],
+				"sdkEvidence": { "file": "models/Vp9Quality.d.ts", "line": 6 }
+			}
+		],
+		[
+			"models/Vp9VideoConfiguration.d.ts#Vp9VideoConfiguration",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/Vp9VideoConfiguration.d.ts",
+					"line": 13
+				},
+				"properties": [
+					{
+						"name": "aqMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/Vp9AqMode.d.ts#Vp9AqMode" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 197
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Vp9AqMode}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "arnrMaxFrames",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 203
+						},
+						"documentation": "altref noise reduction max frame count.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "arnrStrength",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 209
+						},
+						"documentation": "altref noise reduction filter strength.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "arnrType",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/Vp9ArnrType.d.ts#Vp9ArnrType" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 214
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Vp9ArnrType}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "autoLevelSetup",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/AutoLevelSetup.d.ts#AutoLevelSetup" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 220
+						},
+						"documentation": "Enable/disable automatic calculation of level, maxBitrate, and bufsize based on the least level that satisfies maximum property values for picture resolution, frame rate, and bit rate. In the case the target level is set explicitly, the maximum bitrate and buffer size are calculated based on the defined level. Explicitly setting rateOvershootPct, or clientBufferSize properties will disable the automatic calculation.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{AutoLevelSetup}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "automaticAltRefFramesEnabled",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 133
+						},
+						"documentation": "Enable automatic alternate reference frames (2pass only)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "biasPct",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 115
+						},
+						"documentation": "CBR/VBR bias (0=CBR, 100=VBR)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "bitrate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 28
+						},
+						"documentation": "Target bitrate for the encoded video in bps. Either bitrate or crf is required.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "clientBufferSize",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 103
+						},
+						"documentation": "Client buffer size (ms)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "clientInitialBufferSize",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 109
+						},
+						"documentation": "Client initial buffer size (ms)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "colorConfig",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/ColorConfig.d.ts#ColorConfig" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 45
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{ColorConfig}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "cpuUsed",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 127
+						},
+						"documentation": "Controls the tradeoff between compression efficiency and encoding speed. Higher values indicate a faster encoding. The minimum value for width * height >= 1280 * 720 is 2. If the value is too low it will be overridden.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "crf",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 37
+						},
+						"documentation": "Constant rate factor for quality-based variable bitrate. Either bitrate or crf is required.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "displayAspectRatio",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/DisplayAspectRatio.d.ts#DisplayAspectRatio"
+						},
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 63
+						},
+						"documentation": "Specifies a display aspect ratio (DAR) to be enforced. The sample aspect ratio (SAR) will be adjusted accordingly. If set then sampleAspectRatioNumerator and sampleAspectRatioDenominator are not allowed.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{DisplayAspectRatio}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "dynamicRangeFormat",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/Vp9DynamicRangeFormat.d.ts#Vp9DynamicRangeFormat"
+						},
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 31
+						},
+						"documentation": "Automatically configures the VP9 Video Codec to be compatible with the given SDR/HLG format. Bitmovin recommends to use the dynamic range format together with a preset configuration to achieve good results. Explicitly configured properties will take precedence over dynamic range format settings, which in turn will take precedence over preset configurations.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Vp9DynamicRangeFormat}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "encodingMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/EncodingMode.d.ts#EncodingMode" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 69
+						},
+						"documentation": "The mode of the encoding. When this is set, `encodingMode` (`liveEncodingMode`) must not be set in the (live) encoding start request.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{EncodingMode}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "errorResiliencyEnabled",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 49
+						},
+						"documentation": "Enables error resiliency feature",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "frameParallel",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 67
+						},
+						"documentation": "Enable frame parallel decodability features",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "height",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 22
+						},
+						"documentation": "Height of the encoded video in pixels",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "lagInFrames",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 43
+						},
+						"documentation": "Number of frames to look ahead for alternate reference frame selection.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "lossless",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 186
+						},
+						"documentation": "Lossless mode",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "maxGop",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 163
+						},
+						"documentation": "Maximum GOP length, the maximum distance between I-frames",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "maxIntraRate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 73
+						},
+						"documentation": "Maximum I-frame bitrate (percentage) 0=unlimited",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "maxKeyframeInterval",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 175
+						},
+						"documentation": "Maximum interval in seconds between key frames",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "minGop",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 157
+						},
+						"documentation": "Minimum GOP length, the minimum distance between I-frames.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "minKeyframeInterval",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 169
+						},
+						"documentation": "Minimum interval in seconds between key frames",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "noiseSensitivity",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 121
+						},
+						"documentation": "Enable noise sensitivity on Y channel",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "pixelFormat",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/PixelFormat.d.ts#PixelFormat" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 40
+						},
+						"documentation": "Describes the color encoding, bit depth, and chroma subsampling of each pixel in the output image.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PixelFormat}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "presetConfiguration",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/PresetConfiguration.d.ts#PresetConfiguration"
+						},
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 25
+						},
+						"documentation": "Choose from a set of preset configurations tailored for common use cases. Check out [VP9 Presets](https://bitmovin.com/docs/encoding/tutorials/vp9-presets) to see which values get applied by each preset. Explicitly setting a property to a different value will override the preset's value for that property.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{PresetConfiguration}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "qpMax",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 85
+						},
+						"documentation": "Maximum quantization factor.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "qpMin",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 79
+						},
+						"documentation": "Minimum quantization factor.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "quality",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/Vp9Quality.d.ts#Vp9Quality" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 180
+						},
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Vp9Quality}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "rate",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 34
+						},
+						"documentation": "Target frame rate of the encoded video. Must be set for live encodings",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "rateOvershootPct",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 97
+						},
+						"documentation": "Datarate overshoot (max) target (percentage).",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "rateUndershootPct",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 91
+						},
+						"documentation": "Datarate undershoot (min) target (percentage).",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "rowMultiThreadingEnabled",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 145
+						},
+						"documentation": "Enable row based non-deterministic multi-threading",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "sampleAspectRatioDenominator",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 57
+						},
+						"documentation": "The denominator of the sample aspect ratio (also known as pixel aspect ratio). Must be set if sampleAspectRatioNumerator is set. If set then displayAspectRatio is not allowed.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "sampleAspectRatioNumerator",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 51
+						},
+						"documentation": "The numerator of the sample aspect ratio (also known as pixel aspect ratio). Must be set if sampleAspectRatioDenominator is set. If set then displayAspectRatio is not allowed.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					},
+					{
+						"name": "sharpness",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 151
+						},
+						"documentation": "Loop filter sharpness.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "staticThresh",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 192
+						},
+						"documentation": "A change threshold on blocks below which they will be skipped by the encoder.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "targetLevel",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 139
+						},
+						"documentation": "Target level (255: off, 0: only keep level stats; 10: level 1.0; 11: level 1.1; ... 62: level 6.2)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "tileColumns",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 55
+						},
+						"documentation": "Number of tile columns to use, log2. Depending on the encoding width there are limitations on this value. The minimum values are 2 for width >= 1920 and 1 for width >= 1280. The minimum width of each tile is 256 pixels so the maximum values are 0 for width < 256, 1 for width < 512, 2 for width < 1024, 3 for width < 2048, 4 for width < 4096, 5 for width < 8192. If the value is too high or too low it will be overridden.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "tileRows",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 61
+						},
+						"documentation": "Number of tile rows to use, log2.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/CodecConfigType.d.ts#CodecConfigType" },
+						"sdkEvidence": {
+							"file": "models/Vp9VideoConfiguration.d.ts",
+							"line": 19
+						},
+						"documentation": "Discriminator property for CodecConfiguration",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Vp9VideoConfiguration" }
+						]
+					},
+					{
+						"name": "width",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/VideoConfiguration.d.ts",
+							"line": 16
+						},
+						"documentation": "Width of the encoded video in pixels",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/VttMediaInfo.d.ts#VttMediaInfo",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/VttMediaInfo.d.ts", "line": 6 },
+				"properties": [
+					{
+						"name": "assocLanguage",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 24 },
+						"documentation": "Identifies a language that is associated with the Rendition.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "autoselect",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 42 },
+						"documentation": "If set to true, the client MAY choose to play this Rendition in the absence of explicit user preference.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "characteristics",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "array", "items": { "kind": "string" } },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 48 },
+						"documentation": "Contains Uniform Type Identifiers",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string[]}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "forced",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/VttMediaInfo.d.ts", "line": 24 },
+						"documentation": "A value of true indicates that the Rendition contains content which is considered essential to play.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "VttMediaInfo" }
+						]
+					},
+					{
+						"name": "groupId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 12 },
+						"documentation": "The value is a quoted-string which specifies the group to which the Rendition belongs. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "isDefault",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "boolean" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 36 },
+						"documentation": "If set to true, the client SHOULD play this Rendition of the content in the absence of information from the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{boolean}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "language",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 18 },
+						"documentation": "Primary language in the rendition.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/BasicMediaInfo.d.ts", "line": 30 },
+						"documentation": "Human readable description of the rendition. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BasicMediaInfo" }
+						]
+					},
+					{
+						"name": "uri",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/VttMediaInfo.d.ts", "line": 18 },
+						"documentation": "The URI of the Rendition (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "VttMediaInfo" }
+						]
+					},
+					{
+						"name": "vttUrl",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/VttMediaInfo.d.ts", "line": 12 },
+						"documentation": "The URL of the referenced VTT file (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "VttMediaInfo" }
+						]
+					}
+				]
+			}
+		]
+	]
+}

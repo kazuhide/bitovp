@@ -239,7 +239,7 @@ describe("PerTitleGuidedSetup", () => {
 		);
 		expect(conditions.fixedProbeOrder.status).toBe("not-measured");
 		const sourceLabel =
-			locale === "ja" ? "素材で未確認の条件" : "Unmeasured source conditions";
+			locale === "ja" ? "素材で検証する条件" : "Unmeasured source conditions";
 		const source = screen.getByRole("region", { name: sourceLabel });
 		const reasoning = screen.getByText(
 			locale === "ja" ? "設定の根拠" : "Why these settings",
@@ -266,7 +266,7 @@ describe("PerTitleGuidedSetup", () => {
 		);
 		expect(source).toHaveTextContent(
 			locale === "ja"
-				? "丸め後の幅も、指定した解像度の順序と同じ解像度の組を保つ前提です。素材では未確認です。"
+				? "丸め後の幅が指定した解像度順と同じ解像度の組を保つか、素材で検証してください。"
 				: "Rounded widths must preserve the requested resolution order and groups at the same resolution; this has not been verified.",
 		);
 		expect(source).toHaveTextContent(

@@ -24,6 +24,64 @@ function destination(input: ReturnType<typeof plan>) {
 }
 
 describe("libraryPlaybackLinks", () => {
+	it("retains combined Progressive WebM with the same path the compiler writes", () => {
+		const input = encodingPlanSchema.parse({
+			...fixture,
+			aiSceneAnalysis: undefined,
+			renditions: [
+				{
+					key: "v180",
+					codec: "VP9",
+					ingestKey: "video",
+					height: 360,
+					bitrate: 600000,
+				},
+				{
+					key: "a96",
+					codec: "OPUS",
+					ingestKey: "video",
+					rate: 48000,
+					bitrate: 96000,
+				},
+			],
+			muxings: [
+				{
+					key: "webm",
+					kind: "PROGRESSIVE_WEBM",
+					streamKey: "v180",
+					additionalStreamKeys: ["a96"],
+					filename: "sequence.webm",
+					destination: { ...destination(plan()), acl: "PRIVATE" },
+				},
+			],
+			manifests: [],
+		});
+		const op = compilePlan(input).find(
+			(operation) => operation.kind === "CREATE_MUXING_PROGRESSIVE_WEBM",
+		);
+		const path = joinFilePath(
+			String(op?.payload.outputPath),
+			String(op?.payload.filename),
+		);
+		expect(libraryFileOutputs(input)).toEqual([
+			{
+				key: "webm:webm",
+				kind: "WEBM",
+				credentialId: credential.id,
+				bucket: "sample-output-bucket",
+				path,
+			},
+		]);
+		expect(libraryPlaybackLinks(input, credentials)).toEqual([
+			expect.objectContaining({
+				key: "webm:webm",
+				kind: "WEBM",
+				path,
+				url: null,
+				reason: { code: "NOT_PUBLIC" },
+			}),
+		]);
+	});
 	it("retains exact private MP4 coordinates without credentials or config", () => {
 		const input = plan();
 		destination(input).acl = "PRIVATE";

@@ -356,6 +356,27 @@ describe("managed AISA worker boundary", () => {
 		).toBe(true);
 	});
 
+	it("finalizes Analysis without calling Stop on an Encoder in TRANSFER_ERROR", async () => {
+		const f = fixture();
+		f.bind();
+		f.setProvider({ analysisId, encodingId, status: "RUNNING" });
+		const fetch = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						status: "SUCCESS",
+						data: { result: { status: "TRANSFER_ERROR" } },
+					}),
+				),
+		);
+		vi.stubGlobal("fetch", fetch);
+
+		await f.ops.stopLiveEncoding(encodingId);
+
+		expect(f.client.stop).toHaveBeenCalledOnce();
+		expect(fetch).toHaveBeenCalledOnce();
+	});
+
 	it("does not mutate either provider resource when the Analysis belongs to another Encoding", async () => {
 		const f = fixture();
 		f.bind();

@@ -27,6 +27,11 @@ export type MutationControlContract = {
  * so deleting a gate or adding a new write call cannot leave this table green.
  */
 export const MUTATION_CONTROLS = {
+	"encoding-experiments.manage": {
+		minRole: "OPERATOR",
+		source: "app/encoding-experiments/experiments-client.tsx",
+		bindings: 1,
+	},
 	"live.aisa.translate": {
 		minRole: "OPERATOR",
 		source: "app/live/aisa-channel-analysis.tsx",
@@ -72,6 +77,11 @@ export const MUTATION_CONTROLS = {
 	"library.content.register": {
 		minRole: "OPERATOR",
 		source: "app/library/content-registration.tsx",
+		bindings: 1,
+	},
+	"library.content.remove": {
+		minRole: "OPERATOR",
+		source: "app/library/content-removal-action.tsx",
 		bindings: 1,
 	},
 	"library.source.retry": {
@@ -207,6 +217,10 @@ export const MUTATION_CONTROLS = {
 				api: "/api/live-channels/[id]/runs/[runId]/diagnostics",
 			},
 			{
+				source: "app/live/[id]/ladder-panel.tsx",
+				api: "/api/live-channels/[id]/runs/[runId]/diagnostics",
+			},
+			{
 				source: "app/live/[id]/heartbeat-log-panel.tsx",
 				api: "/api/live-channels/[id]/runs/[runId]/heartbeats",
 			},
@@ -255,7 +269,8 @@ export const MUTATION_CONTROLS = {
 	"vod.job.detail": {
 		minRole: "OPERATOR",
 		source: "app/vod/jobs/[id]/job-detail.tsx",
-		bindings: 4,
+		// The header gate also encloses Save as template.
+		bindings: 3,
 	},
 	"vod.job.input-inspect": {
 		minRole: "OPERATOR",
@@ -443,6 +458,14 @@ export type MutationSourceContract = {
  * is hidden (for example CaptureVmafPanel -> live.channel.vmaf).
  */
 export const MUTATION_SOURCE_CENSUS = {
+	"app/encoding-experiments/experiments-client.tsx": {
+		writeCalls: 5,
+		controls: ["encoding-experiments.manage"],
+	},
+	"app/library/content-removal-action.tsx": {
+		writeCalls: 1,
+		controls: ["library.content.remove"],
+	},
 	"app/library/[id]/edits/prepare-generation-controls.tsx": {
 		writeCalls: 2,
 		controls: ["library.edits.prepare", "library.edits.edit"],
@@ -516,6 +539,10 @@ export const MUTATION_SOURCE_CENSUS = {
 		delegatedExports: [
 			{ name: "PortraitResultActions", controls: ["library.edits.result"] },
 		],
+	},
+	"app/library/edits/[id]/result/stored-clip-result.tsx": {
+		writeCalls: 1,
+		controls: ["library.edits.edit"],
 	},
 	"app/library/edits/[id]/editor-client.tsx": {
 		writeCalls: 5,
@@ -773,6 +800,31 @@ export type MutationWriteFamily = {
  * never used as surrogate evidence for a write.
  */
 export const MUTATION_WRITE_FAMILIES = {
+	"app/encoding-experiments/experiments-client.tsx": [
+		{
+			write: "POST /api/encoding-experiments/v1/campaigns/x/select",
+			controls: ["encoding-experiments.manage"],
+		},
+		{
+			write: "POST /api/encoding-experiments/v1/campaigns",
+			controls: ["encoding-experiments.manage"],
+		},
+		{
+			write: "POST /api/encoding-experiments/v1/campaigns/x/trials",
+			controls: ["encoding-experiments.manage"],
+		},
+		{
+			write: "PATCH /api/encoding-experiments/v1/campaigns/x",
+			controls: ["encoding-experiments.manage"],
+		},
+		{
+			write: "POST /api/encoding-experiments/v1/campaigns/x/cancel",
+			controls: ["encoding-experiments.manage"],
+		},
+	],
+	"app/library/content-removal-action.tsx": [
+		{ write: "PATCH /api/library/x", controls: ["library.content.remove"] },
+	],
 	"app/library/[id]/edits/prepare-generation-controls.tsx": [
 		{
 			write: "POST /api/library/media-tasks",
@@ -896,6 +948,12 @@ export const MUTATION_WRITE_FAMILIES = {
 		{
 			write: "POST /api/library/renders/x/cancel",
 			controls: ["library.edits.result"],
+		},
+	],
+	"app/library/edits/[id]/result/stored-clip-result.tsx": [
+		{
+			write: "POST /api/library/edits",
+			controls: ["library.edits.edit"],
 		},
 	],
 	"app/library/edits/[id]/editor-client.tsx": [

@@ -2,6 +2,7 @@ import {
 	type CaptionTimingEvidence,
 	type CompositionSourceSegment,
 	compositionSourceSegmentSchema,
+	type LocalStorySceneScope,
 	TRANSCRIPTION_POLICY_FINGERPRINT,
 	transcriptionRawSegmentSchema,
 	transcriptionSpeechIntervalSchema,
@@ -102,12 +103,13 @@ function legacyTranscript<T>(read: () => T): T {
 	}
 }
 
-/** Whole-source ASR for semantic input; each decoder request stays within the existing 180s bound. */
+/** ASR over the full source or an explicitly verified scene on the original clock. */
 export async function prepareLocalStoryTranscript(input: {
 	store: LocalStoryArtifactStore;
 	sourcePath: string;
 	mediaSha256: string;
 	timeMap: unknown;
+	sceneScope?: LocalStorySceneScope;
 	model?: { path: string; sha256: string };
 	language: "ja" | "en" | "auto";
 	signal: AbortSignal;
@@ -127,9 +129,11 @@ export async function prepareLocalStoryTranscript(input: {
 			timeMap: input.timeMap,
 			configuredModel: input.model ? { sha256: input.model.sha256 } : null,
 			language: input.language,
+			...(input.sceneScope ? { sceneScope: input.sceneScope } : {}),
 		}),
 	);
-	const { timeMap: map, durationUs, key, totalWindows } = recipe;
+	const { timeMap: map, startUs, durationUs, key, totalWindows } = recipe;
+	const preparedStartUs = startUs - map.sourceStartUs;
 	const retryWarnings = new Set<RetryWarning>();
 	const absent = (
 		reason: LocalStoryLegacyTranscriptAbsence,
@@ -175,6 +179,7 @@ export async function prepareLocalStoryTranscript(input: {
 					check(input.signal);
 					if (++attempts > MAX_ATTEMPTS)
 						throw new TranscriptUnavailable("ASR_UNAVAILABLE");
+					const sourceStartUs = preparedStartUs + offset;
 					let result: Awaited<ReturnType<typeof transcribeLocalAudio>>;
 					try {
 						result = await transcribeLocalAudio({
@@ -182,7 +187,7 @@ export async function prepareLocalStoryTranscript(input: {
 							mediaSha256: input.mediaSha256,
 							model,
 							language: input.language,
-							sourceStartUs: offset,
+							sourceStartUs,
 							durationUs: length,
 							timeoutMs: Math.min(10 * 60_000, budget.remaining()),
 							signal: input.signal,
@@ -246,7 +251,7 @@ export async function prepareLocalStoryTranscript(input: {
 								modelSha256: model.sha256,
 								language: input.language,
 								durationUs: length,
-								sourceStartUs: offset,
+								sourceStartUs,
 							}) ||
 						!Array.isArray(result.segments) ||
 						!validLanguage(result.language, result.segments.length > 0) ||
@@ -264,7 +269,8 @@ export async function prepareLocalStoryTranscript(input: {
 					if (
 						!observed.success ||
 						observed.data.some(
-							(s) => s.startUs < offset || s.endUs > offset + length,
+							(s) =>
+								s.startUs < sourceStartUs || s.endUs > sourceStartUs + length,
 						)
 					)
 						throw new TranscriptUnavailable("TRANSCRIPT_INVALID");
@@ -336,6 +342,7 @@ export async function prepareLocalStoryTranscript(input: {
 						mediaSha256: input.mediaSha256,
 						modelSha256: model.sha256,
 						timeMapHash: key.timeMapHash,
+						...(key.sceneScope ? { sceneScope: key.sceneScope } : {}),
 						language: input.language,
 						sourceTimeDomain: "ORIGINAL_PRESENTATION_US",
 						segments,
@@ -370,8 +377,8 @@ export async function prepareLocalStoryTranscript(input: {
 		);
 		if (!input.includeCaptionLanguage) return prepared;
 		const languageWindows = loaded.value.mediaWindows.map((window) => ({
-			startUs: map.sourceStartUs + window.fromUs,
-			endUs: map.sourceStartUs + window.toUs,
+			startUs: startUs + window.fromUs,
+			endUs: startUs + window.toUs,
 			language: window.language,
 		}));
 		const observedLanguage = languageWindows[0]?.language;
@@ -385,6 +392,10 @@ export async function prepareLocalStoryTranscript(input: {
 				modelSha256: loaded.value.modelSha256,
 				qualityPolicyFingerprint: loaded.value.qualityPolicyFingerprint,
 				transcriptHash: loaded.hash,
+				speechCoverage: languageWindows.map(({ startUs, endUs }) => ({
+					startUs,
+					endUs,
+				})),
 				rawSegments: structuredClone(loaded.value.rawSegments),
 				speechIntervals: structuredClone(loaded.value.speechIntervals),
 			},

@@ -3,13 +3,7 @@ import {
 	editingAnalysisBindingSchema,
 	hashEditingEvidence as hash,
 	canonicalEditingJson as json,
-	LOCAL_STORY_FLOW_CLOSURE_POLICY,
-	LOCAL_STORY_FLOW_CONTEXT_POLICY,
 	LOCAL_STORY_FLOW_H1_POLICY,
-	LOCAL_STORY_FLOW_ROUTE_POLICY,
-	LOCAL_STORY_FLOW_SCOPE_POLICY,
-	type LocalStoryFlowContextNodeEvidence,
-	localStoryFlowContextSourceEvidence,
 	localStoryFlowGenerationPolicyFingerprint,
 	localStoryStageRegistry,
 	mediaTaskCacheKey,
@@ -29,12 +23,13 @@ import {
 	type BoundLocalStoryFlowNativeExpectation,
 	type BoundLocalStoryFlowSourceArchive,
 	buildLocalStoryFlowAcceptedContext,
-	createLocalStoryLegacyLedgerCacheRecipe,
-	createLocalStoryLegacyLedgerStageRecipe,
+	LOCAL_STORY_FLOW_CLOSURE_POLICY,
+	LOCAL_STORY_FLOW_CONTEXT_POLICY,
 	LOCAL_STORY_FLOW_NATIVE_PROMPT_POLICY,
-	LOCAL_STORY_LEGACY_LEDGER_RECIPE_POLICY,
-	type LocalStoryArtifactCacheRow,
+	LOCAL_STORY_FLOW_ROUTE_POLICY,
+	LOCAL_STORY_FLOW_SCOPE_POLICY,
 	type LocalStoryFlowArchiveSourceSnapshots,
+	type LocalStoryFlowContextNodeEvidence,
 	type LocalStoryFlowRecordRef,
 	localStoryFlowAcceptedContextNodePublication,
 	localStoryFlowAcceptedContextPublication,
@@ -43,29 +38,38 @@ import {
 	localStoryFlowArchiveLedgerStageRequest,
 	localStoryFlowArchivePreparationEvidence,
 	localStoryFlowArchiveTranscriptEvidence,
+	localStoryFlowContextSourceEvidence,
 	localStoryFlowContextWorkExpectation,
-	localStoryFlowIdentityForModelPin,
 	localStoryFlowNativeExpectationEvidence,
 	localStoryFlowRecordIdentity,
 	localStoryFlowRouteWorkExpectation,
 	localStoryFlowSourceArchiveContext,
 	localStoryFlowSourceArchiveEvidence,
-	localStoryIdentityForModelPin,
-	localStoryLegacyLedgerPrompt,
 	nativeRequestForOrigin,
 	nextLocalStoryFlowRouteWork,
 	prepareLocalStoryFlowArchiveSource,
 	prepareLocalStoryFlowContextWork,
+} from "@bitovp/core/local-story-flow-hierarchy";
+import {
+	createLocalStoryLegacyLedgerCacheRecipe,
+	createLocalStoryLegacyLedgerStageRecipe,
+	LOCAL_STORY_LEGACY_LEDGER_RECIPE_POLICY,
+	type LocalStoryArtifactCacheRow,
+	localStoryFlowIdentityForModelPin,
+	localStoryIdentityForModelPin,
+	localStoryLegacyLedgerPrompt,
 } from "@bitovp/core/local-story-flow-server";
 import {
 	type AppPrismaClient,
 	type LibraryMediaTask,
+	TENANT_ORGANIZATION,
+} from "@bitovp/db";
+import {
 	localStoryFlowReadSourceEvidence,
 	localStoryFlowTaskLockKey,
-	TENANT_ORGANIZATION,
 	validateLocalStoryFlowSourceArchiveReadFence,
 	withLocalStoryFlowWorkerSourceSnapshot,
-} from "@bitovp/db";
+} from "@bitovp/db/library-flow";
 import { afterEach, expect, it, vi } from "vitest";
 import type {
 	LocalSemanticObservedResult,
@@ -1583,6 +1587,7 @@ function assertTaskOrder(r: Awaited<ReturnType<typeof parallelMerges>>) {
 		}
 	}
 }
+// A passing CI run took 12.7 s, 12.6 s and 9.4 s for the next three tests.
 it.each([
 	false,
 	true,
@@ -1594,7 +1599,7 @@ it.each([
 	expect(r.f.manager.lateTaskLocks).toEqual([]);
 	expect(r.f.commits.length - r.priorWrites).toBe(2);
 	expect(r.f.cleanupOnly).not.toHaveBeenCalled();
-}, 15_000);
+}, 60_000);
 it("keeps one exact cache winner for concurrent same-MERGE captures, without a deadlock or retry", async () => {
 	const r = await parallelMerges(true);
 	expect(r.f.manager.cycles).toEqual([]);
@@ -1607,7 +1612,7 @@ it("keeps one exact cache winner for concurrent same-MERGE captures, without a d
 	});
 	expect(r.f.commits.length - r.priorWrites).toBe(1);
 	expect(r.f.cleanupOnly).not.toHaveBeenCalled();
-}, 15_000);
+}, 60_000);
 
 it.each([
 	"complete",

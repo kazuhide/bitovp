@@ -63,6 +63,12 @@ export const PAGE_ACCESS_RULES: readonly PageAccessRule[] = [
 		reason: "Access history and IP policy management",
 	},
 	{
+		prefix: "/settings/operation-analytics",
+		audience: "operator",
+		minRole: "ADMIN",
+		reason: "Weekly operation aggregates for the current organization",
+	},
+	{
 		prefix: "/settings/vmaf",
 		audience: "operator",
 		minRole: "ADMIN",
@@ -100,6 +106,13 @@ export const PAGE_ACCESS_RULES: readonly PageAccessRule[] = [
 		minRole: "OPERATOR",
 		reason:
 			"the Live wizard exists to POST /api/live-channels; a VIEWER is kept on the readable channel list instead of being refused only after completing the form",
+	},
+	{
+		prefix: "/live/[id]/runs/[runId]/moq",
+		audience: "customer",
+		minRole: "OPERATOR",
+		reason:
+			"the standalone MoQ player obtains a run-bound subscribe capability from GET /api/live-channels/[id]/runs/[runId]/moq-playback at the OPERATOR floor; the server page and API enforce the same role independently",
 	},
 	{
 		prefix: "/storage",

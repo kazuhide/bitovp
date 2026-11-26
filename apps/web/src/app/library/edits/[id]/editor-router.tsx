@@ -5,7 +5,8 @@ import {
 	toCompositionDocument,
 } from "@bitovp/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useDocumentOrganization } from "@/components/providers";
 import { Button } from "@/components/ui/button";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
@@ -14,14 +15,24 @@ import type {
 	AnyEditingProjectView,
 	EditingProjectView,
 } from "@/lib/library-editing";
+import { finishReeditNavigation } from "@/lib/reedit-navigation";
 import { editingErrorMessage } from "../editing-errors";
 import { useCompositionCopy } from "./composition-copy";
 import { CompositionWorkbench } from "./composition-workbench";
 import { EditorClient, type LegacyEditingSession } from "./editor-client";
-export function EditorRouter({ id }: { id: string }) {
-	return <EditorRouterView key={id} id={id} />;
+
+type EditorRouterProps = {
+	id: string;
+	previewUnavailableMessage?: string;
+};
+export function EditorRouter(props: EditorRouterProps) {
+	return <EditorRouterView key={props.id} {...props} />;
 }
-function EditorRouterView({ id }: { id: string }) {
+function EditorRouterView({
+	id,
+	previewUnavailableMessage,
+}: EditorRouterProps) {
+	const organizationId = useDocumentOrganization();
 	const c = useCompositionCopy(),
 		{ t } = useT(),
 		canMutate = useMutationAccess("library.edits.edit"),
@@ -51,6 +62,12 @@ function EditorRouterView({ id }: { id: string }) {
 				apiFetch<AnyEditingProjectView>(`/api/library/edits/${id}`, { signal }),
 			refetchInterval: 3000,
 		});
+	const openedContentId =
+		query.isSuccess && query.data.id === id ? query.data.contentId : undefined;
+	useEffect(() => {
+		if (organizationId && openedContentId)
+			finishReeditNavigation(organizationId, id, openedContentId);
+	}, [id, openedContentId, organizationId]);
 	async function upgrade() {
 		if (
 			!canMutate ||
@@ -120,6 +137,7 @@ function EditorRouterView({ id }: { id: string }) {
 					key={id}
 					project={{ ...query.data, draft: query.data.draft }}
 					initialUndoDraft={initialUndoDraft}
+					previewUnavailableMessage={previewUnavailableMessage}
 				/>
 			) : (
 				<>

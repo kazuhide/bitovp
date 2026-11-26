@@ -15,6 +15,7 @@ import {
 	videoKeys,
 	type WizardState,
 } from "./build-plan";
+import { RenditionAddControls } from "./rendition-add-controls";
 import {
 	addVodAudio,
 	addVodVideo,
@@ -184,6 +185,227 @@ describe("rendition Add reuses complete settings", () => {
 		audio.loudness.speechThreshold = 40;
 		expect(state.audios[1]?.loudness?.speechThreshold).toBe(20);
 	});
+	it.each([
+		"default last",
+		"first",
+		"second",
+	] as const)("copies the %s duplicate-key audio row's own settings", (selection) => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const state = vodState();
+			state.audios = [
+				{
+					bitrate: 64_000,
+					rate: 48_000,
+					channelLayout: "CL_MONO",
+					extras: { name: "First" },
+				},
+				{
+					bitrate: 64_000,
+					rate: 48_000,
+					channelLayout: "CL_STEREO",
+					extras: { name: "Second" },
+				},
+			];
+			const onPatch = vi.fn();
+			renderWithQuery(
+				<LadderSection state={state} credentials={[]} onPatch={onPatch} />,
+			);
+			const source = screen.getByRole("combobox", {
+				name: "Audio settings to reuse",
+			});
+			if (selection !== "default last") {
+				const option = within(source).getByRole("option", {
+					name: selection === "first" ? /^1\. First/ : /^2\. Second/,
+				}) as HTMLOptionElement;
+				fireEvent.change(source, { target: { value: option.value } });
+			}
+			fireEvent.click(screen.getByRole("button", { name: /Add audio/ }));
+			expect(onPatch.mock.lastCall?.[0].audios[2]).toMatchObject({
+				bitrate: 64_000,
+				rate: 48_000,
+				channelLayout: selection === "first" ? "CL_MONO" : "CL_STEREO",
+			});
+			expect(error.mock.calls.flat().join(" ")).not.toMatch(/same key/);
+		} finally {
+			error.mockRestore();
+		}
+	});
+	it("keeps the chosen audio row through a key collision and subsequent edit", () => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			let state = vodState();
+			state.audios = [
+				{
+					bitrate: 64_000,
+					rate: 48_000,
+					channelLayout: "CL_MONO",
+					extras: { name: "First" },
+				},
+				{
+					bitrate: 128_000,
+					rate: 48_000,
+					channelLayout: "CL_STEREO",
+					extras: { name: "Second" },
+				},
+				{
+					bitrate: 192_000,
+					rate: 48_000,
+					channelLayout: "CL_5_1",
+					extras: { name: "Last" },
+				},
+			];
+			const onPatch = vi.fn();
+			const view = renderWithQuery(
+				<LadderSection state={state} credentials={[]} onPatch={onPatch} />,
+			);
+			const source = screen.getByRole("combobox", {
+				name: "Audio settings to reuse",
+			});
+			const second = within(source).getByRole("option", {
+				name: /^2\. Second/,
+			}) as HTMLOptionElement;
+			fireEvent.change(source, { target: { value: second.value } });
+			for (const bitrate of [64_000, 256_000]) {
+				state = {
+					...state,
+					audios: state.audios.map((audio, index) =>
+						index === 1 ? { ...audio, bitrate } : audio,
+					),
+				};
+				view.rerender(
+					<LadderSection state={state} credentials={[]} onPatch={onPatch} />,
+				);
+				fireEvent.click(screen.getByRole("button", { name: /Add audio/ }));
+				expect(onPatch.mock.lastCall?.[0].audios[3]).toMatchObject({
+					bitrate,
+					rate: 48_000,
+					channelLayout: "CL_STEREO",
+				});
+			}
+			const [first, chosen, last] = state.audios;
+			if (!first || !chosen || !last)
+				throw new Error("Expected three audio fixtures");
+			view.rerender(
+				<LadderSection
+					state={{ ...state, audios: [chosen, last, first] }}
+					credentials={[]}
+					onPatch={onPatch}
+				/>,
+			);
+			fireEvent.click(screen.getByRole("button", { name: /Add audio/ }));
+			expect(onPatch.mock.lastCall?.[0].audios[3]).toMatchObject({
+				bitrate: 256_000,
+				rate: 48_000,
+				channelLayout: "CL_STEREO",
+			});
+			expect(error.mock.calls.flat().join(" ")).not.toMatch(/same key/);
+		} finally {
+			error.mockRestore();
+		}
+	});
+	it("keeps a unique-key audio choice across reordering and falls back after removal", () => {
+		const state = vodState();
+		state.audios = [
+			{
+				bitrate: 64_000,
+				rate: 48_000,
+				channelLayout: "CL_MONO",
+				extras: { name: "First" },
+			},
+			{
+				bitrate: 128_000,
+				rate: 48_000,
+				channelLayout: "CL_STEREO",
+				extras: { name: "Second" },
+			},
+			{
+				bitrate: 192_000,
+				rate: 48_000,
+				channelLayout: "CL_5_1",
+				extras: { name: "Third" },
+			},
+		];
+		const onPatch = vi.fn();
+		const view = renderWithQuery(
+			<LadderSection state={state} credentials={[]} onPatch={onPatch} />,
+		);
+		const source = screen.getByRole("combobox", {
+			name: "Audio settings to reuse",
+		});
+		const second = within(source).getByRole("option", {
+			name: /^2\. Second/,
+		}) as HTMLOptionElement;
+		fireEvent.change(source, { target: { value: second.value } });
+		const [first, chosen, last] = state.audios;
+		if (!first || !chosen || !last)
+			throw new Error("Expected three audio fixtures");
+		view.rerender(
+			<LadderSection
+				state={{ ...state, audios: [chosen, first, last] }}
+				credentials={[]}
+				onPatch={onPatch}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: /Add audio/ }));
+		expect(onPatch.mock.lastCall?.[0].audios[3]).toMatchObject({
+			bitrate: 128_000,
+			channelLayout: "CL_STEREO",
+		});
+		view.rerender(
+			<LadderSection
+				state={{ ...state, audios: [first, last] }}
+				credentials={[]}
+				onPatch={onPatch}
+			/>,
+		);
+		fireEvent.click(screen.getByRole("button", { name: /Add audio/ }));
+		expect(onPatch.mock.lastCall?.[0].audios[2]).toMatchObject({
+			bitrate: 192_000,
+			channelLayout: "CL_5_1",
+		});
+	});
+	it("falls back to the last row after removal from an ambiguous copy selection", () => {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const onAdd = vi.fn();
+			const view = renderWithQuery(
+				<RenditionAddControls
+					kind="audio"
+					label="Add audio"
+					onAdd={onAdd}
+					choices={[
+						{ key: "same", index: 0, label: "First" },
+						{ key: "same", index: 1, label: "Second" },
+						{ key: "last", index: 2, label: "Last" },
+					]}
+				/>,
+			);
+			const source = screen.getByRole("combobox", {
+				name: "Audio settings to reuse",
+			});
+			const first = within(source).getByRole("option", {
+				name: "First",
+			}) as HTMLOptionElement;
+			fireEvent.change(source, { target: { value: first.value } });
+			view.rerender(
+				<RenditionAddControls
+					kind="audio"
+					label="Add audio"
+					onAdd={onAdd}
+					choices={[
+						{ key: "same", index: 0, label: "Second" },
+						{ key: "last", index: 1, label: "Last" },
+					]}
+				/>,
+			);
+			fireEvent.click(screen.getByRole("button", { name: "Add audio" }));
+			expect(onAdd).toHaveBeenLastCalledWith(1);
+			expect(error.mock.calls.flat().join(" ")).not.toMatch(/same key/);
+		} finally {
+			error.mockRestore();
+		}
+	});
 	it("Live Add reuses preset, codec tuning, audio and container settings independently", () => {
 		const state = liveState();
 		const onPatch = vi.fn();
@@ -236,7 +458,13 @@ describe("rendition Add reuses complete settings", () => {
 				name: "Audio settings to reuse",
 			});
 			fireEvent.change(videoSource, {
-				target: { value: "v360" },
+				target: {
+					value: (
+						within(videoSource).getByRole("option", {
+							name: /^1\./,
+						}) as HTMLOptionElement
+					).value,
+				},
 			});
 			fireEvent.click(addVideo);
 			expect(onPatch.mock.lastCall?.[0].videos[2]).toMatchObject({
@@ -245,7 +473,13 @@ describe("rendition Add reuses complete settings", () => {
 			});
 			expect(onPatch.mock.lastCall?.[0].videos[2].h265).toBeUndefined();
 			fireEvent.change(audioSource, {
-				target: { value: "a64" },
+				target: {
+					value: (
+						within(audioSource).getByRole("option", {
+							name: /^1\./,
+						}) as HTMLOptionElement
+					).value,
+				},
 			});
 			fireEvent.click(addAudio);
 			expect(onPatch.mock.lastCall?.[0].audios[2]).toMatchObject({

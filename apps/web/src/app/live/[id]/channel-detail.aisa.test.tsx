@@ -219,7 +219,11 @@ function renderWithQuery(node: ReactNode, cachedSession?: unknown) {
 	return rendered;
 }
 
-function fixture(imported: boolean, status = "RUNNING") {
+function fixture(
+	imported: boolean,
+	status = "RUNNING",
+	error: string | null = null,
+) {
 	const plan = buildLiveChannelPlan({
 		...structuredClone(DEFAULT_LIVE_WIZARD_STATE),
 		name: "Court 1",
@@ -253,7 +257,7 @@ function fixture(imported: boolean, status = "RUNNING") {
 		endedAt: null,
 		programStartAt: null,
 		programEndAt: null,
-		error: null,
+		error,
 		lastHeartbeat: null,
 		lastHeartbeatAt: null,
 		stepLog: [] as unknown[],
@@ -267,7 +271,7 @@ function fixture(imported: boolean, status = "RUNNING") {
 		origin: imported ? "AISA_IMPORTED" : "MANAGED",
 		name: "Court 1",
 		status,
-		error: null,
+		error,
 		plan: imported ? { kind: "AISA_IMPORTED" } : plan,
 		bitmovinEncodingId: encodingId,
 		bitmovinAccountId: accountId,
@@ -371,6 +375,45 @@ it("shows an imported completed run in the normal detail route with read-only hi
 			`${oldAnalysis}:${oldEncoding}`,
 		),
 	);
+});
+
+it("keeps an imported failed final run read-only while retaining its bound result and recorded failure", async () => {
+	const originalRow = fixture(
+		true,
+		"ERROR",
+		"Imported AISA run ended with a provider error",
+	);
+	const snapshot = {
+		sequence: 20,
+		isFinal: true,
+		keyMoments: [{ id: "goal" }],
+	};
+	const run = {
+		...originalRow.currentRun,
+		liveChannelId: ID,
+		seq: 1,
+		aisaStatus: "ERROR",
+		providerStatus: "ERROR",
+		aisaSnapshot: snapshot,
+		error: "Imported AISA run ended with an error",
+	};
+	const row = { ...originalRow, error: run.error, currentRun: run };
+	respond(row);
+	renderWithQuery(<ChannelDetail id={ID} initialAisaRun={run} />);
+	expect(await screen.findByTestId("aisa-analysis")).toHaveTextContent(
+		`${analysisId}:${encodingId}`,
+	);
+	expect(seen.snapshots).toHaveBeenCalledWith(snapshot);
+	expect(screen.getByText(/Its settings cannot be changed/)).toBeVisible();
+	expect(
+		screen.queryByRole("button", { name: /Start a new broadcast/ }),
+	).toBeNull();
+	expect(screen.queryByRole("button", { name: "Stop channel" })).toBeNull();
+	expect(
+		apiFetch.mock.calls.some(
+			([, init]) => init?.method && init.method !== "GET",
+		),
+	).toBe(false);
 });
 
 it("keeps managed lifecycle controls and read-only operational sections", async () => {
@@ -500,7 +543,12 @@ it.each([
 	expect(document.querySelectorAll("#sec-analysis")).toHaveLength(1);
 	expect(screen.queryByText("AISA Live Preview")).toBeNull();
 	expect(screen.getByRole("region", { name: "Channel status" })).toBeVisible();
-	expect(screen.getByRole("region", { name: "Next action" })).toBeVisible();
+	if (imported) {
+		expect(screen.getByRole("region", { name: "Next action" })).toBeVisible();
+	} else {
+		expect(screen.getByText("Recorded RUNNING")).toBeVisible();
+		expect(screen.queryByRole("region", { name: "Next action" })).toBeNull();
+	}
 	expect(
 		screen.getByRole("heading", { name: "Delivery status" }),
 	).toBeVisible();
@@ -519,13 +567,18 @@ it.each([
 		expect(document.getElementById(section), section).toBeInTheDocument();
 	}
 	expect(
-		screen.getByText("Alerts, manifests and slate reservations"),
+		screen.getByRole("button", { name: "Channel state — more information" }),
 	).toBeVisible();
 	expect(
-		screen.getByText(
-			"Raw telemetry, past runs, and the settings you change once.",
-		),
-	).toBeVisible();
+		screen.getByRole("button", {
+			name: "Diagnostics & history — more information",
+		}),
+	).toHaveAccessibleDescription(
+		"Raw telemetry, past runs, and the settings you change once.",
+	);
+	expect(
+		screen.queryByText("Alerts, manifests and slate reservations"),
+	).toBeNull();
 	if (!imported) expect(screen.queryByText("③ Waiting for input")).toBeNull();
 	expect(screen.getByTestId("aisa-analysis")).not.toBeVisible();
 	await waitFor(() => {
@@ -580,15 +633,9 @@ it("reports failed monitoring reads as unavailable rather than healthy zero", as
 	});
 	renderWithQuery(<ChannelDetail id={ID} />);
 	await screen.findByRole("region", { name: "Channel status" });
-	expect(
-		document.querySelector('[data-status-cell="alerts"]'),
-	).toHaveTextContent("unknown");
-	expect(
-		document.querySelector('[data-status-cell="feeders"]'),
-	).toHaveTextContent("unknown");
-	expect(
-		document.querySelector('[data-status-cell="next-event"]'),
-	).toHaveTextContent("could not be read");
+	for (const key of ["alerts", "feeders", "next-event"]) {
+		expect(document.querySelector(`[data-status-cell="${key}"]`)).toBeNull();
+	}
 });
 
 it("withholds cached operator telemetry and raw logs while a fresh session is pending, then permits safe viewer monitoring", async () => {
@@ -779,9 +826,7 @@ it("shows unresolved AISA playback availability without a zero manifest count", 
 	respond(row);
 	renderWithQuery(<ChannelDetail id={ID} />);
 	await screen.findByRole("region", { name: "Channel status" });
-	expect(
-		document.querySelector('[data-status-cell="playable"]'),
-	).toHaveTextContent("unknown");
+	expect(document.querySelector('[data-status-cell="playable"]')).toBeNull();
 	expect(document.getElementById("sec-manifests")).toHaveTextContent(
 		"could not be read",
 	);
@@ -1174,8 +1219,14 @@ function expectPrivateOwnerDataWithheld() {
 		lastHeartbeat: null,
 		heartbeatReception: undefined,
 		encoderIp: null,
+		monitoringAllowed: false,
 		warningEvidenceAvailable: false,
 	});
+	const lifecycle = screen.getByRole("figure", { name: "Encoder lifecycle" });
+	expect(lifecycle).toHaveTextContent("No input data");
+	expect(lifecycle.querySelector('[aria-current="step"]')).toBeNull();
+	expect(screen.queryByText("Waiting for input data")).toBeNull();
+	expect(screen.queryByRole("region", { name: "Next action" })).toBeNull();
 	expect(latestPrivateProps("LiveArchivePanel")).toMatchObject({
 		plan: null,
 		run: null,
@@ -1196,6 +1247,7 @@ function expectPrivateOwnerDataWithheld() {
 it.each([
 	{ role: "ADMIN" as const, graph: "managed" },
 	{ role: "OPERATOR" as const, graph: "managed" },
+	{ role: "VIEWER" as const, graph: "managed" },
 	{ role: "ADMIN" as const, graph: "unreadable" },
 	{ role: "OPERATOR" as const, graph: "unreadable" },
 ])("withholds every private owner DTO prop while pending and after another fresh $role with $graph graph, then resumes safe monitoring", async ({
@@ -1285,6 +1337,11 @@ it.each([
 			"CONNECTED",
 		),
 	);
+	expect(
+		screen
+			.getByRole("figure", { name: "Encoder lifecycle" })
+			.querySelector('[aria-current="step"]'),
+	).toHaveTextContent("Input connected");
 	expect(latestPrivateProps("DeliveryStatusPanel").lastHeartbeat).toEqual(
 		safeHeartbeat,
 	);
@@ -1297,6 +1354,27 @@ it.each([
 	for (const marker of privateOwnerMarkers)
 		expect(JSON.stringify(seen.privateProps.mock.calls)).not.toContain(marker);
 	expect(seen.bindings).toEqual([]);
+});
+
+it("keeps a running imported encoder read-only when input telemetry is withheld", async () => {
+	const row = fixture(true);
+	const at = new Date().toISOString();
+	Object.assign(row, { serverNow: at });
+	Object.assign(row.currentRun, {
+		providerStatus: "RUNNING",
+		providerStatusObservedAt: at,
+	});
+	respond(row, "VIEWER");
+	renderWithQuery(<ChannelDetail id={ID} />);
+	const lifecycle = await screen.findByRole("figure", {
+		name: "Encoder lifecycle",
+	});
+	expect(lifecycle).toHaveTextContent("No input data");
+	expect(lifecycle.querySelector('[aria-current="step"]')).toBeNull();
+	const guidance = screen.getByRole("region", { name: "Next action" });
+	expect(guidance).toHaveAttribute("data-next-action", "READ_ONLY");
+	expect(guidance.querySelector("a")).toHaveAttribute("href", "#sec-runs");
+	expect(screen.queryByText("Waiting for input data")).toBeNull();
 });
 
 it("retains the private operational DTO for the same freshly authenticated owner", async () => {

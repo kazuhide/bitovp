@@ -1,18 +1,22 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/api";
 import { renderWithQuery } from "@/test/render";
 import { GenerationProgress } from "./generation-progress";
 
 const mocks = vi.hoisted(() => ({
 	api: vi.fn(),
 	push: vi.fn(),
+	replace: vi.fn(),
 	permitted: true,
 }));
 vi.mock("@/lib/api", async (original) => ({
 	...(await original<object>()),
 	apiFetch: mocks.api,
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
+vi.mock("next/navigation", () => ({
+	useRouter: () => ({ push: mocks.push, replace: mocks.replace }),
+}));
 vi.mock("@/lib/auth/use-role-access", () => ({
 	useMutationAccess: () => mocks.permitted,
 }));
@@ -54,6 +58,7 @@ const result = () => ({
 beforeEach(() => {
 	mocks.api.mockReset();
 	mocks.push.mockReset();
+	mocks.replace.mockReset();
 	mocks.permitted = true;
 });
 it.each([
@@ -69,11 +74,41 @@ it.each([
 	["STORY_ENGINE_UNAVAILABLE", "Story selection is unavailable."],
 	["STORY_GRAPH_INVALID", "The story analysis could not be verified."],
 	["STORY_MODEL_CHANGED", "The story analysis model has changed."],
+	[
+		"LOCAL_STORY_NO_FITTING_PLAN",
+		"A connected edit could not fit the requested length.",
+	],
 ])("shows a safe explanation for %s without changing policy automatically", async (error, message) => {
 	mocks.api.mockResolvedValue({ ...task("ERROR"), renderMode: "DRAFT", error });
 	renderWithQuery(<GenerationProgress id={id} />);
 	await screen.findByText((text) => text.startsWith(message));
 	expect(mocks.api.mock.calls.every(([, init]) => !init?.method)).toBe(true);
+});
+it.each([
+	[
+		"en",
+		"LOCAL_STORY_SCENE_TRANSCRIPT_REQUIRED",
+		"Could not transcribe the selected scene. Check the source audio and transcription settings, then retry.",
+	],
+	[
+		"ja",
+		"LOCAL_STORY_SCENE_TRANSCRIPT_REQUIRED",
+		"選択したシーンの音声を文字起こしできませんでした。素材の音声と文字起こしの設定を確認し、再試行してください。",
+	],
+	[
+		"en",
+		"LOCAL_STORY_TRANSCRIPT_REQUIRED",
+		"Trailer planning requires a transcript for the full source. Check the transcription settings and try again.",
+	],
+	[
+		"ja",
+		"LOCAL_STORY_TRANSCRIPT_REQUIRED",
+		"予告編の作成には、素材の全編の文字起こしが必要です。文字起こしの設定を確認してください。",
+	],
+] as const)("shows the transcript guidance for %s %s", async (locale, error, message) => {
+	mocks.api.mockResolvedValue({ ...task("ERROR"), renderMode: "DRAFT", error });
+	renderWithQuery(<GenerationProgress id={id} />, locale);
+	expect(await screen.findByText(message)).toBeInTheDocument();
 });
 it("shows processing phases and cancels against the current task", async () => {
 	mocks.api.mockImplementation(async (_url: string, init?: RequestInit) =>
@@ -115,6 +150,19 @@ it("links every generated result without claiming that the MP4 render finished",
 	expect(screen.getByText("29.00s / 30.00s")).toBeInTheDocument();
 	expect(screen.getByText(/Fixture-authored metadata/)).toBeInTheDocument();
 });
+it("keeps completed draft duration and warnings visible when opened from history", async () => {
+	mocks.api.mockResolvedValue(
+		task("SUCCEEDED", { ...result(), renderMode: "DRAFT" }),
+	);
+	renderWithQuery(<GenerationProgress id={id} showJobDetails />);
+	expect(await screen.findByText("29.00s / 30.00s")).toBeInTheDocument();
+	expect(screen.getByText(/Fixture-authored metadata/)).toBeInTheDocument();
+	expect(screen.getByRole("link", { name: /Open editor/ })).toHaveAttribute(
+		"href",
+		`/library/edits/${projectId}`,
+	);
+	expect(mocks.replace).not.toHaveBeenCalled();
+});
 it("uses one fresh child request key across unknown retry responses", async () => {
 	mocks.api.mockImplementation(async (_url: string, init?: RequestInit) => {
 		if (init?.method === "POST") throw new TypeError("private detail");
@@ -150,6 +198,52 @@ it("uses one fresh child request key across unknown retry responses", async () =
 	await waitFor(() =>
 		expect(mocks.push).toHaveBeenCalledWith(`/library/generations/${childId}`),
 	);
+});
+it.each([
+	[503, "CLIP_EDITING_UNAVAILABLE", /editing service.*unavailable/i],
+	[503, "LOCAL_STORY_ENGINE_UNAVAILABLE", /Automatic editing.*unavailable/i],
+	[401, "private session location", /sign in/i],
+	[403, "private permission detail", /permission/i],
+] as const)("shows a safe recovery explanation when retry returns %s %s", async (status, code, expected) => {
+	mocks.api.mockImplementation(async (_url: string, init?: RequestInit) => {
+		if (init?.method === "POST") throw new ApiError(status, code);
+		return task("ERROR");
+	});
+	renderWithQuery(<GenerationProgress id={id} />);
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Retry as a new task" }),
+	);
+	expect(await screen.findByRole("alert")).toHaveTextContent(expected);
+	expect(screen.getByRole("alert")).not.toHaveTextContent("private");
+});
+
+it.each([
+	401, 403,
+])("explains %s when cancellation needs authentication or permission", async (status) => {
+	mocks.api.mockImplementation(async (_url: string, init?: RequestInit) => {
+		if (init?.method === "POST")
+			throw new ApiError(status, "private cancellation detail");
+		return task();
+	});
+	renderWithQuery(<GenerationProgress id={id} />);
+	fireEvent.click(
+		await screen.findByRole("button", { name: "Cancel generation" }),
+	);
+	expect(await screen.findByRole("alert")).toHaveTextContent(
+		status === 401 ? /sign in/i : /permission/i,
+	);
+	expect(screen.getByRole("alert")).not.toHaveTextContent("private");
+});
+
+it.each([
+	401, 403,
+])("explains %s when the progress data cannot be read", async (status) => {
+	mocks.api.mockRejectedValue(new ApiError(status, "private storage location"));
+	renderWithQuery(<GenerationProgress id={id} />);
+	expect(await screen.findByRole("alert")).toHaveTextContent(
+		status === 401 ? /sign in/i : /permission/i,
+	);
+	expect(screen.getByRole("alert")).not.toHaveTextContent("private");
 });
 it("allows viewers to read results while withholding cancel and retry", async () => {
 	mocks.permitted = false;

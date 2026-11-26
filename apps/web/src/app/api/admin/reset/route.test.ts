@@ -21,6 +21,7 @@ import {
 	ENCODER_POINTER_RECORD_LIMIT,
 	RESET_BLOCKING_CHANNEL_STATUSES,
 	RESET_BLOCKING_JOB_STATUSES,
+	RESET_PRESERVES,
 	RESET_STOPPED_CHANNEL_STATUSES,
 	RESET_STOPPED_JOB_STATUSES,
 } from "@/lib/server/reset";
@@ -134,7 +135,9 @@ const MODELS = [
 	"webhookEvent",
 	"auditLog",
 	"accessEvent",
+	"operationAttempt",
 	"storageInspection",
+	"vodInputPreviewTask",
 	"watchedObject",
 	"alertEvent",
 	"liveHeartbeat",
@@ -150,8 +153,14 @@ const MODELS = [
 	"liveChannel",
 	"encodingJob",
 ];
+const EXPERIMENT_MODELS = [
+	"encodingExperimentCampaign",
+	"encodingExperimentTrial",
+	"encodingExperimentBatch",
+];
 const PRESERVES = [
 	...RESET_PROTECTED_EDITING_MODELS,
+	...EXPERIMENT_MODELS,
 	"createRequest",
 	// Internal ownership ledgers must survive reset until external cleanup completes.
 	"resetCleanupTask",
@@ -367,6 +376,7 @@ vi.mock("@/lib/server/queue", () => {
 		getVmafQueue: q,
 		getFeederQueue: q,
 		getStorageInspectQueue: q,
+		getVodInputPreviewQueue: q,
 		getSlateNormalizeQueue: q,
 		getNotifyQueue: q,
 	};
@@ -520,21 +530,29 @@ describe("POST /api/admin/reset (ledger #130)", () => {
 			postRequest({ confirm: "RESET", categories: ["auditHistory"] }),
 		);
 		expect(res.status).toBe(200);
-		expect(deleted).toEqual(["auditLog", "accessEvent"]);
-		expect(updated).toEqual([]);
+		expect(deleted).toEqual(["auditLog", "accessEvent", "operationAttempt"]);
+		expect(updated).toEqual([
+			[
+				"appSetting",
+				{
+					where: { key: "featureFlags" },
+					data: { updatedAt: expect.any(Date) },
+				},
+			],
+		]);
 		expect(getJobs).not.toHaveBeenCalled();
 		expect(await res.json()).toMatchObject({
-			deletedCounts: [{ category: "auditHistory", count: 2 }],
+			deletedCounts: [{ category: "auditHistory", count: 3 }],
 			requiresSetup: false,
 			providerResources: { pointers: [], total: 0, truncated: false },
 		});
 	});
-	it("selecting every organization category keeps all global identities and platform settings", async () => {
+	it("selecting every organization category keeps global data and encoding experiment records", async () => {
 		const response = await POST(
 			postRequest({ confirm: "RESET", categories: RESET_CATEGORIES }),
 		);
 		expect(response.status).toBe(200);
-		for (const model of RESET_GLOBAL_MODELS) {
+		for (const model of [...RESET_GLOBAL_MODELS, ...EXPERIMENT_MODELS]) {
 			expect(deleted).not.toContain(model);
 			expect(
 				(prisma[model] as { deleteMany: ReturnType<typeof vi.fn> }).deleteMany,
@@ -692,7 +710,7 @@ describe("POST /api/admin/reset (ledger #130)", () => {
 			expect(
 				(prisma[evidence] as { deleteMany: { mock: { calls: unknown[] } } })
 					.deleteMany.mock.calls,
-				`${evidence} is recovery evidence and must survive a reset`,
+				`${evidence} must survive a reset`,
 			).toHaveLength(0);
 		}
 		// Children before parents: results before jobs, runs before channels.
@@ -709,8 +727,8 @@ describe("POST /api/admin/reset (ledger #130)", () => {
 
 	it("drains the queues and writes the audit row AFTER the delete, carrying the counts", async () => {
 		await POST(postRequest({ confirm: "RESET" }));
-		expect(getJobs).toHaveBeenCalledTimes(7);
-		expect(removeJob).toHaveBeenCalledTimes(14);
+		expect(getJobs).toHaveBeenCalledTimes(8);
+		expect(removeJob).toHaveBeenCalledTimes(16);
 		expect(forbiddenQueueOperation).not.toHaveBeenCalled();
 		// review-2 I1: NOT obliterate — it deletes the queue's repeat keys, and
 		// the live-heartbeat scheduler is registered there once, at worker
@@ -1079,7 +1097,7 @@ describe("GET /api/admin/reset (the preview)", () => {
 		// reset.ts:686 is the idiom users/[id] and setup were modelled on;
 		// its own isolation option was never pinned either. All three now
 		// have a from-mock discriminator; the two-connection race proof stays
-		// a PROBE_DATABASE_URL integration deferral.
+		// deferred to a PostgreSQL integration test.
 		await POST(postRequest({ confirm: "RESET" }));
 		expect(txOptions?.isolationLevel).toBe("Serializable");
 	});
@@ -1193,6 +1211,7 @@ describe("the reset's guards (review-265 130-A1/A3/A4)", () => {
 		const models = [...schema.matchAll(/^model (\w+) \{/gm)]
 			.map((m) => m[1] ?? "")
 			.map((name) => name.charAt(0).toLowerCase() + name.slice(1));
+		expect(RESET_PRESERVES).toEqual(expect.arrayContaining(EXPERIMENT_MODELS));
 		const classified = new Set([...MODELS, ...KEEPS, ...PRESERVES]);
 		expect(models.filter((m) => !classified.has(m))).toEqual([]);
 		expect([...classified].filter((m) => !models.includes(m))).toEqual([]);

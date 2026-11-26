@@ -37,7 +37,7 @@ export const nativeVmafReceiptSchema = z
 		frames: integer.positive(),
 		width: dimension,
 		height: dimension,
-		bitDepth: z.literal(10),
+		bitDepth: z.union([z.literal(8), z.literal(10)]),
 		requestedDeviceIndex: integer,
 		referenceSha256: sha,
 		distortedSha256: sha,

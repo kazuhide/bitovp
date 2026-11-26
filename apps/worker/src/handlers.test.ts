@@ -18,6 +18,7 @@ function deps() {
 		feeder: vi.fn().mockResolvedValue({ status: "PUSHING" }),
 		vmaf: vi.fn().mockResolvedValue({ status: "FINISHED" }),
 		storageInspect: vi.fn().mockResolvedValue({ status: "FINISHED" }),
+		vodInputPreview: vi.fn().mockResolvedValue({ status: "SUCCEEDED" }),
 		notify: vi.fn().mockResolvedValue([]),
 		startupProbe: vi.fn().mockResolvedValue({ status: "DONE" }),
 		slateNormalize: vi.fn().mockResolvedValue({ status: "READY" }),

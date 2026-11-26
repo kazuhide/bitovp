@@ -104,6 +104,55 @@ describe("owned native receipt contract", () => {
 		change(raw);
 		expect(() => verifyNativeReceipt(raw, expected)).toThrow(/NATIVE_RECEIPT/);
 	});
+	it("takes a receipt only for the comparison that the worker asked for", () => {
+		// The pictures have the bit depth that the worker named: the reference's.
+		const eight = { ...nativeReceipt(), bitDepth: 8 };
+		expect(
+			verifyNativeReceipt(eight, { ...expected, bitDepth: 8 }).scoring.bitDepth,
+		).toBe(8);
+		expect(
+			verifyNativeReceipt(nativeReceipt(), expected).scoring.bitDepth,
+		).toBe(10);
+		expect(() => verifyNativeReceipt(eight, expected)).toThrow(
+			"NATIVE_RECEIPT_COMPARISON_MISMATCH",
+		);
+		expect(() =>
+			verifyNativeReceipt(nativeReceipt(), { ...expected, bitDepth: 8 }),
+		).toThrow("NATIVE_RECEIPT_COMPARISON_MISMATCH");
+		expect(() =>
+			verifyNativeReceipt({ ...nativeReceipt(), bitDepth: 12 }, expected),
+		).toThrow("NATIVE_RECEIPT_SCHEMA_MISMATCH");
+
+		// libvmaf's defaults, as the scorer writes them for a run that declares
+		// nothing to CAMBI.
+		const cambi = (options: Record<string, string>) => {
+			const raw = nativeReceipt();
+			fixtureValue(raw.extractors, 0).options = options;
+			return raw;
+		};
+		const undeclared = {
+			enc_width: "0",
+			enc_height: "0",
+			enc_bitdepth: "0",
+			window_size: "65",
+		};
+		expect(
+			verifyNativeReceipt(cambi(undeclared), expected).scoring.bitDepth,
+		).toBe(10);
+		// A scorer built from an earlier source declares the encode in every run.
+		const declarations: Record<string, string>[] = [
+			{ enc_width: "320", enc_height: "180", enc_bitdepth: "8" },
+			{ ...undeclared, enc_width: "640" },
+			{ ...undeclared, enc_height: "360" },
+			{ ...undeclared, enc_bitdepth: "8" },
+			{ enc_bitdepth: "10" },
+		];
+		for (const declared of declarations)
+			expect(
+				() => verifyNativeReceipt(cambi(declared), expected),
+				JSON.stringify(declared),
+			).toThrow("NATIVE_RECEIPT_COMPARISON_MISMATCH");
+	});
 	it("pins both the official revision and a recorded owned source hash", () => {
 		expect(
 			nativeSourceFromVersion(

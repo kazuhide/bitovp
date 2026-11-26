@@ -1,6 +1,11 @@
 "use client";
 
-import { DEFAULT_VMAF_MODEL } from "@bitovp/core";
+import {
+	DEFAULT_VMAF_MODEL,
+	HDR_VMAF_MODELS,
+	type HdrReferenceColor,
+	isHdrVmafModel,
+} from "@bitovp/core";
 import {
 	useInfiniteQuery,
 	useMutation,
@@ -87,16 +92,20 @@ export function VmafLabClient() {
 		() => [...selected].filter((id) => selectableIds.has(id)),
 		[selected, selectableIds],
 	);
-	// Only FINISHED reports carry frame results to overlay.
+	// Only FINISHED reports carry measurement results to compare.
 	const comparableIds = useMemo(() => {
 		const finished = new Set(
-			items
-				.filter((j) => j.status === "FINISHED" && j.kind !== "BANDING")
-				.map((j) => j.id),
+			items.filter((j) => j.status === "FINISHED").map((j) => j.id),
 		);
 		return selectedIds.filter((id) => finished.has(id));
 	}, [items, selectedIds]);
 	const overCompareCap = comparableIds.length > MAX_COMPARE;
+	const mixedComparisonKinds =
+		new Set(
+			items
+				.filter((job) => comparableIds.includes(job.id))
+				.map((job) => job.kind ?? "VMAF"),
+		).size > 1;
 
 	function toggleSelect(id: string) {
 		setSelected((prev) => {
@@ -115,7 +124,7 @@ export function VmafLabClient() {
 	}
 
 	function compareSelected() {
-		if (comparableIds.length >= 2 && !overCompareCap) {
+		if (comparableIds.length >= 2 && !overCompareCap && !mixedComparisonKinds) {
 			router.push(`/qc/compare?jobs=${comparableIds.join(",")}`);
 		}
 	}
@@ -167,13 +176,17 @@ export function VmafLabClient() {
 					) : null}
 					<Button
 						size="sm"
-						disabled={comparableIds.length < 2 || overCompareCap}
+						disabled={
+							comparableIds.length < 2 || overCompareCap || mixedComparisonKinds
+						}
 						title={
-							overCompareCap
-								? t("uiX.upToNReportsCompared", { max: MAX_COMPARE })
-								: comparableIds.length < 2
-									? t("qc.needTwoFinished")
-									: undefined
+							mixedComparisonKinds
+								? t("banding.compareMixedKinds")
+								: overCompareCap
+									? t("uiX.upToNReportsCompared", { max: MAX_COMPARE })
+									: comparableIds.length < 2
+										? t("qc.needTwoFinished")
+										: undefined
 						}
 						onClick={compareSelected}
 					>
@@ -496,16 +509,22 @@ function MeasureExistingSection() {
 	const [metric, setMetric] = useState<"VMAF" | "BANDING" | "COMBINED">("VMAF");
 	const banding = metric !== "VMAF";
 	const bandingOnly = metric === "BANDING";
+	const hdr = !bandingOnly && isHdrVmafModel(model);
 	const [profileId, setProfileId] = useState("");
 	const [localMode, setLocalMode] = useState<"CPU" | "AUTO">("CPU");
 	const [budgetUsd, setBudgetUsd] = useState("");
-	const [source, setSource] = useState<"" | "QC_MIRROR" | "OUTPUT_MP4">("");
+	const [source, setSource] = useState<
+		"" | "QC_MIRROR" | "OUTPUT_MP4" | "OUTPUT_HLS"
+	>("");
+	const [hdrReferenceColor, setHdrReferenceColor] = useState<
+		HdrReferenceColor | ""
+	>("");
 	const [psnr, setPsnr] = useState<"" | "true" | "false">("");
 	const [measurementMethod, setMeasurementMethod] = useState<
 		"" | "FRAME_INDEX_BT709_10BIT"
 	>("");
 	const frameIndexAvailable =
-		!banding && profileId !== "" && source === "OUTPUT_MP4";
+		!hdr && !banding && profileId !== "" && source === "OUTPUT_MP4";
 	const profiles = useQuery({
 		queryKey: ["vmaf-compute-profiles"],
 		queryFn: () =>
@@ -553,14 +572,20 @@ function MeasureExistingSection() {
 						: {
 								model,
 								...(banding ? { banding: true } : {}),
-								...(psnr !== "" ? { psnr: psnr === "true" } : {}),
+								...(hdr
+									? { psnr: false }
+									: psnr !== ""
+										? { psnr: psnr === "true" }
+										: {}),
 							}),
 					...(source ? { source } : {}),
+					...(hdr && hdrReferenceColor ? { hdrReferenceColor } : {}),
 					...(frameIndexAvailable && measurementMethod
 						? { measurementMethod }
 						: {}),
-					execution:
-						profileId === ""
+					execution: hdr
+						? { backend: "LOCAL", localMode: "CPU" }
+						: profileId === ""
 							? { backend: "LOCAL", localMode }
 							: { backend: "CLOUD", profileId, budgetUsd: cloudBudget },
 				}),
@@ -655,16 +680,24 @@ function MeasureExistingSection() {
 								value={metric}
 								disabled={measure.isPending}
 								onChange={(e) => {
-									setMetric(e.target.value as typeof metric);
+									const next = e.target.value as typeof metric;
+									setMetric(next);
+									if (next === "BANDING" && isHdrVmafModel(model)) {
+										setModel(DEFAULT_VMAF_MODEL);
+										setSource("");
+										setHdrReferenceColor("");
+									}
 									measure.reset();
 								}}
 							>
 								<option value="VMAF">VMAF</option>
-								<option value="BANDING">{t("banding.only")}</option>
+								<option value="BANDING" disabled={hdr}>
+									{t("banding.only")}
+								</option>
 								<option value="COMBINED">{t("banding.combined")}</option>
 							</SelectNative>
 						</Field>
-						{banding ? (
+						{banding && !hdr ? (
 							<p className="mt-1 text-xs text-zinc-500">{t("banding.hint")}</p>
 						) : null}
 					</div>
@@ -675,15 +708,61 @@ function MeasureExistingSection() {
 									id="lab-measure-model"
 									value={model}
 									disabled={measure.isPending}
-									onChange={(e) => setModel(e.target.value)}
+									onChange={(e) => {
+										const next = e.target.value;
+										setModel(next);
+										setHdrReferenceColor("");
+										setMeasurementMethod("");
+										if (isHdrVmafModel(next)) {
+											setSource("OUTPUT_HLS");
+											setProfileId("");
+											setLocalMode("CPU");
+											setBudgetUsd("");
+											setPsnr("false");
+										} else if (source === "OUTPUT_HLS") {
+											setSource("");
+											setPsnr("");
+										}
+										measure.reset();
+									}}
 								>
-									{VMAF_MODELS.map((m) => (
+									{[
+										...VMAF_MODELS,
+										...HDR_VMAF_MODELS.map((entry) => entry.id),
+									].map((m) => (
 										<option key={m} value={m}>
 											{m}
 										</option>
 									))}
 								</SelectNative>
 							</Field>
+						</div>
+					) : null}
+					{hdr ? (
+						<div className="w-full sm:w-64">
+							<Field
+								label={t("qc.hdrReferenceColor")}
+								htmlFor="lab-measure-hdr-reference"
+							>
+								<SelectNative
+									id="lab-measure-hdr-reference"
+									value={hdrReferenceColor}
+									disabled={measure.isPending}
+									onChange={(event) =>
+										setHdrReferenceColor(
+											event.target.value as typeof hdrReferenceColor,
+										)
+									}
+								>
+									<option value="">{t("qc.hdrReferenceMetadata")}</option>
+									<option value="P3_D65_PQ_RGB_FULL">
+										{t("qc.hdrReferenceP3")}
+									</option>
+								</SelectNative>
+							</Field>
+							<p className="mt-1 text-xs text-zinc-500">
+								{t("qc.hdrProtocolHint")}
+							</p>
 						</div>
 					) : null}
 					<div className="w-full sm:w-64">
@@ -699,7 +778,7 @@ function MeasureExistingSection() {
 										? "lab-measure-execution-hint"
 										: undefined
 								}
-								disabled={measure.isPending}
+								disabled={measure.isPending || hdr}
 								onChange={(e) => {
 									const target = e.target.value;
 									const local = target === "" || target === ":auto";
@@ -814,7 +893,7 @@ function MeasureExistingSection() {
 								<SelectNative
 									id="lab-measure-source"
 									value={source}
-									disabled={measure.isPending}
+									disabled={measure.isPending || hdr}
 									onChange={(e) => {
 										const next = e.target.value as typeof source;
 										setSource(next);
@@ -826,9 +905,14 @@ function MeasureExistingSection() {
 										{t("qc.measureSourceMirror")}
 									</option>
 									<option value="OUTPUT_MP4">{t("qc.measureSourceMp4")}</option>
+									{hdr ? (
+										<option value="OUTPUT_HLS">
+											{t("qc.measureSourceHls")}
+										</option>
+									) : null}
 								</SelectNative>
 							</Field>
-							{!bandingOnly ? (
+							{!bandingOnly && !hdr ? (
 								<Field label={t("qc.measurePsnr")} htmlFor="lab-measure-psnr">
 									<SelectNative
 										id="lab-measure-psnr"
@@ -865,7 +949,7 @@ function MeasureExistingSection() {
 								</Field>
 							) : null}
 						</div>
-						{!bandingOnly ? (
+						{!bandingOnly && !hdr ? (
 							<p className="mt-2 text-xs text-zinc-500">
 								{t("qc.measureMethodHint")}
 							</p>

@@ -13,8 +13,17 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { pathToFileURL } from "node:url";
+import { StringDecoder } from "node:string_decoder";
 import { parseEnv } from "node:util";
+import {
+	asFailure,
+	atStep,
+	failureLines,
+	GateFailure,
+	isEntryPoint,
+	outputTail,
+	withLaterFailure,
+} from "./gate-report.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const SOCKET = "unix:///var/run/docker.sock";
@@ -25,7 +34,7 @@ export const GROUPS = [
 		directory: "packages/db",
 		files: {
 			"src/runtime-role.integration.test.ts": 1,
-			"src/tenant-db.integration.test.ts": 6,
+			"src/tenant-db.integration.test.ts": 9,
 			"src/tenant-legacy-migration.integration.test.ts": 1,
 			"src/create-request.integration.test.ts": 7,
 			"src/transaction-options.integration.test.ts": 6,
@@ -42,12 +51,18 @@ export const GROUPS = [
 		directory: "apps/web",
 		files: {
 			"src/lib/server/create-request.integration.test.ts": 3,
-			"src/lib/server/reset-live-transition-locking.integration.test.ts": 3,
-			"src/lib/server/library-catalog.integration.test.ts": 17,
-			"src/lib/server/library-editing.integration.test.ts": 27,
+			"src/lib/server/vod-input-previews.integration.test.ts": 11,
+			"src/lib/server/vod-input-favorites.integration.test.ts": 6,
+			"src/lib/server/latest-runs.integration.test.ts": 3,
+			"src/lib/server/qc-cancel.integration.test.ts": 3,
+			"src/lib/server/reset-live-probe.integration.test.ts": 3,
+			"src/lib/server/reset-live-transition-locking.integration.test.ts": 6,
+			"src/lib/server/library-catalog.integration.test.ts": 19,
+			"src/lib/server/library-editing.integration.test.ts": 31,
 			"src/lib/server/library-editing-presentation.integration.test.ts": 2,
 			"src/lib/server/library-media-tasks.integration.test.ts": 5,
 			"src/lib/server/library-media-tasks-generation.integration.test.ts": 2,
+			"src/lib/server/library-scene-search.integration.test.ts": 7,
 			"src/lib/server/job-evidence-retention.integration.test.ts": 7,
 			"src/lib/server/selected-reset-editing.integration.test.ts": 3,
 		},
@@ -61,11 +76,13 @@ export const GROUPS = [
 			"src/live/owned-transition-locking.integration.test.ts": 10,
 			"src/watch/sweep.capacity.integration.test.ts": 12,
 			"src/library-editing/derivatives.integration.test.ts": 8,
-			"src/library-editing/media-task-sweep.integration.test.ts": 4,
+			"src/library-editing/media-task-sweep.integration.test.ts": 5,
 			"src/library-editing/generation.integration.test.ts": 9,
 			"src/library-editing/generation-speech.integration.test.ts": 2,
 			"src/library-editing/generation-duration-review.integration.test.ts": 2,
 			"src/library-editing/dialogue-source.integration.test.ts": 2,
+			"src/vod-input-preview/preparation.integration.test.ts": 1,
+			"src/operation-analytics/retention.integration.test.ts": 1,
 		},
 	},
 ];
@@ -117,7 +134,7 @@ export function testEnvironment(env) {
 		admin = new URL(env.BITOVP_TENANT_TEST_ADMIN_URL);
 		app = new URL(env.BITOVP_TENANT_TEST_APP_URL);
 	} catch {
-		throw new Error("Required PostgreSQL test URLs are invalid");
+		throw new GateFailure("Required PostgreSQL test URLs are invalid");
 	}
 	for (const url of [admin, app]) {
 		assert(
@@ -166,55 +183,110 @@ export function testEnvironment(env) {
 	};
 }
 
-export function validateReport(report, group, root) {
-	const expected = Object.entries(group.files);
-	const total = expected.reduce((sum, [, count]) => sum + count, 0);
-	assert(report?.success === true, "PostgreSQL test report did not succeed");
-	for (const key of [
-		"numFailedTests",
-		"numPendingTests",
-		"numTodoTests",
-		"numFailedTestSuites",
-		"numPendingTestSuites",
+// The start of a failure message states the assertion. Frames inside
+// dependencies only show that the test runner called the test.
+const excerpt = (text) =>
+	String(text ?? "")
+		.split("\n")
+		.filter(
+			(line) =>
+				line.trim() !== "" &&
+				!/^\s+at .*(?:node_modules|<anonymous>)/.test(line),
+		)
+		.slice(0, 8)
+		.join("\n");
+
+/** Why a Vitest report is not the complete, fully passed required run. */
+export function reportProblems(report, group, root, kind = "PostgreSQL") {
+	const problems = [];
+	const total = Object.values(group.files).reduce(
+		(sum, count) => sum + count,
+		0,
+	);
+	if (report?.success !== true) problems.push("Vitest reported a failed run");
+	for (const [key, label] of [
+		["numFailedTests", "failed tests"],
+		["numPendingTests", "skipped tests"],
+		["numTodoTests", "todo tests"],
+		["numFailedTestSuites", "failed suites"],
+		["numPendingTestSuites", "unfinished suites"],
 	])
-		assert.equal(
-			report[key],
-			0,
-			"PostgreSQL tests must have no failures, skips or unfinished cases",
-		);
-	assert.equal(
-		report.numTotalTests,
-		total,
-		"Unexpected PostgreSQL test discovery count",
-	);
-	assert.equal(report.numPassedTests, total, "All PostgreSQL tests must pass");
-	assert.equal(
-		report.testResults?.length,
-		expected.length,
-		"Required PostgreSQL test files were not discovered exactly once",
-	);
+		if (report?.[key] !== 0)
+			problems.push(`${label}: ${JSON.stringify(report?.[key])}, required 0`);
+	for (const [key, label] of [
+		["numTotalTests", "tests discovered"],
+		["numPassedTests", "tests passed"],
+	])
+		if (report?.[key] !== total)
+			problems.push(
+				`${label}: ${JSON.stringify(report?.[key])}, required ${total}`,
+			);
+	if (!Array.isArray(report?.testResults))
+		problems.push("the report lists no test files");
 	const seen = new Set();
-	for (const result of report.testResults) {
-		const name = relative(resolve(root, group.directory), result.name);
-		assert(
-			Object.hasOwn(group.files, name) && !seen.has(name),
-			"Unexpected or duplicate PostgreSQL test file",
-		);
+	for (const result of Array.isArray(report?.testResults)
+		? report.testResults
+		: []) {
+		const name = relative(resolve(root, group.directory), String(result?.name));
+		if (!Object.hasOwn(group.files, name)) {
+			problems.push(`${name}: not a required ${kind} test file`);
+			continue;
+		}
+		if (seen.has(name)) {
+			problems.push(`${name}: reported more than once`);
+			continue;
+		}
 		seen.add(name);
-		assert.equal(result.status, "passed", "PostgreSQL test file failed");
-		assert.equal(
-			result.assertionResults?.length,
-			group.files[name],
-			"Unexpected per-file PostgreSQL test count",
+		const tests = Array.isArray(result.assertionResults)
+			? result.assertionResults
+			: [];
+		const passed = tests.filter((test) => test?.status === "passed").length;
+		if (
+			result.status === "passed" &&
+			tests.length === group.files[name] &&
+			passed === tests.length
+		)
+			continue;
+		problems.push(
+			`${name}: ${passed} of ${tests.length} tests passed, ${group.files[name]} required${result.status === "passed" ? "" : `; file status ${JSON.stringify(result.status)}`}`,
 		);
-		assert(
-			result.assertionResults.every((test) => test.status === "passed"),
-			"Every PostgreSQL assertion must run and pass",
-		);
+		if (typeof result.message === "string" && result.message.trim() !== "")
+			problems.push(`${name} did not load:\n${excerpt(result.message)}`);
+		for (const test of tests)
+			if (test?.status !== "passed")
+				problems.push(
+					[
+						`${JSON.stringify(test?.status)}: ${test?.fullName ?? test?.title ?? "unnamed test"}`,
+						excerpt(
+							(Array.isArray(test?.failureMessages)
+								? test.failureMessages
+								: []
+							).join("\n"),
+						),
+					]
+						.filter(Boolean)
+						.join("\n"),
+				);
 	}
+	for (const name of Object.keys(group.files))
+		if (!seen.has(name)) problems.push(`${name}: not run`);
+	return problems;
+}
+
+export function validateReport(report, group, root, diagnostics = "") {
+	const problems = reportProblems(report, group, root);
+	if (problems.length)
+		throw new GateFailure(
+			"PostgreSQL tests must have no failures, skips or unfinished cases",
+			{ details: problems, diagnostics },
+		);
 }
 
 const children = new Map();
+/** Stops every command that is still running; for a signal handler. */
+export const stopCommands = () => {
+	for (const stop of children.values()) stop();
+};
 const terminate = (child) => {
 	try {
 		process.kill(-child.pid, "SIGTERM");
@@ -222,7 +294,7 @@ const terminate = (child) => {
 		child.kill("SIGTERM");
 	}
 };
-async function command(executable, args, options) {
+export async function command(executable, args, options) {
 	return new Promise((accept, reject) => {
 		const child = spawn(executable, args, {
 			cwd: options.cwd,
@@ -231,10 +303,12 @@ async function command(executable, args, options) {
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let output = "";
-		let expired = false;
+		const errors = outputTail();
+		const decoder = new StringDecoder("utf8");
+		let expired = "";
 		let killTimer;
-		const stop = () => {
-			expired = true;
+		const stop = (reason) => {
+			expired ||= reason;
 			terminate(child);
 			killTimer ??= setTimeout(() => {
 				try {
@@ -244,26 +318,40 @@ async function command(executable, args, options) {
 				}
 			}, 5_000);
 		};
-		const timer = setTimeout(stop, options.timeout ?? 180_000);
-		children.set(child, stop);
+		const limit = options.timeout ?? 180_000;
+		const timer = setTimeout(
+			() => stop(`was stopped at its ${limit / 1000} second limit`),
+			limit,
+		);
+		children.set(child, () => stop("was cancelled"));
 		child.stdout.on("data", (chunk) => {
 			output += chunk.toString();
-			if (output.length > 8_000_000) stop();
+			if (output.length > 8_000_000) stop("exceeded its output limit");
 		});
-		// Raw child diagnostics can contain connection URLs. Never forward them.
-		child.stderr.resume();
+		// Raw child diagnostics can contain connection URLs. Never forward them
+		// as they arrive: only their end is kept, for a redacted failure report.
+		child.stderr.on("data", (chunk) => errors.add(decoder.write(chunk)));
 		child.on("error", () => {
 			clearTimeout(timer);
 			clearTimeout(killTimer);
 			children.delete(child);
-			reject(new Error("PostgreSQL integration command could not start"));
+			reject(new GateFailure("PostgreSQL integration command could not start"));
 		});
 		child.on("close", (code) => {
 			clearTimeout(timer);
 			clearTimeout(killTimer);
 			children.delete(child);
-			if (code === 0 && !expired) accept(output.trim());
-			else reject(new Error("PostgreSQL integration command failed"));
+			if (code === 0 && !expired) return accept(output.trim());
+			// A command that wrote no diagnostics is explained by the end of its output.
+			const printed = outputTail(16 * 1024);
+			printed.add(output);
+			reject(
+				new GateFailure("PostgreSQL integration command failed", {
+					details: expired ? [`The command ${expired}`] : [],
+					diagnostics:
+						errors.text().trim() === "" ? printed.text() : errors.text(),
+				}),
+			);
 		});
 	});
 }
@@ -277,61 +365,91 @@ export async function runIntegrationTests(
 		...validated,
 		...privateChildEnvironment(validated, directory),
 	};
-	for (const group of GROUPS)
-		for (const file of Object.keys(group.files))
-			assert(
-				existsSync(resolve(root, group.directory, file)),
-				"Required PostgreSQL integration source is missing",
-			);
-	const discovered = [];
-	const visit = (directory) => {
-		if (!existsSync(directory)) return;
-		for (const entry of readdirSync(directory, { withFileTypes: true })) {
-			const path = join(directory, entry.name);
-			if (entry.isDirectory()) visit(path);
-			else if (
-				entry.name.endsWith(".integration.test.ts") &&
-				/BITOVP_(?:TENANT|MONITORING)_TEST_(?:ADMIN|APP|DATABASE)_URL/.test(
-					readFileSync(path, "utf8"),
+	// Names the part that failed in the final report.
+	let step = "checking the required PostgreSQL test files";
+	try {
+		for (const group of GROUPS)
+			for (const file of Object.keys(group.files))
+				assert(
+					existsSync(resolve(root, group.directory, file)),
+					"Required PostgreSQL integration source is missing",
+				);
+		const discovered = [];
+		const visit = (directory) => {
+			if (!existsSync(directory)) return;
+			for (const entry of readdirSync(directory, { withFileTypes: true })) {
+				const path = join(directory, entry.name);
+				if (entry.isDirectory()) visit(path);
+				else if (
+					entry.name.endsWith(".integration.test.ts") &&
+					/BITOVP_(?:TENANT|MONITORING)_TEST_(?:ADMIN|APP|DATABASE)_URL/.test(
+						readFileSync(path, "utf8"),
+					)
 				)
-			)
-				discovered.push(path);
+					discovered.push(path);
+			}
+		};
+		for (const source of ["packages/db/src", "apps/web/src", "apps/worker/src"])
+			visit(resolve(root, source));
+		const required = GROUPS.flatMap((group) =>
+			Object.keys(group.files).map((file) =>
+				resolve(root, group.directory, file),
+			),
+		);
+		assert.deepEqual(
+			discovered.sort(),
+			required.sort(),
+			"PostgreSQL integration source discovery differs from the required manifest",
+		);
+		for (const [index, group] of GROUPS.entries()) {
+			step = `running ${group.workspace} PostgreSQL tests`;
+			const output = join(directory, `results-${index}.json`);
+			assert(!existsSync(output), "PostgreSQL report already exists");
+			// A rejection without an error is still a failure.
+			let failure;
+			try {
+				await execute(
+					"pnpm",
+					[
+						"--filter",
+						group.workspace,
+						"exec",
+						"vitest",
+						"run",
+						...Object.keys(group.files),
+						"--maxWorkers=2",
+						"--reporter=json",
+						`--outputFile=${output}`,
+					],
+					{ cwd: root, env: clean },
+				);
+			} catch (error) {
+				failure = asFailure(error);
+			}
+			// Vitest writes its report for a failed run too; it names what failed.
+			let report;
+			try {
+				report = JSON.parse(readFileSync(output, "utf8"));
+			} catch {
+				throw (
+					failure ??
+					new GateFailure("Vitest did not write a readable PostgreSQL report")
+				);
+			}
+			validateReport(
+				report,
+				group,
+				root,
+				failure instanceof GateFailure ? failure.diagnostics : "",
+			);
+			// A complete report does not excuse a command that failed.
+			if (failure) throw failure;
+			notify(
+				`${group.workspace}: ${Object.keys(group.files).length} PostgreSQL files, ${Object.values(group.files).reduce((sum, count) => sum + count, 0)} passed, 0 skipped`,
+			);
 		}
-	};
-	for (const source of ["packages/db/src", "apps/web/src", "apps/worker/src"])
-		visit(resolve(root, source));
-	const required = GROUPS.flatMap((group) =>
-		Object.keys(group.files).map((file) =>
-			resolve(root, group.directory, file),
-		),
-	);
-	assert.deepEqual(
-		discovered.sort(),
-		required.sort(),
-		"PostgreSQL integration source discovery differs from the required manifest",
-	);
-	for (const [index, group] of GROUPS.entries()) {
-		const output = join(directory, `results-${index}.json`);
-		assert(!existsSync(output), "PostgreSQL report already exists");
-		await execute(
-			"pnpm",
-			[
-				"--filter",
-				group.workspace,
-				"exec",
-				"vitest",
-				"run",
-				...Object.keys(group.files),
-				"--maxWorkers=2",
-				"--reporter=json",
-				`--outputFile=${output}`,
-			],
-			{ cwd: root, env: clean },
-		);
-		validateReport(JSON.parse(readFileSync(output, "utf8")), group, root);
-		notify(
-			`${group.workspace}: ${Object.keys(group.files).length} PostgreSQL files, ${Object.values(group.files).reduce((sum, count) => sum + count, 0)} passed, 0 skipped`,
-		);
+	} catch (error) {
+		throw atStep(error, step);
 	}
 }
 
@@ -420,10 +538,25 @@ const inside = (root, path) => {
 		(!child.startsWith(`..${sep}`) && child !== ".." && !isAbsolute(child))
 	);
 };
+// Fixture credentials: CI masks them in its log and failure reports redact them.
+const secrets = new Set();
 const mask = (env, values) => {
+	const fresh = [...new Set(values)];
+	for (const value of fresh) secrets.add(value);
+	// A line break inside a value would end the mask command early and let the
+	// rest of the value start a line of its own.
+	assert(
+		// biome-ignore lint/suspicious/noControlCharactersInRegex: reject controls before emitting CI secret masks
+		fresh.every((value) => !/[\u0000-\u001f\u007f-\u009f]/.test(value)),
+		"Fixture credentials must not contain control characters",
+	);
 	if (env.GITHUB_ACTIONS === "true")
-		for (const value of values) console.log(`::add-mask::${value}`);
+		for (const value of fresh) console.log(`::add-mask::${value}`);
 };
+
+/** The public explanation of a failed run. */
+export const failureReport = (error) =>
+	failureLines(error, { secrets: [...secrets] });
 
 export async function runFixture(
 	{
@@ -432,6 +565,9 @@ export async function runFixture(
 		env = process.env,
 		signal,
 		notify = console.log,
+		// What runs against the prepared database. Another gate passes its own
+		// tests here; it gets the fixture's private directory and both URLs.
+		run = runIntegrationTests,
 	} = {},
 	execute = command,
 ) {
@@ -460,6 +596,9 @@ export async function runFixture(
 	const state = { id, directory };
 	const stateFile = statePath ?? join(directory, "state.json");
 	let stateWritten = false;
+	// Names the part that failed in the final report.
+	let step = "creating private fixture files";
+	let failure;
 	writeFileSync(join(directory, ".owner"), id, { mode: 0o600, flag: "wx" });
 	try {
 		writeFileSync(stateFile, JSON.stringify(state), {
@@ -475,6 +614,7 @@ export async function runFixture(
 			`POSTGRES_USER=bitovp_fixture_admin\nPOSTGRES_PASSWORD=${password}\nPOSTGRES_DB=bitovp_integration_${id}\nPOSTGRES_INITDB_ARGS=--auth-host=scram-sha-256\n`,
 			{ mode: 0o600, flag: "wx" },
 		);
+		step = "starting the PostgreSQL container";
 		await docker(
 			[
 				"run",
@@ -499,7 +639,9 @@ export async function runFixture(
 			/^127\.0\.0\.1:\d+$/.test(binding),
 			"PostgreSQL fixture must expose only a random loopback port",
 		);
+		step = "waiting for PostgreSQL to accept connections";
 		let ready = false;
+		let refusal;
 		for (let attempt = 0; attempt < 60; attempt++) {
 			try {
 				await docker(
@@ -519,12 +661,16 @@ export async function runFixture(
 				);
 				ready = true;
 				break;
-			} catch {
+			} catch (error) {
 				assert(!signal?.aborted, "PostgreSQL integration was cancelled");
+				refusal = error;
 				await new Promise((accept) => setTimeout(accept, 250));
 			}
 		}
-		assert(ready, "PostgreSQL fixture did not become ready");
+		if (!ready)
+			throw new GateFailure("PostgreSQL fixture did not become ready", {
+				diagnostics: refusal instanceof GateFailure ? refusal.diagnostics : "",
+			});
 		const adminUrl = `postgresql://bitovp_fixture_admin:${password}@${binding}/bitovp_integration_${id}?schema=public`;
 		mask(env, [adminUrl]);
 		const adminFile = join(directory, ".env.migrate");
@@ -535,6 +681,7 @@ export async function runFixture(
 		});
 		const options = { cwd: root, env: privateChildEnvironment(env, directory) };
 		notify("Preparing dedicated PostgreSQL runtime role and migrations");
+		step = "preparing the runtime database role";
 		await execute(
 			"pnpm",
 			[
@@ -548,14 +695,17 @@ export async function runFixture(
 			],
 			options,
 		);
+		step = "applying database migrations";
 		await execute(
 			"pnpm",
 			["--filter", "@bitovp/db", "db:migrate:deploy", "--admin-env", adminFile],
 			options,
 		);
+		step = "reading the runtime role credentials";
 		const appUrl = parseEnv(readFileSync(appFile, "utf8")).DATABASE_URL;
-		mask(env, [appUrl, new URL(appUrl).password]);
-		await runIntegrationTests(
+		const appPassword = new URL(appUrl).password;
+		mask(env, [appUrl, appPassword, decodeURIComponent(appPassword)]);
+		await run(
 			{
 				root,
 				directory,
@@ -568,11 +718,24 @@ export async function runFixture(
 			},
 			execute,
 		);
-	} finally {
-		await cleanupFixture(state, cleanupExecute, env);
-		if (stateWritten) rmSync(stateFile, { force: true });
-		notify("Dedicated PostgreSQL fixture and private files removed");
+	} catch (error) {
+		failure = atStep(asFailure(error), step);
 	}
+	// Cleanup runs on every path. When it fails too, the report keeps the first
+	// failure and adds the cleanup failure after it.
+	try {
+		await cleanupFixture(state, cleanupExecute, env);
+	} catch (error) {
+		// A cleanup can reject with anything; the report still names its step.
+		const later = atStep(
+			asFailure(error),
+			"removing the PostgreSQL fixture and private files",
+		);
+		throw failure ? withLaterFailure(failure, later) : later;
+	}
+	if (stateWritten) rmSync(stateFile, { force: true });
+	notify("Dedicated PostgreSQL fixture and private files removed");
+	if (failure) throw failure;
 }
 
 async function main(signal) {
@@ -602,21 +765,19 @@ async function main(signal) {
 	}
 }
 
-if (
-	process.argv[1] &&
-	import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-) {
+if (isEntryPoint(import.meta.url)) {
 	const controller = new AbortController();
 	for (const signal of ["SIGINT", "SIGTERM"])
 		process.on(signal, () => {
 			controller.abort();
-			for (const stop of children.values()) stop();
+			stopCommands();
 			process.exitCode = 1;
 		});
-	main(controller.signal).catch(() => {
+	main(controller.signal).catch((error) => {
 		console.error(
 			"PostgreSQL integration failed; required tests or fixture cleanup did not complete.",
 		);
+		for (const line of failureReport(error)) console.error(line);
 		process.exitCode = 1;
 	});
 }

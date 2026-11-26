@@ -10,6 +10,8 @@ import {
 	type VmafFrame,
 } from "@bitovp/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { hdrMeasurementFixture } from "@/test/hdr-measurement";
+import { referencePreparationEvidence } from "@/test/vmaf-reference-preparation";
 
 const findUnique = vi.fn();
 const resultFindFirst = vi.fn(async (args) => {
@@ -83,6 +85,87 @@ beforeEach(() => {
 });
 
 describe("GET /api/vmaf-jobs/[id]", () => {
+	it.each([
+		true,
+		false,
+	])("projects only validated HDR evidence (valid=%s)", async (valid) => {
+		const evidence = hdrMeasurementFixture(true);
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			mode: "VOD",
+			model: evidence.model,
+			scoringVersion: 14,
+			params: { source: "OUTPUT_HLS" },
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "hdr-result",
+					renditionRef: {},
+					pooled: computePooled(frames([95, 96])),
+					framesGzip: gz(frames([95, 96])),
+					provenance: {
+						hdrMeasurement: valid
+							? evidence
+							: { ...evidence, privatePath: "/private/receipt" },
+						path: "/private/source",
+					},
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID)),
+			body = await response.json();
+		expect(response.status).toBe(200);
+		if (valid) expect(body.results[0].hdrMeasurement).toEqual(evidence);
+		else expect(body.results[0]).not.toHaveProperty("hdrMeasurement");
+		expect(JSON.stringify(body)).not.toMatch(/private|provenance/);
+	});
+	it.each([
+		{ evidence: referencePreparationEvidence, visible: true },
+		{ evidence: undefined, visible: false },
+		{
+			evidence: { ...referencePreparationEvidence, frameTimingVerified: false },
+			visible: false,
+		},
+		{
+			evidence: {
+				...referencePreparationEvidence,
+				preparedPath: "/private/prepared.mov",
+			},
+			visible: false,
+		},
+	])("exposes only valid reference preparation proof (visible=$visible)", async ({
+		evidence,
+		visible,
+	}) => {
+		findUnique.mockResolvedValueOnce({
+			id: JOB_ID,
+			params: { referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX" },
+			createdAt: new Date(),
+			updatedAt: new Date(),
+			results: [
+				{
+					id: "prepared-result",
+					renditionRef: {},
+					pooled: computePooled(frames([95])),
+					framesGzip: null,
+					provenance: {
+						referencePreparation: evidence,
+						reference: { path: "/private/original.mov" },
+					},
+				},
+			],
+		});
+		const response = await GET(req(), params(JOB_ID));
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		if (visible)
+			expect(body.results[0].referencePreparation).toEqual(
+				referencePreparationEvidence,
+			);
+		else expect(body.results[0]).not.toHaveProperty("referencePreparation");
+		expect(JSON.stringify(body)).not.toMatch(/private|preparedPath|provenance/);
+	});
 	it.each([
 		true,
 		false,
@@ -524,6 +607,18 @@ describe("GET /api/vmaf-jobs/[id]", () => {
 		expect(result.preview).toEqual({ unavailableReason: "MISSING_FPS" });
 		expect(result.frames.length).toBeLessThanOrEqual(1500);
 		expect(result.frames.length).toBeGreaterThan(0);
+		expect(result.distribution).toMatchObject({
+			frameCount: 20_000,
+			min: pooled.min,
+			max: pooled.max,
+		});
+		expect(result.distribution.mean).toBeCloseTo(pooled.mean, 6);
+		expect(
+			result.distribution.bins.reduce(
+				(total: number, bin: { count: number }) => total + bin.count,
+				0,
+			),
+		).toBe(20_000);
 
 		// pooled is byte-for-byte the stored value.
 		expect(result.pooled.mean).toBeCloseTo(pooled.mean, 6);
@@ -593,6 +688,7 @@ describe("GET /api/vmaf-jobs/[id]", () => {
 		expect(body.encodingName).toBeNull();
 		expect(body.results[0].frames).toEqual([]);
 		expect(body.results[0].frameCount).toBe(0);
+		expect(body.results[0].distribution).toBeNull();
 	});
 });
 

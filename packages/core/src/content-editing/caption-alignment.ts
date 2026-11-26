@@ -2,12 +2,13 @@ import { z } from "zod";
 import {
 	transcriptionRawSegmentSchema,
 	transcriptionSpeechIntervalSchema,
-} from "../content-production/transcription-quality";
+} from "../content-production/transcription-schema";
+import { captionOmissionsSchema } from "./caption-omissions";
 import type { CompositionSourceSegment } from "./composition-evidence";
 
 /** Caption-only timing. Sealed ASR and semantic input retain their identities. */
 export const CAPTION_ALIGNMENT_POLICY = {
-	version: "qwen3-caption-alignment-v7",
+	version: "qwen3-caption-alignment-v8",
 	engine: "qwen-asr",
 	device: "cpu",
 	dtype: "bfloat16",
@@ -22,7 +23,8 @@ export const CAPTION_ALIGNMENT_POLICY = {
 	textProjection: "unicode-letter-number-ascii-apostrophe-v1",
 	alignmentScope: "selected-zero-points-v1",
 	zeroDurationDecoding: "anchored-zero-logit-path-v1",
-	zeroDurationHandling: "same-paragraph-exact-endpoint-v1",
+	zeroDurationHandling: "same-paragraph-anchor-or-abstain-v2",
+	speechSupport: "complete-observation-overlap-v1",
 	confidence: "NOT_REPORTED",
 	contextUs: 3_000_000,
 	maxWindowUs: 60_000_000,
@@ -57,17 +59,32 @@ export const captionTimingEvidenceSchema = z.strictObject({
 	transcriptHash: digest,
 	rawSegments: z.array(transcriptionRawSegmentSchema).max(5000),
 	speechIntervals: z.array(transcriptionSpeechIntervalSchema).max(10000),
+	/** Actual inspected audio ranges, including ranges where VAD found no speech. */
+	speechCoverage: z
+		.array(transcriptionSpeechIntervalSchema)
+		.min(1)
+		.max(5000)
+		.refine((ranges) =>
+			ranges.every(
+				(range, index) =>
+					index === 0 ||
+					range.startUs >= (ranges[index - 1]?.endUs ?? Infinity),
+			),
+		)
+		.optional(),
 });
 export type CaptionTimingEvidence = Omit<
 	z.infer<typeof captionTimingEvidenceSchema>,
-	"rawSegments" | "speechIntervals"
+	"rawSegments" | "speechIntervals" | "speechCoverage"
 > & {
 	rawSegments: readonly z.infer<typeof transcriptionRawSegmentSchema>[];
 	speechIntervals: readonly z.infer<typeof transcriptionSpeechIntervalSchema>[];
+	speechCoverage?: readonly z.infer<typeof transcriptionSpeechIntervalSchema>[];
 };
 const provenanceSchema = captionTimingEvidenceSchema
 	.omit({ rawSegments: true, speechIntervals: true })
 	.extend({ rawSegmentsHash: digest, speechIntervalsHash: digest });
+const legacyProvenanceSchema = provenanceSchema.omit({ speechCoverage: true });
 const windowSchema = z.strictObject({
 	startUs: us,
 	endUs: us,
@@ -176,7 +193,7 @@ const legacyV6CaptionAlignmentReceiptSchema = z
 		version: z.literal("qwen3-caption-alignment-v6"),
 		baseOutputHash: digest,
 		modelManifestHash: z.literal(CAPTION_ALIGNMENT_POLICY.modelManifestHash),
-		evidence: provenanceSchema.optional(),
+		evidence: legacyProvenanceSchema.optional(),
 		focusWindows: z
 			.array(focusWindow)
 			.max(CAPTION_ALIGNMENT_POLICY.focus.maxCandidates),
@@ -271,98 +288,143 @@ const rawGroupMeasurement = z
 	})
 	.refine((v) => v.endChar > v.startChar && v.endUs > v.startUs);
 const finalMeasurement = z.union([nativeMeasurement, rawGroupMeasurement]);
-export const currentCaptionAlignmentReceiptSchema = z
-	.strictObject({
-		...common,
-		version: z.literal(CAPTION_ALIGNMENT_POLICY.version),
-		baseOutputHash: digest,
-		modelManifestHash: z.literal(CAPTION_ALIGNMENT_POLICY.modelManifestHash),
-		evidence: provenanceSchema.optional(),
-		focusWindows: z
-			.array(currentFocusWindow)
-			.max(CAPTION_ALIGNMENT_POLICY.focus.maxCandidates),
-		measurements: z.strictObject({
-			base: z.array(nativeMeasurement).max(30000),
-			focus: z.array(nativeMeasurement).max(30000),
-			final: z.array(finalMeasurement).max(30000),
-		}),
-	})
-	.superRefine((r, ctx) => {
-		checkWindows(r, ctx);
-		if (r.evidence && r.evidence.mediaSha256 !== r.mediaSha256)
-			ctx.addIssue({
-				code: "custom",
-				message: "Expected source-bound timing provenance",
-			});
-		if (
-			r.windows.length + r.focusWindows.length > 80 ||
-			new Set(r.focusWindows.map((w) => w.id)).size !== r.focusWindows.length ||
-			r.focusWindows.some(
-				(w, i) => w.nativeWindowIndex !== r.windows.length + i,
-			) ||
-			(r.focusWindows.length && !r.evidence)
-		)
-			ctx.addIssue({
-				code: "custom",
-				message: "Expected bound unique focus windows",
-			});
-		const bounds = new Map(r.windows.map((w, i) => [i, w]));
-		for (const w of r.focusWindows) bounds.set(w.nativeWindowIndex, w);
-		for (const kind of ["base", "focus", "final"] as const)
-			for (const m of r.measurements[kind]) {
-				if (m.timingSource === "ASR_TOKEN_GROUP") {
-					const f = r.focusWindows.find((f) => f.id === m.focusId);
-					if (
-						kind !== "final" ||
-						!f ||
-						f.kind !== "SUPPORTED_SUFFIX" ||
-						f.outcome !== "RAW_SUPPORTED_GROUP" ||
-						m.segmentIndex !== f.segmentIndex ||
-						m.startChar !== f.startChar ||
-						m.endChar !== f.endChar ||
-						m.startUs !== f.rawStartUs ||
-						m.endUs !== f.rawEndUs ||
-						m.startUs < f.startUs ||
-						m.endUs > f.endUs
-					)
-						ctx.addIssue({
-							code: "custom",
-							message: "Expected exact original raw-token group provenance",
-						});
-					continue;
-				}
-				const w = bounds.get(m.windowIndex),
-					f = r.focusWindows.find((f) => f.nativeWindowIndex === m.windowIndex);
+const currentCaptionAlignmentReceiptObject = z.strictObject({
+	...common,
+	version: z.literal(CAPTION_ALIGNMENT_POLICY.version),
+	baseOutputHash: digest,
+	modelManifestHash: z.literal(CAPTION_ALIGNMENT_POLICY.modelManifestHash),
+	evidence: provenanceSchema.optional(),
+	focusWindows: z
+		.array(currentFocusWindow)
+		.max(CAPTION_ALIGNMENT_POLICY.focus.maxCandidates),
+	omittedParagraphs: captionOmissionsSchema.optional(),
+	speechSupport: z.enum(["CHECKED", "PARTIAL", "UNKNOWN"]).optional(),
+	measurements: z.strictObject({
+		base: z.array(nativeMeasurement).max(30000),
+		focus: z.array(nativeMeasurement).max(30000),
+		final: z.array(finalMeasurement).max(30000),
+	}),
+});
+function checkCurrentReceipt(
+	r: Omit<z.infer<typeof currentCaptionAlignmentReceiptObject>, "version">,
+	ctx: z.RefinementCtx,
+) {
+	checkWindows(r, ctx);
+	if (r.evidence && r.evidence.mediaSha256 !== r.mediaSha256)
+		ctx.addIssue({
+			code: "custom",
+			message: "Expected source-bound timing provenance",
+		});
+	if (
+		r.windows.length + r.focusWindows.length > 80 ||
+		new Set(r.focusWindows.map((w) => w.id)).size !== r.focusWindows.length ||
+		r.focusWindows.some(
+			(w, i) => w.nativeWindowIndex !== r.windows.length + i,
+		) ||
+		(r.focusWindows.length && !r.evidence)
+	)
+		ctx.addIssue({
+			code: "custom",
+			message: "Expected bound unique focus windows",
+		});
+	const bounds = new Map(r.windows.map((w, i) => [i, w]));
+	for (const w of r.focusWindows) bounds.set(w.nativeWindowIndex, w);
+	for (const kind of ["base", "focus", "final"] as const)
+		for (const m of r.measurements[kind]) {
+			if (m.timingSource === "ASR_TOKEN_GROUP") {
+				const f = r.focusWindows.find((f) => f.id === m.focusId);
 				if (
-					!w ||
-					m.startUs < w.startUs ||
-					m.endUs > w.endUs ||
-					(kind === "base" &&
-						(m.windowIndex >= r.windows.length ||
-							m.timingSource !== "MODEL_BASE")) ||
-					(kind === "focus" &&
-						(m.windowIndex < r.windows.length ||
-							m.timingSource !== "MODEL_FOCUS")) ||
-					(kind === "final" &&
-						(m.endUs <= m.startUs ||
-							m.timingSource !==
-								(m.windowIndex < r.windows.length
-									? "MODEL_BASE"
-									: "MODEL_FOCUS"))) ||
-					(f &&
-						(m.segmentIndex !== f.segmentIndex ||
-							m.startChar < f.startChar ||
-							m.endChar > f.endChar ||
-							(kind === "final" && f.outcome !== "ADOPTED")))
+					kind !== "final" ||
+					!f ||
+					f.kind !== "SUPPORTED_SUFFIX" ||
+					f.outcome !== "RAW_SUPPORTED_GROUP" ||
+					m.segmentIndex !== f.segmentIndex ||
+					m.startChar !== f.startChar ||
+					m.endChar !== f.endChar ||
+					m.startUs !== f.rawStartUs ||
+					m.endUs !== f.rawEndUs ||
+					m.startUs < f.startUs ||
+					m.endUs > f.endUs
 				)
 					ctx.addIssue({
 						code: "custom",
-						message: "Expected exact bounded native alignment measurement",
+						message: "Expected exact original raw-token group provenance",
 					});
+				continue;
 			}
-	});
+			const w = bounds.get(m.windowIndex),
+				f = r.focusWindows.find((f) => f.nativeWindowIndex === m.windowIndex);
+			if (
+				!w ||
+				m.startUs < w.startUs ||
+				m.endUs > w.endUs ||
+				(kind === "base" &&
+					(m.windowIndex >= r.windows.length ||
+						m.timingSource !== "MODEL_BASE")) ||
+				(kind === "focus" &&
+					(m.windowIndex < r.windows.length ||
+						m.timingSource !== "MODEL_FOCUS")) ||
+				(kind === "final" &&
+					(m.endUs <= m.startUs ||
+						m.timingSource !==
+							(m.windowIndex < r.windows.length
+								? "MODEL_BASE"
+								: "MODEL_FOCUS"))) ||
+				(f &&
+					(m.segmentIndex !== f.segmentIndex ||
+						m.startChar < f.startChar ||
+						m.endChar > f.endChar ||
+						(kind === "final" && f.outcome !== "ADOPTED")))
+			)
+				ctx.addIssue({
+					code: "custom",
+					message: "Expected exact bounded native alignment measurement",
+				});
+		}
+	for (const omitted of r.omittedParagraphs ?? []) {
+		if (
+			(omitted.reason === "ZERO_DURATION_NO_ANCHOR"
+				? !r.measurements.base.some(
+						(m) =>
+							m.segmentIndex === omitted.segmentIndex && m.startUs === m.endUs,
+					)
+				: !["CHECKED", "PARTIAL"].includes(r.speechSupport ?? "") ||
+					!r.evidence?.speechCoverage?.length ||
+					![...r.measurements.base, ...r.measurements.focus].some(
+						(m) =>
+							m.segmentIndex === omitted.segmentIndex && m.endUs > m.startUs,
+					)) ||
+			r.measurements.final.some((m) => m.segmentIndex === omitted.segmentIndex)
+		)
+			ctx.addIssue({
+				code: "custom",
+				message:
+					"Omitted paragraphs require measured evidence and no adopted words",
+			});
+	}
+	if (
+		(r.speechSupport === "CHECKED" || r.speechSupport === "PARTIAL") &&
+		!r.evidence?.speechCoverage?.length
+	)
+		ctx.addIssue({
+			code: "custom",
+			message: "Measured speech support requires inspected coverage",
+		});
+}
+export const currentCaptionAlignmentReceiptSchema =
+	currentCaptionAlignmentReceiptObject.superRefine(checkCurrentReceipt);
+const legacyV7CaptionAlignmentReceiptSchema = z
+	.strictObject({
+		...currentCaptionAlignmentReceiptObject.shape,
+		version: z.literal("qwen3-caption-alignment-v7"),
+		evidence: legacyProvenanceSchema.optional(),
+		omittedParagraphs: z.never().optional(),
+		speechSupport: z.never().optional(),
+	})
+	.superRefine(checkCurrentReceipt);
 export const captionAlignmentReceiptSchema = z.union([
 	currentCaptionAlignmentReceiptSchema,
+	legacyV7CaptionAlignmentReceiptSchema,
 	legacyV6CaptionAlignmentReceiptSchema,
 	legacyCaptionAlignmentReceiptSchema,
 ]);

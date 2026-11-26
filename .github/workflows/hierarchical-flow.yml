@@ -1,0 +1,71 @@
+name: Hierarchical flow
+
+# The hierarchical story flow is fenced off from production code and from the
+# default test runs (hierarchical-flow-fence.json). This workflow runs its tests.
+on:
+  pull_request:
+    paths:
+      - "**/local-story-flow-*"
+      - "**/library-flow-*"
+      - packages/db/src/library-flow.ts
+      - hierarchical-flow-fence.json
+      - apps/worker/vitest.hierarchical-flow.config.ts
+      - packages/core/vitest.hierarchical-flow.config.ts
+      - packages/db/vitest.hierarchical-flow.config.ts
+      - packages/db/prisma/schema.prisma
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/hierarchical-flow.yml
+  push:
+    branches: [main]
+    paths:
+      - "**/local-story-flow-*"
+      - "**/library-flow-*"
+      - packages/db/src/library-flow.ts
+      - hierarchical-flow-fence.json
+      - apps/worker/vitest.hierarchical-flow.config.ts
+      - packages/core/vitest.hierarchical-flow.config.ts
+      - packages/db/vitest.hierarchical-flow.config.ts
+      - packages/db/prisma/schema.prisma
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/hierarchical-flow.yml
+  workflow_dispatch:
+  schedule:
+    # Weekly: a change outside the paths above can still break these tests.
+    - cron: "41 18 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hierarchical-flow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Not named `tests`: the check list would show it among the jobs of ci.yml.
+  hierarchical-flow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CI: "1"
+      # Same worker limit as the tests job in ci.yml (--maxWorkers=2).
+      VITEST_MAX_WORKERS: "2"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          check-latest: true
+      - name: Install the pinned package manager
+        run: |
+          COREPACK_HOME="$(mktemp -d "$RUNNER_TEMP/corepack-bitovp.XXXXXX")"
+          export COREPACK_HOME
+          printf 'COREPACK_HOME=%s\n' "$COREPACK_HOME" >> "$GITHUB_ENV"
+          corepack enable
+          corepack install
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bitovp/db build
+      - run: pnpm test:hierarchical-flow

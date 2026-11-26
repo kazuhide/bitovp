@@ -30,6 +30,16 @@ How to encode a platform delivery spec as a `.bitovp-preset.json` file. We ship 
 
 One operator per row: `eq` (deep-equal), `oneOf`, or a numeric window via `gte`/`lte` (use both for a range). Paths are dot-joined with numeric array indices (`renditions.0.codec`). **An unresolved path is a deviation, never a pass** — a spec whose field the plan dropped must say so. No cross-field expressions in v1.
 
+To require that a file carries its audio, constrain the streams of its muxing. A muxing names its first stream in `streamKey` and the others in `additionalStreamKeys`, so the shipped mezzanine specs use:
+
+```json
+{ "requirement": "Video and audio in one file", "path": "muxings.0.additionalStreamKeys", "expect": { "eq": ["aac"] } }
+```
+
+Give the audio rendition a key that does not follow one of its settings. A plan always names a key. When a plan is loaded, the form keeps the audio keys as they are unless each of them is the key the form would derive from the bitrate (`a320` for a single track at 320 kbps). Keys that equal the derived ones are treated as derived: they change with the bitrate, so a row that names one reports a deviation as soon as the bitrate changes, even inside the range the spec allows. Naming `a320` in the plan does not prevent this.
+
+A plan that writes the audio to a file of its own has no `additionalStreamKeys` on that muxing, and the unresolved path is reported as a deviation.
+
 Conformance checks plan INTENT, not output bytes — pairing with the verify engine's artefact checks is future work; a ✔ is not a measurement.
 
 ## Verification checklist for a new spec
@@ -40,7 +50,7 @@ Conformance checks plan INTENT, not output bytes — pairing with the verify eng
 
 ## Worked examples the schema cannot express yet
 
-These two were in the design's v1 list and are documented here INSTEAD of shipping as presets, because the plan schema has no H.262/MP2/PCM codec configs and no WAV/MOV/MXF/Broadcast-TS muxings today (REQUIREMENTS §4.2 is the API-parity target, not the implemented surface). Row 82 records the schema gap as the reopening condition.
+These two were in the design's v1 list and are documented here INSTEAD of shipping as presets, because the plan schema has no H.262/MP2/PCM codec configs and no WAV/MXF/Broadcast-TS muxings today (its Progressive TS and MOV muxings hold H.264 or H.265 video with AAC or Dolby audio only) (REQUIREMENTS §4.2 is the API-parity target, not the implemented surface). Row 82 records the schema gap as the reopening condition.
 
 ### broadcast-ts-mpeg2 (example only)
 

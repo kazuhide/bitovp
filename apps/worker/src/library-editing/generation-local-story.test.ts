@@ -4,6 +4,7 @@ import {
 	CAPTION_ALIGNMENT_POLICY,
 	compositionDocumentSchema,
 	GENERATION_POLICY_FINGERPRINT,
+	type GenerationTaskParameters,
 	hashEditingEvidence,
 	LOCAL_TRACKING_ALGORITHM_VERSION,
 	LOCAL_TRACKING_FRAME_CLOCK_VERSION,
@@ -33,6 +34,10 @@ import {
 	type LocalStoryGeneration,
 	localStoryArtifactHash,
 } from "./local-story-engine";
+import {
+	assertNativeGenerationReady,
+	nativeGenerationComponents,
+} from "./native-preflight";
 import { MediaOperationError } from "./process";
 import * as tracking from "./tracking";
 
@@ -54,8 +59,12 @@ function fixture(
 	options: {
 		captions?: "AUTO" | "OFF" | "ORIGINAL" | "JAPANESE";
 		prepared?: boolean;
+		trailer?: GenerationTaskParameters["trailer"];
 		captionTranslator?: LocalCaptionTranslator;
 		captionAligner?: typeof alignSelectedCaptionSegments;
+		preflight?: Parameters<
+			typeof createLibraryGenerationHandler
+		>[0]["preflight"];
 	} = {},
 ) {
 	const f = generationDependencyFixture("TRACK");
@@ -68,6 +77,10 @@ function fixture(
 	});
 	delete f.task.parameters.input.parameters.trackingTaskId;
 	delete f.task.parameters.input.parameters.transcriptionTaskId;
+	if (options.trailer) {
+		delete f.task.parameters.input.parameters.storyMode;
+		f.task.parameters.input.parameters.trailer = options.trailer;
+	}
 	Object.assign(f.task.parameters.identity, { localStoryModel: identity });
 	if (options.captions === "JAPANESE")
 		Object.assign(f.task.parameters.identity, {
@@ -135,6 +148,11 @@ function fixture(
 		selectedEventIds: ["event0"],
 		reason: "COMPLETE_BEATS" as const,
 	};
+	const beatRole = options.trailer ? "CONTEXT" : "ACTION";
+	const windows = [0, 1].map((shotIndex) => ({
+		sourceInUs: shotIndex * 2_000_000,
+		durationFrames: 60,
+	}));
 	const ledger = {
 		version: "local-story-corpus-v1" as const,
 		summaries: ["Authored local story integration evidence"],
@@ -142,7 +160,7 @@ function fixture(
 			{
 				id: "event0",
 				label: "Authored scene",
-				role: "ACTION" as const,
+				role: beatRole,
 				refs: ["s0", "s1"],
 				quotes: [{ ref: "s0", quote: "Explicit authored test annotation" }],
 				subjects: [],
@@ -157,7 +175,7 @@ function fixture(
 		beats: [
 			{
 				id: "beat0",
-				role: "ACTION" as const,
+				role: beatRole,
 				eventIds: ["event0"],
 				requires: [],
 			},
@@ -172,6 +190,9 @@ function fixture(
 		}),
 		ledgerHash: hashEditingEvidence(ledger),
 		blueprintHash: hashEditingEvidence(blueprint),
+		...(options.trailer
+			? { trailer: { intent: options.trailer, windows } }
+			: {}),
 	};
 	const authored: LocalStoryGeneration = {
 		selection: {
@@ -180,11 +201,10 @@ function fixture(
 				: "aisa-local-story-window-v1",
 			requestedDurationFrames: 120,
 			actualDurationFrames: 120,
-			clips: [0, 1].map((shotIndex) => ({
+			clips: windows.map((window, shotIndex) => ({
 				sceneId: f.sceneIds[0] ?? "",
 				shotIndex,
-				sourceInUs: shotIndex * 2_000_000,
-				durationFrames: 60,
+				...window,
 			})),
 			reasonCodes: ["LOCAL_LLM_COMPLETE_BEATS"],
 			...(normalizationReceiptHash ? { normalizationReceiptHash } : {}),
@@ -243,6 +263,7 @@ function fixture(
 				localStoryEngine: engine,
 				captionTranslator: options.captionTranslator,
 				captionAligner: options.captionAligner,
+				preflight: options.preflight,
 			})(f.context),
 		render: vi.spyOn(f.prisma.renderRun, "create"),
 		derive: vi.spyOn(f.prisma.contentDerivation, "create"),
@@ -260,6 +281,227 @@ function expectNoPublication(f: ReturnType<typeof fixture>) {
 }
 
 describe("local story project generation", () => {
+	function scopedFixture(options?: Parameters<typeof fixture>[0]) {
+		const f = fixture(options);
+		const sceneId = fixtureItem(f.sceneIds[0]);
+		Object.assign(f.task.parameters.input.parameters, {
+			storySceneId: sceneId,
+		});
+		f.refresh();
+		f.authored.evidence.sceneScope = { sceneId, startUs: 0, endUs: 4_000_000 };
+		f.authored.evidence.sceneFrameBounds = { fromFrame: 0, toFrame: 120 };
+		f.authored.evidence.inputCoverage = {
+			totalShots: 2,
+			eligibleShots: 2,
+			processedShots: 2,
+			excludedShots: 0,
+			truncated: false,
+		};
+		f.authored.evidence.ledger.coveredRefs = ["s0", "s1"];
+		f.authored.evidence.ledgerHash = hashEditingEvidence(
+			f.authored.evidence.ledger,
+		);
+		f.authored.evidence.artifactHash = localStoryArtifactHash(
+			f.authored.evidence,
+		);
+		return f;
+	}
+	it("publishes and replays an editable draft with matching scoped evidence", async () => {
+		const f = scopedFixture();
+		const result = await f.run();
+		expect(result.localStoryEvidence?.sceneScope).toEqual(
+			f.authored.evidence.sceneScope,
+		);
+		await expect(f.run()).resolves.toEqual(result);
+		expect(f.plan).toHaveBeenCalledTimes(1);
+		for (const bounds of [undefined, { fromFrame: 1, toFrame: 120 }]) {
+			const forged = structuredClone(result);
+			const evidence = fixtureItem(forged.localStoryEvidence);
+			if (bounds) evidence.sceneFrameBounds = bounds;
+			else delete evidence.sceneFrameBounds;
+			evidence.artifactHash = localStoryArtifactHash(evidence);
+			f.task.result = forged;
+			await expect(f.run()).rejects.toMatchObject({
+				code: "TASK_RESULT_UNVERIFIED",
+			});
+		}
+	});
+	it.each([
+		1.0416668, 1.041667,
+	])("publishes and replays only source frames at or after the exact scene start %s", async (sceneStart) => {
+		const f = scopedFixture({ prepared: true });
+		const scene = fixtureItem(f.analysis.document.scenes[0]);
+		scene.startInSeconds = sceneStart;
+		fixtureItem(scene.shots[0]).startInSeconds = sceneStart;
+		f.binding.analysisDocumentHash = hashEditingEvidence(f.analysis.document);
+		Object.assign(f.task.parameters.identity, {
+			analysisDocumentHash: f.binding.analysisDocumentHash,
+			bindingHash: hashEditingEvidence(f.binding),
+			bindingSnapshot: f.binding,
+		});
+		Object.assign(f.task.parameters.input.parameters, {
+			targetDurationFrames: 87,
+		});
+		f.refresh();
+		Object.assign(f.authored.selection, {
+			requestedDurationFrames: 87,
+			actualDurationFrames: 87,
+		});
+		Object.assign(fixtureItem(f.authored.selection.clips[0]), {
+			sourceInUs: 1_100_000,
+			durationFrames: 27,
+		});
+		f.authored.segments = [];
+		fixtureItem(f.authored.evidence.sceneScope).startUs = 1_041_667;
+		f.authored.evidence.sceneFrameBounds = { fromFrame: 33, toFrame: 120 };
+		f.authored.evidence.artifactHash = localStoryArtifactHash(
+			f.authored.evidence,
+		);
+
+		const result = await f.run();
+		expect(result.localStoryEvidence?.sceneFrameBounds).toEqual({
+			fromFrame: 33,
+			toFrame: 120,
+		});
+		await expect(f.run()).resolves.toEqual(result);
+		const stale = structuredClone(result);
+		const evidence = fixtureItem(stale.localStoryEvidence);
+		evidence.sceneFrameBounds = { fromFrame: 32, toFrame: 120 };
+		evidence.artifactHash = localStoryArtifactHash(evidence);
+		f.task.result = stale;
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+		expect(f.plan).toHaveBeenCalledTimes(1);
+	});
+	it("rejects scene frame bounds inconsistent with the verified analysis even with a matching artifact hash", async () => {
+		const f = scopedFixture();
+		f.authored.evidence.sceneFrameBounds = { fromFrame: 0, toFrame: 121 };
+		f.authored.evidence.artifactHash = localStoryArtifactHash(
+			f.authored.evidence,
+		);
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+		expectNoPublication(f);
+	});
+	it("rejects a generated clip crossing the verified scene before publication", async () => {
+		const f = scopedFixture();
+		fixtureItem(f.authored.selection.clips[1]).sourceInUs += 1_000_000;
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+		expectNoPublication(f);
+	});
+	it("rejects a scoped ledger that claims work outside the verified scene", async () => {
+		const f = scopedFixture();
+		f.authored.evidence.ledger.coveredRefs[1] = "s2";
+		fixtureItem(f.authored.evidence.ledger.events[0]).refs[1] = "s2";
+		f.authored.evidence.ledgerHash = hashEditingEvidence(
+			f.authored.evidence.ledger,
+		);
+		f.authored.evidence.artifactHash = localStoryArtifactHash(
+			f.authored.evidence,
+		);
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+		expectNoPublication(f);
+	});
+	it("publishes an editable trailer with matching original source windows and checks replay", async () => {
+		const trailer = {
+			durationMode: "EXACT",
+			disclosure: "SETUP_ONLY",
+		} as const;
+		const f = fixture({ trailer });
+		const result = await f.run();
+		expect(result.renderMode).toBe("DRAFT");
+		expect(result).toMatchObject({ requestedFrames: 120, actualFrames: 120 });
+		expect(f.projects[0]?.title).toContain("（予告編）");
+		const windows = f.authored.evidence.trailer?.windows;
+		expect(windows).toEqual([
+			{ sourceInUs: 0, durationFrames: 60 },
+			{ sourceInUs: 2_000_000, durationFrames: 60 },
+		]);
+		expect(document(f).autoGeneration).toMatchObject({
+			trailer,
+			localStoryEvidence: { trailer: { intent: trailer, windows } },
+		});
+		expect(f.revisions).toHaveLength(1);
+		expect(f.render).not.toHaveBeenCalled();
+		expect(f.derive).not.toHaveBeenCalled();
+		Object.assign(f.task, { state: "SUCCEEDED", result });
+		await expect(f.run()).resolves.toEqual(result);
+
+		const forged = structuredClone(result);
+		const evidence = fixtureItem(forged.localStoryEvidence);
+		fixtureItem(evidence.trailer).intent.disclosure = "SETUP_AND_QUESTION";
+		evidence.artifactHash = localStoryArtifactHash(evidence);
+		Object.assign(f.task, { result: forged });
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+	});
+
+	it("rejects trailer evidence windows that differ from the proposed timeline even with a matching hash", async () => {
+		const f = fixture({
+			trailer: { durationMode: "TARGET", disclosure: "SETUP_ONLY" },
+		});
+		const trailer = fixtureItem(f.authored.evidence.trailer);
+		fixtureItem(trailer.windows[1]).sourceInUs += 1_000_000;
+		f.authored.evidence.artifactHash = localStoryArtifactHash(
+			f.authored.evidence,
+		);
+		await expect(f.run()).rejects.toMatchObject({
+			code: "TASK_RESULT_UNVERIFIED",
+		});
+		expectNoPublication(f);
+	});
+
+	it.each([
+		"OFF",
+		"AUTO",
+	] as const)("keeps a video-only editable project with captions=%s when speech dependencies are missing", async (captions) => {
+		const preflight = vi.fn<
+			NonNullable<
+				Parameters<typeof createLibraryGenerationHandler>[0]["preflight"]
+			>
+		>(async (parameters, _signal, hasAudio) => {
+			assertNativeGenerationReady(
+				{
+					version: "bitovp-native-editing-preflight-v1",
+					checkedAt: Date.now(),
+					code: "UNAVAILABLE",
+					checks: [
+						{ component: "MEDIA_TOOLS", code: "READY" },
+						{ component: "SCRATCH", code: "READY" },
+						{ component: "ASR_RUNTIME", code: "MISSING" },
+						{ component: "ASR_MODEL", code: "MISSING" },
+						{ component: "VAD_MODEL", code: "MISSING" },
+						{ component: "CAPTION_ALIGNMENT", code: "MISSING" },
+						{ component: "CAPTION_FONT", code: "MISSING" },
+					],
+				},
+				nativeGenerationComponents(parameters, hasAudio),
+			);
+		});
+		const f = fixture({ captions, preflight });
+		f.media.probe.streams = [];
+		f.authored.segments = [];
+		f.authored.warnings.push("SOURCE_HAS_NO_AUDIO");
+		const result = await f.run();
+		expect(preflight).toHaveBeenCalledExactlyOnceWith(
+			f.context.parameters,
+			f.context.signal,
+			false,
+		);
+		expect(f.plan).toHaveBeenCalledWith(
+			expect.objectContaining({ hasAudio: false }),
+		);
+		expect(f.projects).toHaveLength(1);
+		expect(document(f).captions ?? []).toEqual([]);
+		expect(result.warnings).toContain("SOURCE_HAS_NO_AUDIO");
+	});
 	it.each([
 		undefined,
 		"f".repeat(64),
@@ -776,22 +1018,23 @@ it("omits unaligned automatic paragraphs instead of repeating their full text ov
 	expect(f.render).not.toHaveBeenCalled();
 });
 
-function captionAlignmentStub() {
+function captionAlignmentStub(
+	window = { startUs: 0, endUs: 4_000_000 },
+	word = { startUs: 2_500_000, endUs: 3_000_000 },
+) {
 	return vi.fn<typeof alignSelectedCaptionSegments>(async (input) => {
 		const segment = input.segments[0];
 		if (!segment) throw new Error("Missing authored alignment input");
 		const segments = [
 			{
 				...segment,
-				startUs: 2_500_000,
-				endUs: 3_000_000,
+				...word,
 				words: [
 					{
 						text: segment.text,
 						startChar: 0,
 						endChar: segment.text.length,
-						startUs: 2_500_000,
-						endUs: 3_000_000,
+						...word,
 						confidence: 0,
 					},
 				],
@@ -803,8 +1046,7 @@ function captionAlignmentStub() {
 			segmentIndex: 0,
 			startChar: 0,
 			endChar: segment.text.length,
-			startUs: 2_500_000,
-			endUs: 3_000_000,
+			...word,
 		};
 		return {
 			segments,
@@ -819,7 +1061,7 @@ function captionAlignmentStub() {
 				inputHash: captionAlignmentInputHash(input),
 				outputHash: hashEditingEvidence(segments),
 				baseOutputHash: hashEditingEvidence(segments),
-				sourceAudioUs: 4_000_000,
+				sourceAudioUs: window.endUs - window.startUs,
 				modelLoadMs: 500,
 				alignmentMs: 750,
 				focusWindows: [],
@@ -830,8 +1072,7 @@ function captionAlignmentStub() {
 				},
 				windows: [
 					{
-						startUs: 0,
-						endUs: 4_000_000,
+						...window,
 						inputTextHash: hashEditingEvidence(segment.text),
 						pcmSha256: "b".repeat(64),
 					},
@@ -871,6 +1112,60 @@ it("adds caption-only aligned times once while preserving the accepted story tra
 	);
 	expect(result.metrics.captionAlignmentModelLoadMs).toBe(500);
 	expect(result.metrics.captionAlignmentInferenceMs).toBe(750);
+	expect(f.render).not.toHaveBeenCalled();
+});
+
+it("keeps an editable story when every requested subtitle abstains and records original paragraph context", async () => {
+	const base = captionAlignmentStub();
+	const aligner = vi.fn<typeof alignSelectedCaptionSegments>(async (input) => {
+		const result = await base(input);
+		const original = input.segments[0];
+		if (!original) throw new Error("Missing fixture paragraph");
+		const omitted = {
+			segmentIndex: 0,
+			sourceStartUs: original.startUs,
+			sourceEndUs: original.endUs,
+			textPreview: original.text,
+			textHash: hashEditingEvidence(original.text),
+			reason: "ZERO_DURATION_NO_ANCHOR" as const,
+		};
+		return {
+			segments: [],
+			warnings: ["CAPTION_ALIGNMENT_PARTIAL"],
+			receipt: {
+				...result.receipt,
+				omittedParagraphs: [omitted],
+				baseOutputHash: hashEditingEvidence([]),
+				outputHash: hashEditingEvidence([]),
+				measurements: {
+					base: result.receipt.measurements.base.map((m) => ({
+						...m,
+						endUs: m.startUs,
+					})),
+					focus: [],
+					final: [],
+				},
+			},
+		};
+	});
+	const f = fixture({ captions: "ORIGINAL", captionAligner: aligner });
+	f.authored.transcriptLanguage = "en";
+	f.authored.segments = [{ startUs: 0, endUs: 4_000_000, text: "NOO" }];
+	const before = structuredClone(f.authored);
+	const result = await f.run();
+	expect(f.authored).toEqual(before);
+	expect(result.warnings).toContain("CAPTION_ALIGNMENT_PARTIAL");
+	expect(result.projectIds).toHaveLength(1);
+	expect(document(f).clips.length).toBeGreaterThan(0);
+	expect(document(f).captions ?? []).toEqual([]);
+	if (result.captionAlignment?.version !== CAPTION_ALIGNMENT_POLICY.version)
+		throw new Error("Missing current alignment receipt");
+	expect(document(f).autoGeneration?.captionOmissions).toEqual(
+		result.captionAlignment.omittedParagraphs,
+	);
+	expect(document(f).autoGeneration?.captionOmissions?.[0]?.textPreview).toBe(
+		"NOO",
+	);
 	expect(f.render).not.toHaveBeenCalled();
 });
 
@@ -964,6 +1259,63 @@ it("skips extra alignment when selected words already have measured timing", asy
 	expect(document(f).captions?.[0]?.text).toBe("Hello");
 });
 
+it("aligns a scoped caption near its left edge using observed language inside that scene", async () => {
+	const audioBounds = { startUs: 4_000_000, endUs: 6_000_000 };
+	const word = { startUs: 4_500_000, endUs: 5_000_000 };
+	const aligner = captionAlignmentStub(audioBounds, word);
+	const f = fixture({ captions: "ORIGINAL", captionAligner: aligner });
+	const sceneId = fixtureItem(f.sceneIds[1]);
+	Object.assign(f.task.parameters.input.parameters, {
+		storySceneId: sceneId,
+		targetDurationFrames: 60,
+	});
+	f.refresh();
+	Object.assign(f.authored.selection, {
+		requestedDurationFrames: 60,
+		actualDurationFrames: 60,
+		clips: [
+			{
+				sceneId,
+				shotIndex: 0,
+				sourceInUs: audioBounds.startUs,
+				durationFrames: 60,
+			},
+		],
+	});
+	const evidence = f.authored.evidence;
+	evidence.sceneScope = { sceneId, ...audioBounds };
+	evidence.sceneFrameBounds = { fromFrame: 120, toFrame: 180 };
+	evidence.inputCoverage = {
+		totalShots: 1,
+		eligibleShots: 1,
+		processedShots: 1,
+		excludedShots: 0,
+		truncated: false,
+	};
+	evidence.ledger.coveredRefs = ["s2"];
+	const event = fixtureItem(evidence.ledger.events[0]);
+	event.refs = ["s2"];
+	fixtureItem(event.quotes[0]).ref = "s2";
+	evidence.ledgerHash = hashEditingEvidence(evidence.ledger);
+	evidence.artifactHash = localStoryArtifactHash(evidence);
+	f.authored.transcriptLanguageWindows = [{ ...audioBounds, language: "ja" }];
+	f.authored.segments = [{ ...word, text: "次のセリフ" }];
+	const result = await f.run();
+	expect(aligner).toHaveBeenCalledExactlyOnceWith(
+		expect.objectContaining({
+			audioBounds,
+			language: "ja",
+			sourceOriginUs: 0,
+			sourceDurationUs: 6_000_000,
+		}),
+	);
+	expect(result.captionAlignment?.windows).toMatchObject([audioBounds]);
+	expect(document(f).captions?.[0]).toMatchObject({
+		text: "次のセリフ",
+		fromFrame: 15,
+		toFrame: 30,
+	});
+});
 it("resolves selected observed language windows even without a full-source unanimous language", async () => {
 	const aligner = captionAlignmentStub();
 	const f = fixture({ captions: "ORIGINAL", captionAligner: aligner });

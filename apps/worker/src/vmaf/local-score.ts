@@ -16,6 +16,7 @@ import {
 	type NativeScoreContext,
 	runNativeVmafScore,
 } from "./native-score";
+import type { VerifiedNativeScore } from "./native-score-reuse";
 
 type InputExecution = { backend: "cpu" | "cuda"; reason?: string };
 
@@ -39,11 +40,14 @@ export async function runLocalVmafScore(
 	/** Parsed once; the processor reuses it instead of loading a large log twice. */
 	log?: unknown;
 	resourceSnapshot?: NativeResourceSnapshot;
+	verifiedNativeScore?: VerifiedNativeScore;
 }> {
 	if (options.scoring) return runNativeVmafScore(deps, options, context);
 	if (
 		context.calibrationFrames !== undefined ||
-		context.nativeInflightFrames !== undefined
+		context.nativeInflightFrames !== undefined ||
+		context.expectedReferenceSha256 !== undefined ||
+		context.verifiedReuse !== undefined
 	)
 		throw new Error("NATIVE_INTERNAL_CONTROLS_REQUIRE_NATIVE_SCORING");
 	const { signal } = context;

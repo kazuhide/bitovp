@@ -121,6 +121,14 @@ const en = {
 	cohesion: "Scene continuity",
 	duration: "Closest whole-shot duration",
 	query: "Context to include",
+	trailerNoPlan:
+		"There are not enough confirmed moments for this trailer. Try a shorter target or review the source analysis.",
+	trailerExactUnavailable:
+		"The eligible moments do not fit that exact duration. Choose a target or a maximum duration.",
+	trailerSearchLimit:
+		"The search reached its limit before finding an exact fit. Choose a target or maximum duration to review a candidate.",
+	trailerTranscriptRequired:
+		"Trailer planning requires a transcript for the full source. Check the transcription settings and try again.",
 	queryHelp:
 		"Describe the topic or scene. Selection uses the recorded scene descriptions.",
 	videoFit: "Video framing",
@@ -242,6 +250,8 @@ const en = {
 		"The editing configuration has changed. Create a new editing proposal.",
 	localStoryContextLimit:
 		"This source could not be processed within the analysis limits. Ask the operator to check the analysis settings.",
+	localStorySceneTranscriptRequired:
+		"Could not transcribe the selected scene. Check the source audio and transcription settings, then retry.",
 	localStoryPlanUnavailable:
 		"A connected edit could not fit the requested length. Try another length or editing approach.",
 	localStoryCoherence:
@@ -387,7 +397,7 @@ const ja: Record<keyof typeof en, string> = {
 	policyLocalStoryHelp:
 		"AISAと発話から、対象の役割や出来事の関係を読み取り、短い編集案を作ります。",
 	policyLocalStoryDetails:
-		"登場する対象・出来事と根拠を整理し、希望尺へ収まる話の骨格を選びます。元映像の提示順を保ち、足りない文脈や不明な関係を創作しません。",
+		"対象と出来事を映像の提示順に整理し、映像から裏付けられる内容で希望尺に収まる構成を選びます。",
 	storyMode: "編集方針",
 	storyModeHelp:
 		"おまかせでは素材と尺に合う方針を選びます。どちらも内容を凝縮し、後から編集できます。",
@@ -413,6 +423,14 @@ const ja: Record<keyof typeof en, string> = {
 	cohesion: "シーンのつながりを優先",
 	duration: "ショット単位で希望尺に近づける",
 	query: "含めたい内容",
+	trailerNoPlan:
+		"条件を満たす場面を十分に確認できませんでした。尺を短くするか、素材の解析結果を確認してください。",
+	trailerExactUnavailable:
+		"採用できる場面では指定秒数ちょうどに収まりませんでした。目標または上限として指定してください。",
+	trailerSearchLimit:
+		"指定尺ちょうどの候補を探す処理が上限に達しました。「目標」または「指定秒数以内」に変更して候補を確認できます。",
+	trailerTranscriptRequired:
+		"予告編の作成には、素材の全編の文字起こしが必要です。文字起こしの設定を確認してください。",
 	queryHelp: "話題や場面を入力します。記録済みのシーン説明をもとに選択します。",
 	videoFit: "映像の収め方",
 	videoPreserveAuto: "全体表示＋ぼかし背景",
@@ -493,7 +511,7 @@ const ja: Record<keyof typeof en, string> = {
 		"サンプル用に作成されたメタデータです。実際の AISA キャプチャではありません。",
 	attested: "操作員が時間・寸法・内容の対応を確認しています。",
 	unverified:
-		"この解析と準備済み素材の対応は未確認です。映像とシーン説明を照合してから確認を記録してください。",
+		"映像とシーン説明を照合し、解析対象と準備済み素材が一致することを確認してから記録してください。",
 	video: "対応確認用の準備済み映像",
 	videoError:
 		"素材映像を再生できませんでした。再読込してから確認してください。",
@@ -531,8 +549,10 @@ const ja: Record<keyof typeof en, string> = {
 		"自動構成の設定が更新されました。新しい編集案として作成してください。",
 	localStoryContextLimit:
 		"この素材を解析できる範囲を超えました。運用担当者に解析設定の確認を依頼してください。",
+	localStorySceneTranscriptRequired:
+		"選択したシーンの音声を文字起こしできませんでした。素材の音声と文字起こしの設定を確認し、再試行してください。",
 	localStoryPlanUnavailable:
-		"希望尺に収まる構成を作れませんでした。尺や編集方針を変えて試してください。",
+		"希望の長さに収まる編集案を作れませんでした。長さや編集方針を変えて試してください。",
 	localStoryCoherence:
 		"選んだ場面のつながりを根拠付きで確認できませんでした。尺や場面の設定を変えて試してください。",
 	localStoryDurationLimited:
@@ -601,6 +621,7 @@ export function productionWarning(code: string, c: ProductionCopy): string {
 		ASR_MODEL_NOT_CONFIGURED: "noModel",
 		WORD_ALIGNMENT_UNAVAILABLE: "segmentOnly",
 		CAPTION_ALIGNMENT_UNAVAILABLE: "segmentOnly",
+		CAPTION_ALIGNMENT_PARTIAL: "segmentOnly",
 		SEGMENT_END_CLAMPED: "clamped",
 		TRACKING_FIT_FALLBACK: "fit",
 		TRACKING_NO_SHOT_EVIDENCE: "noShot",
@@ -639,6 +660,7 @@ export function productionPhase(phase: string, c: ProductionCopy): string {
 export function productionFailure(
 	code: string | null,
 	c: ProductionCopy,
+	fallback = c.error,
 ): string {
 	switch (code) {
 		case "LOCAL_SEMANTIC_UNAVAILABLE":
@@ -650,7 +672,18 @@ export function productionFailure(
 		case "LOCAL_STORY_CONTEXT_LIMIT":
 			return c.localStoryContextLimit;
 		case "LOCAL_STORY_PLAN_UNAVAILABLE":
+		case "LOCAL_STORY_NO_FITTING_PLAN":
 			return c.localStoryPlanUnavailable;
+		case "LOCAL_TRAILER_NO_FITTING_PLAN":
+			return c.trailerNoPlan;
+		case "LOCAL_TRAILER_EXACT_DURATION_UNAVAILABLE":
+			return c.trailerExactUnavailable;
+		case "LOCAL_TRAILER_SEARCH_LIMIT":
+			return c.trailerSearchLimit;
+		case "LOCAL_STORY_TRANSCRIPT_REQUIRED":
+			return c.trailerTranscriptRequired;
+		case "LOCAL_STORY_SCENE_TRANSCRIPT_REQUIRED":
+			return c.localStorySceneTranscriptRequired;
 		case "LOCAL_STORY_BLUEPRINT_COHERENCE_INVALID":
 		case "LOCAL_STORY_SELECTION_COHERENCE_INVALID":
 			return c.localStoryCoherence;
@@ -678,6 +711,6 @@ export function productionFailure(
 		case "NORMALIZATION_EVIDENCE_UNVERIFIED":
 			return c.preparedClockUnavailable;
 		default:
-			return c.error;
+			return fallback;
 	}
 }

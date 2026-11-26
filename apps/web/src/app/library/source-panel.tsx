@@ -117,7 +117,7 @@ export function SourcePanel({
 		},
 	});
 	return (
-		<section className="space-y-4">
+		<section className="@container/source-panel space-y-4">
 			<div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-zinc-400">
 				{!embeddedPlayback && (
 					<h2 className="font-semibold text-sm">
@@ -166,11 +166,11 @@ export function SourcePanel({
 				className={
 					embeddedPlayback || !hasAnalysis
 						? "space-y-4"
-						: "grid items-start gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]"
+						: "grid items-start gap-5 @min-[48rem]/source-panel:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]"
 				}
 			>
 				{!embeddedPlayback && (
-					<div className="order-1 min-w-0 space-y-4 xl:col-start-1 xl:row-start-1">
+					<div className="order-1 min-w-0 space-y-4 @min-[48rem]/source-panel:col-start-1 @min-[48rem]/source-panel:row-start-1">
 						{link ? (
 							<>
 								<SelectNative
@@ -228,7 +228,7 @@ export function SourcePanel({
 							? "hidden"
 							: embeddedPlayback
 								? "space-y-4"
-								: "order-2 min-w-0 space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 xl:sticky xl:top-4 xl:col-start-2 xl:row-start-1 xl:row-span-2 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto"
+								: "order-2 min-w-0 space-y-4 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 @min-[48rem]/source-panel:sticky @min-[48rem]/source-panel:top-4 @min-[48rem]/source-panel:col-start-2 @min-[48rem]/source-panel:row-start-1 @min-[48rem]/source-panel:row-span-2 @min-[48rem]/source-panel:max-h-[calc(100vh-2rem)] @min-[48rem]/source-panel:overflow-y-auto"
 					}
 				>
 					{hasAnalysis && !embeddedPlayback && (
@@ -265,7 +265,7 @@ export function SourcePanel({
 						))}
 				</div>
 				{analysis && !embeddedPlayback && (
-					<section className="order-3 min-w-0 space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 xl:col-start-1 xl:row-start-2">
+					<section className="order-3 min-w-0 space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 @min-[48rem]/source-panel:col-start-1 @min-[48rem]/source-panel:row-start-2">
 						<h3 className="font-semibold">{t("library.globalMetadata")}</h3>
 						<p className="break-words font-medium">
 							{analysis.document.title || t("library.unreported")}

@@ -15,7 +15,8 @@ The [feature guide](https://kazuhide.github.io/bitovp/) and demo are also availa
 between English and Japanese.
 
 Open the [interactive demo](https://kazuhide.github.io/bitovp/#/demo) to explore
-the dashboard, example jobs, Live monitoring, quality reports, and encoding forms
+the dashboard, VOD timeline editing, Live and pseudo-live logs, sample AISA
+analysis, clip editing, and quality reports
 without an account. Created jobs and their progress are simulated. Demo jobs
 stay in the current browser tab. **Reset demo** clears those jobs and demo form
 drafts. Display preferences remain in your browser.

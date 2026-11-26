@@ -4,8 +4,14 @@ import {
 	resolveApiTokenForAuthentication,
 	type UserRole,
 } from "@bitovp/db";
-import { bearerToken, createTokenVerifier, tokenPrefixOf } from "./api-token";
+import {
+	bearerToken,
+	createTokenVerifier,
+	EXPERIMENT_TOKEN_PREFIX,
+	tokenPrefixOf,
+} from "./api-token";
 import { loadAuthConfig } from "./config";
+import { ENCODING_EXPERIMENT_SCOPE } from "./encoding-experiment-scope";
 import { ipAllowedByPolicy, verifiedClientIp } from "./ip-policy";
 import { parseRole, UNKNOWN_ROLE_CEILING } from "./roles";
 import {
@@ -44,6 +50,7 @@ export type AuthenticatedContext = {
 	targetDisplayName: string | null;
 	actor: string;
 	tokenRoleKnown?: boolean;
+	tokenScope?: string | null;
 	user?: ResolvedUser;
 	payload?: SessionPayload;
 };
@@ -145,7 +152,12 @@ async function resolveContext(
 				403,
 				"Legacy authentication is confined to the main organization",
 			);
-		if (!row) throw new AuthContextError(401, "Invalid API token");
+		if (
+			!row ||
+			token.startsWith(EXPERIMENT_TOKEN_PREFIX) !==
+				(row.scope === ENCODING_EXPERIMENT_SCOPE)
+		)
+			throw new AuthContextError(401, "Invalid API token");
 		if (!row.userId && row.organizationId !== DEFAULT_ORGANIZATION_ID)
 			throw new AuthContextError(
 				403,
@@ -186,6 +198,7 @@ async function resolveContext(
 			isImpersonating: false,
 			targetDisplayName: null,
 			tokenRoleKnown: role !== null,
+			tokenScope: row.scope ?? null,
 			user: owner ?? undefined,
 			actor: `token:${row.id}`,
 		};

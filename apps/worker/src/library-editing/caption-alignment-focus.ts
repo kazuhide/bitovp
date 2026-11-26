@@ -31,6 +31,7 @@ type PlanningInput = {
 	selectedRanges: readonly Range[];
 	sourceOriginUs: number;
 	sourceDurationUs: number;
+	audioBounds?: Range;
 	mediaSha256: string;
 	language: "ja" | "en" | "auto";
 	captionTimingEvidence?: CaptionTimingEvidence;
@@ -138,7 +139,7 @@ export function planCaptionAlignmentFocus(input: PlanningInput) {
 		!Object.values(profiles).some((p) => p.sha256 === e.modelSha256)
 	)
 		invalid();
-	const source = {
+	const source = input.audioBounds ?? {
 		startUs: input.sourceOriginUs,
 		endUs: input.sourceOriginUs + input.sourceDurationUs,
 	};
@@ -147,6 +148,7 @@ export function planCaptionAlignmentFocus(input: PlanningInput) {
 		if (r.startUs < prior || !contains(source, r)) invalid();
 		prior = r.endUs;
 	}
+	for (const r of e.speechCoverage ?? []) if (!contains(source, r)) invalid();
 	const runs = merged(input.selectedRanges),
 		buckets = runs.map(() => [] as CaptionFocusCandidate[]);
 	const rawByKey = new Map<
@@ -397,6 +399,7 @@ export function planCaptionAlignmentFocus(input: PlanningInput) {
 			transcriptHash: e.transcriptHash,
 			rawSegmentsHash: hashEditingEvidence(e.rawSegments),
 			speechIntervalsHash: hashEditingEvidence(e.speechIntervals),
+			...(e.speechCoverage ? { speechCoverage: e.speechCoverage } : {}),
 		},
 	};
 }

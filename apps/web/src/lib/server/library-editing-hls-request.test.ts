@@ -76,6 +76,8 @@ function fixture() {
 		prisma: {
 			librarySource: { findUnique: async () => source },
 			encodingJob: {
+				findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+					where.id.in.includes(jobId) ? [{ id: jobId, plan }] : [],
 				findUnique: async () => ({
 					organizationId,
 					bitmovinEncodingId: encodingId,

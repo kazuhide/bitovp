@@ -93,6 +93,18 @@ export const ROUTE_RULES: readonly RouteRule[] = [
 		reason: "Organization access history",
 	},
 	{
+		prefix: "/api/operation-analytics",
+		methods: ["GET", "HEAD"],
+		minRole: "ADMIN",
+		reason: "Weekly operation aggregates for the current organization",
+	},
+	{
+		prefix: "/api/operation-attempts",
+		methods: ["POST"],
+		minRole: "OPERATOR",
+		reason: "Report the outcome of an authorized MoQ preview attempt",
+	},
+	{
 		prefix: "/api/organizations/[id]",
 		minRole: "ADMIN",
 		reason: "Organization policy management",
@@ -190,6 +202,37 @@ export const ROUTE_RULES: readonly RouteRule[] = [
 		reason: "Run-bound provider statistics, events and SRT diagnostics",
 	},
 	{
+		prefix: "/api/live-channels/moq-readiness",
+		methods: ["GET", "HEAD"],
+		minRole: "OPERATOR",
+		reason: "Checks tenant MoQ preview configuration before provisioning",
+	},
+	{
+		prefix: "/api/live-channels/[id]/runs/[runId]/moq-playback",
+		methods: ["GET", "HEAD"],
+		minRole: "OPERATOR",
+		reason: "Reveals a run-bound subscribe-only MoQ playback capability",
+	},
+	{
+		prefix: "/api/player-assets/moq",
+		methods: ["GET", "HEAD"],
+		minRole: "OPERATOR",
+		reason: "Fixed operator-configured MoQ preview player build",
+	},
+	{
+		prefix: "/api/live-channels/[id]/runs/[runId]/moq-observations",
+		methods: ["GET", "HEAD", "PUT"],
+		minRole: "OPERATOR",
+		reason:
+			"Run-bound playback observations and private received-preview recordings",
+	},
+	{
+		prefix: "/api/live-channels/[id]/runs/[runId]/moq-analytics",
+		methods: ["GET", "HEAD"],
+		minRole: "OPERATOR",
+		reason: "Exact run and impression-bound Analytics readback",
+	},
+	{
 		prefix: "/api/live-channels/[id]/runs/[runId]/final-heartbeat",
 		methods: ["GET", "HEAD"],
 		minRole: "ADMIN",
@@ -262,6 +305,16 @@ export const ROUTE_RULES: readonly RouteRule[] = [
 		minRole: "VIEWER",
 		reason:
 			"self-service account surface (password rotate) — every signed-in role acts on ITSELF here; the OPERATOR write catch-all below would lock a VIEWER out of their own forced rotate",
+	},
+	{
+		prefix: "/api/vod/input-previews",
+		minRole: "OPERATOR",
+		reason: "manual VOD input preparation and derived source previews",
+	},
+	{
+		prefix: "/api/vod/input-favorites",
+		minRole: "OPERATOR",
+		reason: "organization fixed input references for VOD editing",
 	},
 	{
 		prefix: "/api",

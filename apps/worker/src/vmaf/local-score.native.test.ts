@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { gzipSync } from "node:zlib";
 import { parseVmafJson, type VmafCommandOptions } from "@bitovp/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runLocalVmafScore } from "./local-score";
 import { NATIVE_OFFICIAL_REVISION } from "./native-contract";
 import { fixtureValue, nativeReceipt, SHA } from "./native-fixture.test-helper";
+import { NativePairRefusal, SCORER_PAIR_REFUSALS } from "./native-score";
+import { sealVerifiedNativeScore } from "./native-score-reuse";
 
 const cleanup = vi.hoisted(() => ({
 	afterRemove: undefined as undefined | ((path: unknown) => void),
@@ -39,8 +42,12 @@ afterEach(async () => {
 	);
 });
 const source = "a".repeat(64);
-const probe = (extra = {}) =>
+const probe = (
+	extra = {},
+	formatName: string | null = "mov,mp4,m4a,3gp,3g2,mj2",
+) =>
 	JSON.stringify({
+		...(formatName === null ? {} : { format: { format_name: formatName } }),
 		streams: [
 			{
 				codec_type: "video",
@@ -93,9 +100,13 @@ async function setup() {
 					stdout: `bitovp-vmaf 0.1 owned CUDA/Vulkan; official=${NATIVE_OFFICIAL_REVISION}; source=${source}\n`,
 					stderr: "",
 				};
+			// As the scorer does, it compares at the bit depth that it is told.
 			await writeFile(
 				fixtureValue(args, args.indexOf("--output") + 1),
-				JSON.stringify(receipt),
+				JSON.stringify({
+					...receipt,
+					bitDepth: Number(fixtureValue(args, args.indexOf("--bit-depth") + 1)),
+				}),
 			);
 			return { code: 0, stdout: "PASS", stderr: "" };
 		},
@@ -119,7 +130,475 @@ async function setup() {
 	};
 }
 
+async function setupReuse() {
+	const h = await setup();
+	const executable = join(dirname(h.options.referencePath), "native");
+	const binary = "test executable identity";
+	await writeFile(executable, binary, { mode: 0o700 });
+	h.deps.nativePath = executable;
+	const identity = {
+		sourceSha256: source,
+		binarySha256: createHash("sha256").update(binary).digest("hex"),
+		supervisorBinarySha256: "d".repeat(64),
+		deviceUuid: h.receipt.device.uuid,
+	};
+	const device = {
+		...h.receipt.device,
+		driverVersion: "fixture-driver-1",
+		driverVersionKnown: true,
+		driverVersionSource: "vulkan-driver-properties",
+		memoryTotalBytes: null,
+		memoryAvailableBytes: null,
+		memoryAvailableSource: "unknown",
+		memoryHeapIndex: null,
+		pciBusId: null,
+	};
+	const original = h.run.getMockImplementation();
+	if (!original) throw new Error("Missing fake native runner");
+	const decoderRuntime = {
+		probeSha256: "8".repeat(64) as string | null,
+		completionSha256: "8".repeat(64) as string | null,
+		scoringSha256: "7".repeat(64) as string | null,
+		selfContainedMovInputs: true as boolean | undefined,
+	};
+	h.run.mockImplementation(async (program, args, context) => {
+		if (args[0] === "--decoder-runtime") {
+			const sha256 = decoderRuntime.probeSha256;
+			return {
+				code: sha256 ? 0 : 1,
+				stdout: sha256
+					? JSON.stringify({
+							schemaVersion: 1,
+							sourceSha256: identity.sourceSha256,
+							sha256,
+						})
+					: "",
+				stderr: "",
+			};
+		}
+		return args[0] === "--device-info"
+			? {
+					code: 0,
+					stdout: JSON.stringify({
+						schemaVersion: 1,
+						sourceSha256: identity.sourceSha256,
+						binarySha256: identity.binarySha256,
+						officialSourceRevision: NATIVE_OFFICIAL_REVISION,
+						backend: "vulkan",
+						device,
+						...(args.includes("--attest-decoder-runtime") &&
+						decoderRuntime.probeSha256
+							? {
+									decoderRuntimeSha256: decoderRuntime.probeSha256,
+									...(decoderRuntime.scoringSha256
+										? { scoringRuntimeSha256: decoderRuntime.scoringSha256 }
+										: {}),
+								}
+							: {}),
+						capabilities: {
+							inflightFrames: [1, 2, 4],
+							cpuParity: true,
+							processSupervisor: true,
+							supervisorBinarySha256: identity.supervisorBinarySha256,
+						},
+					}),
+					stderr: "",
+				}
+			: (async () => {
+					const result = await original(program, args, context);
+					if (
+						args.includes("--attest-decoder-runtime") &&
+						decoderRuntime.completionSha256
+					) {
+						const output = fixtureValue(args, args.indexOf("--output") + 1);
+						const receipt = JSON.parse(await readFile(output, "utf8"));
+						await writeFile(
+							output,
+							JSON.stringify({
+								...receipt,
+								decoderRuntimeSha256: decoderRuntime.completionSha256,
+								scoringRuntimeSha256: decoderRuntime.scoringSha256,
+								selfContainedMovInputs: decoderRuntime.selfContainedMovInputs,
+								...(device.driverVersionKnown
+									? {
+											gpuDriver: {
+												driverVersion: device.driverVersion,
+												driverVersionSource: device.driverVersionSource,
+											},
+										}
+									: {}),
+							}),
+						);
+					}
+					return result;
+				})();
+	});
+	return {
+		...h,
+		device,
+		decoderRuntime,
+		reuse: {
+			organizationId: "00000000-0000-4000-8000-000000000013",
+			scoringVersion: 13,
+			selection: { backend: "vulkan" as const, device: 0, identity },
+		},
+	};
+}
+
+async function completedReuse() {
+	const h = await setupReuse();
+	const result = await runLocalVmafScore(h.deps, h.options, {
+		...h.context,
+		verifiedReuse: h.reuse,
+	});
+	const proof = result.verifiedNativeScore;
+	if (!proof) throw new Error("Missing completion proof");
+	const frames = parseVmafJson(result.log).frames;
+	const framesGzip = gzipSync(JSON.stringify(frames));
+	const candidate = {
+		framesGzip,
+		provenance: {
+			localExecution: result.execution,
+			verifiedNativeScore: sealVerifiedNativeScore(
+				proof,
+				result.execution,
+				framesGzip,
+			),
+		},
+	};
+	h.run.mockClear();
+	return { ...h, candidate, frames };
+}
+
 describe("owned native local scoring", () => {
+	it("replays the verified frame payload without a second native score", async () => {
+		const h = await completedReuse();
+		const load = vi.fn(async () => h.candidate);
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: { ...h.reuse, load },
+		});
+		expect(load).toHaveBeenCalledExactlyOnceWith(
+			h.candidate.provenance.verifiedNativeScore.lookupKey,
+		);
+		expect(result.execution.reusedVerifiedResult).toBe(true);
+		expect(result.verifiedNativeScore).toEqual({
+			key: h.candidate.provenance.verifiedNativeScore.key,
+			lookupKey: h.candidate.provenance.verifiedNativeScore.lookupKey,
+			decoderRuntimeSha256: h.decoderRuntime.probeSha256,
+			scoringRuntimeSha256: h.decoderRuntime.scoringSha256,
+			receiptSha256: h.candidate.provenance.verifiedNativeScore.receiptSha256,
+		});
+		expect(parseVmafJson(result.log).frames).toEqual(h.frames);
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(0);
+	});
+
+	it.each([
+		"organization",
+		"generation",
+		"driver",
+		"decoder-runtime",
+		"psnr",
+		"reference",
+		"distorted",
+		"frames",
+		"evidence",
+		"deleted",
+	] as const)("scores fresh if the predecessor has changed %s", async (change) => {
+		const h = await completedReuse();
+		const scope = { ...h.reuse };
+		if (change === "organization")
+			scope.organizationId = "00000000-0000-4000-8000-000000000014";
+		if (change === "generation") scope.scoringVersion += 1;
+		if (change === "driver") h.device.driverVersion = "fixture-driver-2";
+		if (change === "decoder-runtime") {
+			h.decoderRuntime.probeSha256 = "9".repeat(64);
+			h.decoderRuntime.completionSha256 = h.decoderRuntime.probeSha256;
+		}
+		if (change === "psnr") h.options.psnr = false;
+		if (change === "reference" || change === "distorted") {
+			const bytes = "changed video";
+			await writeFile(h.options[`${change}Path`], bytes);
+			h.receipt[`${change}Sha256`] = createHash("sha256")
+				.update(bytes)
+				.digest("hex");
+		}
+		if (change === "frames")
+			h.candidate.framesGzip = gzipSync(
+				JSON.stringify(h.frames.map((frame) => ({ ...frame, vmaf: 97 }))),
+			);
+		const scoring = h.candidate.provenance.localExecution.scoring;
+		if (change === "evidence" && scoring.implementation === "bitovp-owned")
+			scoring.cpuParity.maxScoreError = 1e-5;
+
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: {
+				...scope,
+				load: async () => (change === "deleted" ? null : h.candidate),
+			},
+		});
+		expect(result.execution.reusedVerifiedResult).toBeUndefined();
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(1);
+	});
+
+	it.each([
+		null,
+		"9".repeat(64),
+	])("scores fresh if the runtime changes to %s while reading a valid predecessor", async (runtime) => {
+		const h = await completedReuse();
+		const load = vi.fn(async () => {
+			h.decoderRuntime.probeSha256 = runtime;
+			h.decoderRuntime.completionSha256 = runtime;
+			return h.candidate;
+		});
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: { ...h.reuse, load },
+		});
+		expect(load).toHaveBeenCalledOnce();
+		expect(
+			h.run.mock.calls.filter(
+				([, args]) =>
+					args[0] === "--device-info" &&
+					args.includes("--attest-decoder-runtime"),
+			),
+		).toHaveLength(1);
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(1);
+		expect(result.execution.reusedVerifiedResult).toBeUndefined();
+		expect(result.verifiedNativeScore).toBeUndefined();
+	});
+
+	it.each([
+		"changed",
+		"unavailable",
+		"replaced with the same version",
+	] as const)("scores fresh if the GPU driver is %s during predecessor lookup", async (change) => {
+		const h = await completedReuse();
+		const load = vi.fn(async () => {
+			if (change === "changed") h.device.driverVersion = "fixture-driver-2";
+			else if (change === "unavailable") h.device.driverVersionKnown = false;
+			else h.decoderRuntime.scoringSha256 = "6".repeat(64);
+			return h.candidate;
+		});
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: { ...h.reuse, load },
+		});
+		expect(load).toHaveBeenCalledOnce();
+		expect(result.execution.reusedVerifiedResult).toBeUndefined();
+		expect(result.verifiedNativeScore).toBeUndefined();
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(1);
+	});
+
+	it("does not initialize a device probe without a reusable predecessor", async () => {
+		const h = await setupReuse();
+		await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: { ...h.reuse, load: async () => null },
+		});
+		expect(
+			h.run.mock.calls.filter(([, args]) => args[0] === "--device-info"),
+		).toHaveLength(0);
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(1);
+	});
+
+	it("does not continue after cancellation during predecessor read", async () => {
+		const h = await completedReuse();
+		const controller = new AbortController();
+		await expect(
+			runLocalVmafScore(h.deps, h.options, {
+				...h.context,
+				signal: controller.signal,
+				verifiedReuse: {
+					...h.reuse,
+					load: async () => {
+						controller.abort();
+						return h.candidate;
+					},
+				},
+			}),
+		).rejects.toThrow(/aborted/i);
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(0);
+	});
+
+	it.each([
+		null,
+		"f".repeat(64),
+	])("scores without a reusable seal when the native completion attestation is %s", async (completionSha256) => {
+		const h = await setupReuse();
+		h.decoderRuntime.completionSha256 = completionSha256;
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: h.reuse,
+		});
+		expect(result.run.code).toBe(0);
+		expect(result.verifiedNativeScore).toBeUndefined();
+		expect(
+			h.run.mock.calls.some(([, args]) =>
+				args.includes("--attest-decoder-runtime"),
+			),
+		).toBe(true);
+	});
+
+	it.each([
+		2, 4,
+	] as const)("scores normally without certifying %i parallel frames", async (inflight) => {
+		const h = await setupReuse();
+		const original = h.run.getMockImplementation();
+		if (!original) throw new Error("Missing fake native runner");
+		h.run.mockImplementation(async (program, args, context) => {
+			const result = await original(program, args, context);
+			if (args.includes("--verify-cpu")) {
+				const output = fixtureValue(args, args.indexOf("--output") + 1);
+				const receipt = JSON.parse(await readFile(output, "utf8"));
+				await writeFile(
+					output,
+					JSON.stringify({ ...receipt, inflightFrames: inflight }),
+				);
+			}
+			return result;
+		});
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			nativeInflightFrames: inflight,
+			verifiedReuse: h.reuse,
+		});
+		expect(result.run.code).toBe(0);
+		expect(result.verifiedNativeScore).toBeUndefined();
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(1);
+	});
+
+	it("does not certify a score without actual GPU driver evidence", async () => {
+		const h = await setupReuse();
+		h.device.driverVersionKnown = false;
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: h.reuse,
+		});
+		expect(result.run.code).toBe(0);
+		expect(result.verifiedNativeScore).toBeUndefined();
+	});
+
+	it("scores without a reusable seal if only transient NVML driver evidence was available", async () => {
+		const h = await setupReuse();
+		h.device.driverVersionSource = "nvml-driver-version";
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: h.reuse,
+		});
+		expect(result.run.code).toBe(0);
+		expect(result.verifiedNativeScore).toBeUndefined();
+	});
+
+	it.each([
+		["referenceProbe", "hls"],
+		["distortedProbe", "concat"],
+		["referenceProbe", null],
+	] as const)("scores fresh without candidate lookup when %s identifies %s", async (input, format) => {
+		const h = await completedReuse();
+		const load = vi.fn(async () => h.candidate);
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			[input]: probe({}, format),
+			verifiedReuse: { ...h.reuse, load },
+		});
+		expect(load).not.toHaveBeenCalled();
+		expect(result.execution.reusedVerifiedResult).toBeUndefined();
+		expect(result.verifiedNativeScore).toBeUndefined();
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(1);
+	});
+
+	it.each([
+		false,
+		undefined,
+	])("scores without a reusable seal when the native input attestation is %s", async (selfContainedMovInputs) => {
+		const h = await setupReuse();
+		h.decoderRuntime.selfContainedMovInputs = selfContainedMovInputs;
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: h.reuse,
+		});
+		expect(result.run.code).toBe(0);
+		expect(result.verifiedNativeScore).toBeUndefined();
+	});
+
+	it("scores fresh on a legacy native executable without decoder-runtime preflight", async () => {
+		const h = await setupReuse();
+		h.decoderRuntime.probeSha256 = null;
+		const load = vi.fn(async () => null);
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: { ...h.reuse, load },
+		});
+		expect(load).toHaveBeenCalledOnce();
+		expect(result.execution.reusedVerifiedResult).toBeUndefined();
+		expect(result.verifiedNativeScore).toBeUndefined();
+		const score = h.run.mock.calls.find(([, args]) =>
+			args.includes("--verify-cpu"),
+		);
+		expect(score?.[1]).not.toContain("--attest-decoder-runtime");
+	});
+
+	it("creates evidence for reuse only from a verified full native invocation", async () => {
+		const h = await setupReuse();
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			verifiedReuse: h.reuse,
+		});
+		expect(result.verifiedNativeScore).toMatchObject({
+			key: expect.stringMatching(/^[a-f0-9]{64}$/),
+			receiptSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+			decoderRuntimeSha256: h.decoderRuntime.probeSha256,
+		});
+		expect(
+			h.run.mock.calls.filter(([, args]) => args.includes("--verify-cpu")),
+		).toHaveLength(1);
+	});
+	it("binds an explicitly prepared reference hash to the native receipt input", async () => {
+		const h = await setup();
+		const expectedReferenceSha256 = createHash("sha256")
+			.update("reference")
+			.digest("hex");
+		const result = await runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			expectedReferenceSha256,
+		});
+		expect(result.execution.scoring.backend).toBe("vulkan");
+		expect(h.receipt.referenceSha256).toBe(expectedReferenceSha256);
+	});
+	it.each([
+		"0".repeat(64),
+		"A".repeat(64),
+		"",
+		"a".repeat(63),
+		"a".repeat(65),
+	])("rejects a mismatched or malformed prepared reference hash before native execution: %s", async (expectedReferenceSha256) => {
+		const h = await setup();
+		await expect(
+			runLocalVmafScore(h.deps, h.options, {
+				...h.context,
+				expectedReferenceSha256,
+			}),
+		).rejects.toThrow("NATIVE_REFERENCE_PREPARATION_SHA256_MISMATCH");
+		expect(h.run).not.toHaveBeenCalled();
+	});
 	it("keeps internal calibration bounded and verifies its frame count and pipeline depth", async () => {
 		const h = await setup();
 		Object.assign(h.receipt, {
@@ -203,17 +682,18 @@ describe("owned native local scoring", () => {
 			"amd",
 			"--device",
 			"0",
-			"--bit-depth",
-			"10",
 			"--verify-cpu",
 			"--model",
 			`${h.options.model}=${h.options.modelPath}`,
 		])
 			expect(args).toContain(token);
+		// An 8-bit 4:2:0 reference: libvmaf through FFmpeg compares 8-bit pictures.
+		expect(fixtureValue(args, args.indexOf("--bit-depth") + 1)).toBe("8");
 		expect(context).toMatchObject({ abortKillAfterMs: 250 });
 		expect(result.execution.scoring).toMatchObject({
 			implementation: "bitovp-owned",
 			backend: "vulkan",
+			bitDepth: 8,
 			modelSha256: SHA,
 			cpuParity: { checked: true },
 			device: { index: 0, vendorId: 0x1002 },
@@ -254,17 +734,402 @@ describe("owned native local scoring", () => {
 		{ tags: { rotate: "90" } },
 		{ sample_aspect_ratio: "2:1" },
 		{ color_transfer: "smpte2084" },
-		{ r_frame_rate: "24/1", avg_frame_rate: "24/1" },
 	])("refuses unqualified input presentation: %j", async (extra) => {
 		const h = await setup();
-		await expect(
-			runLocalVmafScore(h.deps, h.options, {
-				...h.context,
-				distortedProbe: probe(extra),
-			}),
-		).rejects.toThrow(/NATIVE_UNSUPPORTED/);
+		const scored = runLocalVmafScore(h.deps, h.options, {
+			...h.context,
+			distortedProbe: probe(extra),
+		});
+		await expect(scored).rejects.toThrow(/NATIVE_UNSUPPORTED/);
+		// A file that the scorer does not take, whatever the other file is.
+		await expect(scored).rejects.toMatchObject({
+			name: "NativePairRefusal",
+			reason: "GPU_PAIR_INPUT",
+		});
 		expect(h.run).not.toHaveBeenCalled();
 	});
+	it("refuses a pair whose frames FFmpeg would repeat or drop, before any process starts", async () => {
+		const start =
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: ";
+		const slots =
+			", and FFmpeg gives each file one frame per slot of the reference's frame rate, repeating and dropping frames, before libvmaf compares them. Use Local CPU for this pair.";
+		for (const [reference, encode, message] of [
+			// Two frame rates.
+			[
+				{},
+				{ r_frame_rate: "24/1", avg_frame_rate: "24/1" },
+				`${start}the reference's frame rate is 30/1 and the encode's is 24/1, and GPU scoring takes two files only where FFmpeg names one frame rate for both. Use Local CPU for this pair.`,
+			],
+			// A file that leaves slots of its frame rate out.
+			[
+				{ avg_frame_rate: "20/1" },
+				{},
+				`${start}the reference's frames are not evenly spaced by what ffprobe says of it (r_frame_rate 30/1, avg_frame_rate 20/1)${slots}`,
+			],
+			[
+				{},
+				{ avg_frame_rate: "0/0" },
+				`${start}the encode's frames are not evenly spaced by what ffprobe says of it (r_frame_rate 30/1, avg_frame_rate 0/0)${slots}`,
+			],
+			// Two frame counts.
+			[
+				{},
+				{ nb_frames: "3", avg_frame_rate: "30/1" },
+				`${start}the reference has 2 frames and the encode 3, and GPU scoring compares two files of the same number of frames. Use Local CPU for this pair.`,
+			],
+		] as const) {
+			const h = await setup();
+			await expect(
+				runLocalVmafScore(h.deps, h.options, {
+					referenceProbe: probe(reference),
+					distortedProbe: probe(encode),
+				}),
+				JSON.stringify([reference, encode]),
+			).rejects.toMatchObject({
+				message,
+				name: "NativePairRefusal",
+				reason: "GPU_PAIR_FRAME_TIMES",
+			});
+			// Neither the scorer nor FFmpeg in its place.
+			expect(h.run).not.toHaveBeenCalled();
+		}
+	});
+	it("times the scorer on the first frames of a pair, whatever ffprobe says of the two cuts", async () => {
+		// A calibration run scores cuts of a pair that has passed the check:
+		// ffprobe's rates and counts of a short Matroska cut are not the file's.
+		const cut = probe({ avg_frame_rate: "0/0", nb_frames: "66" });
+		const h = await setup();
+		Object.assign(h.receipt, {
+			inflightFrames: 1,
+			cpuThreads: 2,
+			decodeThreads: 2,
+			resourceSnapshotScope: "before-result-serialization",
+			memory: { maxRssBytes: 64_000_000, gpuAllocatedBytes: 32_000_000 },
+		});
+		await runLocalVmafScore(h.deps, h.options, {
+			referenceProbe: probe(),
+			distortedProbe: cut,
+			nativeInflightFrames: 1,
+			calibrationFrames: 2,
+		});
+		expect(h.run.mock.calls.map(([binary]) => binary)).toEqual([
+			"bitovp-vmaf",
+			"bitovp-vmaf",
+		]);
+		// The same two files as a measurement are refused.
+		const measured = await setup();
+		await expect(
+			runLocalVmafScore(measured.deps, measured.options, {
+				referenceProbe: probe(),
+				distortedProbe: cut,
+			}),
+		).rejects.toMatchObject({ reason: "GPU_PAIR_FRAME_TIMES" });
+		expect(measured.run).not.toHaveBeenCalled();
+	});
+	it("names the kind of each refusal, which a result scored on the CPU in the scorer's place keeps", async () => {
+		for (const [reference, encode, reason] of [
+			[{ pix_fmt: "yuv444p" }, {}, "GPU_PAIR_PIXEL_FORMAT"],
+			[{ pix_fmt: "yuvj420p", color_range: "pc" }, {}, "GPU_PAIR_COLOR_RANGE"],
+			[{ color_space: "bt709" }, {}, "GPU_PAIR_COLOR_MATRIX"],
+			[
+				{},
+				{ r_frame_rate: "25/1", avg_frame_rate: "25/1" },
+				"GPU_PAIR_FRAME_TIMES",
+			],
+			[{ sample_aspect_ratio: "2:1" }, {}, "GPU_PAIR_INPUT"],
+		] as const) {
+			const h = await setup();
+			await expect(
+				runLocalVmafScore(h.deps, h.options, {
+					referenceProbe: probe(reference),
+					distortedProbe: probe(encode),
+				}),
+				reason,
+			).rejects.toMatchObject({ name: "NativePairRefusal", reason });
+			expect(h.run).not.toHaveBeenCalled();
+		}
+		// A probe that cannot be read is an error of the measurement, not a
+		// pair that the ordinary method would score.
+		const h = await setup();
+		const unreadable = runLocalVmafScore(h.deps, h.options, {
+			referenceProbe: "not JSON",
+			distortedProbe: probe(),
+		});
+		await expect(unreadable).rejects.toThrow("NATIVE_UNSUPPORTED_PROBE");
+		await expect(unreadable).rejects.not.toHaveProperty("reason");
+	});
+	it("compares at the bit depth of the reference, whatever the encode's is", async () => {
+		const ten = { pix_fmt: "yuv420p10le", bits_per_raw_sample: "10" };
+		for (const [reference, encode, depth] of [
+			[ten, {}, "10"],
+			[ten, ten, "10"],
+			[{}, ten, "8"],
+			[{}, { pix_fmt: "yuv422p" }, "8"],
+			// Full range on both sides, as ffprobe names it for 8 and for 10 bits.
+			[
+				{ pix_fmt: "yuvj420p", color_range: "pc" },
+				{ pix_fmt: "yuvj420p", color_range: "pc" },
+				"8",
+			],
+			[{ pix_fmt: "yuvj420p", color_range: "pc" }, { color_range: "pc" }, "8"],
+			[
+				{ ...ten, color_range: "pc" },
+				{ pix_fmt: "yuvj420p", color_range: "pc" },
+				"10",
+			],
+			// The same colour matrix on both sides.
+			[
+				{ ...ten, color_range: "tv", color_space: "bt709" },
+				{ color_space: "bt709" },
+				"10",
+			],
+		] as const) {
+			const h = await setup();
+			// The receipt names the encode as it was before the comparison.
+			const bitdepth = "bits_per_raw_sample" in encode ? 10 : 8;
+			h.receipt.distortedOriginal.bitdepth = bitdepth;
+			const result = await runLocalVmafScore(
+				h.deps,
+				{
+					...h.options,
+					distortedOriginal: { width: 640, height: 360, bitdepth },
+				},
+				{ referenceProbe: probe(reference), distortedProbe: probe(encode) },
+			);
+			const args = fixtureValue(h.run.mock.calls, 1)[1];
+			const label = JSON.stringify([reference, encode]);
+			expect(fixtureValue(args, args.indexOf("--bit-depth") + 1), label).toBe(
+				depth,
+			);
+			expect(result.execution.scoring, label).toMatchObject({
+				bitDepth: Number(depth),
+			});
+		}
+	});
+	it("refuses a pair that the scorer cannot compare as libvmaf through FFmpeg does, before any process starts", async () => {
+		const start =
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: ";
+		const ten = { pix_fmt: "yuv420p10le", bits_per_raw_sample: "10" };
+		for (const [reference, encode, message] of [
+			[
+				{ pix_fmt: "yuv422p10le", bits_per_raw_sample: "10" },
+				{},
+				`${start}the reference's pixel format is yuv422p10le, and GPU scoring compares 8-bit and 10-bit 4:2:0 pictures only, for references in yuv420p and yuv420p10le. Use Local CPU for this pair.`,
+			],
+			[
+				{ pix_fmt: "yuv444p" },
+				{},
+				`${start}the reference's pixel format is yuv444p, and GPU scoring compares 8-bit and 10-bit 4:2:0 pictures only, for references in yuv420p and yuv420p10le. Use Local CPU for this pair.`,
+			],
+			[
+				{ pix_fmt: "yuv420p12le", bits_per_raw_sample: "12" },
+				{},
+				`${start}the reference's pixel format is yuv420p12le, and GPU scoring compares 8-bit and 10-bit 4:2:0 pictures only, for references in yuv420p and yuv420p10le. Use Local CPU for this pair.`,
+			],
+			[
+				{ pix_fmt: "yuvj420p", color_range: "pc" },
+				{ pix_fmt: "yuvj422p", color_range: "pc" },
+				`${start}the reference's pixel format is yuvj420p and the encode's is yuvj422p, and FFmpeg converts such a reference to the encode's format, which GPU scoring compares for an 8-bit 4:2:0 encode only. Use Local CPU for this pair.`,
+			],
+			[
+				{ pix_fmt: "yuvj420p", color_range: "pc" },
+				{},
+				`${start}the reference is full range and the encode is limited range, and FFmpeg converts one of the two before libvmaf compares them. Use Local CPU for this pair.`,
+			],
+			[
+				{ ...ten, color_range: "pc" },
+				ten,
+				`${start}the reference is full range and the encode is limited range, and FFmpeg converts one of the two before libvmaf compares them. Use Local CPU for this pair.`,
+			],
+			[
+				{},
+				{ pix_fmt: "yuvj420p", color_range: "pc" },
+				`${start}the reference is limited range and the encode is full range, and FFmpeg converts one of the two before libvmaf compares them. Use Local CPU for this pair.`,
+			],
+			[
+				{ color_range: "tv", color_space: "bt709" },
+				{},
+				`${start}the reference names the colour matrix bt709 and the encode names no colour matrix, and FFmpeg, which takes a file that names none for BT.601, converts the encode to the reference's matrix before libvmaf compares them. Use Local CPU for this pair.`,
+			],
+			[
+				{ color_space: "bt709" },
+				{ color_space: "smpte170m" },
+				`${start}the reference names the colour matrix bt709 and the encode names the colour matrix smpte170m, and FFmpeg, which takes a file that names none for BT.601, converts the encode to the reference's matrix before libvmaf compares them. Use Local CPU for this pair.`,
+			],
+		] as const) {
+			const h = await setup();
+			await expect(
+				runLocalVmafScore(
+					h.deps,
+					{
+						...h.options,
+						distortedOriginal: {
+							width: 640,
+							height: 360,
+							bitdepth: "bits_per_raw_sample" in encode ? 10 : 8,
+						},
+					},
+					{ referenceProbe: probe(reference), distortedProbe: probe(encode) },
+				),
+				JSON.stringify([reference, encode]),
+			).rejects.toMatchObject({ message });
+			// Neither the scorer nor FFmpeg in its place.
+			expect(h.run).not.toHaveBeenCalled();
+		}
+	});
+	it("takes no result from a scorer that compared at another bit depth or declared the encode to CAMBI", async () => {
+		const version = {
+			code: 0,
+			stdout: `bitovp-vmaf 0.1 owned CUDA/Vulkan; official=${NATIVE_OFFICIAL_REVISION}; source=${source}\n`,
+			stderr: "",
+		};
+		const writes = (h: Awaited<ReturnType<typeof setup>>, receipt: unknown) =>
+			h.run.mockImplementation(async (_binary, args) => {
+				if (args[0] === "--version") return version;
+				await writeFile(
+					fixtureValue(args, args.indexOf("--output") + 1),
+					JSON.stringify(receipt),
+				);
+				return { code: 0, stdout: "PASS", stderr: "" };
+			});
+		// The pictures of generations 9 and 10: 10 bits for an 8-bit reference.
+		const other = await setup();
+		writes(other, { ...other.receipt, bitDepth: 10 });
+		await expect(
+			runLocalVmafScore(other.deps, other.options, other.context),
+		).rejects.toThrow("NATIVE_RECEIPT_COMPARISON_MISMATCH");
+		// A scorer built from an earlier source: the bit depth that it was told,
+		// and the encode's size and bit depth declared to CAMBI.
+		const earlier = await setup();
+		const declared = structuredClone(earlier.receipt);
+		fixtureValue(declared.extractors, 0).options = {
+			enc_width: "640",
+			enc_height: "360",
+			enc_bitdepth: "8",
+		};
+		writes(earlier, { ...declared, bitDepth: 8 });
+		await expect(
+			runLocalVmafScore(earlier.deps, earlier.options, earlier.context),
+		).rejects.toThrow("NATIVE_RECEIPT_COMPARISON_MISMATCH");
+		// No CPU scoring in its place, and no log of scores.
+		for (const h of [other, earlier]) {
+			expect(h.run.mock.calls.map(([binary]) => binary)).toEqual([
+				"bitovp-vmaf",
+				"bitovp-vmaf",
+			]);
+			await expect(readFile(h.options.logPath, "utf8")).rejects.toThrow();
+		}
+	});
+	it("gives a failed run in the scorer's own words and starts no CPU scoring in its place", async () => {
+		const h = await setup();
+		const failsWith = (stderr: string) =>
+			h.run.mockImplementation(async (_binary, args) =>
+				args[0] === "--version"
+					? {
+							code: 0,
+							stdout: `bitovp-vmaf 0.1 owned CUDA/Vulkan; official=${NATIVE_OFFICIAL_REVISION}; source=${source}\n`,
+							stderr: "",
+						}
+					: { code: 1, stdout: "", stderr },
+			);
+		// The caller refuses pictures that are too small for the model before
+		// this run, with libvmaf's limits for 4:2:0 pictures, so nothing here puts
+		// a refusal of the scorer into other words.
+		for (const stderr of [
+			"bitovp-vmaf: input is too small or too large for official SpEED chroma blocks\n",
+			"bitovp-vmaf: invalid Vulkan CAMBI encoding geometry\n",
+			"bitovp-vmaf: CUDA error: out of memory\n",
+			// Frames that the scorer's two decoders do not give alike are its
+			// own failure, and no property of the pair.
+			"bitovp-vmaf: CPU/NVDEC reference frame coverage differs\n",
+		]) {
+			failsWith(stderr);
+			await expect(
+				runLocalVmafScore(h.deps, h.options, h.context),
+			).rejects.toMatchObject({
+				name: "Error",
+				message: `NATIVE_SCORING_FAILED (1): ${stderr}`,
+			});
+		}
+		// What the scorer says of two files whose frames it does not pair is a
+		// refusal of the pair, in the same words: the sentences of
+		// `native/vmaf-gpu/src/main.cpp` and `decoder_pair.hpp`, as the scorer
+		// gave them on 2026-11-14 for a Matroska and an MP4 file of 60000/1001
+		// frames a second, for a Matroska reference that leaves a frame out
+		// against an encode that has it, and for a Matroska reference and encode
+		// that leave out the same frames.
+		for (const stderr of [
+			"bitovp-vmaf: Inputs must have the same known frame rate; conform them before comparison\n",
+			"bitovp-vmaf: Comparison presentation timestamps do not align\n",
+			"bitovp-vmaf: Comparison inputs have different frame counts\n",
+			"bitovp-vmaf: Comparison frame times do not follow the frame rate\n",
+			"[matroska,webm @ 0x55d0] Could not find codec parameters\nbitovp-vmaf: Comparison presentation timestamps do not align\n",
+		]) {
+			failsWith(stderr);
+			const refusal = await runLocalVmafScore(
+				h.deps,
+				h.options,
+				h.context,
+			).catch((error: unknown) => error);
+			expect(refusal).toBeInstanceOf(NativePairRefusal);
+			expect(refusal).toMatchObject({
+				name: "NativePairRefusal",
+				reason: "GPU_PAIR_FRAME_TIMES",
+				message: `NATIVE_SCORING_FAILED (1): ${stderr}`,
+			});
+		}
+		// The sentence in another program's line is not the scorer's.
+		failsWith("ffmpeg: Comparison presentation timestamps do not align\n");
+		await expect(
+			runLocalVmafScore(h.deps, h.options, h.context),
+		).rejects.toMatchObject({ name: "Error" });
+		// An encode that is smaller than CAMBI's range for a declared encode is
+		// started as every other: nothing of it is declared.
+		failsWith("bitovp-vmaf: CUDA error: out of memory\n");
+		h.run.mockClear();
+		await expect(
+			runLocalVmafScore(
+				h.deps,
+				{
+					...h.options,
+					distortedOriginal: { width: 128, height: 72, bitdepth: 8 },
+				},
+				{
+					...h.context,
+					distortedProbe: probe({ width: 128, height: 72 }),
+				},
+			),
+		).rejects.toMatchObject({
+			message:
+				"NATIVE_SCORING_FAILED (1): bitovp-vmaf: CUDA error: out of memory\n",
+		});
+		expect(h.run.mock.calls.map(([binary]) => binary)).toEqual([
+			"bitovp-vmaf",
+			"bitovp-vmaf",
+		]);
+	});
+	it("names the scorer's refusals of a pair in the words of the scorer's source", async () => {
+		// The worker scores a pair on the CPU when the scorer ends with one of
+		// these sentences. The scorer's own tests hold three of the four, so
+		// each is held here against its source: with another wording there,
+		// such a measurement would end with an error again.
+		const source = (
+			await Promise.all(
+				["main.cpp", "decoder_pair.hpp"].map((name) =>
+					readFile(
+						new URL(`../../../../native/vmaf-gpu/src/${name}`, import.meta.url),
+						"utf8",
+					),
+				),
+			)
+		).join("\n");
+		expect(SCORER_PAIR_REFUSALS).toHaveLength(4);
+		for (const said of SCORER_PAIR_REFUSALS)
+			expect(source).toContain(`std::runtime_error("${said}")`);
+		// The scorer writes what it throws after its name.
+		expect(source).toContain('std::cerr << "bitovp-vmaf: " << error.what()');
+	});
+
 	it("fails a corrupt receipt without starting a CPU fallback", async () => {
 		const h = await setup();
 		h.receipt.cpuParity.checked = false;

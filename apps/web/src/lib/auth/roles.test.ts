@@ -261,6 +261,24 @@ describe("the §4 decisions", () => {
 		}
 	});
 
+	it("MoQ playback descriptors and fixed player assets require OPERATOR for GET and HEAD", () => {
+		const paths = [
+			"/api/live-channels/moq-readiness",
+			"/api/live-channels/channel/runs/run/moq-playback",
+			"/api/player-assets/moq",
+			"/api/live-channels/channel/runs/run/moq-observations",
+			"/api/live-channels/channel/runs/run/moq-observations/session/archive",
+			"/api/live-channels/channel/runs/run/moq-analytics",
+		];
+		for (const path of paths) {
+			for (const method of ["GET", "HEAD"]) {
+				expect(evaluateRole("VIEWER", path, method).allowed).toBe(false);
+				expect(evaluateRole("OPERATOR", path, method).allowed).toBe(true);
+				expect(evaluateRole("ADMIN", path, method).allowed).toBe(true);
+			}
+		}
+	});
+
 	it("REVEAL class: storage browse is credential USE, not a read", () => {
 		expect(
 			evaluateRole("VIEWER", "/api/credentials/abc/storage/objects", "GET")
@@ -494,7 +512,28 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 				.allowed,
 		).toBe(true);
 		// Measured from the combined clip and AISA Live route exporters.
-		expect(guarded.length).toBe(188);
-		expect(methods.length).toBe(263);
+		// Manual VOD preparation adds 3 route files / 5 handlers, all OPERATOR.
+		// Fixed sources add two route files / three OPERATOR handlers.
+		// Error Definitions adds one read-only, account-scoped VIEWER route.
+		expect(
+			evaluateRole("VIEWER", "/api/encoding-error-definitions", "GET").allowed,
+		).toBe(true);
+		// MoQ playback descriptor and the pinned Player asset add two GET routes.
+		// MoQ observations, session updates, archives and Analytics add four routes.
+		// Pre-start MoQ readiness adds one advisory OPERATOR GET route.
+		// Operation analytics adds one ADMIN GET and one OPERATOR POST route.
+		expect(
+			evaluateRole("VIEWER", "/api/operation-attempts", "POST").allowed,
+		).toBe(false);
+		expect(
+			evaluateRole("OPERATOR", "/api/operation-attempts", "POST").allowed,
+		).toBe(true);
+		expect(
+			evaluateRole("OPERATOR", "/api/operation-analytics", "HEAD").allowed,
+		).toBe(false);
+		// Encoding experiments add ten guarded routes with thirteen handlers.
+		// Instance Redis memory adds one guarded platform-owner GET.
+		expect(guarded.length).toBe(214);
+		expect(methods.length).toBe(296);
 	});
 });

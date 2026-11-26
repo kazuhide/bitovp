@@ -69,3 +69,34 @@ describe("VMAF execution selection", () => {
 		).toThrow();
 	});
 });
+
+it.each([
+	"2026-11-18T01:00:00Z",
+	"2026-11-18T10:00:00+09:00",
+])("preserves an optional absolute local deadline %s", (deadlineAt) => {
+	expect(vmafExecutionSchema.parse({ backend: "LOCAL", deadlineAt })).toEqual({
+		backend: "LOCAL",
+		deadlineAt,
+	});
+});
+it.each([
+	"invalid",
+	"2026-11-18T01:00:00",
+	"2026-02-30T01:00:00Z",
+	"Infinity",
+	123,
+])("rejects invalid local deadline %s", (deadlineAt) => {
+	expect(
+		vmafExecutionSchema.safeParse({ backend: "LOCAL", deadlineAt }).success,
+	).toBe(false);
+});
+it("does not accept a local deadline for paid cloud execution", () => {
+	expect(
+		vmafExecutionSchema.safeParse({
+			backend: "CLOUD",
+			profileId: "test",
+			budgetUsd: 1,
+			deadlineAt: "2026-11-18T01:00:00Z",
+		}).success,
+	).toBe(false);
+});

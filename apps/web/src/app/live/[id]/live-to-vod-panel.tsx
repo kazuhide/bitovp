@@ -114,6 +114,8 @@ function startErrorLabel(t: Translator, error: unknown): string {
 export function LiveToVodPanel({
 	channelId,
 	status,
+	providerTerminal = false,
+	unsupported = false,
 	record,
 	families = null,
 	technicalDetailsAllowed = false,
@@ -121,6 +123,9 @@ export function LiveToVodPanel({
 }: {
 	channelId: string;
 	status: LiveChannelStatus;
+	providerTerminal?: boolean;
+	/** The section already explains the configuration restriction. */
+	unsupported?: boolean;
 	record: LiveToVodRecord | null;
 	/**
 	 * : which families THIS recording can carry, from the detail GET.
@@ -186,17 +191,21 @@ export function LiveToVodPanel({
 	const running = record?.status === "RUNNING";
 	const noFamily = !chosen.hls && !chosen.dash;
 	const nothingSupported = families !== null && families.supported.length === 0;
+	if (unsupported && !record) return null;
 
 	return (
 		<div className="mt-2 space-y-3 rounded-md border border-zinc-800 p-3">
-			{status !== "STOPPED" && canOperate ? (
+			{!unsupported && status !== "STOPPED" && canOperate ? (
 				<p className="text-sm text-zinc-500">
-					{/* Keep language-specific spacing inside translated values so a localized noun phrase remains intact. */}
-					{t("liveToVod.stopFirst")}
-					<em>{t("liveToVod.complete")}</em>
-					{t("uiX.liveToVodTail", { status })}
+					{t(
+						nothingSupported
+							? "liveToVod.noSupportedFamily"
+							: providerTerminal
+								? "liveToVod.recordingNotConfirmed"
+								: "liveToVod.startNotStopped",
+					)}
 				</p>
-			) : status === "STOPPED" && canOperate ? (
+			) : !unsupported && status === "STOPPED" && canOperate ? (
 				<>
 					<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 						<Field

@@ -164,6 +164,9 @@ The revision command supports both Git checkouts and official source archives.
 The migration service runs before the application. Do not continue if the
 revision lookup, configuration check, build, or migration fails.
 
+The build compiles FFmpeg for the worker image from pinned sources. This part
+took about 3 minutes on a 10-core machine and 8 to 12 minutes on a 4-core one.
+
 For automatic signed webhook and Live heartbeat delivery, optionally enable a
 public receiver using these values before startup:
 

@@ -28,6 +28,10 @@ import {
 } from "@/lib/server/http";
 import { JobLibraryEvidenceRequired } from "@/lib/server/job-evidence-retention";
 import {
+	MoqObservationError,
+	moqHistoryError,
+} from "@/lib/server/moq-observations";
+import {
 	getFeederQueue,
 	getLiveChannelQueue,
 	getNotifyQueue,
@@ -35,6 +39,7 @@ import {
 	getSlateNormalizeQueue,
 	getStorageInspectQueue,
 	getVmafQueue,
+	getVodInputPreviewQueue,
 } from "@/lib/server/queue";
 import { releaseTemporaryStreamKeys } from "@/lib/server/release-stream-keys";
 import {
@@ -69,7 +74,9 @@ const RESET_DELETE_CATEGORY_BY_MODEL = {
 	webhookEvent: "webhookHistory",
 	auditLog: "auditHistory",
 	accessEvent: "auditHistory",
+	operationAttempt: "auditHistory",
 	storageInspection: "storageChecks",
+	vodInputPreviewTask: "storageChecks",
 	watchedObject: "watchFolderHistory",
 	alertEvent: "alertHistory",
 	liveHeartbeat: "liveChannels",
@@ -430,6 +437,10 @@ export async function POST(req: Request) {
 				get: getStorageInspectQueue,
 				categories: ["storageChecks"],
 			},
+			vodInputPreview: {
+				get: getVodInputPreviewQueue,
+				categories: ["storageChecks"],
+			},
 			notify: {
 				get: getNotifyQueue,
 				categories: ["notificationRules", "notificationChannels"],
@@ -620,6 +631,7 @@ export async function POST(req: Request) {
 				protectedCount: err.protectedCount,
 			});
 		}
+		if (err instanceof MoqObservationError) return moqHistoryError(err);
 		if (err instanceof AisaSnapshotRequired) {
 			return jsonError(
 				409,

@@ -2,6 +2,7 @@ import type { UserRole } from "@bitovp/db";
 import {
 	Activity,
 	Film,
+	FlaskConical,
 	HardDrive,
 	LayoutDashboard,
 	LayoutTemplate,
@@ -53,6 +54,7 @@ export const NAV_SECTIONS: NavSection[] = [
 			navItem("nav.liveChannels", "/live", Radio),
 			navItem("nav.pseudoLiveFeeds", "/live/feeders", RefreshCcw),
 			navItem("nav.vmafLab", "/qc", Activity),
+			navItem("experiments.title", "/encoding-experiments", FlaskConical),
 		],
 	},
 	{

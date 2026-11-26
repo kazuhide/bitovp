@@ -63,8 +63,8 @@ const VENDOR_NAME = "HLS Audio Media";
 export function isHlsAudioRendition(
 	rendition: PlanRendition,
 ): rendition is PlanRendition & { bitrate: number } {
-	// HE-AAC is a PROFILE on the AAC codec config, not a codec of its own —
-	// the union has four audio members, and this list is them.
+	// HLS audio families currently accepted by the plan. HE-AAC v1/v2 have
+	// separate provider configurations and are not part of this plan union.
 	return (
 		rendition.codec === "AAC" ||
 		rendition.codec === "DD" ||

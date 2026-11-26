@@ -6,6 +6,7 @@ import {
 import type { QueryObserverOptions } from "@tanstack/react-query";
 import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { DocumentOrganizationContext } from "@/components/providers";
 import { en } from "@/lib/i18n/messages/en";
 import { renderLocalized, renderWithQuery } from "@/test/render";
 
@@ -211,6 +212,21 @@ it("decorates the standalone library player with the selected analysis", () => {
 	expect(playback).toHaveBeenLastCalledWith(
 		expect.objectContaining({ sceneAnalysis: undefined }),
 	);
+});
+
+it("uses the source panel's available width for the playback and analysis split", () => {
+	renderWithQuery(<SourcePanel source={playableSource} />);
+	const player = screen.getByText("Player").closest(".order-1");
+	const analysis = screen
+		.getByLabelText("Analysis language")
+		.closest(".order-2");
+	const grid = player?.parentElement;
+	expect(grid?.parentElement).toHaveClass("@container/source-panel");
+	expect(grid).toHaveClass(
+		"@min-[48rem]/source-panel:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]",
+	);
+	expect(player).toHaveClass("@min-[48rem]/source-panel:row-start-1");
+	expect(analysis).toHaveClass("@min-[48rem]/source-panel:col-start-2");
 });
 
 it("omits QC and input snapshots from both analysis presentations", () => {
@@ -667,6 +683,26 @@ it("keeps clip drafts out of the original analysis layout until requested", asyn
 	);
 	fireEvent.click(screen.getByRole("button", { name: "Close" }));
 	expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("keeps the clips anchor and full-width original page when creation is unavailable and there are no exports", async () => {
+	apiFetch.mockResolvedValue(pinnedContent);
+	renderWithQuery(
+		<DocumentOrganizationContext.Provider value="00000000-0000-4000-8000-000000000001">
+			<ContentDetailClient id="content" clipEditingAvailable={false} />
+		</DocumentOrganizationContext.Provider>,
+	);
+	expect(await screen.findByRole("region", { name: "Clips" })).toHaveAttribute(
+		"id",
+		"finished-clips",
+	);
+	expect(await screen.findByText("No clips yet.")).toBeVisible();
+	expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+	expect(screen.getByText("Player")).toBeVisible();
+	expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+	expect(
+		clipSummary.mock.calls.some(([url]) => url.includes("scope=exports")),
+	).toBe(true);
 });
 
 it.each([

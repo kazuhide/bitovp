@@ -6,7 +6,10 @@ import {
 	getTenantPrisma,
 } from "@bitovp/db";
 import { headers } from "next/headers";
-import { resolveAuthenticatedContext } from "@/lib/auth/tenancy";
+import {
+	requireOrganizationAdmin,
+	resolveAuthenticatedContext,
+} from "@/lib/auth/tenancy";
 
 /**
  * Defers cipher construction until a secret is actually touched — list/read
@@ -34,13 +37,23 @@ export function createLazyCipher(
  * cross this boundary toward the client: stores return ciphertext-free
  * summaries; reveal* results feed SDK clients exclusively.
  */
-export async function getServerContext() {
-	const tenant = await resolveAuthenticatedContext(await headers());
+export async function getServerContext(requestHeaders?: Headers) {
+	const tenant = await resolveAuthenticatedContext(
+		requestHeaders ?? (await headers()),
+	);
 	return contextForOrganization(
 		tenant.organizationId,
 		tenant.isImpersonating,
 		tenant,
 	);
+}
+
+export async function getOrganizationAdminReadContext(headers: Headers) {
+	const { organizationId } = await requireOrganizationAdmin(headers);
+	return {
+		organizationId,
+		prisma: getTenantPrisma(organizationId, { readOnly: true }),
+	};
 }
 
 /** Only call after an independently authenticated webhook token resolved its org. */

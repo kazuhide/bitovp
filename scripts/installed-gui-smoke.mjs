@@ -6,6 +6,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
@@ -25,6 +26,11 @@ import { pathToFileURL } from "node:url";
 import { parseEnv } from "node:util";
 
 import { selectGuiStates } from "../tests/browser/diagnostics.ts";
+import {
+	cleanupInstalledDrivers,
+	installedDiagnosticCategories,
+	installedDiagnosticSteps,
+} from "./bombadil-installed.mjs";
 import { proveDatabaseRestore } from "./database-restore-proof.mjs";
 import {
 	assertPendingSubmissions,
@@ -54,6 +60,10 @@ export const CASES = [
 	"persist Live through the authenticated submission API",
 	"VOD account defaults, ladder defaults and manual overrides",
 	"Live account defaults and manual overrides survive step navigation",
+	"remove and restore Library registration through the authenticated API",
+	"decode and seek QC comparison previews and inspect violin distributions",
+	"explore installed VOD configuration with Bombadil and replay a fault",
+	"cancel LOCAL QC and retain its result after reload",
 ];
 const QUEUES = [
 	"usageStatistics",
@@ -89,6 +99,8 @@ export function childEnvironment(env) {
 		"PLAYWRIGHT_BROWSERS_PATH",
 		"GITHUB_ACTIONS",
 		"RUNNER_ENVIRONMENT",
+		"BITOVP_BOMBADIL_BINARY",
+		"BITOVP_BOMBADIL_OUTPUT",
 	])
 		if (env[key]) clean[key] = env[key];
 	return {
@@ -99,14 +111,72 @@ export function childEnvironment(env) {
 	};
 }
 
-export function composeOverride({ id, directory, imageId = id }) {
+// A directory that holds an FFmpeg which is already built from the
+// Dockerfile's sources, as scripts/native-media-tools.sh leaves it. The Worker
+// image's build takes it in place of the corresponding SDR or HDR native stage.
+// The programs are not compared with the sources here. The installer that
+// left the directory ran the image's VMAF proof with them; of a build that it
+// had kept, it checked no more than that and the build's own list of
+// checksums. A directory in the checkout would also be a part of what the
+// image is built from.
+export function verifyFfmpeg(path, hdr = false) {
+	assert(
+		typeof path === "string" && isAbsolute(path),
+		"FFmpeg directory must be an absolute path",
+	);
+	assert(existsSync(path), "FFmpeg directory does not exist");
+	const canonical = realpathSync(path);
+	assert(
+		lstatSync(canonical).isDirectory() &&
+			!inside(realpathSync(ROOT), canonical),
+		"FFmpeg directory must be a directory outside the checkout",
+	);
+	// Compose reads a dollar sign in the override as the start of a variable:
+	// the image's build would get another directory than the one checked here.
+	assert(!/[$\r\n]/.test(canonical), "Unsupported FFmpeg directory path");
+	for (const program of hdr
+		? ["ffmpeg-hdr", "ffprobe-hdr"]
+		: ["ffmpeg", "ffprobe"]) {
+		const file = join(canonical, "bin", program);
+		assert(
+			existsSync(file) && lstatSync(file).isFile(),
+			`FFmpeg directory must hold the file bin/${program}`,
+		);
+	}
+	return canonical;
+}
+
+export function composeOverride({
+	id,
+	directory,
+	imageId = id,
+	ffmpeg,
+	ffmpegHdr,
+}) {
 	assert(/^[a-f0-9]{32}$/.test(id), "Invalid smoke test identity");
 	assert(/^[a-f0-9]{32}$/.test(imageId), "Invalid smoke image identity");
+	// Compose would look for any other path in the checkout, and would read a
+	// dollar sign in it as the start of a variable.
+	assert(
+		ffmpeg === undefined || (isAbsolute(ffmpeg) && !/[$\r\n]/.test(ffmpeg)),
+		"Invalid FFmpeg directory",
+	);
+	assert(
+		ffmpegHdr === undefined ||
+			(isAbsolute(ffmpegHdr) && !/[$\r\n]/.test(ffmpegHdr)),
+		"Invalid HDR FFmpeg directory",
+	);
 	const env = (file) =>
 		`env_file: !override\n      - path: ${JSON.stringify(join(directory, file))}\n        required: true\n        format: raw`;
 	const owned = `labels:\n      ${LABEL}: ${id}`;
+	// Each build of the Worker's Dockerfile takes the checked native directories
+	// in place of their stages. Dockerfile.web has neither native stage.
+	const prebuilt =
+		ffmpeg || ffmpegHdr
+			? `\n      additional_contexts:${ffmpeg ? `\n        ffmpeg: ${JSON.stringify(ffmpeg)}` : ""}${ffmpegHdr ? `\n        ffmpeg-hdr: ${JSON.stringify(ffmpegHdr)}` : ""}`
+			: "";
 	const build = (dockerfile) =>
-		`build:\n      context: ${JSON.stringify(ROOT)}\n      dockerfile: ${dockerfile}\n      labels:\n        ${LABEL}: ${id}`;
+		`build:\n      context: ${JSON.stringify(ROOT)}\n      dockerfile: ${dockerfile}${dockerfile === "Dockerfile" ? prebuilt : ""}\n      labels:\n        ${LABEL}: ${id}`;
 	// Only this fixed-target relay and PostgreSQL can use the host-access network.
 	// Web and Worker stay on the internal network without an external route.
 	const relay = `const net = require('node:net'); net.createServer(client => { const upstream = net.connect(3100, 'web'); client.on('error', () => upstream.destroy()); upstream.on('error', () => client.destroy()); client.on('close', () => upstream.destroy()); upstream.on('close', () => client.destroy()); client.pipe(upstream).pipe(client); }).listen(3100, '0.0.0.0');`;
@@ -231,6 +301,11 @@ export function failureSummary(raw) {
 	}
 	const statuses = new Map();
 	const locations = new Map();
+	const qcLocations = new Map();
+	const combinedLocations = new Map();
+	const bombadilLocations = new Map();
+	const bombadilStages = new Map();
+	const bombadilCategories = new Map();
 	const stages = new Map();
 	const observations = new Map();
 	const pending = [...report.suites];
@@ -262,6 +337,23 @@ export function failureSummary(raw) {
 					if (values.length) observations.set(spec.title, values);
 					for (const annotation of annotations) {
 						if (
+							annotation?.type === "bombadil-stage" &&
+							typeof annotation.description === "string"
+						) {
+							const parts = annotation.description.split(":");
+							if (
+								parts.length === 2 &&
+								["current", "negative", "replay"].includes(parts[0]) &&
+								installedDiagnosticSteps.includes(parts[1])
+							)
+								bombadilStages.set(spec.title, annotation.description);
+						}
+						if (
+							annotation?.type === "bombadil-category" &&
+							installedDiagnosticCategories.includes(annotation.description)
+						)
+							bombadilCategories.set(spec.title, annotation.description);
+						if (
 							annotation?.type === "smoke-stage" &&
 							[
 								"submit-clicked",
@@ -274,14 +366,17 @@ export function failureSummary(raw) {
 							stages.set(spec.title, annotation.description);
 					}
 					const lines = new Set();
-					const add = (line) => {
+					const qcLines = new Set();
+					const combinedLines = new Set();
+					const bombadilLines = new Set();
+					const add = (line, target = lines) => {
 						if (
 							Number.isInteger(line) &&
 							line > 0 &&
 							line <= 10_000 &&
-							lines.size < 3
+							target.size < 3
 						)
-							lines.add(line);
+							target.add(line);
 					};
 					const errors = [
 						results[0].error,
@@ -291,21 +386,39 @@ export function failureSummary(raw) {
 					];
 					for (const error of errors) {
 						const file = error?.location?.file;
-						if (
+						const filename =
 							typeof file === "string" &&
-							file.replaceAll("\\", "/").split("/").at(-1) ===
-								"installed-gui.test.ts"
-						)
-							add(error.location.line);
+							file.replaceAll("\\", "/").split("/").at(-1);
+						if (filename === "installed-gui.test.ts") add(error.location.line);
+						else if (filename === "qc-comparison-fixture.ts")
+							add(error.location.line, qcLines);
+						else if (filename === "qc-combined-fixture.ts")
+							add(error.location.line, combinedLines);
+						else if (filename === "installed-bombadil.ts")
+							add(error.location.line, bombadilLines);
 						if (typeof error?.stack === "string")
 							for (const match of error.stack
 								.slice(0, 10_000)
 								.matchAll(
-									/(?:^|[/\\])installed-gui\.test\.ts:([1-9]\d{0,3}):[1-9]\d{0,3}\b/g,
+									/(?:^|[/\\])(installed-gui\.test|qc-comparison-fixture|qc-combined-fixture|installed-bombadil)\.ts:([1-9]\d{0,3}):[1-9]\d{0,3}\b/g,
 								))
-								add(Number(match[1]));
+								add(
+									Number(match[2]),
+									match[1] === "installed-gui.test"
+										? lines
+										: match[1] === "qc-comparison-fixture"
+											? qcLines
+											: match[1] === "installed-bombadil"
+												? bombadilLines
+												: combinedLines,
+								);
 					}
 					if (lines.size) locations.set(spec.title, [...lines].join(","));
+					if (qcLines.size) qcLocations.set(spec.title, [...qcLines].join(","));
+					if (combinedLines.size)
+						combinedLocations.set(spec.title, [...combinedLines].join(","));
+					if (bombadilLines.size)
+						bombadilLocations.set(spec.title, [...bombadilLines].join(","));
 				}
 				statuses.set(
 					spec.title,
@@ -362,7 +475,7 @@ export function failureSummary(raw) {
 		...categories,
 		...CASES.map(
 			(title) =>
-				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}${locations.has(title) ? `; lines=${locations.get(title)}` : ""}${stages.has(title) ? `; stage=${stages.get(title)}` : ""}${observations.has(title) ? `; state=${observations.get(title).join(",")}` : ""}`,
+				`Browser case: ${title}; status=${statuses.get(title) ?? "not-run"}${locations.has(title) ? `; lines=${locations.get(title)}` : ""}${qcLocations.has(title) ? `; qc-lines=${qcLocations.get(title)}` : ""}${combinedLocations.has(title) ? `; combined-lines=${combinedLocations.get(title)}` : ""}${bombadilLocations.has(title) ? `; bombadil-lines=${bombadilLocations.get(title)}` : ""}${bombadilStages.has(title) ? `; bombadil-stage=${bombadilStages.get(title)}` : ""}${bombadilCategories.has(title) ? `; bombadil-category=${bombadilCategories.get(title)}` : ""}${stages.has(title) ? `; stage=${stages.get(title)}` : ""}${observations.has(title) ? `; state=${observations.get(title).join(",")}` : ""}`,
 		),
 	];
 }
@@ -764,12 +877,100 @@ const privateDirectory = (state) => {
 	);
 };
 
+const HDR_SCREENSHOT_NAMES = new Set(
+	["en-1440", "ja-320"].flatMap((view) =>
+		[
+			"controls",
+			"pq",
+			"hlg-hfr",
+			"compare-sdr-pq",
+			"compare-pq-hlg",
+			"compare-pq-pq",
+		].map((scene) => `hdr-${scene}-${view}.png`),
+	),
+);
+/** Preserve only synthetic HDR UI PNGs; private fixture/report files stay private. */
+export function exportHdrScreenshots(state, statePath) {
+	if (!statePath) return [];
+	privateDirectory(state);
+	assert(
+		isAbsolute(statePath) &&
+			!inside(ROOT, statePath) &&
+			realpathSync(dirname(statePath)) === dirname(state.directory),
+		"HDR screenshot output must be a sibling of the owned smoke directory",
+	);
+	const root = join(state.directory, "browser-output");
+	if (!existsSync(root)) return [];
+	const canonicalDirectory = (path) =>
+		assert(
+			lstatSync(path).isDirectory() && realpathSync(path) === path,
+			"HDR screenshot directory must be canonical (no symlinks)",
+		);
+	canonicalDirectory(root);
+	const pngs = new Map();
+	for (const entry of readdirSync(root, { withFileTypes: true })) {
+		assert(
+			!entry.isSymbolicLink(),
+			"HDR screenshot case must not be a symlink",
+		);
+		if (!entry.isDirectory()) continue;
+		const directory = join(root, entry.name);
+		canonicalDirectory(directory);
+		for (const file of readdirSync(directory, { withFileTypes: true })) {
+			if (!HDR_SCREENSHOT_NAMES.has(file.name)) continue;
+			const path = join(directory, file.name);
+			const stat = lstatSync(path);
+			assert(
+				stat.isFile() && realpathSync(path) === path,
+				"HDR screenshot must be a regular canonical PNG",
+			);
+			assert(
+				stat.size >= 8 && stat.size <= 5_000_000,
+				"HDR screenshot size is invalid",
+			);
+			assert(!pngs.has(file.name), "HDR screenshot name is duplicate");
+			const bytes = readFileSync(path);
+			assert(
+				bytes
+					.subarray(0, 8)
+					.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+				"HDR screenshot is not a PNG",
+			);
+			pngs.set(file.name, bytes);
+		}
+	}
+	if (!pngs.size) return [];
+	const output = join(
+		realpathSync(dirname(statePath)),
+		`${basename(statePath)}.hdr-screenshots`,
+	);
+	// A new directory and exclusive files never overwrite an earlier run's output.
+	mkdirSync(output, { mode: 0o700 });
+	const names = [...pngs.keys()].sort();
+	for (const name of names)
+		writeFileSync(join(output, name), pngs.get(name), {
+			mode: 0o600,
+			flag: "wx",
+		});
+	return names;
+}
+
 export async function cleanupFixture(
 	state,
 	execute = command,
 	env = process.env,
 ) {
 	privateDirectory(state);
+	if (existsSync(state.directory)) {
+		try {
+			await cleanupInstalledDrivers(state);
+		} catch (error) {
+			console.error(
+				"Installed Bombadil cleanup could not be confirmed; private fixture retained",
+			);
+			throw error;
+		}
+	}
 	if (state.secondary) await cleanupFixture(state.secondary, execute, env);
 	for (const [kind, list, remove] of [
 		["container", ["ps", "--all", "--quiet"], ["rm", "--force", "--volumes"]],
@@ -882,7 +1083,19 @@ async function waitUntil(probe, signal) {
 
 async function install(
 	state,
-	{ env, execute, imageId, revision, worker, signal, stage, notify, hostname },
+	{
+		env,
+		execute,
+		imageId,
+		revision,
+		worker,
+		ffmpeg,
+		ffmpegHdr,
+		signal,
+		stage,
+		notify,
+		hostname,
+	},
 ) {
 	const { id, directory } = state;
 	const temporary = join(directory, "tmp");
@@ -907,10 +1120,14 @@ async function install(
 		`MASTER_KEY=${randomBytes(32).toString("base64")}\nAUTH_SESSION_SECRET=${randomBytes(48).toString("base64")}\nAUTH_MODE=users\nAUTH_ALLOW_INSECURE_HTTP=true\nPUBLIC_BASE_URL=http://${hostname}\nINGRESS_MODE=none\nCOMPOSE_PROFILES=\n`,
 		{ mode: 0o600, flag: "wx" },
 	);
-	writeFileSync(override, composeOverride({ ...state, imageId }), {
-		mode: 0o600,
-		flag: "wx",
-	});
+	writeFileSync(
+		override,
+		composeOverride({ ...state, imageId, ffmpeg, ffmpegHdr }),
+		{
+			mode: 0o600,
+			flag: "wx",
+		},
+	);
 	const composeArgs = [
 		"compose",
 		"--project-name",
@@ -959,6 +1176,11 @@ async function install(
 	if (worker) {
 		stage("fresh Web and Worker Docker builds");
 		notify("Building the current source into separate Web and Worker images");
+		if (ffmpeg)
+			notify("The Worker image takes the FFmpeg that is already built");
+		if (ffmpegHdr)
+			notify("The Worker image takes the HDR FFmpeg verified in this run");
+		const buildStarted = performance.now();
 		await compose(
 			[
 				"build",
@@ -968,9 +1190,12 @@ async function install(
 				"worker",
 				"web",
 			],
-			{ timeout: 1_200_000 },
+			{ timeout: 1_800_000 },
 		);
 		notify("Web and Worker Docker builds passed");
+		notify(
+			`Installed GUI image build: elapsedMs=${Math.round(performance.now() - buildStarted)}`,
+		);
 	}
 	stage("migration and application startup");
 	await compose([
@@ -1077,6 +1302,8 @@ function failureDiagnostics(state) {
 
 export async function runFixture({
 	statePath,
+	ffmpeg,
+	ffmpegHdr,
 	env = process.env,
 	signal,
 	runtimeOnly = false,
@@ -1091,6 +1318,10 @@ export async function runFixture({
 				!existsSync(statePath),
 			"State file must be new and outside the checkout",
 		);
+	// Before anything is created: a refused directory leaves nothing to remove.
+	const prebuilt = ffmpeg === undefined ? undefined : verifyFfmpeg(ffmpeg);
+	const prebuiltHdr =
+		ffmpegHdr === undefined ? undefined : verifyFfmpeg(ffmpegHdr, true);
 	const parent = realpathSync(statePath ? dirname(statePath) : tmpdir());
 	assert(
 		!inside(realpathSync(ROOT), parent),
@@ -1123,6 +1354,8 @@ export async function runFixture({
 			imageId: state.id,
 			revision,
 			worker: true,
+			ffmpeg: prebuilt,
+			ffmpegHdr: prebuiltHdr,
 			signal,
 			notify,
 			hostname: "localhost",
@@ -1140,6 +1373,8 @@ export async function runFixture({
 				imageId: state.id,
 				revision,
 				worker: false,
+				ffmpeg: prebuilt,
+				ffmpegHdr: prebuiltHdr,
 				signal,
 				notify,
 				hostname: "127.0.0.1",
@@ -1162,6 +1397,11 @@ export async function runFixture({
 					directory: state.directory,
 					...primary.login,
 					secondary: secondary.login,
+					postgresContainer: await primary.compose([
+						"ps",
+						"--quiet",
+						"postgres",
+					]),
 				}),
 				{ mode: 0o600, flag: "wx" },
 			);
@@ -1272,9 +1512,17 @@ export async function runFixture({
 			});
 		throw error;
 	} finally {
-		await cleanupFixture(state, command, env);
-		if (stateWritten) rmSync(stateFile, { force: true });
-		notify("Owned smoke containers, volumes, images and private files removed");
+		try {
+			const screenshots = exportHdrScreenshots(state, statePath);
+			if (screenshots.length)
+				notify(`Saved ${screenshots.length} synthetic HDR UI screenshots`);
+		} finally {
+			await cleanupFixture(state, command, env);
+			if (stateWritten) rmSync(stateFile, { force: true });
+			notify(
+				"Owned smoke containers, volumes, images and private files removed",
+			);
+		}
 	}
 }
 
@@ -1291,11 +1539,34 @@ if (
 		!(runtimeOnly && cleanup),
 		"Cleanup and runtime-only options cannot be combined",
 	);
+	// Each option at most once, with its value.
+	const options = {};
+	for (let index = 0; index < args.length; index += 2) {
+		assert(
+			["--ffmpeg", "--ffmpeg-hdr", "--state-file"].includes(args[index]) &&
+				args[index + 1] !== undefined &&
+				!Object.hasOwn(options, args[index]),
+			"Unknown installed GUI smoke option",
+		);
+		options[args[index]] = args[index + 1];
+	}
+	const statePath = options["--state-file"];
 	assert(
-		args.length === 0 || (args.length === 2 && args[0] === "--state-file"),
-		"Unknown installed GUI smoke option",
+		!(
+			cleanup &&
+			(Object.hasOwn(options, "--ffmpeg") ||
+				Object.hasOwn(options, "--ffmpeg-hdr"))
+		),
+		"Cleanup builds no image and takes no FFmpeg directory",
 	);
-	const statePath = args[1];
+	// Checked here, where a refusal prints its reason: a run that fails later
+	// reports no more than the step it failed in.
+	const ffmpeg = Object.hasOwn(options, "--ffmpeg")
+		? verifyFfmpeg(options["--ffmpeg"])
+		: undefined;
+	const ffmpegHdr = Object.hasOwn(options, "--ffmpeg-hdr")
+		? verifyFfmpeg(options["--ffmpeg-hdr"], true)
+		: undefined;
 	const controller = new AbortController();
 	for (const signal of ["SIGINT", "SIGTERM"])
 		process.on(signal, () => {
@@ -1311,7 +1582,13 @@ if (
 		});
 	(async () => {
 		if (!cleanup)
-			return runFixture({ statePath, runtimeOnly, signal: controller.signal });
+			return runFixture({
+				statePath,
+				ffmpeg,
+				ffmpegHdr,
+				runtimeOnly,
+				signal: controller.signal,
+			});
 		assert(
 			statePath && isAbsolute(statePath) && !inside(ROOT, statePath),
 			"Cleanup requires an external private state file",

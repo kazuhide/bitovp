@@ -10,6 +10,7 @@ import {
 	MAX_SCENE_ANALYSIS_BYTES,
 	normalizeSceneAnalysis,
 	type ProviderAnalysisView,
+	publicLibraryQcEvidence,
 	redactSecrets,
 	sceneAnalysisDocumentSchema,
 	sceneAnalysisLocales,
@@ -112,6 +113,7 @@ export async function sourceView(
 	const {
 		analysisOutput: _privateLocator,
 		fileOutputs,
+		qcEvidence,
 		...snapshot
 	} = {
 		...parsedSnapshot,
@@ -149,6 +151,9 @@ export async function sourceView(
 		snapshot: {
 			...snapshot,
 			playbackLinks: playbackLinks ?? snapshot.playbackLinks,
+			...(qcEvidence === undefined
+				? {}
+				: { qcEvidence: publicLibraryQcEvidence(qcEvidence) }),
 		},
 		analyses: analyses.flatMap((row) => {
 			if (!row) return [];
@@ -223,12 +228,24 @@ type Tx = Omit<
 	"$connect" | "$disconnect" | "$on" | "$transaction" | "$extends"
 >;
 type Metadata = z.infer<typeof contentEditSchema>;
-async function requireSourceLocale(tx: Tx, sourceId: string, locale: string) {
+async function requireSourceLocale(
+	tx: Tx,
+	sourceId: string,
+	locale: string,
+	retainedLocale?: string,
+) {
 	const source = await tx.librarySource.findUnique({
 		where: { id: sourceId },
-		select: { id: true, locales: true },
+		select: { id: true, sourceKind: true, locales: true },
 	});
 	if (!source) throw new LibrarySourceError(404, "Source not found");
+	// Derived renders inherit an editorial locale without importing AISA locales.
+	if (
+		source.sourceKind === "DERIVED_RENDER" &&
+		source.locales.length === 0 &&
+		locale === retainedLocale
+	)
+		return;
 	if (
 		!(
 			source.locales.length ? sceneAnalysisLocales(source.locales) : ["und"]
@@ -333,7 +350,12 @@ export async function updateContent(
 		});
 		if (!previous) throw new Error("Content revision missing");
 		const metadata = contentEditSchema.parse({ ...content, ...input });
-		await requireSourceLocale(tx, previous.sourceId, metadata.locale);
+		await requireSourceLocale(
+			tx,
+			previous.sourceId,
+			metadata.locale,
+			content.locale,
+		);
 		const revision = content.revision + 1;
 		const changed = await tx.content.updateMany({
 			where: { id, revision: content.revision },

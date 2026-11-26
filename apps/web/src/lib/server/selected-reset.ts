@@ -1,6 +1,7 @@
 import "server-only";
 import {
 	cipherFromEnv,
+	FEATURE_FLAGS_KEY,
 	type SecretCipher,
 	USAGE_BACKFILL_SETTING_PREFIX,
 } from "@bitovp/core";
@@ -17,6 +18,11 @@ import {
 	countJobEvidenceReferences,
 	isForeignKeyViolation,
 } from "./job-evidence-retention";
+import {
+	cleanupDeletedMoqArchives,
+	type MoqArchiveCleanupSnapshot,
+	snapshotMoqArchiveCleanup,
+} from "./moq-archive-cleanup";
 import { collectEncoderPointers, type ResetOutcome } from "./reset";
 import { snapshotResetCleanup } from "./reset-cleanup-snapshot";
 
@@ -123,9 +129,22 @@ export async function deleteSelectedData(
 	}
 	if (selected.has("vodJobs")) await assertNoJobEvidenceReferences(prisma);
 	for (let attempt = 0; ; attempt++) {
+		let moqArchives: MoqArchiveCleanupSnapshot[] = [];
 		try {
-			return await prisma.$transaction(
+			const outcome = await prisma.$transaction(
 				async (tx) => {
+					if (selected.has("applicationSettings")) {
+						// The collector locks the flag before its Live channel. Take
+						// the same first lock order when both will be deleted.
+						await tx.$queryRaw`SELECT "key" FROM "AppSetting" WHERE "key" = ${FEATURE_FLAGS_KEY} FOR UPDATE`;
+					} else if (selected.has("auditHistory")) {
+						// Wait for admitted collectors and invalidate a Serializable
+						// reset snapshot that predates a collector's committed insert.
+						await tx.appSetting.updateMany({
+							where: { key: FEATURE_FLAGS_KEY },
+							data: { updatedAt: new Date() },
+						});
+					}
 					const clearsUsage =
 						selected.has("usageStatistics") ||
 						selected.has("bitmovinAccounts") ||
@@ -171,6 +190,8 @@ export async function deleteSelectedData(
 							liveChannels: selected.has("liveChannels"),
 						},
 					);
+					if (selected.has("liveChannels"))
+						moqArchives = await snapshotMoqArchiveCleanup(tx);
 					if (selected.has("contentLibrary") && !selected.has("vodJobs")) {
 						await tx.encodingJob.updateMany({
 							where: {},
@@ -240,11 +261,13 @@ export async function deleteSelectedData(
 						disarmed,
 						encoders,
 						deletedCounts,
-						requiresSetup: false,
+						requiresSetup: false as const,
 					};
 				},
 				{ isolationLevel: "Serializable", timeout: 120_000, maxWait: 10_000 },
 			);
+			await cleanupDeletedMoqArchives(moqArchives);
+			return outcome;
 		} catch (error) {
 			if (selected.has("vodJobs") && isForeignKeyViolation(error))
 				await assertNoJobEvidenceReferences(prisma);

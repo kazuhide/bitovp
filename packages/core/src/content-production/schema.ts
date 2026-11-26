@@ -14,6 +14,7 @@ import {
 	localStoryEvidenceSchema,
 	localStoryModelIdentitySchema,
 	localStoryModeSchema,
+	localStoryTrailerIntentSchema,
 } from "../content-editing/local-story-contracts";
 import { localStoryFlowWorkflowIdentitySchema } from "../content-editing/local-story-flow-contracts";
 import {
@@ -52,6 +53,7 @@ export const transcriptionTaskParametersSchema = z.strictObject({
 	language: language.default("auto"),
 	sourceStartUs: z.number().int().min(0).max(3_600_000_000).default(0),
 	durationUs: z.number().int().min(1).max(180_000_000).optional(),
+	asrBackend: z.literal("cuda").optional(),
 });
 export const trackingTaskParametersSchema = z.strictObject({
 	sceneIds: z.array(uuid).min(1).max(20).optional(),
@@ -70,6 +72,8 @@ export const generationTaskParametersSchema = z
 			.enum(["AUTO", "STORY", "LOCAL_STORY", "COHESION", "DURATION"])
 			.default("COHESION"),
 		storyMode: localStoryModeSchema.optional(),
+		storySceneId: uuid.optional(),
+		trailer: localStoryTrailerIntentSchema.optional(),
 		storyPlanner: z.literal("FEASIBLE_CHOICE_V1").optional(),
 		storyWorkflowVersion: z
 			.literal(LOCAL_STORY_HIERARCHICAL_WORKFLOW_VERSION)
@@ -111,6 +115,16 @@ export const generationTaskParametersSchema = z
 	)
 	.refine(
 		(value) =>
+			value.trailer === undefined ||
+			(value.policy === "LOCAL_STORY" &&
+				value.renderMode === "DRAFT" &&
+				value.storyMode === undefined &&
+				value.storyPlanner === undefined &&
+				value.storyWorkflowVersion === undefined),
+		"A trailer requires a local-story DRAFT with its own editorial scope",
+	)
+	.refine(
+		(value) =>
 			value.storyPlanner === undefined ||
 			(value.policy === "LOCAL_STORY" &&
 				value.renderMode === "DRAFT" &&
@@ -119,8 +133,17 @@ export const generationTaskParametersSchema = z
 	)
 	.refine(
 		(value) =>
+			value.storySceneId === undefined ||
+			(value.policy === "LOCAL_STORY" &&
+				value.renderMode === "DRAFT" &&
+				value.trailer === undefined &&
+				value.storyWorkflowVersion === undefined),
+		"A scoped scene requires a local-story DRAFT without trailer or hierarchical planning",
+	)
+	.refine(
+		(value) =>
 			value.policy !== "LOCAL_STORY" || value.transcriptionTaskId === undefined,
-		"Local story prepares its complete source transcript",
+		"Local story prepares its own transcript",
 	)
 	.refine(
 		(value) =>
@@ -198,6 +221,7 @@ export const mediaTaskIdentitySchema = z.strictObject({
 	localStoryWorkflow: localStoryFlowWorkflowIdentitySchema.optional(),
 	captionTranslationModel: localCaptionModelIdentitySchema.optional(),
 	transcriptionPolicyFingerprint: hash.optional(),
+	asrCudaBinarySha256: hash.optional(),
 	generationPolicyFingerprint: hash.optional(),
 });
 export const mediaTaskEnvelopeSchema = z
@@ -206,6 +230,13 @@ export const mediaTaskEnvelopeSchema = z
 		input: mediaTaskCreateSchema,
 		identity: mediaTaskIdentitySchema,
 	})
+	.refine(
+		(value) =>
+			(value.input.kind === "TRANSCRIBE" &&
+				value.input.parameters.asrBackend === "cuda") ===
+			(value.identity.asrCudaBinarySha256 !== undefined),
+		"CUDA transcription requires its pinned executable",
+	)
 	.refine(
 		(value) =>
 			(value.input.kind === "GENERATE" &&
@@ -472,6 +503,18 @@ export const generationTaskResultSchema = z
 			value.actualFrames <= value.requestedFrames,
 		"Generation result identity and duration must match",
 	)
+	.refine((value) => {
+		const trailer = value.localStoryEvidence?.trailer;
+		return (
+			!trailer ||
+			(trailer.windows.reduce(
+				(sum, window) => sum + window.durationFrames,
+				0,
+			) === value.actualFrames &&
+				(trailer.intent.durationMode !== "EXACT" ||
+					value.actualFrames === value.requestedFrames))
+		);
+	}, "Trailer duration must match its selected windows and requested exact duration")
 	.refine(
 		(value) =>
 			value.selectionEvidence?.reason !== "SPEECH_REVIEW_REQUIRED" ||

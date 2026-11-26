@@ -410,3 +410,107 @@ describe("compilePlan with qc.only (VMAF-only encode)", () => {
 		expect(ops.some((op) => op.kind.includes("MANIFEST"))).toBe(false);
 	});
 });
+
+describe("a measured rendition with no source file to compare with", () => {
+	// The fixture's one rendition reads a part cut out of the source.
+	const trimmed = (qc: Record<string, unknown>) =>
+		encodingPlanSchema.parse({
+			...(loadRawPlan("trimming-time-based") as Record<string, unknown>),
+			qc,
+		});
+	const told = (qc: Record<string, unknown>) =>
+		validatePlan(trimmed(qc)).filter(
+			(issue) => issue.code === "PLAN_QC_NO_REFERENCE",
+		);
+
+	it("is a warning that names the rendition and the stream it reads", () => {
+		const [issue, ...rest] = told({ vmaf: true });
+		expect(rest).toEqual([]);
+		expect(issue).toMatchObject({
+			level: "warning",
+			path: "renditions[0].ingestKey",
+		});
+		expect(issue?.message).toContain('video rendition "v720" reads "trim"');
+		expect(issue?.message).toContain(
+			"VMAF and PSNR will not be measured for it",
+		);
+		expect(issue?.message).not.toContain("gate");
+	});
+
+	it("is said for PSNR alone as well, which rides the same comparison", () => {
+		expect(told({ vmaf: false, psnr: true })).toHaveLength(1);
+	});
+
+	it("says that a gate rule covering the rendition fails, and how to keep it out", () => {
+		const rule = { metric: "VMAF_MEAN", scope: "PER_RENDITION", gte: 80 };
+		const every = told({
+			vmaf: true,
+			gate: { rules: [rule], onFail: "MARK_ONLY" },
+		});
+		expect(every[0]?.message).toContain(
+			"the QC gate rule that covers it will fail for the missing score",
+		);
+		const named = told({
+			vmaf: true,
+			gate: {
+				rules: [{ ...rule, renditions: ["v720"] }],
+				onFail: "MARK_ONLY",
+			},
+		});
+		expect(named[0]?.message).toContain("will fail for the missing score");
+	});
+
+	it("leaves the gate out of it when no rule needs the score", () => {
+		// Banding is read off the encode alone, so its rule is met or not on its own.
+		const banding = told({
+			vmaf: true,
+			banding: true,
+			gate: {
+				rules: [
+					{
+						metric: "CAMBI_MAX",
+						scope: "PER_RENDITION",
+						lte: 5,
+						severity: "WARN",
+					},
+				],
+				onFail: "MARK_ONLY",
+			},
+		});
+		expect(banding).toHaveLength(1);
+		expect(banding[0]?.message).not.toContain("gate");
+	});
+
+	it("is not said for banding alone, which needs no source", () => {
+		expect(told({ vmaf: false, banding: true })).toEqual([]);
+	});
+
+	it("is not said for a rendition that reads the source file, or without a quality check", () => {
+		const plain = encodingPlanSchema.parse({
+			...(loadRawPlan("fixed-bitrate-hls-on-aws") as Record<string, unknown>),
+			qc: { vmaf: true },
+		});
+		expect(
+			validatePlan(plain).filter(
+				(issue) => issue.code === "PLAN_QC_NO_REFERENCE",
+			),
+		).toEqual([]);
+		expect(
+			validatePlan(
+				encodingPlanSchema.parse(loadRawPlan("trimming-time-based")),
+			).filter((issue) => issue.code === "PLAN_QC_NO_REFERENCE"),
+		).toEqual([]);
+	});
+
+	it("refuses nothing: the encode is what was asked for", () => {
+		expect(
+			validatePlan(trimmed({ vmaf: true })).filter(
+				(issue) => issue.level === "error",
+			),
+		).toEqual(
+			validatePlan(
+				encodingPlanSchema.parse(loadRawPlan("trimming-time-based")),
+			).filter((issue) => issue.level === "error"),
+		);
+	});
+});

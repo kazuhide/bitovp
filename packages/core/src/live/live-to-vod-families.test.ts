@@ -35,6 +35,45 @@ const TS_SEPARATED_LOG = compiledLog("live-akamai-msl-ts");
 const FMP4_LOG = compiledLog("live-rtmp-simple");
 
 describe("liveToVodFamilySupport", () => {
+	it.each([
+		"PENDING",
+		"DONE",
+	] as const)("refuses both VOD manifest families for a %s MoQ-only FMP4 graph", (status) => {
+		const plan = liveChannelPlanSchema.parse(
+			JSON.parse(
+				readFileSync(
+					join(__dirname, "__fixtures__/live-rtmp-simple.plan.json"),
+					"utf8",
+				),
+			),
+		);
+		plan.outputs = [
+			{
+				key: "origin",
+				kind: "MOQ",
+				name: "MoQ relay",
+				credentialId: "00000000-0000-4000-8000-000000000001",
+				trackNamespace: ["vod-refusal"],
+				draftVersion: "DRAFT_18",
+			},
+		];
+		plan.liveManifests = [];
+		plan.start.encodingOption = "CUSTOM";
+		const entries = initStepLog(compileLiveChannel(plan)).map((entry) => ({
+			...entry,
+			status,
+		}));
+		// The normal path resolver can find a parent; the relay is the blocker.
+		expect(resolveLiveToVodTarget(entries).ok).toBe(true);
+		const support = liveToVodFamilySupport(entries);
+		expect(support.supported).toEqual([]);
+		expect(support.unsupported.map((value) => value.family)).toEqual([
+			"HLS",
+			"DASH",
+		]);
+		for (const refused of support.unsupported)
+			expect(refused.reason).toContain("MoQ");
+	});
 	it("a segmented-TS recording supports HLS only, and says which muxing rules DASH out", () => {
 		// The premise of the test: the fixture really is TS-only.
 		const kinds = TS_LOG.filter((e) => e.kind.startsWith("CREATE_MUXING_")).map(

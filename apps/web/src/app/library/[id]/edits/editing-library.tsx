@@ -4,7 +4,7 @@ import type { ContentDetail } from "@bitovp/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
@@ -54,6 +54,17 @@ function EditingLibraryView({ contentId }: { contentId: string }) {
 	const [busy, setBusy] = useState(false);
 	const [proposalBusy, setProposalBusy] = useState(false);
 	const [error, setError] = useState("");
+	const submitting = useRef(false);
+	const mounted = useRef(true);
+	const mutationAccess = useRef(canMutate);
+	mutationAccess.current = canMutate;
+	useEffect(() => {
+		mounted.current = true;
+		return () => {
+			mounted.current = false;
+		};
+	}, []);
+	const isCurrent = () => mounted.current && mutationAccess.current;
 	const content = useQuery({
 		queryKey: ["library-edit-content", contentId],
 		queryFn: ({ signal }) =>
@@ -76,15 +87,17 @@ function EditingLibraryView({ contentId }: { contentId: string }) {
 				: false,
 	});
 	async function run(action: () => Promise<void>) {
-		if (!canMutate || busy || proposalBusy) return;
+		if (!canMutate || submitting.current || proposalBusy) return;
+		submitting.current = true;
 		setBusy(true);
 		setError("");
 		try {
 			await action();
 		} catch (failure) {
-			setError(editingErrorMessage(failure, t));
+			if (isCurrent()) setError(editingErrorMessage(failure, t));
 		} finally {
-			setBusy(false);
+			submitting.current = false;
+			if (mounted.current) setBusy(false);
 		}
 	}
 	async function prepare(
@@ -95,14 +108,14 @@ function EditingLibraryView({ contentId }: { contentId: string }) {
 			`/api/library/sources/${sourceId}/media-versions`,
 			{ method: "POST", body: JSON.stringify({ fileKey, output }) },
 		);
-		await eligibility.refetch();
+		if (isCurrent()) await eligibility.refetch();
 	}
 	async function create(input: NewEditingProject) {
 		const project = await apiFetch<EditingProjectView>("/api/library/edits", {
 			method: "POST",
 			body: JSON.stringify({ contentId, ...input }),
 		});
-		router.push(`/library/edits/${project.id}`);
+		if (isCurrent()) router.push(`/library/edits/${project.id}`);
 	}
 	const readError = content.error ?? eligibility.error;
 	const automatic = eligibility.data?.automatic;

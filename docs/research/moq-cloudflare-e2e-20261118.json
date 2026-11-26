@@ -1,0 +1,387 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "5f53e07918ee5fd771b07b333fff404a00640801",
+  "trialId": "b903fd66-855b-42ca-b416-5b23121b8ef1",
+  "startedAt": "2026-11-17T20:32:40.206Z",
+  "endedAt": "2026-11-17T20:38:32.900Z",
+  "success": true,
+  "cleanupConfirmed": true,
+  "channelId": "c1065743-c788-4d6d-a12e-740602669473",
+  "runId": "65916450-736a-4e35-8702-dc56f9bb8fb4",
+  "encodingId": "71356812-f9b6-437e-a599-6001155ca824",
+  "requestedCloudRegion": "AWS_AP_NORTHEAST_1",
+  "selectedCloudRegion": "AWS_AP_NORTHEAST_1",
+  "requestedEncoderVersion": "BETA",
+  "selectedEncoderVersion": "2.294.0",
+  "configuredDraft": 16,
+  "browserTransport": {
+    "constructorProtocols": [
+      "moqt-16"
+    ],
+    "allRecordedProtocolsAreMoqt16": true,
+    "scope": "browser subscriber WebTransport constructor options",
+    "encoderAlpnObserved": null
+  },
+  "providerTerminalStatus": "FINISHED",
+  "liveViews": [
+    {
+      "view": "live-preview",
+      "playbackVerified": true,
+      "initialAttemptFailureObserved": true,
+      "viewFailureObserved": false,
+      "secureContext": true,
+      "webTransportApiPresent": true,
+      "canvas": {
+        "width": 640,
+        "height": 360,
+        "visible": true,
+        "readable": true,
+        "pixelSamples": 524,
+        "changedImages": 341,
+        "distinctImages": 342,
+        "observationMs": 20193.20000000298,
+        "measurement": "distinct canvas pixel updates",
+        "sourceFps": null,
+        "sourceDecoderFrameCounters": null
+      },
+      "latency": {
+        "measurement": "PWX source-barcode estimate",
+        "nativeAnalyticsLatency": false,
+        "lastObservedMs": 1640,
+        "observedSamples": 24,
+        "availableSamples": 19,
+        "minimumMs": 1638.0,
+        "medianMs": 1642.0,
+        "meanMs": 1642.632,
+        "maximumMs": 1650.0
+      }
+    },
+    {
+      "view": "standalone",
+      "playbackVerified": true,
+      "initialAttemptFailureObserved": false,
+      "viewFailureObserved": false,
+      "secureContext": true,
+      "webTransportApiPresent": true,
+      "canvas": {
+        "width": 640,
+        "height": 360,
+        "visible": true,
+        "readable": true,
+        "pixelSamples": 530,
+        "changedImages": 360,
+        "distinctImages": 361,
+        "observationMs": 20301.89999999851,
+        "measurement": "distinct canvas pixel updates",
+        "sourceFps": null,
+        "sourceDecoderFrameCounters": null
+      },
+      "latency": {
+        "measurement": "PWX source-barcode estimate",
+        "nativeAnalyticsLatency": false,
+        "lastObservedMs": 2490,
+        "observedSamples": 22,
+        "availableSamples": 18,
+        "minimumMs": 2488.0,
+        "medianMs": 2489.0,
+        "meanMs": 2489.722,
+        "maximumMs": 2493.0
+      }
+    }
+  ],
+  "history": {
+    "observed": true,
+    "sessions": [
+      {
+        "sessionId": "f77290c8-363f-4633-9a00-287a0187fda2",
+        "startedAt": "2026-11-17T20:37:16.573Z",
+        "endedAt": "2026-11-17T20:37:17.732Z",
+        "samples": 0,
+        "events": [
+          "started",
+          "failed"
+        ],
+        "latency": {
+          "observedSamples": 0,
+          "availableSamples": 0,
+          "minimumMs": null,
+          "medianMs": null,
+          "meanMs": null,
+          "maximumMs": null
+        },
+        "archive": null,
+        "analyticsImpressionId": null
+      },
+      {
+        "sessionId": "8c7f8fc9-8978-452f-812e-06e0dc26bdf2",
+        "startedAt": "2026-11-17T20:37:26.666Z",
+        "endedAt": "2026-11-17T20:37:48.176Z",
+        "samples": 14,
+        "events": [
+          "started",
+          "first-frame",
+          "stopped"
+        ],
+        "latency": {
+          "observedSamples": 14,
+          "availableSamples": 12,
+          "minimumMs": 1641,
+          "medianMs": 1642.0,
+          "meanMs": 1643.5,
+          "maximumMs": 1650
+        },
+        "archive": {
+          "contentType": "video/webm",
+          "bytes": 622254,
+          "durationMs": 18710
+        },
+        "analyticsImpressionId": "0e510c75-91ed-4dfa-bc88-10f505c10185"
+      },
+      {
+        "sessionId": "ccb1c74b-9179-4206-b867-da66de651732",
+        "startedAt": "2026-11-17T20:37:48.699Z",
+        "endedAt": "2026-11-17T20:38:12.212Z",
+        "samples": 18,
+        "events": [
+          "started",
+          "first-frame",
+          "stopped"
+        ],
+        "latency": {
+          "observedSamples": 18,
+          "availableSamples": 17,
+          "minimumMs": 2488,
+          "medianMs": 2490,
+          "meanMs": 2490.059,
+          "maximumMs": 2493
+        },
+        "archive": {
+          "contentType": "video/webm",
+          "bytes": 726890,
+          "durationMs": 21073
+        },
+        "analyticsImpressionId": "ebef075b-3715-4562-ba63-1900a1939566"
+      }
+    ],
+    "cumulativeSamples": 32,
+    "latency": {
+      "observedSamples": 32,
+      "availableSamples": 29,
+      "minimumMs": 1641,
+      "medianMs": 2489,
+      "meanMs": 2139.759,
+      "maximumMs": 2493
+    }
+  },
+  "archiveRangeReceipts": [
+    {
+      "sessionId": "8c7f8fc9-8978-452f-812e-06e0dc26bdf2",
+      "status": 206,
+      "bytes": 64,
+      "webmHeader": true
+    },
+    {
+      "sessionId": "ccb1c74b-9179-4206-b867-da66de651732",
+      "status": 206,
+      "bytes": 64,
+      "webmHeader": true
+    }
+  ],
+  "postLiveViews": [
+    {
+      "view": "live-job",
+      "success": true,
+      "archivePlaybackVerified": true,
+      "archiveSessionId": "ccb1c74b-9179-4206-b867-da66de651732",
+      "playbackAdvancedSeconds": 1.776,
+      "width": 640,
+      "height": 360,
+      "presentedArchiveFrames": 38,
+      "durationSeconds": 21.073,
+      "seek": {
+        "timeSeconds": 10.5366,
+        "durationSeconds": 21.073
+      },
+      "correlation": {
+        "applied": true,
+        "sessionId": "ccb1c74b-9179-4206-b867-da66de651732",
+        "receiverRunId": "65916450-736a-4e35-8702-dc56f9bb8fb4",
+        "receiverFrom": "2026-11-17T20:37:48.699Z",
+        "receiverTo": "2026-11-17T20:38:12.212Z",
+        "runMatches": true,
+        "windowMatchesSavedSession": true
+      }
+    },
+    {
+      "view": "standalone",
+      "success": true,
+      "archivePlaybackVerified": true,
+      "archiveSessionId": "ccb1c74b-9179-4206-b867-da66de651732",
+      "playbackAdvancedSeconds": 1.802,
+      "width": 640,
+      "height": 360,
+      "presentedArchiveFrames": 41,
+      "durationSeconds": 21.073,
+      "seek": {
+        "timeSeconds": 10.5366,
+        "durationSeconds": 21.073
+      },
+      "correlation": {
+        "applied": true,
+        "sessionId": "ccb1c74b-9179-4206-b867-da66de651732",
+        "receiverRunId": "65916450-736a-4e35-8702-dc56f9bb8fb4",
+        "receiverFrom": "2026-11-17T20:37:48.699Z",
+        "receiverTo": "2026-11-17T20:38:12.212Z",
+        "runMatches": true,
+        "windowMatchesSavedSession": true
+      }
+    }
+  ],
+  "heartbeat": {
+    "source": "live-encoder-heartbeat",
+    "points": 3,
+    "truncated": false,
+    "correlationProbe": {
+      "markerCount": 1,
+      "runMatched": true,
+      "windowMatched": true
+    }
+  },
+  "analyticsIngestionVerified": true,
+  "analyticsReadback": [
+    {
+      "impressionId": "0e510c75-91ed-4dfa-bc88-10f505c10185",
+      "status": "available",
+      "source": "bitmovin-analytics-custom-data",
+      "measurement": "moq-source-barcode",
+      "field": "customData1",
+      "unit": "ms",
+      "nativeLatency": false,
+      "runBindingMatches": true,
+      "points": 19,
+      "matchedSavedBrowserPoints": 12,
+      "savedBrowserSamples": 12,
+      "analyticsSamples": 19,
+      "additionalAnalyticsSamples": 7,
+      "matchingDirection": "persisted finite browser samples form a subset of same-impression Analytics samples",
+      "latency": {
+        "observedSamples": 19,
+        "availableSamples": 19,
+        "minimumMs": 1638,
+        "medianMs": 1642,
+        "meanMs": 1642.632,
+        "maximumMs": 1650
+      }
+    },
+    {
+      "impressionId": "ebef075b-3715-4562-ba63-1900a1939566",
+      "status": "available",
+      "source": "bitmovin-analytics-custom-data",
+      "measurement": "moq-source-barcode",
+      "field": "customData1",
+      "unit": "ms",
+      "nativeLatency": false,
+      "runBindingMatches": true,
+      "points": 21,
+      "matchedSavedBrowserPoints": 17,
+      "savedBrowserSamples": 17,
+      "analyticsSamples": 21,
+      "additionalAnalyticsSamples": 4,
+      "matchingDirection": "persisted finite browser samples form a subset of same-impression Analytics samples",
+      "latency": {
+        "observedSamples": 21,
+        "availableSamples": 21,
+        "minimumMs": 2488,
+        "medianMs": 2489,
+        "meanMs": 2489.81,
+        "maximumMs": 2493
+      }
+    }
+  ],
+  "verification": {
+    "tests": [
+      {
+        "scope": "retained full Web suite",
+        "passed": 13385,
+        "failed": 0,
+        "skippedOrPending": 110,
+        "files": 902,
+        "success": true,
+        "sourceCommit": null,
+        "sourceBinding": "commit not embedded in this retained test receipt"
+      },
+      {
+        "scope": "retained full Worker suite",
+        "passed": 7161,
+        "failed": 0,
+        "skippedOrPending": 60,
+        "files": 377,
+        "success": true,
+        "sourceCommit": null,
+        "sourceBinding": "commit not embedded in this retained test receipt"
+      },
+      {
+        "scope": "retained DB suite",
+        "passed": 406,
+        "failed": 0,
+        "skippedOrPending": 70,
+        "files": 39,
+        "success": true,
+        "sourceCommit": null,
+        "sourceBinding": "commit not embedded in this retained test receipt"
+      },
+      {
+        "scope": "Heartbeat disclosure focused regression",
+        "passed": 217,
+        "failed": 0,
+        "skippedOrPending": 0,
+        "files": 11,
+        "success": true,
+        "sourceCommit": null,
+        "sourceBinding": "commit not embedded in this retained test receipt"
+      },
+      {
+        "scope": "lossless persistence focused regression",
+        "passed": 118,
+        "failed": 0,
+        "skippedOrPending": 0,
+        "files": 9,
+        "success": true,
+        "sourceCommit": null,
+        "sourceBinding": "commit not embedded in this retained test receipt"
+      }
+    ],
+    "build": {
+      "sourceCommit": "5f53e07918ee5fd771b07b333fff404a00640801",
+      "imageDigest": "sha256:cb9d7ec2152a233d417e69fa955c3d7e753a6fc1b88cec49217107ae86f61142",
+      "exitCode": 0,
+      "productionFileDigestsMatched": 20,
+      "phases": [
+        "compile",
+        "typecheck",
+        "generate",
+        "sdk-external-assertion"
+      ],
+      "cpuCount": 2.0,
+      "memoryBytes": 3670016000,
+      "runtimeCredentialsMounted": false
+    }
+  },
+  "failureObservedDuringSupplement": false,
+  "originalHarnessFailure": true,
+  "originalHarnessSuccess": null,
+  "originalReportSha256": "ae55f5f3549dda368b75e5f84d4ad23aa5a85373341bfa8885bd02c70eb07ea2",
+  "resultBasis": "read-only stopped-run post-live supplement",
+  "postLiveRecheck": {
+    "kind": "read-only-stopped-run",
+    "startedAt": "2026-11-17T20:44:21.540Z",
+    "endedAt": "2026-11-17T20:44:30.934Z",
+    "originalReportUnchanged": true,
+    "providerTerminalStatus": "FINISHED",
+    "matching": {
+      "direction": "every persisted finite sample matched uniquely within same impression Analytics superset",
+      "valueToleranceMs": 2,
+      "timestampToleranceMs": 10
+    }
+  }
+}

@@ -1,0 +1,994 @@
+{
+	"schemaVersion": 1,
+	"kind": "operations",
+	"items": [
+		{
+			"sdkMethod": "encoding.statistics.get",
+			"path": "/encoding/statistics",
+			"httpVerb": "GET",
+			"parameters": [],
+			"sdkEvidence": {
+				"file": "encoding/statistics/StatisticsApi.d.ts",
+				"line": 27
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.list",
+			"path": "/encoding/statistics/{from}/{to}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "from",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "from",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/StatisticsApi.d.ts",
+						"line": 36
+					}
+				},
+				{
+					"name": "to",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "to",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/StatisticsApi.d.ts",
+						"line": 36
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 2,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/StatisticsListQueryParams.d.ts#StatisticsListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: StatisticsListQueryParamsBuilder) => StatisticsListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/StatisticsApi.d.ts",
+						"line": 36
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/StatisticsApi.d.ts",
+				"line": 36
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.cdn.usage.get",
+			"path": "/encoding/statistics/cdn/usage",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/cdn/usage/CdnUsageStatisticsGetQueryParams.d.ts#CdnUsageStatisticsGetQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: CdnUsageStatisticsGetQueryParamsBuilder) => CdnUsageStatisticsGetQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/cdn/usage/UsageApi.d.ts",
+						"line": 19
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/cdn/usage/UsageApi.d.ts",
+				"line": 19
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.daily.list",
+			"path": "/encoding/statistics/daily",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/daily/DailyStatisticsListQueryParams.d.ts#DailyStatisticsListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DailyStatisticsListQueryParamsBuilder) => DailyStatisticsListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/daily/DailyApi.d.ts",
+						"line": 20
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/daily/DailyApi.d.ts",
+				"line": 20
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.daily.listByDateRange",
+			"path": "/encoding/statistics/daily/{from}/{to}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "from",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "from",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/daily/DailyApi.d.ts",
+						"line": 28
+					}
+				},
+				{
+					"name": "to",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "to",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/daily/DailyApi.d.ts",
+						"line": 28
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/daily/DailyApi.d.ts",
+				"line": 28
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.get",
+			"path": "/encoding/statistics/encodings/{encoding_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/EncodingsApi.d.ts",
+						"line": 24
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/EncodingsApi.d.ts",
+				"line": 24
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.live.list",
+			"path": "/encoding/statistics/encodings/live",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/encodings/live/EncodingStatisticsLiveListQueryParams.d.ts#EncodingStatisticsLiveListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: EncodingStatisticsLiveListQueryParamsBuilder) => EncodingStatisticsLiveListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/live/LiveApi.d.ts",
+						"line": 25
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/live/LiveApi.d.ts",
+				"line": 25
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.live.listByDateRange",
+			"path": "/encoding/statistics/encodings/live/{from}/{to}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "from",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "from",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/live/LiveApi.d.ts",
+						"line": 34
+					}
+				},
+				{
+					"name": "to",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "to",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/live/LiveApi.d.ts",
+						"line": 34
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 2,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/encodings/live/EncodingStatisticsLiveListByDateRangeQueryParams.d.ts#EncodingStatisticsLiveListByDateRangeQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: EncodingStatisticsLiveListByDateRangeQueryParamsBuilder) => EncodingStatisticsLiveListByDateRangeQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/live/LiveApi.d.ts",
+						"line": 34
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/live/LiveApi.d.ts",
+				"line": 34
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.live.daily.listByDateRange",
+			"path": "/encoding/statistics/encodings/live/daily/{from}/{to}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "from",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "from",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/live/daily/DailyApi.d.ts",
+						"line": 20
+					}
+				},
+				{
+					"name": "to",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "to",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/live/daily/DailyApi.d.ts",
+						"line": 20
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/live/daily/DailyApi.d.ts",
+				"line": 20
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.live.options.get",
+			"path": "/encoding/statistics/encodings/live/{encoding_id}/options",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/live/options/OptionsApi.d.ts",
+						"line": 20
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/live/options/OptionsApi.d.ts",
+				"line": 20
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.live.options.listByDateRange",
+			"path": "/encoding/statistics/encodings/live/options",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/encodings/live/options/LiveOptionsStatisticsListByDateRangeQueryParams.d.ts#LiveOptionsStatisticsListByDateRangeQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: LiveOptionsStatisticsListByDateRangeQueryParamsBuilder) => LiveOptionsStatisticsListByDateRangeQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/live/options/OptionsApi.d.ts",
+						"line": 27
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/live/options/OptionsApi.d.ts",
+				"line": 27
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.liveStatistics.get",
+			"path": "/encoding/statistics/encodings/{encoding_id}/live-statistics",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/liveStatistics/LiveStatisticsApi.d.ts",
+						"line": 24
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/liveStatistics/LiveStatisticsApi.d.ts",
+				"line": 24
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.liveStatistics.events.list",
+			"path": "/encoding/statistics/encodings/{encoding_id}/live-statistics/events",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/liveStatistics/events/EventsApi.d.ts",
+						"line": 21
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/encodings/liveStatistics/events/LiveEncodingStatsEventListQueryParams.d.ts#LiveEncodingStatsEventListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: LiveEncodingStatsEventListQueryParamsBuilder) => LiveEncodingStatsEventListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/liveStatistics/events/EventsApi.d.ts",
+						"line": 21
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/liveStatistics/events/EventsApi.d.ts",
+				"line": 21
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.liveStatistics.srt.list",
+			"path": "/encoding/statistics/encodings/{encoding_id}/live-statistics/srt",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/liveStatistics/srt/SrtApi.d.ts",
+						"line": 22
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/encodings/liveStatistics/srt/SrtStatisticsListQueryParams.d.ts#SrtStatisticsListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: SrtStatisticsListQueryParamsBuilder) => SrtStatisticsListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/liveStatistics/srt/SrtApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/liveStatistics/srt/SrtApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.liveStatistics.srt.listBySrtInputId",
+			"path": "/encoding/statistics/encodings/{encoding_id}/live-statistics/srt/{srt_input_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/liveStatistics/srt/SrtApi.d.ts",
+						"line": 31
+					}
+				},
+				{
+					"name": "srtInputId",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "srt_input_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/liveStatistics/srt/SrtApi.d.ts",
+						"line": 31
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 2,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/encodings/liveStatistics/srt/SrtStatisticsListBySrtInputIdQueryParams.d.ts#SrtStatisticsListBySrtInputIdQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: SrtStatisticsListBySrtInputIdQueryParamsBuilder) => SrtStatisticsListBySrtInputIdQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/liveStatistics/srt/SrtApi.d.ts",
+						"line": 31
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/liveStatistics/srt/SrtApi.d.ts",
+				"line": 31
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.liveStatistics.streams.list",
+			"path": "/encoding/statistics/encodings/{encoding_id}/live-statistics/streams",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/liveStatistics/streams/StreamsApi.d.ts",
+						"line": 21
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/encodings/liveStatistics/streams/StreamInfosListQueryParams.d.ts#StreamInfosListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: StreamInfosListQueryParamsBuilder) => StreamInfosListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/liveStatistics/streams/StreamsApi.d.ts",
+						"line": 21
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/liveStatistics/streams/StreamsApi.d.ts",
+				"line": 21
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.vod.list",
+			"path": "/encoding/statistics/encodings/vod",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/encodings/vod/EncodingStatisticsVodListQueryParams.d.ts#EncodingStatisticsVodListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: EncodingStatisticsVodListQueryParamsBuilder) => EncodingStatisticsVodListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/vod/VodApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/vod/VodApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.vod.listByDateRange",
+			"path": "/encoding/statistics/encodings/vod/{from}/{to}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "from",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "from",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/vod/VodApi.d.ts",
+						"line": 32
+					}
+				},
+				{
+					"name": "to",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "to",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/vod/VodApi.d.ts",
+						"line": 32
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 2,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/encodings/vod/EncodingStatisticsVodListByDateRangeQueryParams.d.ts#EncodingStatisticsVodListByDateRangeQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: EncodingStatisticsVodListByDateRangeQueryParamsBuilder) => EncodingStatisticsVodListByDateRangeQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/vod/VodApi.d.ts",
+						"line": 32
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/vod/VodApi.d.ts",
+				"line": 32
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.vod.daily.listByDateRange",
+			"path": "/encoding/statistics/encodings/vod/daily/{from}/{to}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "from",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "from",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/vod/daily/DailyApi.d.ts",
+						"line": 20
+					}
+				},
+				{
+					"name": "to",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "to",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/encodings/vod/daily/DailyApi.d.ts",
+						"line": 20
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/encodings/vod/daily/DailyApi.d.ts",
+				"line": 20
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.labels.list",
+			"path": "/encoding/statistics/labels",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/labels/StatisticsPerLabelListQueryParams.d.ts#StatisticsPerLabelListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: StatisticsPerLabelListQueryParamsBuilder) => StatisticsPerLabelListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/labels/LabelsApi.d.ts",
+						"line": 23
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/labels/LabelsApi.d.ts",
+				"line": 23
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.labels.listByDateRange",
+			"path": "/encoding/statistics/labels/{from}/{to}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "from",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "from",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/labels/LabelsApi.d.ts",
+						"line": 32
+					}
+				},
+				{
+					"name": "to",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "to",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/labels/LabelsApi.d.ts",
+						"line": 32
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 2,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/labels/StatisticsPerLabelListByDateRangeQueryParams.d.ts#StatisticsPerLabelListByDateRangeQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: StatisticsPerLabelListByDateRangeQueryParamsBuilder) => StatisticsPerLabelListByDateRangeQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/labels/LabelsApi.d.ts",
+						"line": 32
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/labels/LabelsApi.d.ts",
+				"line": 32
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.labels.daily.list",
+			"path": "/encoding/statistics/labels/daily",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "queryParameters",
+					"parameterIndex": 0,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/labels/daily/DailyStatisticsPerLabelListQueryParams.d.ts#DailyStatisticsPerLabelListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DailyStatisticsPerLabelListQueryParamsBuilder) => DailyStatisticsPerLabelListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/labels/daily/DailyApi.d.ts",
+						"line": 21
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/labels/daily/DailyApi.d.ts",
+				"line": 21
+			}
+		},
+		{
+			"sdkMethod": "encoding.statistics.labels.daily.listByDateRange",
+			"path": "/encoding/statistics/labels/daily/{from}/{to}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "from",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "from",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/labels/daily/DailyApi.d.ts",
+						"line": 30
+					}
+				},
+				{
+					"name": "to",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "to",
+					"optional": false,
+					"type": {
+						"kind": "builtin",
+						"type": "Date",
+						"scope": "TypeScript builtin; wire representation unconfirmed"
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/labels/daily/DailyApi.d.ts",
+						"line": 30
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 2,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/statistics/labels/daily/DailyStatisticsPerLabelListByDateRangeQueryParams.d.ts#DailyStatisticsPerLabelListByDateRangeQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: DailyStatisticsPerLabelListByDateRangeQueryParamsBuilder) => DailyStatisticsPerLabelListByDateRangeQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/statistics/labels/daily/DailyApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/statistics/labels/daily/DailyApi.d.ts",
+				"line": 30
+			}
+		}
+	]
+}

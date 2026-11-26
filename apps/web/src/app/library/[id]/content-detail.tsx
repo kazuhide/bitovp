@@ -7,6 +7,8 @@ import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import type { LibrarySceneSelection } from "@/lib/library-scenes";
 import { ContentClipPanel } from "../content-clip-panel";
+import { ContentRemovalAction } from "../content-removal-action";
+import { FinishedClips } from "../finished-clips";
 import { SourcePanel } from "../source-panel";
 import { sourcePollingInterval } from "../source-polling";
 
@@ -15,6 +17,7 @@ type ContentDetailProps = {
 	player?: PlayerClientConfig;
 	initialScene?: LibrarySceneSelection;
 	clipEditingAvailable?: boolean;
+	browseClipsHref?: string;
 };
 
 export function ContentDetailClient(props: ContentDetailProps) {
@@ -31,6 +34,7 @@ function ContentDetailView({
 	player,
 	initialScene,
 	clipEditingAvailable = false,
+	browseClipsHref,
 }: ContentDetailProps) {
 	const { t } = useT();
 	const query = useQuery({
@@ -139,19 +143,23 @@ function ContentDetailView({
 								</p>
 							)}
 						</div>
-						{!query.data.parent || !clipEditingAvailable ? (
-							<ContentClipPanel
-								contentId={id}
-								clipEditingAvailable={clipEditingAvailable}
-							/>
-						) : (
-							<Link
-								href={`/library/${id}/edits`}
-								className="inline-flex h-9 items-center rounded-md border border-zinc-700 bg-zinc-900 px-4 font-medium text-sm text-zinc-200 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-emerald-500"
-							>
-								{t("editing.open")}
-							</Link>
-						)}
+						<div className="flex flex-wrap items-start gap-2">
+							<ContentRemovalAction content={query.data} />
+							{!browseClipsHref &&
+							(!query.data.parent || !clipEditingAvailable) ? (
+								<ContentClipPanel
+									contentId={id}
+									clipEditingAvailable={clipEditingAvailable}
+								/>
+							) : (
+								<Link
+									href={browseClipsHref ?? `/library/${id}/edits`}
+									className="inline-flex h-9 items-center rounded-md border border-zinc-700 bg-zinc-900 px-4 font-medium text-sm text-zinc-200 hover:bg-zinc-800 focus-visible:outline-2 focus-visible:outline-emerald-500"
+								>
+									{t("editing.open")}
+								</Link>
+							)}
+						</div>
 					</header>
 					{freshSelectionRead &&
 						initialScene &&
@@ -161,13 +169,18 @@ function ContentDetailView({
 								{t("library.sceneLinkChanged")}
 							</p>
 						)}
-					<SourcePanel
-						key={`${id}:${query.data.source.id}:${initialScene ? JSON.stringify(initialScene) : ""}`}
-						source={query.data.source}
-						initialLocale={query.data.locale}
-						initialScene={validSelection}
-						player={player}
-					/>
+					<FinishedClips
+						contentId={id}
+						canCreate={clipEditingAvailable && !query.data.archived}
+					>
+						<SourcePanel
+							key={`${id}:${query.data.source.id}:${initialScene ? JSON.stringify(initialScene) : ""}`}
+							source={query.data.source}
+							initialLocale={query.data.locale}
+							initialScene={validSelection}
+							player={player}
+						/>
+					</FinishedClips>
 				</>
 			)}
 		</div>

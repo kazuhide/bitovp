@@ -18,7 +18,7 @@ export type {
 } from "./bitmovin-accounts";
 export { createBitmovinAccountStore } from "./bitmovin-accounts";
 export type { AppPrismaClient, AppTransactionClient } from "./client";
-export { createPrismaClient, DB_NULL, getPrisma } from "./client";
+export { createPrismaClient, DB_NULL, dbSql, getPrisma } from "./client";
 export type {
 	CreateCredentialInput,
 	CredentialStore,
@@ -27,6 +27,22 @@ export type {
 } from "./credentials";
 export { createCredentialStore } from "./credentials";
 export { recordUnrestrictedEgress } from "./egress-audit";
+export type { ExperimentContext } from "./encoding-experiments";
+export {
+	addExperimentCampaign,
+	claimExperimentTrial,
+	completeExperimentTrial,
+	controlExperimentCampaign,
+	EncodingExperimentError,
+	enqueueExperimentBatch,
+	experimentCampaignDetail,
+	experimentCampaignPage,
+	experimentResultPage,
+	experimentSelectionRows,
+	experimentTrialPage,
+	releaseExperimentTrial,
+	renewExperimentTrial,
+} from "./encoding-experiments";
 export type { FeederSinglePassDispatchFence } from "./feeder-single-pass";
 export { claimFeederSinglePassDispatch } from "./feeder-single-pass";
 export type {
@@ -41,24 +57,8 @@ export {
 	touchApiTokenForAuthentication,
 } from "./identity-client";
 export { readIngressSnapshot, writeIngressSnapshot } from "./ingress-setting";
-export type {
-	BoundLocalStoryFlowReadSource,
-	LocalStoryFlowReadSnapshotReader,
-	LocalStoryFlowReadSourceEvidence,
-	LocalStoryFlowRuntimeReadSnapshot,
-	LocalStoryFlowWorkerSourceSnapshotReader,
-	OwnedLocalStoryFlowReadFence,
-} from "./library-flow-evidence-reader";
-export {
-	LOCAL_STORY_FLOW_DB_READ_POLICY,
-	LocalStoryFlowReadError,
-	localStoryFlowReadSourceEvidence,
-	localStoryFlowTaskLockKey,
-	validateLocalStoryFlowReadFence,
-	validateLocalStoryFlowSourceArchiveReadFence,
-	withLocalStoryFlowReadSnapshot,
-	withLocalStoryFlowWorkerSourceSnapshot,
-} from "./library-flow-evidence-reader";
+// The hierarchical flow evidence reader is fenced: its exports are in
+// ./library-flow (see hierarchical-flow-fence.json at the repository root).
 export type { CapturedOriginalInput } from "./library-input-capture";
 export {
 	listCapturedOriginalInputs,

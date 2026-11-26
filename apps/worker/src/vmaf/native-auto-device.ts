@@ -44,7 +44,11 @@ export async function resolveNativeExecutable(path: string) {
 /** Identity is verified on each inspection; changing headroom is never cached. */
 export async function inspectNativeDevice(
 	deps: { runner: ProcessRunner; nativePath: string },
-	selection: { backend: "cuda" | "vulkan"; device?: number },
+	selection: {
+		backend: "cuda" | "vulkan";
+		device?: number;
+		attestDecoderRuntime?: boolean;
+	},
 	signal?: AbortSignal,
 ): Promise<{ executable: string; info: NativeDeviceInfo; cacheable: boolean }> {
 	signal?.throwIfAborted();
@@ -69,6 +73,7 @@ export async function inspectNativeDevice(
 		executable,
 		[
 			"--device-info",
+			...(selection.attestDecoderRuntime ? ["--attest-decoder-runtime"] : []),
 			"--backend",
 			selection.backend,
 			...(selection.device === undefined
@@ -189,7 +194,7 @@ export function nativeAutoProfileKey(
 				info.device.driverVersionKnown,
 				"software-decode",
 				"mandatory-cpu-parity",
-				"comparison-10-bit",
+				"comparison-reference-depth",
 				work.model,
 				work.modelSha256,
 				...dimensions,

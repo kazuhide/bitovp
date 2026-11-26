@@ -1,6 +1,5 @@
 import type { AppPrismaClient } from "@bitovp/db";
-import { createPrismaClient } from "@bitovp/db";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { latestRunsFor } from "./latest-runs";
 
 /**
@@ -16,9 +15,9 @@ import { latestRunsFor } from "./latest-runs";
  *
  * So the property under test is a property of the SQL TEXT, and these
  * assertions read it. A double cannot prove what Postgres does with the
- * statement, which is why the last describe runs the real thing against a real
- * database (opt-in, like `reset-live-probe.test.ts`) and why the plan numbers
- * live in the helper's own docblock.
+ * statement, which is why latest-runs.integration.test.ts runs the real thing
+ * against PostgreSQL and why the plan numbers live in the helper's own
+ * docblock.
  */
 function fakePrisma(rows: unknown[] = []) {
 	// Variadic on purpose: with `vi.fn(async  => rows)` the inferred call
@@ -146,92 +145,5 @@ describe("latestRunsFor — the limit lives in the SQL", () => {
 		expect(map.get(CH_A)?.seq).toBe(4);
 		expect(map.get(CH_B)?.seq).toBe(1);
 		expect(map.get("00000000-0000-4000-8000-0000000000ff")).toBeUndefined();
-	});
-});
-
-/**
- * What no double can answer: does that statement really return one row per
- * channel, and is it really the NEWEST one?
- *
- * Opt-in, exactly like `reset-live-probe.test.ts`: the gate suite is offline by
- * rule, so this is skipped unless PROBE_DATABASE_URL names a probe database —
- * and the name check is also the guard, because this block TRUNCATES the two
- * live tables and must not be able to reach the real one whatever the
- * environment says. TYPECHECK-COVERED ONLY in a normal `pnpm test` run: a green
- * gate is not evidence about anything in here.
- *
- * Run (2026-08-29, Postgres 17 in this compose stack) — recorded because the
- * gate cannot re-run it:
- *
- *   createdb bitovp_run_probe && DATABASE_URL=…/bitovp_run_probe \
- *     pnpm --filter @bitovp/db exec prisma migrate deploy
- *   PROBE_DATABASE_URL=…/bitovp_run_probe pnpm --filter @bitovp/web \
- *     exec vitest run src/lib/server/latest-runs.test.ts
- *   → 2 passed. Mutating `LIMIT 1` → `LIMIT 5` failed the first arm with seq
- *     [1, 1, 3] where [1, 3, 7] was expected (the map keeps the LAST row it is
- *     handed per channel, so extra rows overwrite the newest); mutating
- *     `ORDER BY r."seq" DESC` → `ASC` failed it with [1, 1, 1] — the OLDEST
- *     airing of each channel.
- */
-const probeUrl = process.env.PROBE_DATABASE_URL ?? "";
-const PROBE = /\/bitovp_run_probe(\?|$)/.test(probeUrl);
-
-describe.skipIf(!PROBE)("latestRunsFor against a real Postgres", () => {
-	const prisma = createPrismaClient(probeUrl);
-	afterAll(async () => {
-		await prisma.$disconnect();
-	});
-
-	/** 1, 3 and 7 airings — the shapes a re-aired channel actually reaches. */
-	const PLAN = [1, 3, 7];
-
-	async function seed(): Promise<string[]> {
-		await prisma.$executeRawUnsafe(
-			'TRUNCATE TABLE "LiveChannelRun", "LiveChannel" CASCADE',
-		);
-		const ids: string[] = [];
-		for (const airings of PLAN) {
-			const channel = await prisma.liveChannel.create({
-				data: { name: `probe-${airings}`, plan: {} },
-				select: { id: true },
-			});
-			ids.push(channel.id);
-			for (let seq = 1; seq <= airings; seq += 1) {
-				await prisma.liveChannelRun.create({
-					data: {
-						liveChannelId: channel.id,
-						seq,
-						// Only the newest may be non-terminal: the partial unique
-						// index allows at most one live run per channel (#108 PR1).
-						status: seq === airings ? "RUNNING" : "STOPPED",
-						outputPrefix: `runs/${seq}`,
-						lastHeartbeat: { at: `2026-08-29T00:00:0${seq}.000Z` },
-					},
-				});
-			}
-		}
-		return ids;
-	}
-
-	it("returns exactly one row per channel, and it is the newest seq", async () => {
-		const ids = await seed();
-		const map = await latestRunsFor(prisma, ids);
-		expect(map.size).toBe(ids.length);
-		expect(ids.map((id) => map.get(id)?.seq)).toEqual(PLAN);
-		// The row really is that run's, not another channel's newest.
-		for (const id of ids) {
-			expect(map.get(id)?.liveChannelId).toBe(id);
-		}
-	});
-
-	it("a channel with no runs is absent, rather than a null row", async () => {
-		const ids = await seed();
-		const empty = await prisma.liveChannel.create({
-			data: { name: "probe-never-aired", plan: {} },
-			select: { id: true },
-		});
-		const map = await latestRunsFor(prisma, [...ids, empty.id]);
-		expect(map.has(empty.id)).toBe(false);
-		expect(map.size).toBe(ids.length);
 	});
 });

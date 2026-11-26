@@ -14,6 +14,7 @@ import Link from "next/link";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { InfoHint } from "@/components/ui/info-hint";
+import { VodFlowPreference } from "@/components/vod-flow-preference";
 import { canAccess, pageAccess } from "@/lib/auth/audience";
 import { useRoleView } from "@/lib/auth/use-session";
 import type { MessageKey } from "@/lib/i18n";
@@ -114,9 +115,19 @@ const ACCESS: readonly Area[] = [
 
 const DIAGNOSTICS: readonly Area[] = [
 	{
+		titleKey: "pageTitles.errorDefinitions",
+		href: "/settings/error-definitions",
+		captionKey: "errorDefinitions.caption",
+	},
+	{
 		titleKey: "clipDiagnostics.title",
 		href: "/settings/clip-editing",
 		captionKey: "clipDiagnostics.caption",
+	},
+	{
+		titleKey: "operationAnalytics.title",
+		href: "/settings/operation-analytics",
+		captionKey: "operationAnalytics.caption",
 	},
 	{
 		titleKey: "settingsX.apiCoverage",
@@ -151,9 +162,10 @@ export function SettingsAreas() {
 					icon={UserRound}
 					titleKey="settingsCatalog.personal"
 				/>
-				<div className="grid grid-cols-1 gap-5 px-2 pt-2 sm:grid-cols-2 sm:gap-8 sm:px-10">
+				<div className="grid grid-cols-1 gap-5 px-2 pt-2 sm:grid-cols-2 sm:gap-8 sm:px-10 lg:grid-cols-3">
 					<LocaleSwitcher select />
 					<ThemeSwitcher />
+					<VodFlowPreference />
 				</div>
 			</section>
 			<div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">

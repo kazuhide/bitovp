@@ -70,7 +70,7 @@ describe("RunsPanel (ledger #149 batch 2g)", () => {
 		).toBeInTheDocument();
 	});
 
-	it("a run row carries seq, status and safe recorded-failure copy", async () => {
+	it("labels the error in its run row without an instruction to retry", async () => {
 		apiFetch.mockResolvedValue({
 			runs: [
 				{
@@ -90,10 +90,10 @@ describe("RunsPanel (ledger #149 batch 2g)", () => {
 		expect(await screen.findByText("Run #3")).toBeInTheDocument();
 		expect(screen.getByText("ERROR")).toBeInTheDocument();
 		expect(
-			screen.getByText(
+			screen.queryByText(
 				"The live operation encountered a problem. Check the activity history and current channel state, then retry if appropriate.",
 			),
-		).toBeInTheDocument();
+		).not.toBeInTheDocument();
 		expect(screen.queryByText("encoder exploded")).not.toBeInTheDocument();
 	});
 

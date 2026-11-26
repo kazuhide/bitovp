@@ -5,6 +5,7 @@ import {
 	type LocalStoryBlueprint,
 	type LocalStoryCorpus,
 	type LocalStoryInput,
+	selectLocalStoryClips,
 } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import { prepareLocalBlueprintPrompt } from "./local-story-blueprint-prompt";
@@ -255,6 +256,93 @@ describe("bounded lossless Blueprint prompts", () => {
 		expect(() => prepared.decodeNativeOutput?.(unknown)).toThrow(
 			"LOCAL_STORY_BLUEPRINT_INVALID",
 		);
+	});
+	it("admits a native event whose speech is already covered by an earlier beat", () => {
+		const f = fixture();
+		const sceneId = randomUUID();
+		const description = "An observed event has a supported source quote.";
+		const speech = {
+			startUs: 23_550_000,
+			endUs: 25_050_000,
+			text: "Listen to the motor.",
+		};
+		const input: LocalStoryInput = {
+			...f.input,
+			sceneScope: { sceneId, startUs: 20_000_000, endUs: 40_000_000 },
+			sceneFrameBounds: { fromFrame: 600, toFrame: 1200 },
+			segments: [speech],
+			coverage: [
+				{ ref: "s0", status: "ELIGIBLE" },
+				{ ref: "s1", status: "ELIGIBLE" },
+			],
+			shots: [
+				{
+					ref: "s0",
+					sceneId,
+					fromFrame: 600,
+					toFrame: 752,
+					text: description,
+					fields: [
+						{
+							pointer: "/shots/0/description",
+							kind: "AISA",
+							text: description,
+						},
+					],
+				},
+				{
+					ref: "s1",
+					sceneId,
+					fromFrame: 752,
+					toFrame: 792,
+					text: `${description}\n${speech.text}`,
+					fields: [
+						{
+							pointer: "/shots/1/description",
+							kind: "AISA",
+							text: description,
+						},
+						{ pointer: "/segments/0/text", kind: "ASR", ...speech },
+					],
+				},
+			],
+		};
+		const ledger: LocalStoryCorpus = {
+			...f.ledger,
+			coveredRefs: ["s0", "s1"],
+			events: f.ledger.events.map((event, index) =>
+				index === 1
+					? {
+							...event,
+							quotes: [...event.quotes, { ref: "s1", quote: speech.text }],
+						}
+					: {
+							...event,
+							refs: ["s0"],
+							quotes: [{ ref: "s0", quote: description }],
+						},
+			),
+		};
+		const options = {
+			input,
+			ledger,
+			mode: "FLOW" as const,
+			targetDurationFrames: 200,
+		};
+		const prepared = prepareLocalBlueprintPrompt(options);
+		expect(prepared.representation).toBe("ELIGIBLE_ALIASES_V1");
+		const blueprint = prepared.decodeNativeOutput?.(response());
+		if (!blueprint) throw new Error("Expected packed native Blueprint decoder");
+		expect(blueprint.beats.map(({ eventIds }) => eventIds)).toEqual([
+			["l0_e0"],
+			["l1_e0"],
+		]);
+		const flat = data(localBlueprintPrompt(options));
+		expect(flat.events[1][5]).toBe(40);
+		expect(flat.allowedEventIdsByRole.ACTION).toContain("l1_e0");
+		expect(
+			selectLocalStoryClips({ ...options, blueprint }).actualDurationFrames,
+		).toBe(192);
 	});
 	it("expands only event references and leaves beat dependencies unchanged", () => {
 		const f = fixture(),

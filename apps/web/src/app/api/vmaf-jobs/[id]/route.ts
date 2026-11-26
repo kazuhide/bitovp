@@ -1,5 +1,11 @@
 import type { PooledMetrics } from "@bitovp/core";
-import { localVmafExecutionOf, vmafExecutionSchema } from "@bitovp/core";
+import {
+	hdrMeasurementOf,
+	localVmafExecutionOf,
+	publicHlsQcEvidenceOf,
+	referencePreparationOf,
+	vmafExecutionSchema,
+} from "@bitovp/core";
 import { NextResponse } from "next/server";
 import type {
 	BandingResultDetail,
@@ -21,7 +27,7 @@ import { requireQcVmafEnabled } from "@/lib/server/feature-flags";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
 import {
 	downsampleBandingFrameBlob,
-	downsampleFrameBlob,
+	readVmafChartData,
 } from "@/lib/server/vmaf-frames";
 import {
 	bandingPreviewDescriptor,
@@ -148,8 +154,8 @@ export async function GET(req: Request, { params }: RouteParams) {
 			if (!stored) throw new Error("VMAF result is no longer available");
 			const series =
 				!bandingOnly && stored.framesGzip
-					? await downsampleFrameBlob(stored.framesGzip, undefined, req.signal)
-					: { frames: [], frameCount: 0 };
+					? await readVmafChartData(stored.framesGzip, undefined, req.signal)
+					: { frames: [], frameCount: 0, distribution: null };
 			// LIVE results carry the PR6a alignment block in pooled.live; lift it
 			// out so the report can render the live panels (VOD pooled has no live).
 			const bandingSeries =
@@ -207,6 +213,9 @@ export async function GET(req: Request, { params }: RouteParams) {
 				...pooled
 			} = pooledRaw;
 			const localExecution = localVmafExecutionOf(r.provenance);
+			const referencePreparation = referencePreparationOf(r.provenance);
+			const hdrMeasurement = hdrMeasurementOf(r.provenance);
+			const hlsSource = publicHlsQcEvidenceOf(r.provenance);
 			results.push({
 				id: r.id,
 				renditionRef: r.renditionRef as RenditionRef,
@@ -217,8 +226,12 @@ export async function GET(req: Request, { params }: RouteParams) {
 				...bandingData,
 				frames: series.frames,
 				frameCount: series.frameCount,
+				distribution: series.distribution,
 				preview: previewDescriptor(id, job, r, requestOrganizationId(ctx)),
 				...(localExecution ? { localExecution } : {}),
+				...(referencePreparation ? { referencePreparation } : {}),
+				...(hdrMeasurement ? { hdrMeasurement } : {}),
+				...(hlsSource ? { hlsSource } : {}),
 				...(live ? { live } : {}),
 			});
 		}

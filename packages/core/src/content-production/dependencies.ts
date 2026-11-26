@@ -20,7 +20,7 @@ import {
 import {
 	transcriptionRawSegmentSchema,
 	transcriptionSpeechIntervalSchema,
-} from "./transcription-quality";
+} from "./transcription-schema";
 
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const transcriptResultSchema = z
@@ -199,6 +199,7 @@ export function verifyMediaTaskDependency(input: Input) {
 	});
 	if (previous.kind === "TRANSCRIBE") {
 		if (
+			previous.parameters.asrBackend === "cuda" ||
 			!usesGeneratedCaptions(request.parameters.captions) ||
 			row.analysisRevisionId !== null ||
 			!currentIdentity.modelSha256 ||

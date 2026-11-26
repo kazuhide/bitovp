@@ -6,6 +6,7 @@ import type {
 	EditDocument,
 	SceneAnalysisDocument,
 } from "@bitovp/core";
+import type { StoredEditingSettings } from "./stored-editing-settings";
 
 export type EditingMediaView = {
 	id: string;
@@ -52,6 +53,7 @@ export type EditingRenderView = {
 		derivedContentId: string | null;
 	} | null;
 };
+export type EditingClipPurpose = "CLIP" | "HIGHLIGHT" | "TRAILER";
 export type EditingProjectExportSummary = {
 	id: string;
 	revisionId: string;
@@ -60,7 +62,21 @@ export type EditingProjectExportSummary = {
 	durationFrames: number | null;
 	finishedAt: string | null;
 	matchesCurrentDraft: boolean;
+	purpose?: EditingClipPurpose;
 	artifact: EditingRenderView["artifact"];
+};
+export type StoredEditingExport = {
+	projectId: string;
+	contentId: string;
+	title: string;
+	earlierVersion: boolean;
+	purpose: EditingClipPurpose;
+	settings?: StoredEditingSettings;
+	render: EditingRenderView & {
+		kind: "EXPORT";
+		state: "SUCCEEDED";
+		artifact: NonNullable<EditingRenderView["artifact"]>;
+	};
 };
 export type EditingProjectSummary = {
 	id: string;

@@ -290,6 +290,10 @@ export const liveMuxingSchema = z.discriminatedUnion("kind", [
 ]);
 export type LiveMuxing = z.infer<typeof liveMuxingSchema>;
 
+export function isMoqMuxingKind(kind: LiveMuxing["kind"]): boolean {
+	return kind === "FMP4" || kind === "CMAF";
+}
+
 /**
  * Live manifests are PRE-CREATED resources (compiled as ops, exactly like
  * VOD trees) and referenced by manifestId in the start request — the one
@@ -654,6 +658,15 @@ export const liveChannelPlanSchema = z
 			isAisaManagedLivePlan(plan) ||
 			plan.liveManifests.length > 0 ||
 			plan.muxings.some(
+				(muxing) =>
+					isMoqMuxingKind(muxing.kind) &&
+					plan.outputs.some(
+						(output) =>
+							output.kind === "MOQ" &&
+							output.key === muxing.destination?.outputKey,
+					),
+			) ||
+			plan.muxings.some(
 				(m) =>
 					(m.kind === "FMP4" || m.kind === "CMAF") &&
 					[
@@ -668,7 +681,7 @@ export const liveChannelPlanSchema = z
 		{
 			path: ["liveManifests"],
 			message:
-				"At least one manifest is required unless an Origin receives Live Media Ingest",
+				"At least one manifest is required unless an Origin receives Live Media Ingest or a MoQ relay receives FMP4 or CMAF",
 		},
 	);
 

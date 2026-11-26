@@ -392,9 +392,13 @@ export function SchedulePanel({
 
 	const rows = schedules.data ?? [];
 	/* A failed schedule query must not become an empty list. TanStack retains old data after background refresh failure, so isError marks the displayed rows as stale even when data remains available. */
-	const unavailable = schedules.isError;
+	const unavailable = schedules.isError || schedules.isPending;
 	/** The one line, rendered in place of each section's empty-state copy. */
-	const unavailableLine = (
+	const unavailableLine = schedules.isPending ? (
+		<p role="status" className="mt-1 text-xs text-zinc-500">
+			{t("common.loading")}
+		</p>
+	) : (
 		<p
 			role="status"
 			data-schedule-unavailable="true"
@@ -475,9 +479,7 @@ export function SchedulePanel({
 					{t("schedule.upcoming")}
 				</h4>
 				{unavailable ? unavailableLine : null}
-				{schedules.isLoading ? (
-					<p className="mt-1 text-xs text-zinc-500">{t("common.loading")}</p>
-				) : upcoming.length === 0 ? (
+				{upcoming.length === 0 ? (
 					unavailable ? null : (
 						<p className="mt-1 text-xs text-zinc-500">
 							{t("schedule.noneUpcoming")}

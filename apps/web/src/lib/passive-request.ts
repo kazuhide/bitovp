@@ -2,13 +2,20 @@ export const EXPECTED_ORGANIZATION_QUERY = "expectedOrganizationId";
 const UUID = "[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}";
 const ORGANIZATION_ID = new RegExp(`^${UUID}$`);
 const PASSIVE_PATH = new RegExp(
-	`^/api/(?:library/(?:(?:sources|media-versions|artifacts|image-assets)/${UUID}/media|artifacts/${UUID}/download)|vmaf-jobs/${UUID}/preview|encoding-jobs/${UUID}/qc-report|live/analyses/${UUID}/recording(?:/media)?)$`,
+	`^/api/(?:library/(?:(?:sources|media-versions|artifacts|image-assets)/${UUID}/media|artifacts/${UUID}/download)|vmaf-jobs/${UUID}/preview|encoding-jobs/${UUID}/qc-report|live/analyses/${UUID}/recording(?:/media)?|vod/input-previews/${UUID}/content)$`,
 );
 const LIBRARY_MEDIA_PATH = new RegExp(`^/api/library/sources/${UUID}/media$`);
+const CANONICAL_UUID = "[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}";
+const MOQ_PASSIVE_PATH = new RegExp(
+	`^/api/(?:player-assets/moq|live-channels/${CANONICAL_UUID}/runs/${CANONICAL_UUID}/moq-observations/${CANONICAL_UUID}/archive)$`,
+);
 
-/** Only these native media/download reads may carry the document's organization in their URL. */
+/** Only these native asset/media/download reads may carry the document organization in their URL. */
 export function passiveRequestPath(pathname: string, method: string) {
-	return (method === "GET" || method === "HEAD") && PASSIVE_PATH.test(pathname);
+	return (
+		(method === "GET" || method === "HEAD") &&
+		(PASSIVE_PATH.test(pathname) || MOQ_PASSIVE_PATH.test(pathname))
+	);
 }
 
 export type PassiveOrganizationBinding =
@@ -21,6 +28,13 @@ export function passiveOrganizationBinding(
 	method: string,
 ): PassiveOrganizationBinding {
 	if (!passiveRequestPath(url.pathname, method)) return { kind: "absent" };
+	if (
+		MOQ_PASSIVE_PATH.test(url.pathname) &&
+		[...url.searchParams.keys()].some(
+			(key) => key !== EXPECTED_ORGANIZATION_QUERY,
+		)
+	)
+		return { kind: "invalid" };
 	const values = url.searchParams.getAll(EXPECTED_ORGANIZATION_QUERY);
 	if (!values.length) return { kind: "absent" };
 	const value = values[0];

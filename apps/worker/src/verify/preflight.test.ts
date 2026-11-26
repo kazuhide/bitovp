@@ -156,6 +156,10 @@ describe("every plan IO kind is classified, none by omission (ledger #137)", () 
 		// no bucket, so counting it as S3-blocked would be a different lie.
 		expect(msl?.needs).not.toContain("S3");
 	});
+
+	it("requires an unevidenced MoQ capability instead of treating a relay as storage or credential-free", () => {
+		expect(capabilityOfIoKind("MOQ")).toBe("MOQ");
+	});
 });
 
 describe("capabilitiesFor — the three scenarios that were counted runnable and were not", () => {

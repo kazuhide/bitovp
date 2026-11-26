@@ -4,6 +4,7 @@ import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
 	cipherFromEnv,
+	DEFAULT_ASR_MODEL_SHA256,
 	enqueueFeederJob,
 	FEEDER_CONCURRENCY,
 	hashEditingEvidence,
@@ -43,7 +44,10 @@ import {
 	TENANT_ORGANIZATION,
 } from "@bitovp/db";
 import type { BrowserCredential } from "@bitovp/storage";
-import { createBrowserForCredential } from "@bitovp/storage";
+import {
+	createBrowserForCredential,
+	verifyInputTimelinePreparation,
+} from "@bitovp/storage";
 import { type Job, Queue, Worker } from "bullmq";
 import { Redis } from "ioredis";
 import { createAlertEngine, createOrphanResolver } from "./alerts/engine";
@@ -80,6 +84,12 @@ import { createConfiguredLocalCaptionTranslator } from "./library-editing/config
 import { createLibraryGenerationHandler } from "./library-editing/generation";
 import { createLocalStoryEngine } from "./library-editing/local-story-engine";
 import { createLibraryMediaTaskSweep } from "./library-editing/media-task-sweep";
+import {
+	assertNativeGenerationReady,
+	nativeGenerationComponents,
+	probeNativeEditingRuntime,
+} from "./library-editing/native-preflight";
+import { MediaOperationError } from "./library-editing/process";
 import {
 	startLocalSemanticDiagnostics,
 	startLocalStoryChoiceDiagnostics,
@@ -121,6 +131,7 @@ import {
 import { createRunHeartbeatSummarizer } from "./live/run-heartbeat-summary";
 import { reconcileStartupCancellations } from "./live/startup-cancel";
 import {
+	LIVE_HEARTBEAT_SLOTS,
 	liveChannelConcurrency,
 	reserveLiveStopCapacity,
 } from "./live-capacity";
@@ -128,6 +139,7 @@ import { createInboundDispatcher } from "./notify/dispatcher";
 import { createEventEmitter } from "./notify/emitter";
 import { createNotifyProcessor } from "./notify/processor";
 import { createWakeBus } from "./notify/wake-bus";
+import { pruneOperationAttempts } from "./operation-analytics/retention";
 import {
 	createLiveChannelProcessor,
 	createLiveHeartbeatSweep,
@@ -162,7 +174,12 @@ import {
 	DEFAULT_LONG_JOB_MAX_STALLED_COUNT,
 	stallOptionsFor,
 } from "./stall-policy";
-import { createTenantConsumer } from "./tenant/consumer";
+import {
+	pruneSystemSweepHistory,
+	scheduleSystemSweep,
+	systemSweeps,
+} from "./system-sweeps";
+import { createTenantConsumer, isTenantSystemSweep } from "./tenant/consumer";
 import { createTenantDispatcher } from "./tenant/dispatch";
 import { tenantQueue } from "./tenant/queue";
 import {
@@ -189,10 +206,14 @@ import {
 import { queueExcessVmafJobs } from "./vmaf/job-capacity";
 import { createLiveVmafProcessor } from "./vmaf/live-processor";
 import { createLocalVmafResources } from "./vmaf/local-resources";
+import { createVmafModelResolver } from "./vmaf/model-path";
 import { createVmafProcessor } from "./vmaf/processor";
 import { createStrandedVmafReconciler } from "./vmaf/reconcile-stranded";
 import { readLocalResources } from "./vmaf/resources";
 import { createVmafTrigger } from "./vmaf/trigger";
+import { createVodInputPreviewSweep } from "./vod-input-preview/cleanup";
+import { createVodInputPreviewProcessor } from "./vod-input-preview/processor";
+import { createVodInputPreviewReservation } from "./vod-input-preview/resources";
 import { createWatchSweep } from "./watch/sweep";
 import { createRegistrarProvider } from "./webhooks/provider";
 import { createWebhookRegistrar } from "./webhooks/registrar";
@@ -274,6 +295,10 @@ const resetCleanupLoop = tenantService(() =>
 runTenantTick(() => resetCleanupLoop.run());
 setTenantInterval(() => resetCleanupLoop.run(), 30_000).unref();
 
+const pruneAttempts = () => pruneOperationAttempts(prisma);
+runTenantTick(pruneAttempts);
+setTenantInterval(pruneAttempts, 60 * 60 * 1000).unref();
+
 // Producer side of the feeder queue: the live channel worker enqueues
 // feeder stops when a channel stops (P3-PR3 lifecycle coupling). The
 // shared core helper applies the producer jobId convention (start = row
@@ -314,6 +339,13 @@ const storageInspectQueue = tenantQueue(
 		connection: { url: env.REDIS_URL },
 	}),
 );
+const vodInputPreviewQueue = tenantQueue(
+	new Queue(QUEUE_NAMES.vodInputPreview, {
+		connection: { url: env.REDIS_URL },
+	}),
+);
+// A global queue permit bounds CPU preview concurrency across worker replicas.
+await vodInputPreviewQueue.setGlobalConcurrency(1);
 // : slate normalization — the direct route enqueues, this process
 // consumes, and the promoter below re-queues rows that were waiting for the
 // live input.
@@ -647,12 +679,10 @@ const editingBrowserFor = async (credentialId: string) => {
 	);
 };
 const editingAsrModel =
-	process.env.WHISPER_MODEL_PATH &&
-	process.env.WHISPER_MODEL_SHA256 &&
-	existsSync(process.env.WHISPER_MODEL_PATH)
+	process.env.WHISPER_MODEL_PATH && existsSync(process.env.WHISPER_MODEL_PATH)
 		? {
 				path: process.env.WHISPER_MODEL_PATH,
-				sha256: process.env.WHISPER_MODEL_SHA256,
+				sha256: process.env.WHISPER_MODEL_SHA256 ?? DEFAULT_ASR_MODEL_SHA256,
 			}
 		: undefined;
 let editingCaptionModelHash: string | undefined;
@@ -689,6 +719,15 @@ const editingSweepLoop = createConfiguredLibraryEditing(
 					ffmpegPath: env.FFMPEG_PATH,
 					localStoryEngine: editingLocalStoryEngine,
 					captionAligner: alignSelectedCaptionSegments,
+					preflight: async (parameters, signal, hasAudio) => {
+						const components = nativeGenerationComponents(parameters, hasAudio);
+						const result = await probeNativeEditingRuntime({
+							components,
+							signal,
+						});
+						if (signal.aborted) throw new MediaOperationError("CANCELED");
+						assertNativeGenerationReady(result, components);
+					},
 					captionTranslator: createConfiguredLocalCaptionTranslator({
 						prisma,
 						config: editingSemanticConfiguration,
@@ -774,6 +813,7 @@ const editingRuntimeHeartbeat = startLocalSemanticHeartbeat({
 }).catch(() => ({ stop: async () => {} }));
 const editingRuntimeDiagnostics = startLocalSemanticDiagnostics({
 	env: process.env,
+	nativeProbe: (signal) => probeNativeEditingRuntime({ signal }),
 	captionModelHash: editingCaptionModelHash,
 	captionSelection: editingCaptionSelection,
 	claim: (keys) => wakePublisher.rpop(keys.requests),
@@ -942,6 +982,19 @@ const processorDeps: LiveChannelDeps = {
 const orchestrate = tenantService(() =>
 	createOrchestratorProcessor({
 		...processorDeps,
+		validateInputPreparation: (plan) =>
+			verifyInputTimelinePreparation({
+				plan,
+				organizationId: requireOrganizationId(),
+				allowExpired: true,
+				findTask: (id) =>
+					prisma.vodInputPreviewTask.findUnique({ where: { id } }),
+				browserFor: editingBrowserFor,
+				signal: AbortSignal.any([
+					editingShutdownController.signal,
+					AbortSignal.timeout(120_000),
+				]),
+			}),
 		captureIngestInput: createEncodingInputCapture({
 			prisma,
 			browserFor: editingBrowserFor,
@@ -1367,14 +1420,13 @@ const vmafSubsample = env.VMAF_SUBSAMPLE;
 // NOT libvmaf built-ins — they only load from a model FILE — so the runner maps
 // a model name to its bundled JSON when one is present and uses `model=path=`;
 // otherwise it falls back to the built-in `model=version=` (the v0.6.1 family,
-// reachable on the host too). Undefined when VMAF_MODEL_DIR is unset (host dev).
+// reachable on the host too). HDR can use a separate model directory without
+// changing the existing SDR installation.
 const vmafModelDir = env.VMAF_MODEL_DIR;
-const resolveModelPath = vmafModelDir
-	? (model: string): string | undefined => {
-			const file = join(vmafModelDir, `${model}.json`);
-			return existsSync(file) ? file : undefined;
-		}
-	: undefined;
+const resolveModelPath = createVmafModelResolver({
+	sdrDir: vmafModelDir,
+	hdrDir: env.VMAF_HDR_MODEL_DIR,
+});
 /**
  * The capability the orchestrator refuses against (review-234 I1): a model is
  * scorable here if libvmaf has it built in, or if a bundled JSON exists.
@@ -1431,6 +1483,8 @@ const vmafProcessor = tenantService(() =>
 			: {}),
 		nativeSelectionFailure: automaticVmafSelectionState.failure,
 		ffmpegPath: env.VMAF_FFMPEG_PATH ?? env.FFMPEG_PATH,
+		hdrFfmpegPath: env.VMAF_HDR_FFMPEG_PATH,
+		hdrFfprobePath: env.VMAF_HDR_FFPROBE_PATH,
 		ffprobePath: env.FFPROBE_PATH,
 		workDir: join(vmafWorkDir, requireOrganizationId()),
 		decodePolicy: {
@@ -1438,6 +1492,7 @@ const vmafProcessor = tenantService(() =>
 			device: env.VMAF_GPU_DEVICE,
 		},
 		scoringBackend: env.VMAF_SCORING_BACKEND,
+		reuseVerifiedNativeResults: env.VMAF_REUSE_VERIFIED_NATIVE_RESULTS === "1",
 		...(env.VMAF_NATIVE_PATH ? { nativePath: env.VMAF_NATIVE_PATH } : {}),
 		now: processorDeps.now,
 		localResources: localVmafResources,
@@ -1464,6 +1519,39 @@ const storageInspectProcessor = tenantService(() =>
 		now: processorDeps.now,
 	}),
 );
+
+const vodInputPreviewShutdown = new AbortController();
+const vodInputPreviewRoot =
+	process.env.VOD_INPUT_PREVIEW_DIR ??
+	join(tmpdir(), "bitovp-vod-input-previews");
+const vodInputPreviewReservation =
+	createVodInputPreviewReservation(wakePublisher);
+const vodInputPreviewProcessor = tenantService(() =>
+	createVodInputPreviewProcessor({
+		prisma,
+		browserFor: editingBrowserFor,
+		workDir: vodInputPreviewRoot,
+		ffmpegPath: env.FFMPEG_PATH,
+		ffprobePath: env.FFPROBE_PATH,
+		signal: vodInputPreviewShutdown.signal,
+		reserve: vodInputPreviewReservation,
+	}),
+);
+const vodInputPreviewSweep = tenantService(() =>
+	createVodInputPreviewSweep({
+		prisma,
+		queue: vodInputPreviewQueue,
+		workDir: vodInputPreviewRoot,
+		organizationId: requireOrganizationId(),
+	}),
+);
+const vodInputPreviewSweepLoop = tenantService(() =>
+	createSweepLoop(vodInputPreviewSweep, () =>
+		console.error("[vod-input-preview] recovery/cleanup will retry"),
+	),
+);
+runTenantTick(() => vodInputPreviewSweepLoop.run());
+setTenantInterval(() => vodInputPreviewSweepLoop.run(), 30_000).unref();
 
 // : slate normalization + registration. Shares the work dir, runner
 // and credential resolution with the inspection above; every customer byte
@@ -1621,6 +1709,7 @@ const handlers = createHandlers({
 	feeder: (jobData) => feederProcessor.process(jobData),
 	vmaf: dispatchVmaf,
 	storageInspect: (jobData) => storageInspectProcessor(jobData),
+	vodInputPreview: (jobData) => vodInputPreviewProcessor(jobData),
 	notify: (jobData) => notifyProcessor({ data: jobData }),
 	startupProbe: (jobData) => processProbeBatch(jobData),
 	slateNormalize: (job) =>
@@ -1664,33 +1753,29 @@ setTenantInterval(
 ).unref();
 runTenantTick(() => startupCancellationLoop.run());
 
-liveChannelQueue
-	.upsertJobScheduler(
-		"live-heartbeat-sweep",
-		{ every: HEARTBEAT_SWEEP_INTERVAL_MS },
-		{ name: HEARTBEAT_SWEEP_JOB, data: { systemSweep: "heartbeat" } },
-	)
-	.catch((err) =>
-		console.error(
-			"[worker:liveChannel] failed to schedule heartbeat sweep:",
-			err,
-		),
-	);
+scheduleSystemSweep(
+	liveChannelQueue,
+	systemSweeps.liveChannel,
+	HEARTBEAT_SWEEP_INTERVAL_MS,
+).catch((err) =>
+	console.error(
+		"[worker:liveChannel] failed to schedule heartbeat sweep:",
+		err,
+	),
+);
 
 // : the slate promoter — re-queues rows that waited for the live
 // input once the channel reports stream attributes. upsert = idempotent.
-slateNormalizeQueue
-	.upsertJobScheduler(
-		SLATE_NORMALIZE_PROMOTE_JOB,
-		{ every: SLATE_NORMALIZE_PROMOTE_INTERVAL_MS },
-		{ name: SLATE_NORMALIZE_PROMOTE_JOB, data: { systemSweep: "slate" } },
-	)
-	.catch((err) =>
-		console.error(
-			"[worker:slateNormalize] failed to schedule the promoter:",
-			err,
-		),
-	);
+scheduleSystemSweep(
+	slateNormalizeQueue,
+	systemSweeps.slateNormalize,
+	SLATE_NORMALIZE_PROMOTE_INTERVAL_MS,
+).catch((err) =>
+	console.error(
+		"[worker:slateNormalize] failed to schedule the promoter:",
+		err,
+	),
+);
 
 // Live schedule sweep : fires ARMED LiveSchedule rows through
 // the queue actions above — dispatcher idiom (in-process interval,
@@ -1905,13 +1990,33 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				? { concurrency: ORCHESTRATOR_CONCURRENCY }
 				: {}),
 			...(key === "liveChannel"
-				? { concurrency: LIVE_CHANNEL_CONCURRENCY }
+				? { concurrency: LIVE_CHANNEL_CONCURRENCY + LIVE_HEARTBEAT_SLOTS }
 				: {}),
 			// review-183 I3: one slow webhook host must not serialize the bus.
 			...(key === "notify" ? { concurrency: 4 } : {}),
 			...(key === "vmafRunner" ? { concurrency: VMAF_JOB_CONCURRENCY } : {}),
 		},
 	);
+	if (key === "liveChannel" || key === "slateNormalize") {
+		const queue =
+			key === "liveChannel" ? liveChannelQueue : slateNormalizeQueue;
+		const pruneAfterSweep = (job: Job | undefined) => {
+			if (job && isTenantSystemSweep(key, job)) {
+				void pruneSystemSweepHistory(
+					wakePublisher,
+					queue,
+					systemSweeps[key],
+				).catch((error) =>
+					console.error(
+						`[worker:${key}] failed to prune sweep history:`,
+						error,
+					),
+				);
+			}
+		};
+		worker.on("completed", pruneAfterSweep);
+		worker.on("failed", pruneAfterSweep);
+	}
 	worker.on("ready", () => {
 		// The concurrency is part of the line because it is otherwise invisible: the orchestrator
 		// ran at BullMQ's default of 1 for the project's whole life, and the only symptom was
@@ -2227,6 +2332,7 @@ const shutdown = createShutdown({
 	// resolve to STOPPED and worker.close waits for them.
 	stopFeeders: () => {
 		stopping = true;
+		vodInputPreviewShutdown.abort();
 		editingShutdownController.abort();
 		void editingGpuGate?.stop();
 		return forEachTenantService(feederProcessor, (instance) =>
@@ -2237,6 +2343,10 @@ const shutdown = createShutdown({
 	// `queue.add` finishes BEFORE the queue closes — the ordinary stop must
 	// not manufacture the lost handoff the outbox exists to recover from.
 	drains: [
+		{
+			name: "VOD input preview recovery",
+			run: () => drainTenantLoop(vodInputPreviewSweepLoop),
+		},
 		{
 			name: "local semantic heartbeat",
 			run: async () => {
@@ -2323,6 +2433,7 @@ const shutdown = createShutdown({
 		feederQueue,
 		vmafQueue,
 		orchestratorProducerQueue,
+		vodInputPreviewQueue,
 	],
 	disconnect: () => basePrisma.$disconnect(),
 	exit: (code) => process.exit(code),

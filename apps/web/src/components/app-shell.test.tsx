@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
@@ -32,9 +32,12 @@ beforeEach(() => {
 	pathname = "/vod/jobs";
 });
 
-function renderShell(qcVmaf = true) {
+function renderShell(qcVmaf = true, encodingExperiments = false) {
 	return renderWithQuery(
-		<FeatureFlagsProvider flags={{ qcVmaf }}>
+		<FeatureFlagsProvider
+			flags={{ qcVmaf }}
+			encodingExperiments={encodingExperiments}
+		>
 			<AppShell>
 				<h1>the page</h1>
 			</AppShell>
@@ -125,14 +128,38 @@ describe("AppShell responsive shells", () => {
 		expect(classes).not.toContain("px-8");
 	});
 
+	it("keeps the page video mounted while hiding and restoring desktop navigation", async () => {
+		renderWithQuery(
+			<FeatureFlagsProvider flags={{ qcVmaf: true }}>
+				<AppShell>
+					<video data-testid="demo-video" muted />
+				</AppShell>
+			</FeatureFlagsProvider>,
+		);
+		const video = await screen.findByTestId("demo-video");
+		(video as HTMLVideoElement).currentTime = 12;
+		const handle = screen.getByRole("separator", { name: "Resize navigation" });
+		fireEvent.keyDown(handle, { key: "ArrowLeft" });
+		expect(desktopColumn()).toHaveStyle({ width: "0px" });
+		expect(screen.getByTestId("demo-video")).toBe(video);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Show navigation" }),
+		);
+		expect(screen.getByTestId("demo-video")).toBe(video);
+		expect((video as HTMLVideoElement).currentTime).toBe(12);
+		expect(desktopColumn()).toHaveStyle({ width: "240px" });
+	});
+
 	it.each([
-		true,
-		false,
-	])("offers the sheet the SAME destinations as the column, from one list (qcVmaf=%s)", async (qcVmaf) => {
-		// Both flag states (review-344 M1): at the default flag a hand-forked
-		// list in the sheet happens to equal the declared set, so only the
-		// flag-off arm can tell a fork from the shared component.
-		renderShell(qcVmaf);
+		{ qcVmaf: true, encodingExperiments: true },
+		{ qcVmaf: true, encodingExperiments: false },
+		{ qcVmaf: false, encodingExperiments: true },
+		{ qcVmaf: false, encodingExperiments: false },
+	])("offers the same destinations in both shells (qcVmaf=$qcVmaf, encodingExperiments=$encodingExperiments)", async ({
+		qcVmaf,
+		encodingExperiments,
+	}) => {
+		renderShell(qcVmaf, encodingExperiments);
 		// The OPERATOR storage entry renders once the password-mode session has
 		// resolved; read both shells only after the column shows it.
 		await within(desktopColumn()).findByRole("link", {
@@ -143,11 +170,13 @@ describe("AppShell responsive shells", () => {
 		);
 		const fromColumn = navHrefs(desktopColumn());
 		const fromSheet = navHrefs(screen.getByRole("dialog"));
-		// Derived from the IA, never hand-listed — a nav item added to
-		// NAV_SECTIONS must appear in both shells or this fails on both arms.
 		const declared = NAV_SECTIONS.flatMap((section) =>
 			section.items.map((item) => item.href),
-		).filter((href) => qcVmaf || href !== "/qc");
+		).filter(
+			(href) =>
+				(qcVmaf || href !== "/qc") &&
+				(encodingExperiments || href !== "/encoding-experiments"),
+		);
 		expect(fromColumn).toEqual(declared);
 		expect(fromSheet).toEqual(declared);
 	});

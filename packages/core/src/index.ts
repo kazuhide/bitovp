@@ -44,6 +44,7 @@ export {
 	libraryFileContentType,
 	librarySnapshotSchema,
 	librarySourceSnapshotSchema,
+	publicLibraryQcEvidence,
 } from "./content-library/contracts";
 export {
 	isManagedEditingObjectKey,
@@ -106,6 +107,7 @@ export {
 	// it wanted to — unverifiable by construction rather than merely
 	// unverified. The credentials route's own test now parses with it.
 	credentialSummaryWireSchema,
+	moqPlaybackUrlSchema,
 	ociCompatHost,
 	updateCredentialSchema,
 } from "./credentials/schemas";
@@ -401,6 +403,17 @@ export {
 	sourceMediaAttributes,
 	type VideoAttributes,
 } from "./live/media-attributes";
+export {
+	bindMoqPlaybackNamespace,
+	MOQ_PLAYBACK_NAMESPACE_MAX_LENGTH,
+	moqRunNamespaceSuffix,
+} from "./live/moq-run-namespace";
+export type { MoqTaskStatus } from "./live/moq-task-status";
+export {
+	MOQ_TASK_HISTORY_ERROR,
+	projectMoqTaskHistory,
+	projectMoqTaskStatus,
+} from "./live/moq-task-status";
 export type {
 	LiveChannelStatus,
 	LiveNextAction,
@@ -691,6 +704,7 @@ export { CODEC_ENUM_VALUES, CODEC_OPTIONS } from "./plan/codec-enums";
 export type { CompiledOperation, OperationKind } from "./plan/compiler";
 export {
 	compilePlan,
+	qcMirrorDirectory,
 	qcOutputPath,
 	relativeSegmentPath,
 } from "./plan/compiler";
@@ -786,6 +800,12 @@ export {
 export * from "./plan/manifest-options";
 export * from "./plan/media-filters";
 export { MslEncoderVersionError } from "./plan/msl-encoder-version";
+export type { FileOnlyMuxingKind } from "./plan/muxing-streams";
+export {
+	FILE_ONLY_MUXING_KINDS,
+	isFileOnlyMuxingKind,
+	muxingKindCarriesAudio,
+} from "./plan/muxing-streams";
 export { outputStorageKeys } from "./plan/output-files";
 export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";
 export { findCapReachingMaximumStep } from "./plan/per-title-cap-reach";
@@ -908,6 +928,10 @@ export {
 	RESOURCE_GROUP_LABEL,
 	RESOURCE_GROUP_ORDER,
 } from "./plan/resource-tree";
+export {
+	inspectSavedPlanCompatibility,
+	type SavedPlanCompatibility,
+} from "./plan/saved-plan-compatibility";
 export type {
 	Acl,
 	ConcatenationSource,
@@ -918,6 +942,7 @@ export type {
 	H265V2QualityControls,
 	PaddingSequence,
 	PlanInput,
+	PlanMuxing,
 	PlanOutput,
 	PlanQc,
 	PlanRendition,
@@ -941,6 +966,8 @@ export {
 	imscRenditionSchema,
 	ingestStreamSchema,
 	LIBVMAF_BUILTIN_MODELS,
+	moqDraftVersionSchema,
+	moqTrackNamespaceSchema,
 	OPUS_CHANNEL_LAYOUTS,
 	opusRenditionSchema,
 	PER_TITLE_MIN_BITRATE,
@@ -954,6 +981,9 @@ export {
 	planMuxingSchema,
 	planOutputSchema,
 	planQcSchema,
+	progressiveMovMuxingSchema,
+	progressiveTsMuxingSchema,
+	progressiveWebmMuxingSchema,
 	renditionSchema,
 	secretEgressUrlSchema,
 	spriteSchema,
@@ -1012,7 +1042,15 @@ export type {
 	PlanIssueLevel,
 	PlanValidationOptions,
 } from "./plan/validate";
-export { planHasErrors, validatePlan } from "./plan/validate";
+export {
+	DOLBY_VISION_AUDIO_CODECS,
+	MUXING_CODEC_MATRIX,
+	planHasErrors,
+	UNMEASURED_MUXING_KINDS,
+	UNVERIFIED_DOLBY_VISION_MUXING_KINDS,
+	UNVERIFIED_MUXING_CODECS,
+	validatePlan,
+} from "./plan/validate";
 export type {
 	InstantiateWatchPlanInput,
 	InstantiateWatchPlanResult,
@@ -1096,6 +1134,7 @@ export {
 	slateNormalizeJobSchema,
 	storageInspectJobSchema,
 	vmafJobSchema,
+	vodInputPreviewJobSchema,
 } from "./queues";
 export {
 	ipAllowedByPolicy,
@@ -1381,8 +1420,13 @@ export {
 	VMAF_FRAME_INDEX_SCORING_VERSION,
 	VMAF_OWNED_CUDA_SCORING_VERSION,
 	VMAF_OWNED_VULKAN_SCORING_VERSION,
+	VMAF_RETIRED_OWNED_CUDA_SCORING_VERSION,
+	VMAF_RETIRED_OWNED_VULKAN_SCORING_VERSION,
 	VMAF_SCORING_VERSION,
+	vmafComparableScoringVersion,
 } from "./vmaf/command";
+export * from "./vmaf/hdr";
+export * from "./vmaf/hls-source";
 export type {
 	LiveCaptureTarget,
 	LiveSegmentKind,
@@ -1410,6 +1454,16 @@ export {
 	timelineFromContainerProbe,
 	timelineFromProfile,
 } from "./vmaf/loop-timeline";
+export {
+	VMAF_GPU_PAIR_REASONS,
+	type VmafGpuPairReason,
+	type VmafNativeComparison,
+	type VmafNativeFrameTimes,
+	type VmafNativeRefusal,
+	type VmafProbedVideo,
+	vmafNativeComparison,
+	vmafNativeFrameTimes,
+} from "./vmaf/native-comparison";
 export {
 	type NativeDeviceInfo,
 	nativeDeviceInfoSchema,
@@ -1440,9 +1494,24 @@ export {
 	poolFrames,
 } from "./vmaf/pooled";
 export * from "./vmaf/profiles";
+export {
+	referencePreparationOf,
+	type VmafReferencePreparationEvidence,
+	vmafReferencePreparationEvidenceSchema,
+} from "./vmaf/reference-preparation";
+export {
+	VMAF_SPEED_CHROMA_PRESCALE,
+	type VmafChromaLayout,
+	type VmafComparedPictures,
+	vmafChromaLayout,
+	vmafConvertedChromaLayout,
+	vmafSizeLimitFailureMessage,
+	vmafSizeLimitMessage,
+} from "./vmaf/size-limits";
 export * from "./vmaf/streamable-io";
 export type {
 	BandingTarget,
+	HlsQcTarget,
 	QcDistorted,
 	QcReference,
 	QcTarget,
@@ -1451,11 +1520,14 @@ export {
 	enumerateBandingQcTargets,
 	enumerateBandingTargets,
 	enumerateExistingBandingMp4Targets,
+	enumerateExistingHlsQcTargets,
 	enumerateExistingMp4Targets,
 	enumerateExistingQcMirrorTargets,
 	enumerateFrameIndexQcTargets,
+	enumerateQcMirrorsWithoutReference,
 	enumerateQcTargets,
 	gateExpectedRenditionKeys,
+	retainedHlsQcKey,
 	sameQcTargetPopulation,
 } from "./vmaf/targets";
 export type { HeartbeatRegistrationConfig } from "./webhooks/heartbeat-registration";

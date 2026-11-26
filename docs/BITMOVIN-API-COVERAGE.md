@@ -13,7 +13,7 @@ use the [glossary](user-guide/GLOSSARY.md) for encoding terms.
 
 | Workflow | Available features |
 |---|---|
-| VOD | Fixed and Per-Title ladders; H.264, H.265, VP9, and AV1 video; audio, subtitles, filters, input-stream selection, packaging, manifests, encryption, and quality gates |
+| VOD | Fixed and Per-Title ladders; H.264, H.265, VP9, and AV1 video; audio, subtitles, filters, input-stream selection, packaging, file export as MP4, Progressive TS, Progressive MOV, or Progressive WebM, manifests, encryption, and quality gates |
 | Live | RTMP, redundant RTMP, SRT, Zixi, and HLS pull inputs; reusable channels and broadcast history; scheduling, slate insertion, advertising markers, heartbeat monitoring, storage mirrors, Live-to-VOD, and optional H.264/AAC MP4 archives |
 | Storage | AWS S3 and compatible providers, Google Cloud Storage, Azure, and other supported input/output credentials; encoding destinations can support more operations than the storage browser or output inspection |
 | Quality | Local or configured cloud quality measurement, comparisons, and quality gates; VMAF is calculated with FFmpeg/libvmaf, separately from the Bitmovin Encoding API |
@@ -32,11 +32,14 @@ not imply a control for every field.
   frames, and aspect ratios. The VOD form also exposes `crf` (constant rate
   factor); the Live form retains its fixed target bitrate requirement.
   These codec controls are separate from Per-Title bitrate bounds and from
-  keyframe intervals measured in seconds. H.264 `autoLevelSetup` remains
-  unsupported in imported plans.
+  keyframe intervals measured in seconds. H.264 `autoLevelSetup` is available
+  in advanced codec controls and imported plans, including the shared Live
+  H.264 editor.
 - AV1 exposes selected settings, including presets, automatic level setup,
-  and `dynamicRangeFormat`. The SDK also declares `maxLevel`, which current
-  plans do not accept. SDK model availability does not add a form control.
+  `maxLevel`, and `dynamicRangeFormat`. Imported plans accept AV1 level enum
+  names or API wire values; the application normalizes and serializes them.
+  A supplied `maxLevel` with automatic level setup disabled is preserved but
+  carries `PLAN_AV1_MAX_LEVEL_DISABLED`, because the limit is inactive.
 - Running Live channels offer **Encoder automatic stop** under **Maximum run
   time**. Each update replaces all three timers; blank fields disable timers.
   Check the accepted settings and the encoder's returned shutdown time before
@@ -51,6 +54,23 @@ not imply a control for every field.
 - Standard VOD and Live video renditions can set their HLS child-playlist
   filenames. Live accepts literal flat `.m3u8` names; VOD can expand `{group}`
   for variants per audio group. Per-Title keeps its derived filename options.
+- Progressive TS, Progressive MOV, and Progressive WebM write one whole file for
+  each video rendition, with the audio in the same file: H.264 or H.265 video in
+  TS and MOV, and VP9 or AV1 video with Opus audio in WebM. No HLS, DASH, or
+  Smooth manifest lists them, and DRM is not offered. Progressive MOV and
+  Progressive WebM have not been verified on a live encode; a plan that uses
+  either carries the warning `PLAN_MUXING_UNMEASURED_KIND`. A codec that no
+  Bitmovin document read for this lists for its container carries
+  `PLAN_MUXING_UNVERIFIED_CODEC`, as does Dolby Vision in a Progressive TS or
+  Progressive MOV file, and audio beside AV1 in a Progressive WebM file
+  carries `PLAN_MUXING_AV1_NOT_ALONE`. Audio other than AAC or Dolby Atmos in
+  one container with Dolby Vision video carries
+  `PLAN_MUXING_DOLBY_VISION_AUDIO`: Bitmovin's rules name those two only.
+- An MP4 holds AV1 as a whole file, and as a fragmented MP4 for DASH on-demand
+  only: another manifest type is refused with
+  `PLAN_MP4_AV1_FRAGMENTED_MANIFEST_TYPE`.
+  A playlist does not take its audio from such a file: an HLS manifest in a plan
+  whose only audio is inside one is refused with `PLAN_HLS_AUDIO_UNSELECTED`.
 - Account-specific features, including HEVCv2, appear only where enabled for the
   selected account. A codec or setting declared by the provider's software
   development kit (SDK) is not proof that your account or encoder accepts it.
@@ -68,7 +88,7 @@ plan is rejected or a result is unclear.
 | C2 | Start-request trimming cannot be combined with InputStream resources. Use the input-stream trimming controls rather than adding trimming to an imported start request. |
 | C3 | Plans use Manifest Generator V2. Live-to-VOD uses `LEGACY` because V2 cannot enumerate live muxings. Choose a supported recording container for Live-to-VOD. |
 | C4 | Per-Title creates multiple results, so paths must include `{uuid}` or `{bitrate}` and use a supported output: S3, GenericS3, Google Cloud Storage, Akamai NetStorage, or Azure. `{width}`, `{height}`, or a unique literal path alone is not enough. |
-| C5 | High-Efficiency AAC (HE-AAC) v1 is limited to 128 kbps and v2 to 64 kbps. Lower the bitrate or change audio profile. |
+| C5 | HE-AAC v1/v2 are not currently selectable in plans or forms. The existing AAC configuration does not expose a HE-AAC profile; dedicated provider configurations require a future implementation. |
 | C9 | Common Encryption (CENC) counter mode (CTR) needs an 8-byte initialization vector (IV); cipher block chaining (CBC) needs 16 bytes. Standalone FairPlay uses AES-CBC with an IV and key URI. Match encryption mode and container. |
 | C17 | Audio/video synchronization adjustments conflict with Dolby audio. Preview manifests are just-in-time (JIT), generated during encoding; preview-only manifests are not finalized. Smooth has no preview list. Use final manifests for completed delivery. |
 | C21 | Kantar watermarking is one encoding-wide setting and requires audio. A new configuration replaces the previous value rather than adding another. |
@@ -127,6 +147,17 @@ delete operations.
 
 ## Reading the API coverage screen
 
+The coverage data has separate purposes:
+
+| Data | What it establishes |
+|---|---|
+| `current.json` | Installed SDK Encoding operations, source-resolved calls, and direct top-level body-property assignments. |
+| `contracts.json` + hash-bound shards | Versioned SDK request-type inventory: path/query/body parameters, nested model references, enums, and SDK documentation annotations. An SDK declaration does not establish API writeability or conditional requirements. |
+| `implementation-audit.json` | Bounded, manually reviewed GUI or JSON access and implementation findings, with source, contract-test, and provider-verification evidence kept separate. Items without a reviewed finding remain unconfirmed. |
+| `summary.json` | Historical GUI/JSON parameter survey. Its date, SDK version, scope, and method differ from the current inventories. |
+
+Unknown SDK implementation syntax stops the request audit for review.
+
 Settings → API coverage lists operations under `/encoding/` in the installed
 provider SDK and marks calls found in application source code as source-confirmed.
 Account, notification, and other product APIs are outside this inventory. This is not a
@@ -152,6 +183,38 @@ The separately dated historical parameter survey uses a different scope and
 method. Its GUI/JSON reachability figures have not been refreshed and must not
 be compared with the current body-model inventory. The CSV export uses the same
 operation census as this screen, including separate methods sharing one path.
+
+The manually reviewed audit corrects older unsupported-field claims for H.264
+`autoLevelSetup` and AV1 `maxLevel`. Their form/schema/compiled-request paths
+and SDK serialization have contract tests. This does not qualify all enum
+choices, accounts, or encoder versions for provider execution. Where an SDK
+model combines request and response fields, read-only annotations and unknown
+writeability are recorded separately; an unannotated property is not assumed
+writable. Nested fields, query parameters, and enum choices are not included in
+the top-level direct-property ratio as though they had been audited.
+
+## Next coverage work
+
+**Error Definitions** is now available in Settings and from VOD/Live failure
+details. It searches the selected account's generic error catalogue; it is not
+a failure-history viewer and never restarts a job.
+
+The [functional gap audit](ENCODING-FUNCTIONAL-GAPS.md) prioritizes actual encoding
+capabilities: HE-AAC, Stream Conditions authoring and conjunctions, PCM/WAV and
+bounded audio passthrough, followed by embedded-caption extraction. It traces
+closed plan unions and execution paths instead of treating unconfirmed SDK
+calls as missing features. Source support is not provider qualification.
+
+Native Templates, Native Watch Folders and resource CRUD remain a separate
+management lane. Current Watch folders use application watch rules and a storage
+sweep; they do not implement the provider's native Watch Folders API. Live MSL
+and SFTP mirror authoring remains a GUI gap; primary MSL already has a path and
+valid expert-JSON mirror plans are preserved.
+
+The Live wizard uses encrypted MoQ credentials. See the [relay settings](./user-guide/LIVE.md#experimental-moq-delivery)
+and [Cloudflare draft 16 trial](./MOQ-LIVE-ENCODER-TEST-RESULTS.md).
+AV1 Per-Title `targetQualityCrf` is an existing field whose upstream documentation
+changed, not an operation or field newly implemented by this upgrade.
 
 A successful encode, an available manifest, and browser playback are separate
 checks. Verify the expected renditions and actual delivery after encoding;

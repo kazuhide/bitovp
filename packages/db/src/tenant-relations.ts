@@ -220,6 +220,11 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 		organization: "organization",
 		credential: "credential",
 	},
+	vodInputPreviewTask: {
+		organization: "organization",
+		probe: "vodInputPreviewTask",
+		previews: "vodInputPreviewTask",
+	},
 	preset: {
 		organization: "organization",
 		watchRules: "watchRule",
@@ -250,6 +255,19 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 	apiToken: {
 		user: "user",
 		organization: "organization",
+	},
+	encodingExperimentCampaign: {
+		organization: "organization",
+		trials: "encodingExperimentTrial",
+		batches: "encodingExperimentBatch",
+	},
+	encodingExperimentTrial: {
+		organization: "organization",
+		campaign: "encodingExperimentCampaign",
+	},
+	encodingExperimentBatch: {
+		organization: "organization",
+		campaign: "encodingExperimentCampaign",
 	},
 	startupSample: {
 		organization: "organization",
@@ -318,5 +336,8 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 	accessEvent: {
 		organization: "organization",
 		user: "user",
+	},
+	operationAttempt: {
+		organization: "organization",
 	},
 };

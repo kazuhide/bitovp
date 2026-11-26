@@ -27,7 +27,7 @@ const id = "00000000-0000-4000-8000-000000000001";
 const resultId = "00000000-0000-4000-8000-000000000002";
 const path = `/api/vmaf-jobs/${id}/preview`;
 const call = (query = `resultId=${resultId}`, jobId = id) =>
-	GET(new Request(`http://test${path}?${query}`), {
+	GET(new Request(`http://test/api/vmaf-jobs/${jobId}/preview?${query}`), {
 		params: Promise.resolve({ id: jobId }),
 	});
 beforeEach(() => {
@@ -41,9 +41,18 @@ describe("GET report-scoped QC media (small, mocked DB/storage)", () => {
 			allowed: true,
 		});
 	});
-	it("feature-off returns 404 without reading the report", async () => {
+	it.each([
+		"vmaf",
+		"banding",
+	])("feature-off returns 404 without reading the %s report", async (metric) => {
 		enabled = false;
-		expect((await call()).status).toBe(404);
+		expect(
+			(
+				await call(
+					`resultId=${resultId}${metric === "banding" ? "&metric=banding" : ""}`,
+				)
+			).status,
+		).toBe(404);
 		expect(findUnique).not.toHaveBeenCalled();
 	});
 	it.each([
@@ -69,10 +78,13 @@ describe("GET report-scoped QC media (small, mocked DB/storage)", () => {
 		expect((await call()).status).toBe(404);
 		expect(servePreview).not.toHaveBeenCalled();
 	});
-	it("selects only the requested result under this report; returns bytes without provenance", async () => {
+	it.each([
+		"vmaf",
+		"banding",
+	])("selects only the requested %s result under this report; returns bytes without provenance", async (metric) => {
 		const row = {
 			mode: "VOD",
-			params: {},
+			params: metric === "banding" ? { kind: "BANDING" } : {},
 			encodingJob: { plan: {} },
 			results: [
 				{ id: resultId, provenance: { private: true }, renditionRef: {} },
@@ -80,15 +92,94 @@ describe("GET report-scoped QC media (small, mocked DB/storage)", () => {
 		};
 		findUnique.mockResolvedValue(row);
 		resolvePreview.mockReturnValue({ key: "private" });
+		resolveBanding.mockReturnValue({ key: "private" });
 		servePreview.mockResolvedValue(new Response("media", { status: 206 }));
-		const response = await call();
+		const response = await call(
+			`resultId=${resultId}${metric === "banding" ? "&metric=banding" : ""}`,
+		);
 		expect(response.status).toBe(206);
 		expect(await response.text()).toBe("media");
 		expect(findUnique.mock.calls[0]?.[0]).toMatchObject({
 			where: { id },
 			select: { results: { where: { id: resultId } } },
 		});
-		expect(resolvePreview).toHaveBeenCalledWith(row, row.results[0]);
+		const selected = metric === "banding" ? resolveBanding : resolvePreview;
+		const other = metric === "banding" ? resolvePreview : resolveBanding;
+		expect(selected).toHaveBeenCalledWith(row, row.results[0]);
+		expect(other).not.toHaveBeenCalled();
+	});
+	it("does not borrow a CAMBI result from another report when comparing reports", async () => {
+		const otherId = "00000000-0000-4000-8000-000000000003";
+		const otherResultId = "00000000-0000-4000-8000-000000000004";
+		const rows = new Map([
+			[
+				id,
+				{
+					mode: "VOD",
+					params: { kind: "BANDING" },
+					results: [{ id: resultId }],
+				},
+			],
+			[
+				otherId,
+				{
+					mode: "VOD",
+					params: { kind: "BANDING" },
+					results: [{ id: otherResultId }],
+				},
+			],
+		]);
+		findUnique.mockImplementation(
+			async ({
+				where,
+				select,
+			}: {
+				where: { id: string };
+				select: { results: { where: { id: string } } };
+			}) => {
+				const row = rows.get(where.id);
+				return row
+					? {
+							...row,
+							results: row.results.filter(
+								(result) => result.id === select.results.where.id,
+							),
+						}
+					: null;
+			},
+		);
+		const query = `resultId=${otherResultId}&metric=banding`;
+		expect((await call(query, id)).status).toBe(404);
+		expect(resolveBanding).not.toHaveBeenCalled();
+		expect(servePreview).not.toHaveBeenCalled();
+		resolveBanding.mockReturnValue({ key: "private" });
+		servePreview.mockResolvedValue(new Response("measured CAMBI media"));
+		const response = await call(query, otherId);
+		expect(response.status).toBe(200);
+		expect(await response.text()).toBe("measured CAMBI media");
+		expect(findUnique).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				where: { id },
+				select: expect.objectContaining({
+					results: expect.objectContaining({ where: { id: otherResultId } }),
+				}),
+			}),
+		);
+		expect(findUnique).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				where: { id: otherId },
+				select: expect.objectContaining({
+					results: expect.objectContaining({ where: { id: otherResultId } }),
+				}),
+			}),
+		);
+		expect(resolvePreview).not.toHaveBeenCalled();
+		expect(resolveBanding).toHaveBeenCalledWith(
+			rows.get(otherId),
+			rows.get(otherId)?.results[0],
+		);
 	});
 	it("uses the time-based resolver only for an explicit banding request", async () => {
 		const row = {

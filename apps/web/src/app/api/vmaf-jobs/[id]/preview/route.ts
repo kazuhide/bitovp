@@ -47,6 +47,7 @@ export async function GET(
 		const job = await ctx.prisma.vmafJob.findUnique({
 			where: { id },
 			select: {
+				id: true,
 				mode: true,
 				params: true,
 				encodingJob: { select: { plan: true } },

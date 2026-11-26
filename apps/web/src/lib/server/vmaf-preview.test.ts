@@ -4,8 +4,10 @@ import { Readable } from "node:stream";
 import {
 	encodingPlanSchema,
 	enumerateBandingTargets,
+	enumerateExistingHlsQcTargets,
 	enumerateQcTargets,
 	perTitleRungsFromSnapshot,
+	retainedHlsQcKey,
 } from "@bitovp/core";
 import {
 	ObjectVersionMismatchError,
@@ -64,6 +66,150 @@ function fixture() {
 }
 const ctx = {} as Parameters<typeof serveVmafPreview>[0];
 beforeEach(() => vi.clearAllMocks());
+
+describe("retained HDR HLS preview binding", () => {
+	function hlsFixture() {
+		const f = fixture();
+		const plan = encodingPlanSchema.parse({
+			...f.encodingJob.plan,
+			qc: undefined,
+			drm: [],
+			dolbyStreams: [
+				{
+					key: "dv",
+					kind: "VISION",
+					inputKey: "main",
+					videoInputPath: "source.mxf",
+				},
+			],
+			renditions: [
+				{
+					key: "v",
+					codec: "AV1",
+					ingestKey: "dv",
+					width: 3840,
+					height: 2160,
+					bitrate: 8000000,
+					rate: 24,
+					dynamicRangeFormat: "DOLBY_VISION_PROFILE_10_1",
+				},
+			],
+			muxings: [
+				{
+					key: "mux",
+					kind: "FMP4",
+					streamKey: "v",
+					segmentNaming: "seg_%number%.m4s",
+					initSegmentName: "init.mp4",
+					destination: { outputKey: "origin", path: "run/video/" },
+				},
+			],
+			manifests: [
+				{
+					key: "hls",
+					kind: "HLS",
+					manifestName: "master.m3u8",
+					destination: { outputKey: "origin", path: "run/" },
+				},
+			],
+		});
+		const [target] = enumerateExistingHlsQcTargets(plan);
+		if (!target) throw new Error("Invalid HLS fixture");
+		const captured = (role: string, key: string, bytes: number) => ({
+			role,
+			key,
+			bytes,
+			sha256: "a".repeat(64),
+			identity: { size: bytes, etag: '"source"' },
+		});
+		const hlsSource = {
+			version: 1,
+			method: "FMP4_INIT_SEGMENTS",
+			vmafJobId: reportId,
+			renditionKey: "v",
+			muxingKey: "mux",
+			bucket: "sample-output-bucket",
+			masterKey: "run/master.m3u8",
+			mediaKey: "run/video.m3u8",
+			objects: [
+				captured("MASTER", "run/master.m3u8", 1),
+				captured("MEDIA", "run/video.m3u8", 1),
+				captured("INIT", "run/video/init.mp4", 5),
+				captured("SEGMENT", "run/video/seg_0.m4s", 5),
+			],
+			segmentCount: 1,
+			durationSeconds: 2,
+			assembledSha256: "b".repeat(64),
+			assembledBytes: 10,
+			complete: true,
+		};
+		return {
+			job: {
+				...f,
+				id: reportId,
+				params: { source: "OUTPUT_HLS", reference: { fps: 24 }, banding: true },
+				encodingJob: { plan },
+			},
+			result: {
+				id: resultId,
+				renditionRef: { renditionKey: "v" },
+				provenance: {
+					hlsSource,
+					distorted: {
+						...f.result.provenance.distorted,
+						key: retainedHlsQcKey(target, reportId, "b".repeat(64)),
+						sha256: "b".repeat(64),
+					},
+				},
+			},
+		};
+	}
+	it("serves only the canonical retained measurement object with its pinned version", () => {
+		const f = hlsFixture();
+		expect(resolveVmafPreview(f.job, f.result)).toMatchObject({
+			key: `run/video/qc-retained/${reportId}/v-${"b".repeat(64)}.mp4`,
+			expect: { etag: '"sealed"' },
+			contentType: "video/mp4",
+		});
+		expect(resolveBandingPreview(f.job, f.result)).toHaveProperty(
+			"key",
+			f.result.provenance.distorted.key,
+		);
+		expect(
+			previewDescriptor(reportId, f.job, f.result, reportId),
+		).toHaveProperty("url");
+	});
+	it.each([
+		"job",
+		"key",
+		"hash",
+		"hash-and-witness",
+		"bucket",
+		"witness",
+		"source",
+		"rendition",
+	])("refuses a mismatched %s", (shape) => {
+		const f = hlsFixture();
+		if (shape === "job") f.job.id = resultId;
+		if (shape === "key")
+			f.result.provenance.distorted.key = "private/unrelated.mp4";
+		if (shape === "hash") f.result.provenance.distorted.sha256 = "c".repeat(64);
+		if (shape === "hash-and-witness") {
+			f.result.provenance.distorted.sha256 = "c".repeat(64);
+			f.result.provenance.hlsSource.assembledSha256 = "c".repeat(64);
+		}
+		if (shape === "bucket")
+			f.result.provenance.distorted.bucket = "other-bucket";
+		if (shape === "witness")
+			f.result.provenance.hlsSource.masterKey = "other/master.m3u8";
+		if (shape === "source") f.job.params.source = "QC_MIRROR";
+		if (shape === "rendition") f.result.renditionRef.renditionKey = "other";
+		expect(resolveVmafPreview(f.job, f.result)).toHaveProperty(
+			"unavailableReason",
+		);
+	});
+});
+
 describe("VMAF preview resolution (small, no I/O)", () => {
 	it.each([
 		["trimming-time-based.plan.json", "v720"],

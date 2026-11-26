@@ -151,6 +151,7 @@ export function bucketAddressing(
 		// streamId and an event name.
 		case "AKAMAI_MSL":
 		case "LIVE_MEDIA_INGEST":
+		case "MOQ":
 		case "DRM_CENC":
 		case "DRM_SPEKE":
 		case "NEXGUARD":

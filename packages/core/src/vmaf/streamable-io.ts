@@ -89,6 +89,9 @@ const STREAMABLE_IO: {
 		refuse:
 			"Live Media Ingest is an Origin publishing target, not readable storage",
 	},
+	MOQ: {
+		refuse: "MoQ relays deliver live objects, not readable storage for scoring",
+	},
 	AKAMAI_MSL: {
 		refuse:
 			"Akamai MSL is an INGEST target with no readable origin — the same fact the live verifier meets, where every MSL delivery check can only SKIP",

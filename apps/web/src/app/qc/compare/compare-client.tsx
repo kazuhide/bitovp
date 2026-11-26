@@ -1,18 +1,26 @@
 "use client";
 
+import type { PlayerClientConfig } from "@bitovp/core";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { InfoHint } from "@/components/ui/info-hint";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
+import { OutputComparison } from "../../vod/compare/output-compare-client";
+import { parseOutputJobIds } from "../../vod/compare/output-selection";
 import { VmafScoreLegend } from "../vmaf-score-legend";
 import {
+	type BandingJobDetail,
 	comparedModels,
 	comparedSubsamples,
 	fmtScore,
+	type HdrMeasurementContext,
+	hdrMeasurementContext,
 	jobShortLabel,
+	mixesHdrMeasurementContexts,
 	mixesModels,
 	mixesReferenceCanvases,
 	mixesScoringGenerations,
@@ -25,8 +33,8 @@ import {
 	type VmafJobDetail,
 	type VmafResultDetail,
 } from "../vmaf-shared";
-import { CompareFrameChart } from "./compare-frame-chart";
-import { CompareLadderChart } from "./compare-ladder-chart";
+import { BandingReportComparison } from "./banding-report-comparison";
+import { ReportFrameComparison } from "./report-frame-comparison";
 
 /** Bounds for the comparison overlay — keep it readable, keep the URL sane. */
 const MIN_JOBS = 2;
@@ -76,7 +84,7 @@ function parseJobIds(raw: string | null): string[] {
  * in both charts. One job failing (404 / error) is noted and skipped; the rest
  * still render.
  */
-export function CompareClient() {
+export function CompareClient({ player }: { player?: PlayerClientConfig }) {
 	const { t } = useT();
 	const queryClient = useQueryClient();
 	const params = useSearchParams();
@@ -89,37 +97,47 @@ export function CompareClient() {
 	// Only fan out once there are enough ids to actually compare — below the
 	// minimum we render the guard, so fetching would be wasted work.
 	const enabled = jobIds.length >= MIN_JOBS;
-	const { loadedJobs, failedIds, incompatibleIds, loading, fetching } =
-		useQueries({
-			queries: jobIds.map((id) => ({
-				queryKey: ["vmaf-job", id],
-				queryFn: () => apiFetch<QcJobDetail>(`/api/vmaf-jobs/${id}`),
-				staleTime: 30_000,
-				enabled,
-			})),
-			combine: (results) => {
-				const jobs: VmafJobDetail[] = [];
-				const failed: string[] = [];
-				const incompatible: string[] = [];
-				results.forEach((q, i) => {
-					const id = jobIds[i] as string;
-					if (q.data?.kind === "BANDING") incompatible.push(id);
-					else if (q.data) {
-						jobs.push(q.data);
-					}
-					if (q.isError) {
-						failed.push(id);
-					}
-				});
-				return {
-					loadedJobs: jobs,
-					failedIds: failed,
-					incompatibleIds: incompatible,
-					loading: results.some((q) => q.isLoading),
-					fetching: results.some((q) => q.isFetching),
-				};
-			},
-		});
+	const { loadedReports, failedIds, loading, fetching } = useQueries({
+		queries: jobIds.map((id) => ({
+			queryKey: ["vmaf-job", id],
+			queryFn: () => apiFetch<QcJobDetail>(`/api/vmaf-jobs/${id}`),
+			staleTime: 30_000,
+			enabled,
+		})),
+		combine: (results) => {
+			const jobs: QcJobDetail[] = [];
+			const failed: string[] = [];
+			results.forEach((q, i) => {
+				const id = jobIds[i] as string;
+				if (q.data) {
+					jobs.push(q.data);
+				}
+				if (q.isError) {
+					failed.push(id);
+				}
+			});
+			return {
+				loadedReports: jobs,
+				failedIds: failed,
+				loading: results.some((q) => q.isLoading),
+				fetching: results.some((q) => q.isFetching),
+			};
+		},
+	});
+	const loadedJobs = useMemo(
+		() =>
+			loadedReports.filter(
+				(job): job is VmafJobDetail => job.kind !== "BANDING",
+			),
+		[loadedReports],
+	);
+	const bandingJobs = useMemo(
+		() =>
+			loadedReports.filter(
+				(job): job is BandingJobDetail => job.kind === "BANDING",
+			),
+		[loadedReports],
+	);
 
 	// Flatten (job × rendition) → series with a stable key + distinct colour.
 	// Colour index runs across the whole flattened list so no two series share a
@@ -193,6 +211,23 @@ export function CompareClient() {
 	}, [series, selected]);
 
 	const shownSeries = series.filter((s) => effectiveSelected.has(s.key));
+	const mixedHdrContexts = mixesHdrMeasurementContexts(loadedJobs);
+	const separatedGroups = mixedHdrContexts
+		? loadedJobs.flatMap((job) => {
+				const contexts = new Map<HdrMeasurementContext, CompareSeries[]>();
+				for (const item of series.filter((item) => item.jobId === job.id)) {
+					const context = hdrMeasurementContext(job, item.result);
+					const group = contexts.get(context) ?? [];
+					group.push(item);
+					contexts.set(context, group);
+				}
+				return [...contexts].map(([context, items]) => ({
+					job,
+					context,
+					series: items,
+				}));
+			})
+		: [];
 
 	function toggleSeries(key: string) {
 		const base = new Set(effectiveSelected);
@@ -223,7 +258,7 @@ export function CompareClient() {
 		);
 	}
 
-	if (loading && loadedJobs.length === 0) {
+	if (loading && loadedReports.length === 0) {
 		return (
 			<section>
 				<CompareHeader jobCount={jobIds.length} seriesCount={0} />
@@ -244,13 +279,10 @@ export function CompareClient() {
 	}
 
 	// Every requested id failed to load (all 404 / errored).
-	if (loadedJobs.length === 0) {
+	if (loadedReports.length === 0) {
 		return (
 			<GuardMessage>
 				{t("prose.noReportsLoaded")}
-				{incompatibleIds.length ? (
-					<p role="alert">{t("banding.compareUnsupported")}</p>
-				) : null}
 				<Button
 					size="sm"
 					variant="secondary"
@@ -283,47 +315,82 @@ export function CompareClient() {
 			</GuardMessage>
 		);
 	}
+	if (loadedJobs.length > 0 && bandingJobs.length > 0) {
+		return (
+			<section>
+				<CompareHeader jobCount={loadedReports.length} seriesCount={0} />
+				<p role="alert" className="mt-3 text-sm text-amber-400">
+					{t("banding.compareMixedKinds")}
+				</p>
+			</section>
+		);
+	}
 
 	const skippedIds = failedIds.filter(
-		(id) => !loadedJobs.some((job) => job.id === id),
+		(id) => !loadedReports.some((job) => job.id === id),
 	);
-	const resultlessJobs = loadedJobs.filter((j) => j.results.length === 0);
+	const resultlessJobs = loadedReports.filter((j) => j.results.length === 0);
+	const comparisonSeriesCount = bandingJobs.length
+		? bandingJobs.reduce((count, job) => count + job.results.length, 0)
+		: series.length;
+	const outputJobIds =
+		!loading &&
+		failedIds.length === 0 &&
+		loadedReports.length === jobIds.length &&
+		loadedReports.every((job) => job.mode === "VOD" && job.encodingJobId)
+			? parseOutputJobIds(
+					[...new Set(loadedReports.map((job) => job.encodingJobId))].join(","),
+				)
+			: [];
 
 	return (
 		<section>
-			<CompareHeader jobCount={loadedJobs.length} seriesCount={series.length} />
-			{incompatibleIds.length ? (
-				<p role="alert" className="mt-3 text-xs text-amber-400">
-					{t("banding.compareUnsupported")}
-				</p>
+			<CompareHeader
+				jobCount={loadedReports.length}
+				seriesCount={comparisonSeriesCount}
+				separatedMeasurements={mixedHdrContexts}
+			/>
+			{outputJobIds.length >= 2 ? (
+				<section aria-label={t("outputCompare.title")}>
+					<OutputComparison
+						key={outputJobIds.join(",")}
+						jobIds={outputJobIds}
+						player={player}
+						path="/qc/compare"
+					/>
+				</section>
 			) : null}
-			<VmafScoreLegend className="mt-3" />
-			{mixesReferenceCanvases(loadedJobs) ? (
-				<p role="alert" className="mt-3 text-amber-400 text-xs">
-					{t("qc.mixedReferenceCanvases")}
-				</p>
-			) : null}
+			{bandingJobs.length === 0 ? (
+				<>
+					{!mixedHdrContexts ? <VmafScoreLegend className="mt-3" /> : null}
+					{!mixedHdrContexts && mixesReferenceCanvases(loadedJobs) ? (
+						<p role="alert" className="mt-3 text-amber-400 text-xs">
+							{t("qc.mixedReferenceCanvases")}
+						</p>
+					) : null}
 
-			{mixesScoringGenerations(loadedJobs) ? (
-				<p role="alert" className="mt-3 text-amber-400 text-xs">
-					{t("qc.mixedScoringGenerations", {
-						generations: scoringGenerations(loadedJobs).join(", "),
-					})}
-				</p>
-			) : null}
-			{mixesModels(loadedJobs) ? (
-				<p role="alert" className="mt-3 text-amber-400 text-xs">
-					{t("qc.mixedModels", {
-						models: comparedModels(loadedJobs).join(", "),
-					})}
-				</p>
-			) : null}
-			{mixesSubsampling(loadedJobs) ? (
-				<p role="alert" className="mt-3 text-amber-400 text-xs">
-					{t("qc.mixedSubsampling", {
-						strides: comparedSubsamples(loadedJobs).join(", "),
-					})}
-				</p>
+					{!mixedHdrContexts && mixesScoringGenerations(loadedJobs) ? (
+						<p role="alert" className="mt-3 text-amber-400 text-xs">
+							{t("qc.mixedScoringGenerations", {
+								generations: scoringGenerations(loadedJobs).join(", "),
+							})}
+						</p>
+					) : null}
+					{!mixedHdrContexts && mixesModels(loadedJobs) ? (
+						<p role="alert" className="mt-3 text-amber-400 text-xs">
+							{t("qc.mixedModels", {
+								models: comparedModels(loadedJobs).join(", "),
+							})}
+						</p>
+					) : null}
+					{!mixedHdrContexts && mixesSubsampling(loadedJobs) ? (
+						<p role="alert" className="mt-3 text-amber-400 text-xs">
+							{t("qc.mixedSubsampling", {
+								strides: comparedSubsamples(loadedJobs).join(", "),
+							})}
+						</p>
+					) : null}
+				</>
 			) : null}
 			{failedIds.length > 0 ? (
 				<p role="alert" className="mt-3 text-amber-400 text-xs">
@@ -353,15 +420,70 @@ export function CompareClient() {
 				<p className="mt-1 text-xs text-zinc-500">
 					{t("qc.resultlessReports", {
 						count: resultlessJobs.length,
-						ids: resultlessJobs.map((job) => jobShortLabel(job)).join(", "),
+						ids: resultlessJobs
+							.map((job) =>
+								job.kind === "BANDING"
+									? (job.encodingName ?? shortJobId(job.id))
+									: jobShortLabel(job),
+							)
+							.join(", "),
 					})}
 				</p>
 			) : null}
 
-			{series.length === 0 ? (
+			{comparisonSeriesCount === 0 ? (
 				<p className="mt-6 text-sm text-zinc-500">
 					{t("qc.noRenditionsToCompare")}
 				</p>
+			) : bandingJobs.length ? (
+				<BandingReportComparison jobs={bandingJobs} />
+			) : mixedHdrContexts ? (
+				separatedGroups.map((group) => {
+					const keys = new Set(group.series.map((item) => item.key));
+					const selected = new Set(
+						[...effectiveSelected].filter((key) => keys.has(key)),
+					);
+					const headingId = `measurement-context-${group.job.id}-${group.context}`;
+					const contextLabels = {
+						SDR: "qc.measurementSdr",
+						HDR_PQ: "qc.measurementHdrPq",
+						HDR_HLG_PQ_1000: "qc.measurementHdrHlg",
+						HDR_UNVERIFIED: "qc.measurementHdrUnverified",
+					} as const;
+					return (
+						<section
+							key={headingId}
+							aria-labelledby={headingId}
+							className="mt-6"
+						>
+							<h2 id={headingId} className="font-medium text-sm text-zinc-200">
+								{group.series[0]?.jobLabel} · {t(contextLabels[group.context])}
+							</h2>
+							<VmafScoreLegend className="mt-2" />
+							<SeriesLegend
+								className="mt-3"
+								series={group.series}
+								selected={selected}
+								onToggle={toggleSeries}
+								onAll={(on) => {
+									const next = new Set(effectiveSelected);
+									for (const key of keys) {
+										if (on) next.add(key);
+										else next.delete(key);
+									}
+									setSelected(next);
+								}}
+							/>
+							<ReportFrameComparison
+								jobs={[group.job]}
+								series={group.series}
+								shownSeries={group.series.filter((item) =>
+									selected.has(item.key),
+								)}
+							/>
+						</section>
+					);
+				})
 			) : (
 				<>
 					<SeriesLegend
@@ -371,24 +493,11 @@ export function CompareClient() {
 						onAll={setAll}
 					/>
 
-					<h2 className="mt-8 font-medium text-sm text-zinc-200">
-						{t("qc.perFrame")}
-						<span className="ml-2 font-normal text-xs text-zinc-500">
-							{t("uiX.downsampledSeries", {
-								shown: shownSeries.length,
-								total: series.length,
-							})}
-						</span>
-					</h2>
-					<CompareFrameChart series={shownSeries} />
-
-					<h2 className="mt-8 font-medium text-sm text-zinc-200">
-						{t("qc.qualityLadder")}
-						<span className="ml-2 font-normal text-xs text-zinc-500">
-							{t("ui.meanVmafVsBitrateOneCurvePer")}
-						</span>
-					</h2>
-					<CompareLadderChart series={shownSeries} />
+					<ReportFrameComparison
+						jobs={loadedJobs}
+						series={series}
+						shownSeries={shownSeries}
+					/>
 				</>
 			)}
 		</section>
@@ -399,9 +508,11 @@ export function CompareClient() {
 function CompareHeader({
 	jobCount,
 	seriesCount,
+	separatedMeasurements = false,
 }: {
 	jobCount: number;
 	seriesCount: number;
+	separatedMeasurements?: boolean;
 }) {
 	const { t } = useT();
 	return (
@@ -424,6 +535,12 @@ function CompareHeader({
 					</>
 				) : null}
 			</span>
+			{separatedMeasurements ? (
+				<InfoHint
+					text={t("qc.separateHdrContexts")}
+					labelFor={t("qc.compareReports")}
+				/>
+			) : null}
 		</header>
 	);
 }
@@ -451,15 +568,17 @@ function SeriesLegend({
 	selected,
 	onToggle,
 	onAll,
+	className = "mt-6",
 }: {
 	series: CompareSeries[];
 	selected: Set<string>;
 	onToggle: (key: string) => void;
 	onAll: (on: boolean) => void;
+	className?: string;
 }) {
 	const { t } = useT();
 	return (
-		<div className="mt-6 rounded-lg border border-zinc-800">
+		<div className={`${className} rounded-lg border border-zinc-800`}>
 			<div className="flex items-center justify-between border-zinc-800 border-b px-3 py-2">
 				<span className="font-medium text-xs text-zinc-400">
 					{t("uiX.seriesShown", {

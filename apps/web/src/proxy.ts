@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { ACTOR_HEADER, bearerToken } from "@/lib/auth/api-token-gate";
-import { loadAuthConfig } from "@/lib/auth/config";
+import { type AuthMode, loadAuthConfig } from "@/lib/auth/config";
+import { experimentScopeRefusal } from "@/lib/auth/encoding-experiment-scope";
 import { classifyPath, loginPath, type PathClass } from "@/lib/auth/gate";
 import { ingressHostname } from "@/lib/auth/ingress-allowlist";
 import {
@@ -42,6 +43,7 @@ import {
 	resolveUserByIdFresh as resolveUserById,
 } from "@/lib/auth/users";
 import { viewAsMayRead } from "@/lib/auth/view-as";
+import { OPERATION_ATTEMPTS_PATH } from "@/lib/operation-attempts";
 import { passiveOrganizationBinding } from "@/lib/passive-request";
 import { recordAccessNonAdmin } from "@/lib/server/access-audit";
 
@@ -268,6 +270,13 @@ function clearSessionCookies(res: NextResponse): NextResponse {
 	return res;
 }
 
+// Telemetry may complete after logout or another identity change.
+function isOperationAttemptSubmission(req: NextRequest): boolean {
+	return (
+		req.method === "POST" && req.nextUrl.pathname === OPERATION_ATTEMPTS_PATH
+	);
+}
+
 function unauthenticated(
 	req: NextRequest,
 	isApi: boolean,
@@ -283,7 +292,9 @@ function unauthenticated(
 					req.nextUrl,
 				),
 			);
-	return staleCookie ? clearSessionCookies(res) : res;
+	return staleCookie && !isOperationAttemptSubmission(req)
+		? clearSessionCookies(res)
+		: res;
 }
 
 /**
@@ -403,8 +414,21 @@ async function contextRefusal(
 function tenantRequestRefusal(
 	context: AuthenticatedContext,
 	req: NextRequest,
+	mode: AuthMode,
 ): NextResponse | null {
 	const path = req.nextUrl.pathname;
+	const scopeDenied = experimentScopeRefusal(context, path, req.method, mode);
+	if (scopeDenied)
+		return NextResponse.json(
+			{
+				error:
+					scopeDenied === "TOKEN_SCOPE_DENIED"
+						? "The token cannot access this endpoint"
+						: "Encoding experiments require authentication",
+				details: { code: scopeDenied },
+			},
+			{ status: 403, headers: { "Cache-Control": "private, no-store" } },
+		);
 	if (context.isImpersonating && !viewAsMayRead(path, req.method))
 		return NextResponse.json(
 			{ error: "View-as is read-only" },
@@ -436,11 +460,7 @@ function tenantRequestRefusal(
 				req.method,
 			)
 		) {
-			if (
-				context.tokenRoleKnown === false &&
-				loadAuthConfig().ok &&
-				process.env.AUTH_MODE === "users"
-			)
+			if (context.tokenRoleKnown === false && mode === "users")
 				return NextResponse.json(
 					{ error: "Invalid token role" },
 					{ status: 403 },
@@ -572,7 +592,7 @@ async function usersGate(
 		} catch (err) {
 			return contextRefusal(err, req, isApi);
 		}
-		const refusal = tenantRequestRefusal(context, req);
+		const refusal = tenantRequestRefusal(context, req, settings.mode);
 		try {
 			await recordAccessNonAdmin(context, req, refusal ? refusal.status : 200);
 		} catch {
@@ -581,6 +601,7 @@ async function usersGate(
 		if (refusal) return refusal;
 	}
 	const res = forward(req, `user:${user.id}`, context?.role, context);
+	if (isOperationAttemptSubmission(req)) return res;
 	const renewed = renewSession(verdict.payload, now, settings.idleMs);
 	if (renewed) {
 		const https = requestIsHttps(req.headers, req.url);
@@ -618,7 +639,11 @@ async function authGate(
 		} catch (err) {
 			return contextRefusal(err, req, true);
 		}
-		const refusal = tenantRequestRefusal(context, req);
+		const refusal = tenantRequestRefusal(
+			context,
+			req,
+			configured.settings.mode,
+		);
 		try {
 			await recordAccessNonAdmin(context, req, refusal ? refusal.status : 200);
 		} catch {
@@ -644,7 +669,7 @@ async function authGate(
 	if (settings.mode === "none") {
 		try {
 			const context = await resolveAuthenticatedContext(req.headers);
-			const refusal = tenantRequestRefusal(context, req);
+			const refusal = tenantRequestRefusal(context, req, settings.mode);
 			return refusal ?? forward(req, "none", context.role, context);
 		} catch (err) {
 			return contextRefusal(err, req, isApi);
@@ -678,9 +703,10 @@ async function authGate(
 	} catch (err) {
 		return contextRefusal(err, req, isApi);
 	}
-	const refusal = tenantRequestRefusal(context, req);
+	const refusal = tenantRequestRefusal(context, req, settings.mode);
 	if (refusal) return refusal;
 	const res = forward(req, "session", context.role, context);
+	if (isOperationAttemptSubmission(req)) return res;
 	const renewed = renewSession(verdict.payload, now, settings.idleMs);
 	if (renewed) {
 		const https = requestIsHttps(req.headers, req.url);

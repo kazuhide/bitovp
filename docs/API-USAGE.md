@@ -97,6 +97,7 @@ tests):
   `apps/web/src/lib/auth/roles.ts`). Revocation is checked on the next request.
 
 - `/api/settings/clip-editing` — GET/POST (ADMIN): GET reports local clip configuration without connectivity checks. POST `{}` requests a bounded metadata-only diagnosis through the editing service and returns independent configuration/service/model states. It does not load models or run inference. Responses are `no-store` and omit connection secrets.
+- `/api/vod/input-favorites` — GET/POST (OPERATOR, no view-as): organization-scoped fixed input references, capped at 64. POST `{credentialId,bucket,objectKey,label,kind}` (`VIDEO`, `AUDIO`, or PNG/JPEG `IMAGE`) saves a reference without fetching media. Duplicate storage references reuse the existing item. GET reports current credential availability, not verified object existence. `DELETE /api/vod/input-favorites/<id>` removes only that reference; it never deletes storage objects or project snapshots. Corrupt saved data returns `409` instead of an empty list. Responses are private and `no-store`; signed URLs and credentials are not stored.
 - `/api/settings/api-coverage` — GET (VIEWER): bundled current source census,
   installed/surveyed SDK and mismatch flag, current top-level SDK body-model
   properties with conservative direct property-key evidence, plus a separately
@@ -184,6 +185,31 @@ rejects writes, including queue operations. [Full contract](user-guide/LIBRARY-A
   organization. Cursor is an event UUID, limit1..100; foreign cursor404. These are
   non-admin access-gate decisions, not downstream provider/completion statuses.
   Query/body/secrets and background GETs are excluded.
+- ADMIN `GET /api/operation-analytics` returns `{weeks,isCollecting}` for the current
+  organization, with eight UTC weeks starting Monday. The current week is
+  partial. The report stays available when collection is paused. The first-frame
+  share divides the number of first-frame results by starts excluding pending
+  attempts. Duration percentiles use first-frame results.
+- The browser sends a bounded `POST /api/operation-attempts` after an OPERATOR
+  starts MoQ preview, with `x-bitovp-expected-org` set to the document's
+  organization. Collection is off by default. An administrator can set
+  `operationAnalytics: true` via `PATCH /api/settings/features` for that
+  organization. The JSON fields are `operation: "LIVE_MOQ_PLAYBACK"`,
+  `attemptId`, `channelId`, `runId`, and `stage`. Accepted stage values are
+  `STARTED`, `FIRST_FRAME`, `FAILED`, and `CANCELED`. A terminal event
+  requires integer `elapsedMs` between 0 and 600,000. New starts must match the
+  current running MoQ run and its stored output binding. The browser measures
+  `FIRST_FRAME` at the first observed video presentation or the first readable
+  nonblank Canvas mirror sample. The server accepts outcomes for up to 11
+  minutes from the accepted start. The first terminal event wins. A lost
+  browser result, including during shutdown or external session invalidation,
+  remains unconfirmed after the result window. Operation submissions never
+  update session cookies. While collection
+  is enabled, accepted events and identical replays of retained attempts return
+  204, including a start replay after its run is deleted. The worker removes
+  records older than 90 days hourly. The organization's `auditHistory` reset
+  category also deletes these records. Allowed background submissions are
+  excluded from access history. The access gate still records denials.
 
 ## Retry a creation safely
 
@@ -242,8 +268,10 @@ storage locations remain private; clients choose a server-listed `fileKey`.
 | `POST /api/library/sources/<id>/media-versions` | `{fileKey,output:{credentialId,bucket,prefix}}` →202 media version; pins the selected object's identity |
 | `GET /api/library/media-versions/<id>` | Preparation state, safe error, time map, dimensions and authenticated media URL |
 | `POST /api/library/edits` | `{contentId,mediaVersionId,title,variant:LANDSCAPE|PORTRAIT,analysisRevisionId?}` →201 project; requires READY material |
+| `POST /api/library/edits` | `{title,fromExport:{projectId,exportId,expectedOrganizationId,requestKey}}` →201 new editing draft from the selected successful export. Replaying the same request opens the draft. A changed source, export, or title with the same key returns409 `REQUEST_KEY_REUSED`. |
 | `GET /api/library/edits?contentId=<id>&offset=0` | `{items,offset,total}`, page size25 |
 | `GET /api/library/edits/<id>` | Draft, `draftRevision`, current immutable revision, `currentRevisionMatchesDraft`, pinned analysis and recent runs |
+| `GET /api/library/edits/<id>?exportId=<uuid>` | The selected successful export and its immutable editing settings when available |
 | `PUT /api/library/edits/<id>/draft` | `{expectedRevision,document}` →200 project; stale revision409 `EDIT_CONFLICT` |
 | `POST /api/library/edits/<id>/revisions` | `{expectedRevision,confirmSuggestions:boolean}` →201 project; unconfirmed AISA framing cannot render |
 | `POST /api/library/edits/<id>/suggestions` | `{query,sceneIds?,targetDurationFrames?}` → candidates; leaves the draft unchanged |
@@ -298,7 +326,7 @@ the browser and FFmpeg consume the same compiled automation.
 
 GENERATE parameters are `{contentId,targetDurationFrames,renderMode?:DRAFT|EXPORT,
 draftPolicyVersion?:"duration-review-v2",presentation?,policy:AUTO|COHESION|DURATION|LOCAL_STORY,
-storyMode?:AUTO|FLOW|THEME,
+storyMode?:AUTO|FLOW|THEME,storySceneId?:<uuid>,
 query?,templateId?,variants:1|2|3,captions:OFF|AUTO,tracking:boolean,language:auto|ja|en,
 transcriptionTaskId?,trackingTaskId?}`.
 Defaults and exact bounds are in the core `mediaTaskCreateSchema`. The historical
@@ -330,8 +358,27 @@ storyMode. The server pins a distinct LOCAL_OLLAMA model/runtime/schema/config
 identity in the task envelope. It does not reactivate the withdrawn STORY/Codex
 provider. There is no client-supplied model, endpoint, schema or shell command.
 
-LOCAL_STORY prepares a full-source transcript when available, including when
-captions are OFF, and analyzes all eligible shots in coverage-preserving chunks.
+By default, LOCAL_STORY prepares a full-source transcript when available,
+including when captions are OFF, and analyzes all eligible shots in
+coverage-preserving chunks. Set `storySceneId` to a scene UUID from the selected
+`analysisRevisionId` to limit transcription and shot selection to that scene.
+The analysis revision must have a verified association with the READY media
+version. This option applies to a LOCAL_STORY DRAFT without `trailer` or
+`storyWorkflowVersion`.
+
+At intake, the UUID must identify exactly one scene within the media time map,
+with at least one frame on that map. Every shot must stay within the scene bounds.
+Excluded scene types are `ADS`, `LOGO_IDENT`, `OPENING_CREDITS`, `END_CREDITS`,
+`BREAK_BUMPER`, `PROMOTION_OTHER_TITLE`, and `PREVIEW_THIS_TITLE`. A scene that
+fails these intake checks returns HTTP 422 `LOCAL_STORY_SCENE_SCOPE_INVALID`.
+
+After HTTP 202, poll `GET /api/library/media-tasks/<id>` for the task state and
+error. The Worker checks the scene against the prepared frame clock during
+generation. If that clock leaves no usable frames, the task fails with
+`LOCAL_STORY_SCENE_SCOPE_INVALID`. If the media has an audio track and the scene
+transcript is unavailable, the task fails with
+`LOCAL_STORY_SCENE_TRANSCRIPT_REQUIRED`.
+
 Immutable transcript/ledger/blueprint receipts bind source, clock, analysis and
 model identities. The planner uses real shot or observed utterance spans, retains
 source order and required beats, and rejects an infeasible duration rather than
@@ -456,6 +503,11 @@ STOP intent: Retry409; [re-run/rollout](user-guide/VOD.md#copy-retry-and-cancel)
 ## Workflow 2 — live channel lifecycle
 
 Queued/provisioning `cancel-start`: [durable generation-bound contract](user-guide/LIVE.md#stop-and-broadcast-again).
+
+For a managed AISA channel with `canRetryAisaFinalization: true`, the authorized
+operator can POST `{"action":"retry-finalization","runId":"<runId>","encodingId":"<encodingId>"}`
+to `/api/live-channels/<channelId>/actions`. Use the current run and its encoder
+from the channel detail. A changed binding or ineligible recovery returns 409.
 
 `GET /api/live/orphan-inventory?bitmovinAccountId=<uuid>`: VIEWER/manual/read-only,
 `no-store`; returns account ID, ISO `checkedAt`, counts: `running` (non-terminal),
@@ -610,6 +662,11 @@ their meaning; removals or renames are breaking changes.
   otherwise the same-model CPU path. Reports include the actual method and
   selection reason. Delivery gates retain CPU scoring.
 - `{"backend":"LOCAL"}` retains the historical worker-environment policy.
+- LOCAL execution may additionally set `deadlineAt` to an ISO 8601 timestamp
+  with an explicit timezone. The absolute deadline includes queue and resource
+  waiting; it is not extended by retry. An expired retry returns 409. Omit the
+  field to retain the existing behavior. A worker must be serving the queue to
+  record expiry; no completion-time guarantee is implied.
 - `{"backend":"CLOUD","profileId":"<id>","budgetUsd":5}` selects a configured
   cloud profile; `localMode` is not accepted for cloud execution.
 
@@ -617,12 +674,41 @@ No binary path or GPU index is accepted from these requests. Remeasure retains
 the requested local mode and selects a new backend snapshot for the new report.
 See [local GPU setup and limits](user-guide/GPU-QUALITY.md#choose-local-processing).
 
+`POST /api/vmaf-jobs/<id>/cancel` accepts local and cloud VOD measurements,
+including historical local jobs without an execution object. It conditionally
+changes PENDING/RUNNING to ERROR and preserves measured results. The response
+is `{id,cancelRequested,stopped:false}`: `cancelRequested` is true only when
+this request recorded cancellation, and false for an already-terminal job or
+a completion that won the race. Acceptance does not confirm process exit or
+cloud resource cleanup. LIVE uses its existing lifecycle controls. The Worker
+honors cancellation after observing it and prevents completion from overwriting
+the recorded error.
+
+Manual `POST /api/vmaf-jobs` additionally accepts
+`referencePreparation:"LOSSLESS_DISPLAY_SCALE_REMUX"` with explicit
+`execution:{"backend":"LOCAL","localMode":"AUTO"}`. It is unavailable for
+cloud, CPU, Banding-only, automatic QC, delivery gates, or `measurementMethod`.
+The worker requires an eligible native GPU and a supported display-scale-only
+source; it fails rather than falling back to CPU. Only a temporary reference is
+remuxed: coded pixels, packets and timing must be verified unchanged. Comparison
+uses the **coded raster**, with display scaling explicitly ignored; this does
+not validate the displayed presentation. Original storage objects stay unchanged.
+Valid per-result evidence appears as `results[].referencePreparation` in detail
+and `renditions[].referencePreparation` in JSON exports: source/prepared SHA-256,
+original fixed-point display matrix, geometry, stream identity, full packet/frame
+counts and hashes, and verified timing flags. Private paths are never returned;
+missing or invalid evidence is omitted. CSV columns remain unchanged.
+
 Create/re-run/watch
 validation: invalid400, unavailable503. `qc.measurementMethod:"FRAME_INDEX_BT709_10BIT"`:
 Cloud generation6. [Eligibility and cancellation](user-guide/QUALITY-AND-MONITORING.md#local-and-cloud-execution).
 ADMIN `/api/settings/vmaf-profiles`, `/api/settings/vmaf-credentials`: [CRUD](user-guide/QUALITY-AND-MONITORING.md#local-and-cloud-execution).
 
 - Live RTMP update: OPERATOR `POST /api/live-channels/[id]/actions`; [run-bound request](user-guide/LIVE.md#send-input-and-confirm-delivery).
-- Live diagnostics: `GET /api/live-channels/[id]/runs/[runId]/diagnostics` (OPERATOR), including `kind=hd-start`; `GET /api/live-channels/[id]/runs/[runId]/final-heartbeat` (ADMIN). [Parameters and persistence](user-guide/LIVE.md#heartbeat-and-status-history).
+- Live diagnostics: `GET /api/live-channels/[id]/runs/[runId]/diagnostics` (OPERATOR): `kind=hd-start`, `kind=task` (status and bounded message metadata), and `kind=summary` (the original run/account's requested `data.encoderVersion`/`data.cloudRegion` and concrete `data.selectedEncoderVersion`/`data.selectedCloudRegion`, omitted when unavailable). `kind=ladder` reports encoded streams for the exact run, with provider codec, height, and bitrate where recorded. `data: null` means the statistics are unavailable. An empty array means the provider explicitly reported no encoded streams. Playback remains a separate observation. Task message counts are unknown (`totalMessageCount: null`) for missing or empty SDK-mapped lists; positive counts are preserved. Protocol mentions do not establish negotiated ALPN; free-form messages are withheld by default. Explicit ADMIN-only `kind=task&download=task` returns an attachment with at most 100 messages and 16,384 characters of text per message; provider text may contain sensitive input details and is never saved in audits. `GET /api/live-channels/[id]/runs/[runId]/final-heartbeat` (ADMIN). [Parameters and persistence](user-guide/LIVE.md#heartbeat-and-status-history).
+- Experimental MoQ Live: create an encrypted `MOQ` credential with `secret:{relayUrl,authToken?,authTokenType?,playbackUrl?}` and an empty config. `playbackUrl` is a separate HTTPS subscribe URL. Live plan outputs use `{key,kind:"MOQ",credentialId,trackNamespace:[...],draftVersion:"DRAFT_16"|"DRAFT_18",name?}`. Use the normal `POST /api/live-channels` path; creation immediately provisions a billable Live. [Restrictions and import](user-guide/LIVE.md#experimental-moq-delivery).
+- MoQ preview readiness: OPERATOR `GET /api/live-channels/moq-readiness` takes either `credentialId`, `draftVersion` and `namespaceComponents` from a draft output or `channelId` for a saved channel. The local configuration check returns `status` (`ready`, `publisher-only`, `needs-configuration`, or `binding-unverified`) and a list of issue codes. The binding for a previously attempted output on a resumed run is checked during playback. Responses are private/no-store and exclude URL, token and license values. Relay reachability and actual playback are evaluated during the broadcast.
+- MoQ preview: OPERATOR `GET /api/live-channels/[id]/runs/[runId]/moq-playback` returns the original run's verified single-namespace subscriber descriptor and public Player key, private/no-store. It rejects credentials changed after output creation and never derives a browser URL from publisher credentials. OPERATOR `GET /api/player-assets/moq` serves only an operator-configured local MoQ Player build after size/hash validation. [Player setup](user-guide/LIVE.md#experimental-moq-delivery).
+- MoQ history (OPERATOR): `GET .../runs/[runId]/moq-observations` returns saved browser sessions and safe persisted heartbeat metrics. `PUT .../moq-observations/[sessionId]` accepts bounded timestamped observations for the owned active run (up to five sessions; post-stop flush is limited to existing sessions). IDs use canonical lowercase UUIDs. `PUT .../[sessionId]/archive` accepts at most 16MiB of WebM for a registered session; validated video lasts at most 90 seconds and is remuxed for seeking. The optional `X-BitOVP-Moq-Capture-Started-At` header carries the browser capture timestamp in UTC with milliseconds. A supplied timestamp is saved as the archive's `captureStartedAt`. `GET` on that archive supports byte ranges. `GET .../runs/[runId]/moq-analytics?impressionId=<uuid>` reads back exact-run Analytics custom latency data, requiring the saved impression and unchanged license digest. Responses are private/no-store; observation data contains no publisher/subscriber URL, token or license key.
 
 Plans accept [CMAF muxings](user-guide/VOD.md#advanced-video-audio-and-subtitles).

@@ -1,4 +1,5 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
 import { type Locale, messagesFor, translate } from "@/lib/i18n";
@@ -26,20 +27,131 @@ vi.mock("@/lib/api", async (orig) => ({
 		}),
 }));
 
-function renderSidebar(locale: Locale = "en", qcVmaf = true) {
+function renderSidebar(
+	locale: Locale = "en",
+	qcVmaf = true,
+	encodingExperiments = false,
+) {
 	// : the nav's QC entry is flag-gated, and the provider's own
 	// default is OFF (a fresh deployment). The IA loop below asserts EVERY
 	// item, so it renders with the flag ON; the pair of pins at the bottom
 	// covers both states.
 	return renderWithQuery(
-		<FeatureFlagsProvider flags={{ qcVmaf }}>
+		<FeatureFlagsProvider
+			flags={{ qcVmaf }}
+			encodingExperiments={encodingExperiments}
+		>
 			<Sidebar />
 		</FeatureFlagsProvider>,
 		locale,
 	);
 }
 
+// jsdom dispatches pointer events but does not implement pointer capture.
+function resizeHandle() {
+	const handle = screen.getByRole("separator", { name: "Resize navigation" });
+	const captured = new Set<number>();
+	Object.assign(handle, {
+		setPointerCapture: vi.fn((id: number) => captured.add(id)),
+		hasPointerCapture: (id: number) => captured.has(id),
+		releasePointerCapture: vi.fn((id: number) => captured.delete(id)),
+	});
+	return handle;
+}
+
+const pointer = { pointerId: 1, isPrimary: true, button: 0 };
+
 describe("Sidebar", () => {
+	it("follows the boundary drag, collapses navigation, and restores it without replacing links", async () => {
+		renderSidebar();
+		const handle = resizeHandle();
+		const sidebar = screen.getByRole("complementary");
+		const originalLink = screen.getByRole("link", { name: "VOD Jobs" });
+		fireEvent.pointerDown(handle, { ...pointer, clientX: 240 });
+		fireEvent.pointerMove(handle, { ...pointer, clientX: 80 });
+		expect(sidebar).toHaveStyle({ width: "80px" });
+		fireEvent.pointerUp(handle, { ...pointer, clientX: 80 });
+		expect(sidebar).toHaveStyle({ width: "0px" });
+		expect(handle.releasePointerCapture).toHaveBeenCalledWith(1);
+		expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+		expect(originalLink.closest("[inert]")).not.toBeNull();
+		await userEvent.click(
+			screen.getByRole("button", { name: "Show navigation" }),
+		);
+		expect(sidebar).toHaveStyle({ width: "240px" });
+		expect(screen.getByRole("link", { name: "VOD Jobs" })).toBe(originalLink);
+		expect(originalLink.closest("[inert]")).toBeNull();
+		expect(handle).toHaveFocus();
+	});
+
+	it("snaps a short drag open, bounds the width, and allows dragging a hidden menu open", () => {
+		renderSidebar();
+		const handle = resizeHandle();
+		fireEvent.pointerDown(handle, { ...pointer, clientX: 240 });
+		fireEvent.pointerMove(handle, { ...pointer, clientX: 500 });
+		expect(handle).toHaveAttribute("aria-valuenow", "240");
+		fireEvent.pointerUp(handle, { ...pointer, clientX: 180 });
+		expect(handle).toHaveAttribute("aria-valuenow", "240");
+		fireEvent.pointerDown(handle, { ...pointer, clientX: 240 });
+		fireEvent.pointerMove(handle, { ...pointer, clientX: -20 });
+		expect(handle).toHaveAttribute("aria-valuenow", "0");
+		fireEvent.pointerUp(handle, { ...pointer, clientX: -20 });
+		fireEvent.pointerDown(handle, { ...pointer, clientX: 0 });
+		fireEvent.pointerUp(handle, { ...pointer, clientX: 160 });
+		expect(screen.getByRole("navigation")).toBeInTheDocument();
+		expect(handle).toHaveAttribute("aria-valuenow", "240");
+	});
+
+	it.each([
+		"pointerCancel",
+		"lostPointerCapture",
+	] as const)("restores the previous width on %s and accepts the next drag", (cancelEvent) => {
+		renderSidebar();
+		const handle = resizeHandle();
+		fireEvent.pointerDown(handle, { ...pointer, clientX: 240 });
+		fireEvent.pointerMove(handle, { ...pointer, clientX: 40 });
+		fireEvent[cancelEvent](handle, pointer);
+		expect(handle).toHaveAttribute("aria-valuenow", "240");
+		expect(handle.hasPointerCapture(1)).toBe(false);
+		fireEvent.pointerDown(handle, { ...pointer, clientX: 240 });
+		fireEvent.pointerUp(handle, { ...pointer, clientX: 40 });
+		expect(handle).toHaveAttribute("aria-valuenow", "0");
+	});
+
+	it("supports keyboard collapse and restore, and Escape cancels a drag", () => {
+		renderSidebar();
+		const handle = resizeHandle();
+		fireEvent.pointerDown(handle, { ...pointer, clientX: 240 });
+		fireEvent.pointerMove(handle, { ...pointer, clientX: 40 });
+		fireEvent.keyDown(handle, { key: "Escape" });
+		expect(handle.hasPointerCapture(1)).toBe(false);
+		expect(handle).toHaveAttribute("aria-valuenow", "240");
+		fireEvent.keyDown(handle, { key: "ArrowLeft" });
+		expect(handle).toHaveAttribute("aria-valuenow", "0");
+		expect(handle).toHaveFocus();
+		fireEvent.keyDown(handle, { key: "ArrowRight" });
+		expect(handle).toHaveAttribute("aria-valuenow", "240");
+		fireEvent.keyDown(handle, { key: "Enter" });
+		expect(handle).toHaveAttribute("aria-valuenow", "0");
+		fireEvent.keyDown(handle, { key: "Enter" });
+		expect(handle).toHaveAttribute("aria-valuenow", "240");
+	});
+
+	it("ignores secondary buttons and unrelated pointers during a drag", () => {
+		renderSidebar();
+		const handle = resizeHandle();
+		fireEvent.pointerDown(handle, { ...pointer, button: 2, clientX: 240 });
+		fireEvent.pointerUp(handle, { ...pointer, clientX: 0 });
+		expect(handle.setPointerCapture).not.toHaveBeenCalled();
+		fireEvent.pointerDown(handle, { ...pointer, clientX: 240 });
+		fireEvent.pointerMove(handle, { ...pointer, pointerId: 2, clientX: 0 });
+		fireEvent.pointerCancel(handle, { ...pointer, pointerId: 2 });
+		fireEvent.pointerUp(handle, { ...pointer, pointerId: 2, clientX: 0 });
+		expect(handle).toHaveAttribute("aria-valuenow", "240");
+		fireEvent.pointerUp(handle, { ...pointer, clientX: 0 });
+		expect(handle).toHaveAttribute("aria-valuenow", "0");
+	});
+
 	/**
 	 * Runs for both locales — but a reviewer showed this loop is WEAKER than the PR
 	 * claimed: it computes its expectation with `translate(messagesFor(locale), …)`,
@@ -53,7 +165,7 @@ describe("Sidebar", () => {
 	 */
 	for (const locale of ["en", "ja"] as const) {
 		it(`renders every IA nav item with its href (${locale})`, async () => {
-			renderSidebar(locale);
+			renderSidebar(locale, true, true);
 			const messages = messagesFor(locale);
 			for (const section of NAV_SECTIONS) {
 				for (const item of section.items) {

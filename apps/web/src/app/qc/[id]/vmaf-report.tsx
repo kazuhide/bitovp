@@ -2,30 +2,42 @@
 
 import { VMAF_SCORING_VERSION } from "@bitovp/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { DeleteResourceButton } from "@/components/delete-resource-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { InfoHint } from "@/components/ui/info-hint";
 import { ApiError, apiFetch } from "@/lib/api";
 import { RoleAccess } from "@/lib/auth/use-role-access";
-import { formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
+import { AnalysisChartLayout } from "../analysis-chart-layout";
 import { CloudProgress } from "../cloud-progress";
+import { QualityMetricTabs } from "../quality-metric-tabs";
 import {
+	isActiveVmafStatus,
 	type QcJobDetail,
+	renditionColor,
+	renditionLabel,
 	shortJobId,
-	VMAF_STATUS_TONE,
+	sortedRenditions,
 	type VmafJobDetail,
 } from "../vmaf-shared";
+import { VmafViolinChart } from "../vmaf-violin";
 import { BandingPanels, BandingReport } from "./banding-panel";
-import { ExportButtons } from "./export-buttons";
+import { FrameChart } from "./frame-chart";
 import { FrameComparison } from "./frame-comparison";
+import { HdrMeasurementSummary } from "./hdr-measurement-summary";
 import { LadderScatter } from "./ladder-scatter";
 import { LivePanels, LiveQualityWarnings } from "./live-panels";
 import { PooledTable } from "./pooled-table";
+import { ReferencePreparationSummary } from "./reference-preparation-summary";
+import {
+	BackToVmafLab,
+	QcReportHeader,
+	QcReportRunDetails,
+} from "./report-header";
 import { VmafContextBanner } from "./vmaf-context-banner";
 
 /**
@@ -63,9 +75,13 @@ export function VmafReport({ id }: { id: string }) {
 	});
 
 	const [cancelOpen, setCancelOpen] = useState(false);
+	const [expandedSummaryId, setExpandedSummaryId] = useState<string>();
 	const cancel = useMutation({
 		mutationFn: () =>
-			apiFetch(`/api/vmaf-jobs/${id}/cancel`, { method: "POST" }),
+			apiFetch<{ id: string; cancelRequested: boolean; stopped: false }>(
+				`/api/vmaf-jobs/${id}/cancel`,
+				{ method: "POST" },
+			),
 		onSuccess: () => {
 			setCancelOpen(false);
 			queryClient.invalidateQueries({ queryKey: ["vmaf-job", id] });
@@ -101,23 +117,25 @@ export function VmafReport({ id }: { id: string }) {
 	) : null;
 	if (!report.data) {
 		return (
-			<div>
+			<section className="space-y-3">
+				<BackToVmafLab />
+				<h1 className="font-semibold text-xl text-zinc-50">
+					{t("qc.reportTitle")}
+				</h1>
 				{loadError}
-				<Link href="/qc" className="text-sm text-emerald-400 underline">
-					{t("qc.backToLab")}
-				</Link>
-			</div>
+			</section>
 		);
 	}
 
 	const job = report.data;
+	const running = isActiveVmafStatus(job.status);
 	const deleteAction = (
 		<RoleAccess control="qc.report.delete">
 			<DeleteResourceButton
 				resourceLabel={t(
 					job.kind === "BANDING" ? "banding.report" : "qc.reportTitle",
 				)}
-				disabled={job.status === "PENDING" || job.status === "RUNNING"}
+				disabled={running}
 				disabledReason={t("ui.waitForTheReportToFinishBefore")}
 				confirmTitle={t("qc.deleteTitle")}
 				confirmDescription={t("qc.deleteConfirmOne")}
@@ -138,188 +156,87 @@ export function VmafReport({ id }: { id: string }) {
 			<BandingReport job={job} loadError={loadError} actions={deleteAction} />
 		);
 	const hasResults = job.results.length > 0;
-	const maxFrameCount = job.results.reduce(
-		(m, r) => Math.max(m, r.frameCount),
-		0,
-	);
-	// Title the report by its encoding name (plan.name); LIVE jobs / older rows
-	// without one fall back to the short job id. The "VMAF report" context moves
-	// to a small eyebrow so the recognisable name is the headline.
 	const title = job.encodingName ?? shortJobId(job.id);
-
-	return (
-		<section>
-			{loadError}
-			<p className="text-xs text-zinc-500 uppercase tracking-wide">
-				{t("qc.reportTitle")}
-			</p>
-			<header className="mt-1 flex flex-wrap items-center gap-3">
-				<h1
-					className="font-semibold text-xl text-zinc-50"
-					title={t("uiX.reportShortId", { id: shortJobId(job.id) })}
+	const cancelAction =
+		job.mode === "VOD" && running ? (
+			<RoleAccess control="qc.jobs">
+				<Button
+					size="sm"
+					variant="destructive"
+					disabled={cancel.isPending}
+					onClick={() => setCancelOpen(true)}
 				>
-					{title}
-				</h1>
-				<Badge tone={VMAF_STATUS_TONE[job.status]}>{job.status}</Badge>
-				<span className="font-mono text-xs text-zinc-500">{job.model}</span>
-				{(job.scoringVersion ?? 1) < VMAF_SCORING_VERSION ? (
-					/**
-					 * An operator reading ONE report needs this as much as one
-					 * comparing two: the number in front of them was produced by
-					 * an older pipeline with timestamp-pairing defects (generations
-					 * 1 and 2). Without this the historical report looks current.
-					 */
-					<Badge tone="error">
-						{t("qc.staleScoringGeneration", {
-							version: String(job.scoringVersion ?? 1),
-						})}
-					</Badge>
-				) : null}
-				{job.subsample !== null && job.subsample > 1 ? (
-					/**
-					 * Not an error — a subsampled run is a legitimate choice — but the
-					 * report has to state the terms of its own measurement. The mean is
-					 * trustworthy; the MINIMUM is the worst frame of a sample, and an
-					 * operator reading a single report has no other way to know that the
-					 * worst frame may simply not have been scored.
-					 *
-					 * `neutral`, not `error` like the stale-generation badge beside it:
-					 * that badge means the number is WRONG, this one means the number is
-					 * right and its minimum is scoped. Reusing `error` would put a
-					 * deliberate speed/precision trade in the same visual class as a
-					 * measurement defect.
-					 */
-					<Badge tone="neutral">
-						{t("qc.subsampledBadge", { stride: String(job.subsample) })}
-					</Badge>
-				) : null}
-				<span className="text-xs text-zinc-500">{job.mode}</span>
-				{hasResults ? (
-					<span className="text-xs text-zinc-500">
-						{t(
-							job.results.length === 1
-								? "uiX.renditionCountOne"
-								: "uiX.renditionCountOther",
-							{ count: job.results.length },
-						)}
-					</span>
-				) : null}
-				{job.mode === "VOD" &&
-				job.execution?.backend === "CLOUD" &&
-				(job.status === "PENDING" || job.status === "RUNNING") ? (
-					<RoleAccess control="qc.jobs">
+					{t("qc.cancelMeasurement")}
+				</Button>
+				<Dialog
+					open={cancelOpen}
+					onOpenChange={setCancelOpen}
+					title={t("qc.cancelMeasurementTitle")}
+					description={t(
+						job.execution?.backend === "CLOUD"
+							? "qc.cancelCloudConfirm"
+							: "qc.cancelLocalConfirm",
+						{ name: title },
+					)}
+				>
+					<div className="flex justify-end gap-2">
+						<Button
+							size="sm"
+							variant="secondary"
+							disabled={cancel.isPending}
+							onClick={() => setCancelOpen(false)}
+						>
+							{t("common.cancel")}
+						</Button>
 						<Button
 							size="sm"
 							variant="destructive"
 							disabled={cancel.isPending}
-							onClick={() => setCancelOpen(true)}
+							onClick={() => cancel.mutate()}
 						>
-							{t("qc.cancelCloud")}
+							{t("qc.cancelMeasurement")}
 						</Button>
-						<Dialog
-							open={cancelOpen}
-							onOpenChange={setCancelOpen}
-							title={t("qc.cancelCloudTitle")}
-							description={t("qc.cancelCloudConfirm", { name: title })}
-						>
-							<div className="flex justify-end gap-2">
-								<Button
-									size="sm"
-									variant="secondary"
-									disabled={cancel.isPending}
-									onClick={() => setCancelOpen(false)}
-								>
-									{t("common.cancel")}
-								</Button>
-								<Button
-									size="sm"
-									variant="destructive"
-									disabled={cancel.isPending}
-									onClick={() => cancel.mutate()}
-								>
-									{t("qc.cancelCloud")}
-								</Button>
-							</div>
-							{cancel.isError ? (
-								<p role="alert" className="mt-2 text-xs text-red-400">
-									{cancel.error instanceof ApiError
-										? cancel.error.message
-										: t("qc.cancelCloudFailed")}
-								</p>
-							) : null}
-						</Dialog>
-					</RoleAccess>
-				) : null}
-				<div className="ml-auto">{deleteAction}</div>
-			</header>
-			{job.execution ? (
-				<p className="mt-1 text-xs text-zinc-500">
-					{t("qc.executionTarget")}:{" "}
-					{job.execution.backend === "CLOUD"
-						? t("qc.executionCloudReport", {
-								profile: job.execution.profileId,
-								budget: job.execution.budgetUsd,
-							})
-						: t("qc.executionLocal")}
+					</div>
+					{cancel.isError ? (
+						<p role="alert" className="mt-2 text-xs text-red-400">
+							{cancel.error instanceof ApiError
+								? cancel.error.message
+								: t("qc.cancelFailed")}
+						</p>
+					) : null}
+				</Dialog>
+			</RoleAccess>
+		) : null;
+	return (
+		<section className="min-w-0">
+			{loadError}
+			<QcReportHeader
+				job={job}
+				actions={
+					<>
+						{cancelAction}
+						{deleteAction}
+					</>
+				}
+			/>
+			{cancel.data?.id === id && cancel.data.cancelRequested ? (
+				<p role="status" className="mt-2 text-xs text-zinc-400">
+					{t("qc.cancelRequested")}
 				</p>
 			) : null}
-			{job.computeTasks?.length ? (
-				<CloudProgress
-					tasks={job.computeTasks}
-					active={job.status === "PENDING" || job.status === "RUNNING"}
-				/>
-			) : null}
-			{job.computeTasks?.length ? (
-				<details className="mt-2 text-xs text-zinc-500">
-					<summary className="cursor-pointer">{t("qc.computeTasks")}</summary>
-					<ul className="mt-2 space-y-1">
-						{job.computeTasks.map((task) => (
-							<li key={task.id}>
-								<span className="font-mono">{task.id.slice(0, 8)}</span> ·{" "}
-								{task.state} ·{" "}
-								{t("qc.computeReserved", {
-									amount: task.reservedUsd.toFixed(2),
-								})}{" "}
-								·{" "}
-								{t(
-									task.cleanedAt
-										? "qc.computeCleaned"
-										: "qc.computeCleanupPending",
-								)}
-								{task.error ? (
-									<span className="ml-1 text-amber-600 dark:text-amber-400">
-										{t("qc.computeAttention")}
-									</span>
-								) : null}
-							</li>
-						))}
-					</ul>
-				</details>
-			) : null}
-
-			<p className="mt-1 text-xs text-zinc-500">
-				{job.encodingJobId ? (
-					<>
-						{t("uiX.fromEncodingJob")}{" "}
-						<Link
-							href={`/vod/jobs/${job.encodingJobId}`}
-							className="font-mono text-zinc-400 hover:text-emerald-400"
-						>
-							{job.encodingJobId}
-						</Link>{" "}
-						·{" "}
-					</>
-				) : null}
-				{formatDateTime(job.createdAt)}
-			</p>
-
 			{job.error ? (
-				<p role="alert" className="mt-3 text-red-400 text-sm">
+				<p role="alert" className="mt-3 break-words text-red-400 text-sm">
 					{job.error}
 				</p>
 			) : null}
 
-			{job.status === "PENDING" || job.status === "RUNNING" ? (
+			{!running && job.computeTasks?.some((task) => !task.cleanedAt) ? (
+				<p className="mt-3 text-sm text-amber-600 dark:text-amber-400">
+					{t("qc.computeCleanupPending")}
+				</p>
+			) : null}
+
+			{running ? (
 				<div className="mt-6 space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-5 text-sm text-zinc-400">
 					<div className="flex items-center gap-3">
 						<span
@@ -334,96 +251,231 @@ export function VmafReport({ id }: { id: string }) {
 						active={true}
 					/>
 					<VmafResourcesLine job={job} />
-				</div>
-			) : null}
-
-			{job.status === "FINISHED" &&
-			(job.totalUnits > 0 || job.cores != null) ? (
-				<div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
-					{job.totalUnits > 0 ? (
-						<span>
-							{t(
-								job.totalUnits === 1
-									? "uiX.scoredUnitsOne"
-									: "uiX.scoredUnitsOther",
-								{ done: job.doneUnits, total: job.totalUnits },
-							)}
-						</span>
+					{job.computeTasks?.length ? (
+						<CloudProgress tasks={job.computeTasks} />
 					) : null}
-					<VmafResourcesLine job={job} />
 				</div>
 			) : null}
 
-			{job.banding && hasResults ? (
-				<BandingPanels results={job.results} />
-			) : null}
 			{hasResults ? (
-				<>
-					{/* Above the numbers, deliberately: a correct score with no context is
-					    what turned a healthy pipeline into an hours-long investigation. */}
-					<VmafContextBanner
-						results={job.results}
-						model={job.model}
-						referenceHeight={job.reference?.height ?? null}
-					/>
-
-					<div className="mt-8 flex items-center justify-between gap-3">
-						<h2 className="font-medium text-sm text-zinc-200">
-							{job.mode === "LIVE"
-								? t("qc.windowedVmaf")
-								: t("qc.pooledSummary")}
-						</h2>
-						<ExportButtons jobId={job.id} />
-					</div>
-					{job.mode === "LIVE" ? (
-						<LiveQualityWarnings results={job.results} />
-					) : null}
-					<PooledTable results={job.results} />
-
-					<h2 className="mt-8 font-medium text-sm text-zinc-200">
-						{t("uiX.perFrameVmaf")}
-						{maxFrameCount > 0 ? (
-							<span className="ml-2 font-normal text-xs text-zinc-500">
-								{t("uiX.downsampledExportFull", {
-									frames: maxFrameCount.toLocaleString(),
-								})}
-							</span>
-						) : null}
-					</h2>
-					<FrameComparison
+				<div className="mt-4">
+					<QualityMetricTabs
 						key={job.id}
-						results={job.results}
-						fps={job.reference?.fps}
-						mode={job.mode}
+						cambi={
+							job.banding ? (
+								<BandingPanels results={job.results} compact reportDetail />
+							) : undefined
+						}
+						vmaf={
+							<VmafResults
+								job={job}
+								summaryOpen={expandedSummaryId === job.id}
+								onSummaryToggle={(open) =>
+									setExpandedSummaryId(open ? job.id : undefined)
+								}
+							/>
+						}
 					/>
-
-					<h2 className="mt-8 font-medium text-sm text-zinc-200">
-						{t("qc.qualityLadder")}
-						<span className="ml-2 font-normal text-xs text-zinc-500">
-							{t("ui.meanVmafVsBitrate")}
-						</span>
-					</h2>
-					<LadderScatter results={job.results} />
-					{job.mode === "LIVE" && job.results.some((result) => result.live) ? (
-						<details className="mt-8 rounded-lg border border-zinc-800 p-4">
-							<summary className="cursor-pointer text-sm text-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-500">
-								<h2 className="inline font-medium">
-									{t("qc.alignmentDiagnostics")}
-								</h2>
-								<span className="ml-2 text-xs text-zinc-500">
-									{t("ui.loopOffsetConfidenceDrift")}
-								</span>
-							</summary>
-							<LivePanels results={job.results} showWarnings={false} />
-						</details>
-					) : null}
-				</>
-			) : job.status === "ERROR" ? null : job.status === "FINISHED" ? (
+				</div>
+			) : job.status === "FINISHED" ? (
 				<p className="mt-6 text-sm text-zinc-500">
 					{t("ui.thisReportFinishedWithNoRenditionResults")}
 				</p>
 			) : null}
+
+			<QcReportRunDetails job={job}>
+				{job.execution ? (
+					<p>
+						{t("qc.executionTarget")}:{" "}
+						{job.execution.backend === "CLOUD"
+							? t("qc.executionCloudReport", {
+									profile: job.execution.profileId,
+									budget: job.execution.budgetUsd,
+								})
+							: t("qc.executionLocal")}
+					</p>
+				) : null}
+				{job.status === "FINISHED" &&
+				(job.totalUnits > 0 || job.cores != null) ? (
+					<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+						{job.totalUnits > 0 ? (
+							<span>
+								{t(
+									job.totalUnits === 1
+										? "uiX.scoredUnitsOne"
+										: "uiX.scoredUnitsOther",
+									{ done: job.doneUnits, total: job.totalUnits },
+								)}
+							</span>
+						) : null}
+						<VmafResourcesLine job={job} />
+					</div>
+				) : null}
+				{job.computeTasks?.length ? (
+					<div>
+						<h2 className="font-medium text-zinc-300">
+							{t("qc.computeTasks")}
+						</h2>
+						<ul className="mt-2 space-y-1">
+							{job.computeTasks.map((task) => (
+								<li key={task.id}>
+									<span className="font-mono">{task.id.slice(0, 8)}</span> ·{" "}
+									{task.state} ·{" "}
+									{t("qc.computeReserved", {
+										amount: task.reservedUsd.toFixed(2),
+									})}{" "}
+									·{" "}
+									{t(
+										task.cleanedAt
+											? "qc.computeCleaned"
+											: "qc.computeCleanupPending",
+									)}
+									{task.error ? (
+										<span className="ml-1 text-amber-600 dark:text-amber-400">
+											{t("qc.computeAttention")}
+										</span>
+									) : null}
+								</li>
+							))}
+						</ul>
+					</div>
+				) : null}
+			</QcReportRunDetails>
 		</section>
+	);
+}
+
+function VmafResults({
+	job,
+	summaryOpen,
+	onSummaryToggle,
+}: {
+	job: VmafJobDetail;
+	summaryOpen: boolean;
+	onSummaryToggle: (open: boolean) => void;
+}) {
+	const { t } = useT();
+	const maxFrameCount = job.results.reduce(
+		(m, r) => Math.max(m, r.frameCount),
+		0,
+	);
+	// Keep the static plots unchanged while the player clock advances.
+	const distribution = (
+		<VmafViolinChart
+			series={sortedRenditions(job.results).map(({ result, index }) => ({
+				key: result.id,
+				label: renditionLabel(
+					result.renditionRef,
+					index,
+					t("common.renditionNumbered", { n: index + 1 }),
+				),
+				color: renditionColor(index),
+				distribution: result.distribution,
+				subsample: job.subsample,
+			}))}
+		/>
+	);
+	const ladder = (
+		<>
+			<h2 className="font-medium text-sm text-zinc-200">
+				{t("qc.qualityLadder")}
+				<span className="ml-2 font-normal text-xs text-zinc-500">
+					{t("ui.meanVmafVsBitrate")}
+				</span>
+			</h2>
+			<LadderScatter results={job.results} />
+		</>
+	);
+
+	const summaryTitle = t(
+		job.mode === "LIVE" ? "qc.windowedVmaf" : "qc.pooledSummary",
+	);
+	return (
+		<div className="space-y-3">
+			<div className="space-y-2">
+				<HdrMeasurementSummary results={job.results} />
+				<ReferencePreparationSummary results={job.results} />
+				<VmafContextBanner
+					results={job.results}
+					model={job.model}
+					referenceHeight={job.reference?.height ?? null}
+				/>
+				{(job.scoringVersion ?? 1) < VMAF_SCORING_VERSION ? (
+					<Badge tone="error">
+						{t("qc.staleScoringGeneration", {
+							version: String(job.scoringVersion ?? 1),
+						})}
+					</Badge>
+				) : null}
+				{job.subsample !== null && job.subsample > 1 ? (
+					<Badge tone="neutral">
+						{t("qc.subsampledBadge", { stride: String(job.subsample) })}
+					</Badge>
+				) : null}
+			</div>
+			{job.mode === "LIVE" ? (
+				<LiveQualityWarnings results={job.results} />
+			) : null}
+			{job.banding ? (
+				<details
+					open={summaryOpen}
+					onToggle={(event) => onSummaryToggle(event.currentTarget.open)}
+					className="rounded-lg border border-zinc-800 px-3 py-2"
+				>
+					<summary className="cursor-pointer text-sm text-zinc-200 focus-visible:outline-2 focus-visible:outline-emerald-500">
+						<h2 className="inline font-medium">{summaryTitle}</h2>
+					</summary>
+					<PooledTable results={job.results} />
+				</details>
+			) : (
+				<div>
+					<h2 className="font-medium text-sm text-zinc-200">{summaryTitle}</h2>
+					<PooledTable results={job.results} />
+				</div>
+			)}
+			<FrameComparison
+				results={job.results}
+				fps={job.reference?.fps}
+				mode={job.mode}
+				renderChart={(selection) => (
+					<AnalysisChartLayout
+						frames={
+							<>
+								<div className="flex items-center gap-2">
+									<h2 className="font-medium text-sm text-zinc-200">
+										{t("uiX.perFrameVmaf")}
+									</h2>
+									{maxFrameCount > 0 ? (
+										<InfoHint
+											labelFor={t("uiX.perFrameVmaf")}
+											text={t("uiX.downsampledExportFull", {
+												frames: maxFrameCount.toLocaleString(),
+											})}
+										/>
+									) : null}
+								</div>
+								<FrameChart results={job.results} {...selection} />
+							</>
+						}
+						distribution={distribution}
+						ladder={ladder}
+					/>
+				)}
+			/>
+			{job.mode === "LIVE" && job.results.some((result) => result.live) ? (
+				<details className="rounded-lg border border-zinc-800 p-4">
+					<summary className="cursor-pointer text-sm text-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-500">
+						<h2 className="inline font-medium">
+							{t("qc.alignmentDiagnostics")}
+						</h2>
+						<span className="ml-2 text-xs text-zinc-500">
+							{t("ui.loopOffsetConfidenceDrift")}
+						</span>
+					</summary>
+					<LivePanels results={job.results} showWarnings={false} />
+				</details>
+			) : null}
+		</div>
 	);
 }
 

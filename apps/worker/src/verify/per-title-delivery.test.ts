@@ -145,6 +145,64 @@ describe("bindPerTitleDelivery", () => {
 			expect(result.bindings).toHaveLength(0);
 		}
 	});
+	it.each([
+		["PROGRESSIVE_TS", "movie.ts"],
+		["PROGRESSIVE_MOV", "movie.mov"],
+		["PROGRESSIVE_WEBM", "movie.webm"],
+	] as const)("binds a whole %s file to the provider muxing of that type and that filename only", (container, filename) => {
+		const expected = artefacts([
+			muxing("fixed", "FIXED", {
+				container,
+				filename,
+				initSegment: undefined,
+				segmentNaming: undefined,
+				segmentLengthSec: undefined,
+			}),
+		]);
+		const bound = (muxingType: string, actualFilename: string) =>
+			bindPerTitleDelivery(
+				expected,
+				complete(
+					[{ streamId: "result", templateRendition: "fixed" }],
+					[
+						actualMuxing(
+							"result",
+							"fixed",
+							"mux-result",
+							[
+								leg(
+									"result",
+									"fixed",
+									"mux-result",
+									"provider-origin",
+									"video/fixed/360p_400000_a/",
+									{ muxingType },
+								),
+							],
+							{ muxingType, filename: actualFilename },
+						),
+					],
+				),
+				{ origin: "provider-origin" },
+			);
+		const same = bound(container, filename);
+		expect(same.status).toBe("complete");
+		if (same.status !== "complete") return;
+		expect(same.issues).toEqual([]);
+		expect(same.bindings.map((binding) => binding.id)).toEqual([
+			"fixed:result:mux-result:clear:provider-origin",
+		]);
+		// Another provider type, or another file of the same type, is not it.
+		for (const other of [
+			bound("MP4", filename),
+			bound(container, "other.bin"),
+		]) {
+			expect(other.status).toBe("complete");
+			if (other.status !== "complete") return;
+			expect(other.issues.length).toBeGreaterThan(0);
+			expect(other.bindings).toHaveLength(0);
+		}
+	});
 	it("binds same-codec templates to their own RESULT legs exactly once", () => {
 		const expected = artefacts([
 			muxing("fixed-a", "FIXED"),

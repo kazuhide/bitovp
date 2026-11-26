@@ -64,6 +64,15 @@ function basePlan() {
 	});
 }
 
+it("keeps HDR models on the explicit existing-output protocol before paid encoding", () => {
+	const plan = encodingPlanSchema.parse({
+		...basePlan(),
+		qc: { vmaf: true, model: "hdr_vmaf_v1.1.8_3d0h_2160" },
+	});
+	const codes = validatePlan(plan).map((issue) => issue.code);
+	expect(codes).toContain("PLAN_HDR_QC_EXISTING_OUTPUT_REQUIRED");
+});
+
 describe("validatePlan", () => {
 	it("rejects a retained numeric per-title template bitrate before provider creation", () => {
 		const plan = basePlan();
@@ -506,7 +515,7 @@ describe("validatePlan", () => {
 		).toHaveLength(1);
 	});
 
-	it("allows AV1 in fMP4 and WebM but rejects it in MP4 and TS", () => {
+	it("allows AV1 in fMP4, WebM and MP4 but rejects it in TS", () => {
 		const plan = basePlan();
 		plan.renditions = [
 			encodingPlanSchema.shape.renditions.element.parse({
@@ -518,7 +527,7 @@ describe("validatePlan", () => {
 			}),
 		];
 		const muxing = encodingPlanSchema.shape.muxings.element;
-		// Valid containers: fMP4 (CMAF) + WebM.
+		// Valid containers: fMP4 (CMAF) + WebM, and MP4 since encoder 2.105.0.
 		plan.muxings = [
 			muxing.parse({
 				key: "av1-fmp4",
@@ -537,7 +546,6 @@ describe("validatePlan", () => {
 			validatePlan(plan).filter((i) => i.code === "PLAN_MUXING_CODEC_MISMATCH"),
 		).toHaveLength(0);
 
-		// Invalid containers: MP4 + TS each fire a mismatch.
 		plan.muxings.push(
 			muxing.parse({
 				key: "av1-mp4",
@@ -546,6 +554,13 @@ describe("validatePlan", () => {
 				filename: "av1.mp4",
 				destination: { outputKey: "out", path: "x/video/mp4" },
 			}),
+		);
+		expect(
+			validatePlan(plan).filter((i) => i.code === "PLAN_MUXING_CODEC_MISMATCH"),
+		).toHaveLength(0);
+
+		// An invalid container: TS fires a mismatch.
+		plan.muxings.push(
 			muxing.parse({
 				key: "av1-ts",
 				kind: "TS",
@@ -554,8 +569,10 @@ describe("validatePlan", () => {
 			}),
 		);
 		expect(
-			validatePlan(plan).filter((i) => i.code === "PLAN_MUXING_CODEC_MISMATCH"),
-		).toHaveLength(2);
+			validatePlan(plan)
+				.filter((i) => i.code === "PLAN_MUXING_CODEC_MISMATCH")
+				.map((i) => i.path),
+		).toEqual(["muxings[3].streamKey"]);
 	});
 
 	it("DASH zero-rep check honors pinned legs and per-title expansion", () => {
@@ -3304,21 +3321,29 @@ describe("deliveryMirrors (ledger #115)", () => {
 function perTitlePlanWithOutputKind(kind: string) {
 	const cred = "00000000-0000-4000-8000-000000000002";
 	const output: Record<string, unknown> =
-		kind === "AKAMAI_MSL"
+		kind === "MOQ"
 			? {
 					key: "out",
 					kind,
-					credentialId: "00000000-0000-4000-8000-000000000003",
-					streamFormat: "HLS",
-					mslVersion: "MSL4",
+					credentialId: cred,
+					trackNamespace: ["per-title-must-refuse"],
+					draftVersion: "DRAFT_18",
 				}
-			: kind === "SFTP" ||
-					kind === "AKAMAI_NETSTORAGE" ||
-					kind === "LIVE_MEDIA_INGEST"
-				? { key: "out", kind, credentialId: cred }
-				: kind === "AZURE"
-					? { key: "out", kind, credentialId: cred, container: "c" }
-					: { key: "out", kind, credentialId: cred, bucket: "b" };
+			: kind === "AKAMAI_MSL"
+				? {
+						key: "out",
+						kind,
+						credentialId: "00000000-0000-4000-8000-000000000003",
+						streamFormat: "HLS",
+						mslVersion: "MSL4",
+					}
+				: kind === "SFTP" ||
+						kind === "AKAMAI_NETSTORAGE" ||
+						kind === "LIVE_MEDIA_INGEST"
+					? { key: "out", kind, credentialId: cred }
+					: kind === "AZURE"
+						? { key: "out", kind, credentialId: cred, container: "c" }
+						: { key: "out", kind, credentialId: cred, bucket: "b" };
 	return encodingPlanSchema.parse({
 		planVersion: 1,
 		name: "per-title",
@@ -3392,7 +3417,7 @@ describe("C4's per-title allowlist, pinned PER KIND against the schema (ledger #
 	 *  - SFTP: no object placeholders — per-title paths need {uuid}/{bitrate}.
 	 *  - AKAMAI_MSL: a live ingest target with no path at all .
 	 */
-	const REFUSED = new Set(["SFTP", "AKAMAI_MSL", "LIVE_MEDIA_INGEST"]);
+	const REFUSED = new Set(["SFTP", "AKAMAI_MSL", "LIVE_MEDIA_INGEST", "MOQ"]);
 
 	it("found the schema's output kinds", () => {
 		expect(outputKinds.length).toBeGreaterThan(6);

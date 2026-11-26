@@ -15,6 +15,7 @@ import type {
 	DashDetailedOptions,
 	HlsDetailedOptions,
 } from "../plan/manifest-options";
+import { muxingKindCarriesAudio } from "../plan/muxing-streams";
 import type { QcGate } from "../plan/qc-gate";
 import {
 	type AV1_DYNAMIC_RANGE_FORMATS,
@@ -24,6 +25,7 @@ import {
 	srtCharacterEncodingSchema,
 } from "../plan/schema";
 import type { VmafExecution } from "../vmaf/cloud";
+import { applyVodInputTimeline } from "./input-timeline";
 
 /**
  * Pure mapping from wizard state to an EncodingPlan (input shape — zod
@@ -94,6 +96,10 @@ export type WizardInputFile = {
 	region?: string;
 	/** Bitmovin Input resource name (on the deduped input). */
 	name?: string;
+	/** An output-filter image is not an audio/video timeline source. */
+	purpose?: "FILTER_IMAGE";
+	/** Optional bin/timeline label; never a provider input resource name. */
+	displayName?: string;
 };
 
 /** Extra ingest track beyond the implicit video/audio pair. */
@@ -474,7 +480,13 @@ export type WizardMuxingKind =
 	| "TS"
 	| "WEBM"
 	| "CHUNKED_TEXT"
-	| "TEXT";
+	| "TEXT"
+	/** One whole .ts file (never a manifest leg; audio muxed in). */
+	| "PROGRESSIVE_TS"
+	/** One whole .mov file (never a manifest leg; audio muxed in). */
+	| "PROGRESSIVE_MOV"
+	/** One whole .webm file (never a manifest leg; audio muxed in). */
+	| "PROGRESSIVE_WEBM";
 
 /** Per-rendition muxing leg (Muxings step). Absent = P1 fMP4 defaults. */
 export type WizardMuxing = {
@@ -501,11 +513,16 @@ export type WizardMuxing = {
 	initSegmentName?: string;
 	initSegmentNameTemplate?: string;
 	framesPerCmafChunk?: number;
-	// MP4
+	// MP4 (and the three whole-file kinds, which share `filename`)
 	filename?: string;
 	fragmentDuration?: number;
 	manifestType?: "HLS_BYTE_RANGES" | "SMOOTH" | "DASH_ON_DEMAND";
 	dolbyVisionTrackSampleEntryName?: "DVHE" | "DVH1";
+	/**
+	 * PROGRESSIVE_TS only: MPEG-TS timestamp offset in whole seconds. Absent
+	 * preserves the provider default.
+	 */
+	startOffset?: number;
 	/**
 	 * VIDEO CONTAINERS — the audio renditions that ride INSIDE this one.
 	 *
@@ -589,6 +606,12 @@ export type WizardAudioRendition = {
 	/** DOLBY_ATMOS loudness control. */
 	loudness?: WizardLoudnessControl;
 	extras?: WizardRenditionExtras;
+	/**
+	 * Editor-only, never in the plan: the key the video containers that carry this
+	 * track still name, while the key the track would have is one another row has
+	 * too. They are renamed once the key is this row's alone.
+	 */
+	carriedAs?: string;
 	muxing?: WizardMuxing;
 	/** Additional muxing legs from the same stream (see WizardVideoRendition). */
 	extraMuxings?: WizardMuxing[];
@@ -872,6 +895,14 @@ export type WizardQc = {
 	 */
 	only?: boolean;
 	/**
+	 * Folder the measured copies go to, RELATIVE to the base output path (the AISA
+	 * precedent); they are written to its `qc/` child (`planQcSchema.mirrorPath`).
+	 * Absent = beside each rendition's own output. A job that writes its files
+	 * straight into a folder other jobs use sets one, so that its copies are not the
+	 * ones another job writes.
+	 */
+	mirrorPath?: string;
+	/**
 	 * QC gate : carried VERBATIM as the plan's `qc.gate` —
 	 * the editor produces exactly the schema shape, so the wizard state does
 	 * not re-model it. Only meaningful while vmaf/psnr is on: buildPlan
@@ -930,6 +961,9 @@ export type WizardKantar = {
 };
 
 export type WizardState = {
+	/** Manual, CPU-previewed input sequence. Absent preserves the ordinary wizard graph. */
+	inputTimeline?: import("../vod-input-timeline/contracts").VodInputTimelineDocument;
+	inputTimelinePreparation?: { taskId: string; requestHash: string };
 	/** Internal account-gated profile; never inferred from the selected account. */
 	internal?: EncodingPlanInput["internal"];
 	name: string;
@@ -1129,13 +1163,16 @@ function isQcOnly(state: Pick<WizardState, "qc">): boolean {
 	);
 }
 
-/** Audio keys a video container leg carries  — TS/MP4 only. */
+/**
+ * Audio keys a video container leg carries — only for the kinds whose
+ * container can hold a second stream (`muxingKindCarriesAudio`, the one
+ * definition the packaging form and its reconciler read too).
+ */
 function carriedAudioKeysOf(
 	leg: WizardMuxing,
 	audioKeySet: ReadonlySet<string>,
 ): string[] {
-	const legKind = leg.kind ?? "FMP4";
-	if (legKind !== "TS" && legKind !== "MP4") {
+	if (!muxingKindCarriesAudio(leg.kind ?? "FMP4")) {
 		return [];
 	}
 	return (leg.muxedAudioKeys ?? []).filter((key) => audioKeySet.has(key));
@@ -1494,6 +1531,7 @@ export function wizardUsesCodecEncodingMode(
 	);
 }
 export function buildPlan(state: WizardState): EncodingPlanInput {
+	if (state.inputTimeline) return buildPlan(applyVodInputTimeline(state));
 	if (hasInvalidHevcV2Ladder(state)) throw new WizardCodecError();
 	const hevcV2 = state.videos.some((video) => video.codec === "H265V2");
 	const internal = hevcV2 ? state.internal : undefined;
@@ -1691,8 +1729,11 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	const useVideoIngest =
 		state.videos.some((v) => usesImplicit(v.extras, "video")) ||
 		wrappedSourceKeys.has("video");
+	// A QC-only encode emits no audio rendition (below), so none reads the implicit
+	// audio track: left in, the plan would ask for a track of the source that nothing
+	// encodes, and would not load back into the form that built it.
 	const useAudioIngest =
-		state.audios.some((a) => usesImplicit(a.extras, "audio")) ||
+		(!qcOnly && state.audios.some((a) => usesImplicit(a.extras, "audio"))) ||
 		wrappedSourceKeys.has("audio");
 	// Separate A/V: the implicit audio may read a different input file than the
 	// video; absent audioInputFile = the same primary object.
@@ -2037,7 +2078,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 	 * videoA←audioA, videoB←audioB, videoC←audioA, videoD←nothing. The owner
 	 * rejected it on exactly that case.
 	 */
-	const audioKeySet = new Set(aKeys);
+	// A QC-only encode emits no audio rendition (below), so no container has one
+	// to carry: a key left on a video leg would name a stream the plan lacks.
+	const audioKeySet = new Set(qcOnly ? [] : aKeys);
 	/**
 	 * What this leg will ACTUALLY carry — the same two conditions `muxingFor`
 	 * applies when it writes `additionalStreamKeys`.
@@ -2077,8 +2120,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		muxing: WizardMuxing | undefined,
 		legacyFmp4: boolean,
 		/**
-		 * Audio renditions muxed INTO this container . Only TS and
-		 * MP4 accept them — the plan schema carries the field on those two only,
+		 * Audio renditions muxed INTO this container . Only the
+		 * kinds `muxingKindCarriesAudio` names accept them (TS, MP4 and the three
+		 * whole-file kinds) — the plan schema carries the field on those only,
 		 * so passing it anywhere else could not compile even if this builder
 		 * tried. Empty is normalised to absent because the schema refuses an
 		 * empty list: there is no half-muxed container.
@@ -2131,6 +2175,53 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				segmentNaming: str(m.segmentNaming),
 				segmentNamingTemplate: str(m.segmentNamingTemplate),
 				destination: dest,
+				name,
+			});
+		}
+		if (
+			kind === "PROGRESSIVE_TS" ||
+			kind === "PROGRESSIVE_MOV" ||
+			kind === "PROGRESSIVE_WEBM"
+		) {
+			// One whole file. The destination is REQUIRED by the schema — these
+			// kinds have no DRM-owned output path — so it is written even when a
+			// DRM row names this muxing; the validator then refuses that row
+			// (PLAN_DRM_MUXING_MISMATCH) instead of the plan failing to parse on
+			// a missing destination, which would say nothing about the cause.
+			const fileDestination = dest ?? destination(`${base}${derived}`, m.acl);
+			const additionalStreamKeys =
+				muxedIn && muxedIn.length > 0 ? [...muxedIn] : undefined;
+			if (kind === "PROGRESSIVE_TS") {
+				return prune({
+					key: muxKey,
+					kind: "PROGRESSIVE_TS" as const,
+					streamKey: key,
+					additionalStreamKeys,
+					filename: m.filename || "output.ts",
+					segmentLength: m.segmentLength,
+					startOffset: m.startOffset,
+					destination: fileDestination,
+					name,
+				});
+			}
+			if (kind === "PROGRESSIVE_WEBM") {
+				return prune({
+					key: muxKey,
+					kind: "PROGRESSIVE_WEBM" as const,
+					streamKey: key,
+					additionalStreamKeys,
+					filename: m.filename || "output.webm",
+					destination: fileDestination,
+					name,
+				});
+			}
+			return prune({
+				key: muxKey,
+				kind: "PROGRESSIVE_MOV" as const,
+				streamKey: key,
+				additionalStreamKeys,
+				filename: m.filename || "output.mov",
+				destination: fileDestination,
 				name,
 			});
 		}
@@ -2476,6 +2567,9 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				: {}),
 		},
 		inputs: inputDecls(),
+		...(state.inputTimelinePreparation
+			? { inputTimelinePreparation: state.inputTimelinePreparation }
+			: {}),
 		outputs: outputDecls(),
 		...(state.additionalOutputs.length > 0
 			? {
@@ -2802,6 +2896,11 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 						// QC-only: emit `only: true` (and the spreads above cleared
 						// manifests/thumbnails/sprites/drm/keyframes). Absent otherwise.
 						only: qcOnly ? true : undefined,
+						// "" is the base output path itself, so only absence is left out.
+						mirrorPath:
+							state.qc.mirrorPath === undefined
+								? undefined
+								: `${base}${state.qc.mirrorPath}`,
 						// QC gate : VERBATIM — the editor produces the
 						// schema shape and the preview's validator rails a bad one
 						// loudly (the infrastructure precedent); pruning would swallow
@@ -2815,8 +2914,11 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 		// encoding). Emitted VERBATIM whenever the section is on: a half-filled
 		// form must reach the schema and fail loudly in the preview (the
 		// `infrastructure` precedent above) instead of being quietly pruned.
-		// Absent state ⇒ no key at all, so the goldens stay byte-identical.
-		...(state.kantar
+		// Absent state ⇒ no key at all, so the goldens stay byte-identical. A QC-only
+		// encode emits no audio rendition, and Kantar marks audio and nothing else:
+		// the block would be refused for the audio it lacks (PLAN_KANTAR_NEEDS_AUDIO),
+		// in words that ask for a track the form already has.
+		...(state.kantar && !qcOnly
 			? {
 					kantar: {
 						credentialId: state.kantar.credentialId,

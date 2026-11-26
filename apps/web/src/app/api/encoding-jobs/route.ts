@@ -48,6 +48,7 @@ import {
 	verificationKeyPairComplete,
 	verificationReplay,
 } from "@/lib/server/verification-key";
+import { validateVodInputPreparation } from "@/lib/server/vod-input-preparation";
 
 /**
  * `presetId`+`presetRevision`: template provenance from the
@@ -329,6 +330,7 @@ export async function POST(req: Request) {
 			}
 		}
 		const outcome = await submitEncodingJob(body.data.plan, {
+			validateInputPreparation: validateVodInputPreparation,
 			internalHevcV2AccountId: process.env.BITOVP_INTERNAL_HEVC_V2_ACCOUNT_ID,
 			//  (review-265 131-A2): the gate rides the SHARED
 			// submit path now, so every door obeys it — this route, re-run,

@@ -214,7 +214,7 @@ export function PrewarmedPoolsPanel({
 											<Badge
 												tone={pool.status === "STARTED" ? "ok" : "neutral"}
 											>
-												{pool.status ?? "UNKNOWN"}
+												{pool.status ?? "—"}
 											</Badge>
 											{pool.dynamicPool ? (
 												<Badge>{t("settingsForms.dynamic10")}</Badge>

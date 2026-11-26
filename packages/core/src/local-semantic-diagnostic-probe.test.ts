@@ -4,6 +4,7 @@ import {
 	LOCAL_SEMANTIC_MODEL_DIGEST,
 	LOCAL_SEMANTIC_RUNTIME_VERSION,
 } from "./content-editing/local-semantic-protocol";
+import { summarizeClipEditingAvailability } from "./content-editing/local-semantic-readiness";
 import { localSemanticStageRegistry } from "./content-editing/local-semantic-stages";
 import { localSemanticCombinedStageRegistry } from "./content-editing/local-story-flow-stages";
 import * as probe from "./local-semantic-diagnostic-probe";
@@ -51,6 +52,172 @@ const reader = (value = health()) =>
 	vi.fn(async (_config: unknown, path: string) =>
 		path === "/health" ? value : readiness,
 	);
+
+describe("passive GPU device-access metadata", () => {
+	it.each([
+		["nvidia", "CUDA"],
+		["amd", "ROCm"],
+	] as const)("accepts fresh %s access without claiming native discovery", async (profile, backend) => {
+		const observedAt = Date.now() - 1_000;
+		const read = vi.fn(async (_config: unknown, path: string) =>
+			path === "/health"
+				? health()
+				: {
+						...readiness,
+						profile,
+						gpu: {
+							...readiness.gpu,
+							method: "PASSIVE_DEVICE_ACCESS",
+							profile,
+							backend,
+							observedAt,
+						},
+					},
+		);
+		const result = await probe.probeLocalClipGateway(
+			{ ...config, profile },
+			read,
+		);
+		expect(result).toEqual({
+			scope: "METADATA_ONLY",
+			code: "READY",
+			gpuObservedAt: observedAt,
+			authorizedOrganizationId: organizationId,
+		});
+		expect(read.mock.calls.map((call) => call[1])).toEqual([
+			"/health",
+			`/readiness/${profile}`,
+		]);
+		const hash = "a".repeat(64);
+		const heartbeat = {
+			version: "local-semantic-worker-v1",
+			connectionHash: hash,
+			instanceId: config.configId,
+			profile,
+			state: "READY",
+			observedAt: Date.now(),
+			clipAvailability: {
+				version: "local-clip-availability-v2",
+				checkedAt: result.gpuObservedAt,
+				code: result.code,
+				authorizedOrganizationId: result.authorizedOrganizationId,
+			},
+		};
+		expect(
+			summarizeClipEditingAvailability(
+				[heartbeat],
+				hash,
+				profile,
+				Date.now(),
+				organizationId,
+			),
+		).toBe(true);
+		expect(
+			summarizeClipEditingAvailability(
+				[heartbeat],
+				hash,
+				profile,
+				Date.now(),
+				"33333333-3333-4333-8333-333333333333",
+			),
+		).toBe(false);
+		expect(
+			summarizeClipEditingAvailability(
+				[heartbeat],
+				hash,
+				profile,
+				observedAt + 15_001,
+				organizationId,
+			),
+		).toBe(false);
+	});
+
+	it.each([
+		["missing proof", undefined, "GPU_UNVERIFIED"],
+		["another profile", { profile: "amd" }, "GPU_UNVERIFIED"],
+		["another backend", { backend: "ROCm" }, "GPU_UNVERIFIED"],
+		["old observation", { observedAt: 84_999 }, "GPU_UNVERIFIED"],
+		["future observation", { observedAt: 105_001 }, "GPU_UNVERIFIED"],
+		["unknown method", { method: "CACHED_NATIVE_RESULT" }, "INVALID_RESPONSE"],
+		["CPU backend", { backend: "CPU" }, "INVALID_RESPONSE"],
+	] as const)("rejects passive %s without upgrading its evidence", async (_label, changes, code) => {
+		const clock = vi.spyOn(Date, "now").mockReturnValue(100_000);
+		try {
+			const read = vi.fn(async (_config: unknown, path: string) =>
+				path === "/health"
+					? health()
+					: {
+							...readiness,
+							gpu:
+								changes === undefined
+									? undefined
+									: {
+											...readiness.gpu,
+											method: "PASSIVE_DEVICE_ACCESS",
+											observedAt: 100_000,
+											...changes,
+										},
+						},
+			);
+			await expect(probe.probeLocalClipGateway(config, read)).resolves.toEqual({
+				scope: "METADATA_ONLY",
+				code,
+				gpuObservedAt: undefined,
+				authorizedOrganizationId: undefined,
+			});
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
+	it.each([
+		undefined,
+		"not-a-tenant",
+	])("rejects passive readiness with invalid tenant %s", async (organizationId) => {
+		const read = vi.fn(async (_config: unknown, path: string) =>
+			path === "/health"
+				? health()
+				: {
+						...readiness,
+						organizationId,
+						gpu: {
+							...readiness.gpu,
+							method: "PASSIVE_DEVICE_ACCESS",
+							observedAt: Date.now(),
+						},
+					},
+		);
+		await expect(probe.probeLocalClipGateway(config, read)).resolves.toEqual({
+			scope: "METADATA_ONLY",
+			code: "INVALID_RESPONSE",
+			gpuObservedAt: undefined,
+			authorizedOrganizationId: undefined,
+		});
+	});
+
+	it("does not publish passive success from a GPU_UNVERIFIED response", async () => {
+		const read = vi.fn(async (_config: unknown, path: string) =>
+			path === "/health"
+				? health()
+				: {
+						...readiness,
+						ready: false,
+						code: "GPU_UNVERIFIED",
+						gpu: {
+							...readiness.gpu,
+							method: "PASSIVE_DEVICE_ACCESS",
+							observedAt: Date.now(),
+						},
+					},
+		);
+		await expect(probe.probeLocalClipGateway(config, read)).resolves.toEqual({
+			scope: "METADATA_ONLY",
+			code: "GPU_UNVERIFIED",
+			gpuObservedAt: undefined,
+			authorizedOrganizationId: undefined,
+		});
+	});
+});
 
 describe("FLOW exact six-stage metadata probe", () => {
 	it("attests the token-authorized organization only from authenticated readiness metadata", async () => {

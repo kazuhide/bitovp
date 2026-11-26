@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, routeError } from "@/lib/server/http";
+import { publicMoqListErrors } from "@/lib/server/moq-public-history";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -22,7 +23,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 	}
 	try {
 		const ctx = await getServerContext();
-		const runs = await ctx.prisma.liveChannelRun.findMany({
+		const storedRuns = await ctx.prisma.liveChannelRun.findMany({
 			where: { liveChannelId: id },
 			orderBy: { seq: "desc" },
 			take: 100,
@@ -45,6 +46,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 				createdAt: true,
 			},
 		});
+		const runs = await publicMoqListErrors(ctx.prisma, "run", storedRuns);
 		return NextResponse.json(
 			{
 				runs: aisaLiveAccessAllowed(ctx.tenant)

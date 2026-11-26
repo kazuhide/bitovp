@@ -1,5 +1,10 @@
 import "server-only";
-import { localVmafExecutionOf } from "@bitovp/core";
+import {
+	hdrMeasurementOf,
+	localVmafExecutionOf,
+	publicHlsQcEvidenceOf,
+	referencePreparationOf,
+} from "@bitovp/core";
 import { type RenditionRef, renditionLabel } from "@/app/qc/vmaf-shared";
 import { hasBanding, isBandingOnly } from "@/lib/qc-kind";
 import {
@@ -40,8 +45,11 @@ async function* fragments(
 ): AsyncGenerator<string> {
 	const bandingOnly = isBandingOnly(job.params);
 	const banding = hasBanding(job.params);
+	const hdr =
+		!bandingOnly &&
+		job.results.some((result) => hdrMeasurementOf(result.provenance));
 	if (format === "csv")
-		yield `rendition,frameNum,vmaf,psnr${banding ? ",timestampSeconds,durationSeconds,cambi,computedCambi,cpu_reference_cambi,metric" : ""}`;
+		yield `rendition,frameNum,vmaf,psnr${banding ? ",timestampSeconds,durationSeconds,cambi,computedCambi,cpu_reference_cambi,metric" : ""}${hdr ? ",hdrMethod,hdrComparison,hdrReferenceTransfer,hdrDistortedTransfer,hlgDisplayPeakNits,modelSha256" : ""}`;
 	else
 		yield `${JSON.stringify({ vmafJobId: job.id, model: bandingOnly ? null : job.model, ...(bandingOnly ? { kind: "BANDING", detector: "CAMBI" } : banding ? { banding: true } : {}) }, null, 2).slice(0, -2)},\n  "renditions": [`;
 	for (const [index, result] of job.results.entries()) {
@@ -51,19 +59,28 @@ async function* fragments(
 		const ref = result.renditionRef as RenditionRef;
 		const label = renditionLabel(ref, index);
 		const csvLabel = format === "csv" ? csvCell(label) : "";
+		const hdrMeasurement = !bandingOnly && hdrMeasurementOf(result.provenance);
+		const hlsSource = publicHlsQcEvidenceOf(result.provenance);
+		const hdrCells = hdr
+			? hdrMeasurement
+				? `,${hdrMeasurement.method},${hdrMeasurement.comparison},${hdrMeasurement.reference.transfer},${hdrMeasurement.distorted.transfer},${hdrMeasurement.hlgReferenceDisplay?.peakNits ?? ""},${hdrMeasurement.modelSha256}`
+				: ",,,,,,"
+			: "";
 		if (format === "json") {
 			const localExecution =
 				!bandingOnly && localVmafExecutionOf(result.provenance);
+			const referencePreparation =
+				!bandingOnly && referencePreparationOf(result.provenance);
 			const bandingExecution = banding && bandingExecutionOf(result.provenance);
 			const pooled = banding && bandingPooledOf(result.pooled);
 			const assessment = banding && bandingAssessmentOf(result.pooled);
-			yield `${index ? ",\n" : "\n"}${indent({ id: result.id, label, renditionRef: ref, ...(localExecution ? { localExecution } : {}), ...(bandingExecution ? { bandingExecution } : {}), ...(pooled ? { banding: pooled } : {}), ...(assessment ? { bandingAssessment: assessment } : {}) }, 4).slice(0, -6)},\n      "${bandingOnly ? "bandingFrames" : "frames"}": [`;
+			yield `${index ? ",\n" : "\n"}${indent({ id: result.id, label, renditionRef: ref, ...(localExecution ? { localExecution } : {}), ...(referencePreparation ? { referencePreparation } : {}), ...(hdrMeasurement ? { hdrMeasurement } : {}), ...(hlsSource ? { hlsSource } : {}), ...(bandingExecution ? { bandingExecution } : {}), ...(pooled ? { banding: pooled } : {}), ...(assessment ? { bandingAssessment: assessment } : {}) }, 4).slice(0, -6)},\n      "${bandingOnly ? "bandingFrames" : "frames"}": [`;
 		}
 		let first = true;
 		if (blob && !bandingOnly)
 			for await (const frame of iterateFrames(blob, signal)) {
 				if (format === "csv")
-					yield `\n${csvLabel},${frame.frameNum},${frame.vmaf},${typeof frame.psnr === "number" ? frame.psnr : ""}${banding ? ",,,,,,VMAF" : ""}`;
+					yield `\n${csvLabel},${frame.frameNum},${frame.vmaf},${typeof frame.psnr === "number" ? frame.psnr : ""}${banding ? ",,,,,,VMAF" : ""}${hdrCells}`;
 				else yield `${first ? "\n" : ",\n"}${indent(frame, 8)}`;
 				first = false;
 			}
@@ -74,7 +91,7 @@ async function* fragments(
 			if (blob)
 				for await (const frame of iterateBandingFrames(blob, signal)) {
 					if (format === "csv")
-						yield `\n${csvLabel},${frame.frameNum},,,${frame.timestampSeconds},${frame.durationSeconds},${frame.cambi},${frame.computedCambi ?? ""},${frame.cpuReferenceCambi ?? ""},CAMBI`;
+						yield `\n${csvLabel},${frame.frameNum},,,${frame.timestampSeconds},${frame.durationSeconds},${frame.cambi},${frame.computedCambi ?? ""},${frame.cpuReferenceCambi ?? ""},CAMBI${hdrCells}`;
 					else yield `${first ? "\n" : ",\n"}${indent(frame, 8)}`;
 					first = false;
 				}

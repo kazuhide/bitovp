@@ -1,0 +1,41 @@
+{
+	"schemaVersion": 1,
+	"kind": "schemas",
+	"items": [
+		[
+			"models/XmlNamespace.d.ts#XmlNamespace",
+			{
+				"kind": "object",
+				"sdkEvidence": { "file": "models/XmlNamespace.d.ts", "line": 5 },
+				"properties": [
+					{
+						"name": "prefix",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/XmlNamespace.d.ts", "line": 11 },
+						"documentation": "Name of the XML Namespace reference (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "XmlNamespace" }
+						]
+					},
+					{
+						"name": "uri",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": { "file": "models/XmlNamespace.d.ts", "line": 17 },
+						"documentation": "Source of the XML Namespace reference (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "XmlNamespace" }
+						]
+					}
+				]
+			}
+		]
+	]
+}

@@ -12,27 +12,28 @@ import {
 	tenantSystemSweepSchema,
 	usageBackfillJobSchema,
 	vmafJobSchema,
+	vodInputPreviewJobSchema,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { DelayedError, type Job } from "bullmq";
+import { systemSweeps } from "../system-sweeps";
 import {
 	admitInactiveOrganization,
 	INACTIVE_ORGANIZATION_ERROR,
 } from "./admission";
 import { runInOrganization } from "./scope";
 
-const sweeps = {
-	liveChannel: {
-		name: "heartbeat-sweep",
-		id: "live-heartbeat-sweep",
-		marker: "heartbeat",
-	},
-	slateNormalize: {
-		name: "slate-normalize-promote",
-		id: "slate-normalize-promote",
-		marker: "slate",
-	},
-} as const;
+export function isTenantSystemSweep(key: QueueKey, job: Job): boolean {
+	const sweep =
+		key === "liveChannel" || key === "slateNormalize"
+			? systemSweeps[key]
+			: undefined;
+	if (!sweep || job.name !== sweep.name || job.repeatJobKey !== sweep.id) {
+		return false;
+	}
+	const marker = tenantSystemSweepSchema.safeParse(job.data);
+	return marker.success && marker.data.systemSweep === sweep.marker;
+}
 
 type TenantConsumerDeps = {
 	prisma: AppPrismaClient;
@@ -153,6 +154,13 @@ export async function assertTenantJobOwned(
 				slateNormalizeJobSchema.parse(payload).slateNormalizationId,
 			);
 			return;
+		case "vodInputPreview":
+			await assertOwned(
+				prisma,
+				"vodInputPreviewTask",
+				vodInputPreviewJobSchema.parse(payload).taskId,
+			);
+			return;
 		case "usageStatistics":
 			await assertOwned(
 				prisma,
@@ -198,18 +206,7 @@ export function createTenantConsumer(deps: TenantConsumerDeps) {
 		options?: { reserveFeederStopSlot?: boolean; enforceActive?: boolean },
 	) =>
 		async (job: Job): Promise<T | undefined> => {
-			const sweep =
-				key === "liveChannel" || key === "slateNormalize"
-					? sweeps[key]
-					: undefined;
-			const marker = tenantSystemSweepSchema.safeParse(job.data);
-			if (
-				sweep &&
-				job.name === sweep.name &&
-				job.repeatJobKey === sweep.id &&
-				marker.success &&
-				marker.data.systemSweep === sweep.marker
-			) {
+			if (isTenantSystemSweep(key, job)) {
 				await deps.forEachOrganization(() => handler(unwrappedJob(job, {})));
 				return;
 			}

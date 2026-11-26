@@ -88,6 +88,10 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		method: "POST",
 		template: "/encoding/outputs/live-media-ingest",
 	},
+	CREATE_OUTPUT_MOQ: {
+		method: "POST",
+		template: "/encoding/outputs/moq",
+	},
 	CREATE_OUTPUT_AKAMAI_MSL: {
 		method: "POST",
 		template: "/encoding/outputs/akamai-msl",
@@ -310,6 +314,14 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 	CREATE_MUXING_PROGRESSIVE_WEBM: {
 		method: "POST",
 		template: "/encoding/encodings/:encodingId/muxings/progressive-webm",
+	},
+	CREATE_MUXING_PROGRESSIVE_TS: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/muxings/progressive-ts",
+	},
+	CREATE_MUXING_PROGRESSIVE_MOV: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/muxings/progressive-mov",
 	},
 	CREATE_MUXING_TS: {
 		method: "POST",

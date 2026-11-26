@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { AppPrismaClient } from "@bitovp/db";
 import { jsonError } from "./http";
 
-export type CreateRequestKind = "VOD_JOB" | "LIVE_CHANNEL";
+export type CreateRequestKind = "VOD_JOB" | "LIVE_CHANNEL" | "LIBRARY_EDIT";
 export type CreateRequestIdentity = {
 	requestKey: string;
 	requestSha256: string;

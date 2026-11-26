@@ -1,6 +1,17 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type AppPrismaClient, createPrismaClient } from "./client";
+import {
+	claimExperimentTrial,
+	completeExperimentTrial,
+	controlExperimentCampaign,
+	enqueueExperimentBatch,
+	experimentResultPage,
+	experimentSelectionRows,
+	releaseExperimentTrial,
+	renewExperimentTrial,
+} from "./encoding-experiments";
 import { createTenantPrismaClient } from "./tenant-client";
 
 const adminUrl = process.env.BITOVP_TENANT_TEST_ADMIN_URL;
@@ -65,6 +76,18 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				await admin.credential.deleteMany({
 					where: { organizationId: { in: [orgA, orgB] } },
 				});
+				await admin.operationAttempt.deleteMany({
+					where: { organizationId: { in: [orgA, orgB] } },
+				});
+				await admin.encodingExperimentBatch.deleteMany({
+					where: { organizationId: { in: [orgA, orgB] } },
+				});
+				await admin.encodingExperimentTrial.deleteMany({
+					where: { organizationId: { in: [orgA, orgB] } },
+				});
+				await admin.encodingExperimentCampaign.deleteMany({
+					where: { organizationId: { in: [orgA, orgB] } },
+				});
 				await admin.organization.deleteMany({
 					where: { id: { in: [orgA, orgB] } },
 				});
@@ -93,6 +116,221 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			expect(
 				await a.credential.findUnique({ where: { id: credentialA } }),
 			).not.toHaveProperty("encryptedSecret");
+		});
+
+		it("fences experiment claims, replays idempotent batches and isolates their results", async () => {
+			const ctx = { organizationId: orgA, prisma: a };
+			const foreign = { organizationId: orgB, prisma: b };
+			const capabilityId = "a".repeat(64);
+			const campaign = await a.encodingExperimentCampaign.create({
+				data: { name: "NVENC experiment", capabilityId, runtime: {} },
+			});
+			const trial = {
+				trialKey: "b".repeat(64),
+				sourceSha256: "c".repeat(64),
+				input: {
+					sourceId: "fixture",
+					codec: "H264",
+					window: {
+						timeBase: { num: 1, den: 90_000 },
+						startPts: "90000",
+						endPtsExclusive: "180000",
+					},
+					sdk: {
+						version: "13.0",
+						pictures: [
+							{
+								frameIndex: 0,
+								metadata: Array.from({ length: 7 }, () => ({
+									type: 5,
+									payload: "ab".repeat(16_384),
+								})),
+							},
+						],
+					},
+				},
+			};
+			const create = async () => [trial, trial];
+			const first = await enqueueExperimentBatch(
+				ctx,
+				campaign.id,
+				"key",
+				capabilityId,
+				create,
+			);
+			const replay = await enqueueExperimentBatch(
+				ctx,
+				campaign.id,
+				"key",
+				capabilityId,
+				async () => {
+					throw new Error("A replay must not need the current worker");
+				},
+			);
+			expect(replay).toEqual(first);
+			expect(first.items[0]?.id).toEqual(first.items[1]?.id);
+			expect(
+				await experimentSelectionRows(ctx, campaign.id, "fixture", "30", "60"),
+			).toEqual([
+				{
+					id: first.items[0]?.id,
+					codec: "H264",
+					result: null,
+					status: "PENDING",
+					sourceSha256: trial.sourceSha256,
+				},
+			]);
+			expect(
+				await experimentSelectionRows(ctx, campaign.id, "fixture", "30", "61"),
+			).toEqual([]);
+			expect(
+				await experimentSelectionRows(ctx, campaign.id, "other", "30", "60"),
+			).toEqual([]);
+			expect(
+				await experimentSelectionRows(
+					foreign,
+					campaign.id,
+					"fixture",
+					"30",
+					"60",
+				),
+			).toEqual([]);
+			await expect(
+				enqueueExperimentBatch(ctx, campaign.id, "key", "e".repeat(64), create),
+			).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
+			expect(await b.encodingExperimentCampaign.count()).toBe(0);
+			await expect(
+				experimentResultPage(foreign, campaign.id),
+			).rejects.toMatchObject({
+				status: 404,
+			});
+			const expire = async (id: string) => {
+				await a.$executeRaw`UPDATE "EncodingExperimentTrial"
+					SET "leaseUntil" = (clock_timestamp() AT TIME ZONE 'UTC') - INTERVAL '1 second'
+					WHERE "id" = ${id}::uuid`;
+			};
+			const claimed = await claimExperimentTrial(ctx, capabilityId, 30_000);
+			if (!claimed) throw new Error("First claim was not acquired");
+			expect(claimed.attempt).toBe(1);
+			expect(await renewExperimentTrial(ctx, claimed, 30_000)).toBe(true);
+			expect(await claimExperimentTrial(ctx, capabilityId, 30_000)).toBeNull();
+			await expire(claimed.id);
+			expect(await renewExperimentTrial(ctx, claimed, 30_000)).toBe(false);
+			expect(await releaseExperimentTrial(ctx, claimed)).toBe(false);
+			const retry = await claimExperimentTrial(ctx, capabilityId, 30_000);
+			if (!retry) throw new Error("Expired claim was not recovered");
+			expect(retry.attempt).toBe(2);
+			expect(
+				await completeExperimentTrial(ctx, claimed, {
+					failureCode: "STALE",
+				}),
+			).toBe(false);
+			let live = retry;
+			for (let attempt = 3; attempt <= 6; attempt++) {
+				expect(await releaseExperimentTrial(ctx, live)).toBe(true);
+				expect(
+					await completeExperimentTrial(ctx, live, {
+						failureCode: "RELEASED",
+					}),
+				).toBe(false);
+				const next = await claimExperimentTrial(ctx, capabilityId, 30_000);
+				if (!next) throw new Error("GPU contention exhausted the lease budget");
+				expect(next.attempt).toBe(attempt);
+				expect(next.expiredClaims).toBe(1);
+				live = next;
+			}
+			await controlExperimentCampaign(ctx, campaign.id, "cancel");
+			expect(await releaseExperimentTrial(ctx, live)).toBe(false);
+			expect(
+				await completeExperimentTrial(ctx, live, {
+					failureCode: "STALE",
+				}),
+			).toBe(false);
+			expect(await experimentResultPage(ctx, campaign.id)).toMatchObject({
+				items: [{ status: "CANCELED", resultSequence: 1 }],
+				nextCursor: null,
+				snapshot: 1,
+			});
+			expect(
+				await experimentSelectionRows(ctx, campaign.id, "fixture", "30", "60"),
+			).toEqual([
+				{
+					id: first.items[0]?.id,
+					codec: "H264",
+					result: null,
+					status: "CANCELED",
+					sourceSha256: trial.sourceSha256,
+				},
+			]);
+			const exhausted = await a.encodingExperimentCampaign.create({
+				data: { name: "Expired leases", capabilityId, runtime: {} },
+			});
+			await enqueueExperimentBatch(
+				ctx,
+				exhausted.id,
+				"expired",
+				capabilityId,
+				create,
+			);
+			const lease = 1_000;
+			const firstLease = await claimExperimentTrial(ctx, capabilityId, lease);
+			if (!firstLease) throw new Error("Expected a live claim");
+			let ready!: () => void;
+			let unblock!: () => void;
+			const locked = new Promise<void>((resolve) => {
+				ready = resolve;
+			});
+			const release = new Promise<void>((resolve) => {
+				unblock = resolve;
+			});
+			const locker = a.$transaction(async (tx) => {
+				await tx.$queryRaw`SELECT "id" FROM "EncodingExperimentCampaign"
+					WHERE "id" = ${exhausted.id}::uuid FOR UPDATE`;
+				ready();
+				await release;
+			});
+			await Promise.race([locked, locker]);
+			try {
+				const waited = completeExperimentTrial(ctx, firstLease, {
+					failureCode: "TOO_LATE",
+				});
+				await sleep(lease + 20);
+				unblock();
+				expect(await waited).toBe(false);
+			} finally {
+				unblock();
+				await locker;
+			}
+			for (let attempt = 2; attempt <= 3; attempt++) {
+				const next = await claimExperimentTrial(ctx, capabilityId, 30_000);
+				if (!next) throw new Error("Expected an expired lease retry");
+				expect(next).toMatchObject({ attempt, expiredClaims: attempt - 1 });
+				await expire(next.id);
+			}
+			expect(await claimExperimentTrial(ctx, capabilityId, 30_000)).toBeNull();
+			expect(await experimentResultPage(ctx, exhausted.id)).toMatchObject({
+				items: [{ status: "FAILED", failureCode: "WORKER_LEASE_EXPIRED" }],
+			});
+			const receipt = { scoreMilli: 90123 };
+			await enqueueExperimentBatch(
+				ctx,
+				exhausted.id,
+				"finish",
+				capabilityId,
+				async () => [{ ...trial, trialKey: "d".repeat(64) }],
+			);
+			const finishing = await claimExperimentTrial(ctx, capabilityId, 30_000);
+			if (!finishing) throw new Error("Expected a fresh claim");
+			expect(
+				await completeExperimentTrial(ctx, finishing, { result: receipt }),
+			).toBe(true);
+			expect(await experimentResultPage(ctx, exhausted.id)).toMatchObject({
+				items: [
+					{ status: "FAILED", resultSequence: 1 },
+					{ status: "SUCCEEDED", resultSequence: 2, result: receipt },
+				],
+				snapshot: 2,
+			});
 		});
 
 		it("refuses global SQL, projections and nested identity writes before reaching PostgreSQL", async () => {
@@ -202,6 +440,90 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			});
 			expect(retained.bitmovinAccountId).toBeNull();
 			expect(retained.organizationId).toBe(orgA);
+		});
+
+		it("isolates operation attempts and keeps their organization immutable", async () => {
+			const id = randomUUID();
+			const ownerDigest = "a".repeat(64);
+			const data = { id, operation: "LIVE_MOQ_PLAYBACK" as const, ownerDigest };
+			const attempt = await app.$transaction(async (tx) => {
+				await tx.$queryRaw`SELECT set_config('TimeZone', 'Asia/Tokyo', true)`;
+				await tx.$queryRaw`SELECT set_config('bitovp.organization_id', ${orgA}, true)`;
+				const [clock] = await tx.$queryRaw<
+					{ utc: Date }[]
+				>`SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::timestamp(3) AS utc`;
+				await tx.$executeRaw`
+					INSERT INTO "OperationAttempt" (id, operation, "ownerDigest")
+					VALUES (${id}::uuid, 'LIVE_MOQ_PLAYBACK', ${ownerDigest})
+				`;
+				const row = await tx.operationAttempt.findUniqueOrThrow({
+					where: { organizationId_id: { organizationId: orgA, id } },
+				});
+				expect(row.startedAt).toEqual(clock?.utc);
+				return row;
+			});
+			expect(attempt).toMatchObject({
+				organizationId: orgA,
+				startedAt: expect.any(Date),
+				outcome: null,
+				elapsedMs: null,
+			});
+			expect(
+				await b.operationAttempt.updateMany({
+					where: { id },
+					data: { outcome: "FIRST_FRAME", elapsedMs: 500 },
+				}),
+			).toEqual({ count: 0 });
+			await b.operationAttempt.create({
+				data: { ...data, ownerDigest: "b".repeat(64) },
+			});
+			expect(await a.operationAttempt.findMany({ where: { id } })).toEqual([
+				attempt,
+			]);
+			expect(await app.$queryRaw`SELECT id FROM "OperationAttempt"`).toEqual(
+				[],
+			);
+			await expect(a.$executeRaw`
+				INSERT INTO "OperationAttempt" ("organizationId", id, operation, "ownerDigest")
+				VALUES (${orgB}::uuid, ${randomUUID()}::uuid, 'LIVE_MOQ_PLAYBACK', ${ownerDigest})
+			`).rejects.toThrow(/row-level security/i);
+			await expect(a.$executeRaw`
+				UPDATE "OperationAttempt" SET "organizationId" = ${orgB}::uuid WHERE id = ${id}::uuid
+			`).rejects.toThrow(/Organization ownership is immutable/);
+		});
+
+		it("enforces the operation digest and paired terminal result at the database", async () => {
+			const id = randomUUID();
+			const ownerDigest = "a".repeat(64);
+			const insert = (digest: string) => a.$executeRaw`
+				INSERT INTO "OperationAttempt" (id, operation, "ownerDigest")
+				VALUES (${id}::uuid, 'LIVE_MOQ_PLAYBACK', ${digest})
+			`;
+			for (const digest of ["a".repeat(63), "A".repeat(64), "z".repeat(64)]) {
+				await expect(insert(digest)).rejects.toThrow(
+					/OperationAttempt_ownerDigest_format/,
+				);
+			}
+			await insert(ownerDigest);
+			const complete = (
+				outcome: "FIRST_FRAME" | null,
+				elapsedMs: number | null,
+			) => a.$executeRaw`
+				UPDATE "OperationAttempt" SET outcome = ${outcome}::"OperationOutcome", "elapsedMs" = ${elapsedMs}::integer
+				WHERE id = ${id}::uuid
+			`;
+			for (const [outcome, elapsed] of [
+				["FIRST_FRAME", null],
+				[null, 10],
+				["FIRST_FRAME", -1],
+				["FIRST_FRAME", 600001],
+			] as const) {
+				await expect(complete(outcome, elapsed)).rejects.toThrow(
+					/OperationAttempt_terminal_result/,
+				);
+			}
+			await expect(complete("FIRST_FRAME", 0)).resolves.toBe(1);
+			await expect(complete("FIRST_FRAME", 600000)).resolves.toBe(1);
 		});
 
 		it("does not leak scope between simultaneous pooled transactions and enforces read-only raw SQL", async () => {

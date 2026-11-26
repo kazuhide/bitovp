@@ -214,6 +214,92 @@ it("keeps an unresolved output editable as the exact imported JSON", async () =>
 	);
 });
 
+it("keeps a valid MoQ plan with a relay-root path submittable through expert JSON", async () => {
+	const raw = plan();
+	const credentialId = "00000000-0000-4000-8000-000000000002";
+	raw.outputs = [
+		{
+			key: "relay",
+			kind: "MOQ",
+			credentialId,
+			name: "MoQ relay",
+			trackNamespace: ["interop", "event-20261117"],
+			draftVersion: "DRAFT_18",
+		},
+	];
+	raw.liveManifests = [];
+	raw.start.encodingOption = "CUSTOM";
+	raw.muxings = raw.muxings.map(
+		(muxing: { destination: object }, index: number) => ({
+			...muxing,
+			segmentLength: 1,
+			destination: {
+				...muxing.destination,
+				...(index === 0 ? { path: "" } : {}),
+				outputKey: "relay",
+			},
+		}),
+	);
+	expect(liveChannelPlanSchema.safeParse(raw).success).toBe(true);
+	let finishCheck!: (value: unknown) => void;
+	const check = new Promise((resolve) => {
+		finishCheck = resolve;
+	});
+	apiFetch.mockImplementation(async (url: string) => {
+		if (url.startsWith("/api/live-channels/moq-readiness?")) return check;
+		if (url === "/api/auth/session") return operatorSession;
+		if (url === "/api/credentials")
+			return [{ id: credentialId, provider: "MOQ", label: "MoQ evaluation" }];
+		if (url === "/api/live-channels")
+			return { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee9" };
+		return [];
+	});
+	renderWithQuery(<LiveWizard />);
+	load(raw);
+	expect(screen.queryByRole("textbox", { name: "Channel name" })).toBeNull();
+	const create = await screen.findByRole("button", {
+		name: "Create channel (imported plan)",
+	});
+	expect(create).toBeDisabled();
+	expect(
+		screen.getByText("Checking MoQ preview settings…"),
+	).toBeInTheDocument();
+	const readiness = apiFetch.mock.calls.find(([url]) =>
+		String(url).startsWith("/api/live-channels/moq-readiness?"),
+	);
+	expect(
+		new URL(readiness?.[0], "https://app.example").searchParams.toString(),
+	).toBe(
+		new URLSearchParams({
+			credentialId,
+			draftVersion: "DRAFT_18",
+			namespaceComponents: "2",
+		}).toString(),
+	);
+	expect(apiFetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+		false,
+	);
+	await act(async () => {
+		finishCheck({
+			status: "publisher-only",
+			issues: ["namespace-unsupported"],
+		});
+	});
+	expect(await screen.findByText("Publishing only")).toBeInTheDocument();
+	await waitFor(() => expect(create).toBeEnabled());
+	fireEvent.click(create);
+	await waitFor(() =>
+		expect(push).toHaveBeenCalledWith(
+			"/live/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee9",
+		),
+	);
+	const posts = apiFetch.mock.calls.filter(
+		([url, init]) => url === "/api/live-channels" && init?.method === "POST",
+	);
+	expect(posts).toHaveLength(1);
+	expect(JSON.parse(posts[0]?.[1].body).plan).toEqual(raw);
+});
+
 it.each([
 	"OPUS",
 	"AV1",

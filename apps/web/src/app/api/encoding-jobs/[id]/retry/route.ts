@@ -1,9 +1,16 @@
-import { masterKeyFromEnv, stepLogSchema } from "@bitovp/core";
+import {
+	encodingPlanSchema,
+	masterKeyFromEnv,
+	stepLogSchema,
+	validatePlan,
+} from "@bitovp/core";
 import type { Prisma } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { getServerContext } from "@/lib/server/context";
 import { invalidIdResponse, jsonError, routeError } from "@/lib/server/http";
+import { serverPlanValidationOptions } from "@/lib/server/plan-validation";
 import { getOrchestratorQueue } from "@/lib/server/queue";
+import { validateVodInputPreparation } from "@/lib/server/vod-input-preparation";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -37,6 +44,45 @@ export async function POST(_req: Request, { params }: RouteParams) {
 				409,
 				"Remote STOP was requested; use re-run-as-new instead of reusing these resources",
 			);
+		}
+		// Retained steps resume unchanged. Block the confirmed SMART_PASS conflict
+		// and unqualified paired AV concatenation, without migrating or rejecting
+		// saved jobs for unrelated historical configuration rules.
+		const plan = encodingPlanSchema.safeParse(row.plan);
+		if (plan.success && plan.data.inputTimelinePreparation) {
+			try {
+				await validateVodInputPreparation(plan.data, true);
+			} catch {
+				return jsonError(
+					409,
+					"The prepared timeline is unavailable or changed. Prepare a new input before retrying.",
+					{ code: "INPUT_PREPARATION_INVALID" },
+				);
+			}
+		}
+		if (
+			plan.success &&
+			(plan.data.internal?.hevcV2 || plan.data.concatenationStreams.length > 0)
+		) {
+			const issues = validatePlan(plan.data, serverPlanValidationOptions());
+			const conflict = issues.find(
+				(issue) => issue.code === "PLAN_INTERNAL_HEVC_V2_MULTIPLE_MUXINGS",
+			);
+			if (conflict)
+				return jsonError(
+					409,
+					`Create a corrected new job instead of repeating this saved SMART_PASS muxing conflict. ${conflict.message}`,
+					{ code: conflict.code },
+				);
+			const unqualified = issues.find(
+				(issue) => issue.code === "PLAN_CONCATENATION_AV_UNQUALIFIED",
+			);
+			if (unqualified)
+				return jsonError(
+					409,
+					`Create a corrected new job instead of repeating this saved unqualified AV concatenation. ${unqualified.message}`,
+					{ code: unqualified.code },
+				);
 		}
 		const entries = stepLogSchema
 			.parse(row.stepLog)

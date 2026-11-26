@@ -1,6 +1,6 @@
 import type { ManifestPlaybackLink } from "@bitovp/core";
 import { liveChannelPlanSchema } from "@bitovp/core";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -378,8 +378,7 @@ describe("live channel detail — the §5.7 hierarchy (rows #248/#249)", () => {
 		it(`${phase.name}: renders the layers in order`, async () => {
 			mockChannel(phase.row as Over);
 			const view = wrap(<ChannelDetail id={CHANNEL} />);
-			await screen.findByRole("region", { name: /next action/i });
-			expect(renderedOrder()).toEqual(phase.order);
+			await waitFor(() => expect(renderedOrder()).toEqual(phase.order));
 			const panels = document.querySelectorAll("#sec-delivery-status");
 			expect(panels).toHaveLength(phase.row.status === "CREATED" ? 0 : 1);
 			if (panels[0]) {
@@ -399,11 +398,12 @@ describe("live channel detail — the §5.7 hierarchy (rows #248/#249)", () => {
 		it(`${phase.name}: opens exactly the sections the phase is about`, async () => {
 			mockChannel(phase.row as Over);
 			const view = wrap(<ChannelDetail id={CHANNEL} />);
-			await screen.findByRole("region", { name: /next action/i });
 			// Set equality in BOTH directions: an extra open section is as much
 			// a defect as a missing one — "collapse nothing" is the layout this
 			// replaced, and "collapse everything" is the one before that.
-			expect([...openSections()].sort()).toEqual([...phase.open].sort());
+			await waitFor(() =>
+				expect([...openSections()].sort()).toEqual([...phase.open].sort()),
+			);
 			view.unmount();
 		});
 	}
@@ -415,7 +415,7 @@ describe("live channel detail — the §5.7 hierarchy (rows #248/#249)", () => {
 				<ChannelDetail id={CHANNEL} />
 			</FeatureFlagsProvider>,
 		);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const ids = renderedOrder();
 		expect(ids).toContain("sec-vmaf");
 		// Last of the delivery four, before the diagnostics layer opens.
@@ -465,7 +465,7 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			},
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const cell = document.querySelector('[data-status-cell="next-event"]');
 		expect(cell?.textContent).toBe("Insert slate (SLATE_IN) in 4m · slate 30s");
 		// The header links to the layer that owns the detail — §5.7's rule is a
@@ -482,7 +482,7 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			currentRun: run(),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		// The run came up 90 minutes ago under a 120-minute cap.
 		expect(
 			document.querySelector('[data-status-cell="runtime"]')?.textContent,
@@ -514,11 +514,11 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			}),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByText("Encoder runtime");
 		const cell = document.querySelector('[data-status-cell="runtime"]');
 		// `endedAt − runningSince`: two worker stamps, no viewer clock, so it
 		// reads the same three days later as it did at the stop.
-		expect(cell?.textContent).toBe("ran for 10m");
+		expect(cell?.textContent).toBe("10m");
 		// The pre-fix rendering, named so a regression is recognisable rather
 		// than merely red.
 		expect(cell?.textContent).not.toBe("72h 10m elapsed · cap reached");
@@ -527,7 +527,7 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 		expect(cell?.className).not.toContain("amber");
 	});
 
-	it("a finished run with NO end stamp says None rather than inventing one from the clock", async () => {
+	it("omits elapsed time for a finished run without an end stamp", async () => {
 		// The counterfactual for the arm above: the frozen figure needs a
 		// MEASUREMENT. A legacy row without `endedAt` has none, and the answer
 		// to that is silence, not `now − runningSince` wearing a past tense.
@@ -537,10 +537,8 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			currentRun: run({ status: "STOPPED", endedAt: null }),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
-		expect(
-			document.querySelector('[data-status-cell="runtime"]')?.textContent,
-		).toBe("None");
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
+		expect(document.querySelector('[data-status-cell="runtime"]')).toBeNull();
 	});
 
 	it("an armed row past its fire time reads as OVERDUE, not as 0s away", async () => {
@@ -567,7 +565,7 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			},
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const cell = document.querySelector('[data-status-cell="next-event"]');
 		expect(cell?.textContent).toBe("Stop channel (STOP) overdue by 5m");
 		expect(cell?.className).toContain("amber");
@@ -605,11 +603,14 @@ describe("the operational header carries the two TIME answers (row #248)", () =>
 			}
 			return { items: [] };
 		});
-		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		const { client } = wrap(<ChannelDetail id={CHANNEL} />);
+		await waitFor(() =>
+			expect(client.getQueryState(["live-schedules", CHANNEL])?.status).toBe(
+				"error",
+			),
+		);
 		const cell = document.querySelector('[data-status-cell="next-event"]');
-		expect(cell?.textContent).toBe("could not be read");
-		expect(cell?.textContent).not.toBe("none armed");
+		expect(cell).toBeNull();
 	});
 });
 
@@ -617,7 +618,7 @@ describe("read, configure and destroy no longer share a row (row #249)", () => {
 	it("Delete lives in the Danger zone, and NOT beside Stop in the header", async () => {
 		mockChannel({ status: "STOPPED", currentRun: run({ status: "STOPPED" }) });
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("button", { name: "Start a new run" });
 
 		const danger = document.getElementById("sec-danger") as HTMLDetailsElement;
 		expect(danger).not.toBeNull();
@@ -629,16 +630,16 @@ describe("read, configure and destroy no longer share a row (row #249)", () => {
 			within(danger).getByRole("button", { name: /Delete channel/i }),
 		).toBeInTheDocument();
 
-		// …and the header's lifecycle row carries Start only.
+		// The other header actions stay together, away from Delete.
 		const actions = document.getElementById("sec-actions") as HTMLElement;
 		expect(
 			within(actions).queryByRole("button", { name: /Delete channel/i }),
 		).toBeNull();
 		expect(
-			within(actions).queryByRole("button", {
-				name: /設定をコピーして編集|Copy settings and edit/i,
+			within(actions).getByRole("button", {
+				name: "Copy settings and edit",
 			}),
-		).toBeNull();
+		).toBeInTheDocument();
 		expect(
 			within(actions).getByRole("button", { name: "Start a new run" }),
 		).toBeInTheDocument();
@@ -647,7 +648,7 @@ describe("read, configure and destroy no longer share a row (row #249)", () => {
 	it("copy settings is in the header while Save as template remains in Advanced", async () => {
 		mockChannel({ status: "STOPPED", currentRun: run({ status: "STOPPED" }) });
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("button", { name: "Copy settings and edit" });
 		const advanced = document.getElementById(
 			"sec-advanced",
 		) as HTMLDetailsElement;
@@ -693,7 +694,7 @@ describe("Programme opens with what is scheduled, not with the form (row #248)",
 			armed,
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const section = document.getElementById("sec-schedule") as HTMLElement;
 
 		// Closed: no Action select, no Run at, no Arm button anywhere.
@@ -728,7 +729,7 @@ describe("Programme opens with what is scheduled, not with the form (row #248)",
 			armed,
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const trigger = screen.getByRole("button", { name: "Schedule an action" });
 		expect(trigger.getAttribute("aria-expanded")).toBe("false");
 		const regionId = trigger.getAttribute("aria-controls");
@@ -753,7 +754,7 @@ describe("Programme opens with what is scheduled, not with the form (row #248)",
 			currentRun: run(),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		const trigger = screen.getByRole("button", { name: "Start file input" });
 		expect(trigger.getAttribute("aria-expanded")).toBe("false");
 		expect(trigger.getAttribute("aria-controls")).toBe(
@@ -783,7 +784,7 @@ describe("escalations outrank the phase default (row #249)", () => {
 			},
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		expect(isOpen("sec-alerts")).toBe(true);
 	});
 
@@ -807,7 +808,7 @@ describe("escalations outrank the phase default (row #249)", () => {
 			},
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		expect(isOpen("sec-alerts")).toBe(false);
 	});
 
@@ -843,7 +844,7 @@ describe("escalations outrank the phase default (row #249)", () => {
 			},
 		);
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		for (const id of [
 			"sec-alerts",
 			"sec-ingest",
@@ -881,7 +882,7 @@ describe("escalations outrank the phase default (row #249)", () => {
 			}),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />);
-		await screen.findByRole("region", { name: /next action/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		expect(isOpen("sec-steps")).toBe(true);
 	});
 });
@@ -897,7 +898,7 @@ describe("the reorganised page renders in both catalogues", () => {
 		"Diagnostics & history",
 		"Danger zone",
 		"Next event",
-		"Runtime",
+		"Encoder runtime",
 		// : the slate section is a reservation list, and the emergency
 		// stop is its own section beside it.
 		"Slate reservations",
@@ -926,7 +927,7 @@ describe("the reorganised page renders in both catalogues", () => {
 		"診断・履歴",
 		"取り消せない操作",
 		"次の予定",
-		"稼働時間",
+		"エンコーダ稼働",
 		"スレートの予約",
 		"差し込みコンテンツの緊急停止",
 		"アラートルールと解決済み履歴",
@@ -954,7 +955,7 @@ describe("the reorganised page renders in both catalogues", () => {
 			currentRun: run(),
 		});
 		wrap(<ChannelDetail id={CHANNEL} />, locale);
-		await screen.findByRole("region", { name: /next action|次にやること/i });
+		await screen.findByRole("heading", { name: "Hierarchy channel" });
 		for (const text of strings) {
 			expect(
 				screen.getAllByText(text, { exact: false }).length,

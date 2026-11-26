@@ -33,7 +33,11 @@ import {
 	trackShotSubjects,
 } from "./tracking";
 import { transcriptInOriginalTime } from "./transcript-clock";
-import { transcribeLocalAudio } from "./transcription";
+import {
+	type CudaTranscriptionRuntime,
+	readCudaTranscriptionRuntime,
+	transcribeLocalAudio,
+} from "./transcription";
 
 export type MediaTaskExecutionDependencies = {
 	prisma: AppPrismaClient;
@@ -130,6 +134,18 @@ export async function executeMediaTask(input: {
 		speechSelectionIntentFailureCode(verified.envelope);
 	if (intentFailure) throw new MediaOperationError(intentFailure);
 	const request = verified.envelope.input;
+	let cuda: CudaTranscriptionRuntime | undefined;
+	if (
+		request.kind === "TRANSCRIBE" &&
+		request.parameters.asrBackend === "cuda"
+	) {
+		cuda = readCudaTranscriptionRuntime();
+		if (
+			!cuda ||
+			cuda.binarySha256 !== verified.envelope.identity.asrCudaBinarySha256
+		)
+			throw new MediaOperationError("ASR_CUDA_NOT_CONFIGURED");
+	}
 	const localStory =
 		request.kind === "GENERATE" && request.parameters.policy === "LOCAL_STORY";
 	if (localStory) boundedInteger(input.timeoutMs, 1, 120 * 60_000);
@@ -207,6 +223,7 @@ export async function executeMediaTask(input: {
 				durationUs,
 				signal,
 				timeoutMs: budget.remaining(),
+				...(cuda ? { cuda } : {}),
 			});
 			const origin = verified.map.sourceStartUs;
 			if (
@@ -216,7 +233,10 @@ export async function executeMediaTask(input: {
 					verified.envelope.identity.transcriptionPolicyFingerprint
 			)
 				throw new MediaOperationError("ASR_QUALITY_POLICY_CHANGED");
-			return transcriptInOriginalTime(result, origin);
+			return {
+				...transcriptInOriginalTime(result, origin),
+				...(cuda ? { cacheable: false } : {}),
+			};
 		}
 		const analysis = verified.analysisDocument;
 		if (

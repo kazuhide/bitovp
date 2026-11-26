@@ -3620,6 +3620,7 @@ describe("no credential-backed IO op reaches the vendor with a mismatched creden
 			/needs an? GCS_SERVICE_ACCOUNT credential but got provider "KANTAR"/,
 		CREATE_OUTPUT_LIVE_MEDIA_INGEST:
 			/needs an? LIVE_MEDIA_INGEST credential but got provider "KANTAR"/,
+		CREATE_OUTPUT_MOQ: /needs an? MOQ credential but got provider "KANTAR"/,
 		CREATE_OUTPUT_AKAMAI_MSL:
 			/needs an? AKAMAI_MSL credential but got provider "KANTAR"/,
 	};

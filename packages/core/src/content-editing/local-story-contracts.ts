@@ -10,6 +10,26 @@ export const LOCAL_STORY_MAX_CHUNK_BYTES = 4500;
 export const LOCAL_STORY_MAX_CHUNKS = 128;
 export const localStoryModeSchema = z.enum(["AUTO", "FLOW", "THEME"]);
 export type LocalStoryMode = z.infer<typeof localStoryModeSchema>;
+export const localStoryTrailerIntentSchema = z.strictObject({
+	durationMode: z.enum(["TARGET", "UP_TO", "EXACT"]),
+	disclosure: z.enum(["SETUP_ONLY", "SETUP_AND_QUESTION"]),
+});
+export type LocalStoryTrailerIntent = z.infer<
+	typeof localStoryTrailerIntentSchema
+>;
+
+const localStoryTrailerEvidenceSchema = z.strictObject({
+	intent: localStoryTrailerIntentSchema,
+	windows: z
+		.array(
+			z.strictObject({
+				sourceInUs: z.number().int().nonnegative(),
+				durationFrames: z.number().int().positive().max(5400),
+			}),
+		)
+		.min(1)
+		.max(20),
+});
 
 /** This identity cannot describe or reactivate a historical coding-agent receipt. */
 export const localStoryModelIdentitySchema = z.strictObject({
@@ -58,6 +78,17 @@ export const localStoryEventSchema = z.strictObject({
 	uncertainty: z.string().max(240),
 });
 export type LocalStoryEvent = z.infer<typeof localStoryEventSchema>;
+export function localStoryTrailerAllowsEvent(
+	event: LocalStoryEvent,
+	intent: LocalStoryTrailerIntent,
+) {
+	return (
+		event.uncertainty.trim() === "" &&
+		(event.role === "CONTEXT" ||
+			(intent.disclosure === "SETUP_AND_QUESTION" &&
+				(event.role === "ACTION" || event.role === "CHANGE")))
+	);
+}
 /** Model output for one complete input chunk. No scores, clock values or render commands. */
 export const localStoryLedgerSchema = z.strictObject({
 	summary: text(320),
@@ -108,6 +139,25 @@ export const localStoryBlueprintSchema = z
 	});
 export type LocalStoryBlueprint = z.infer<typeof localStoryBlueprintSchema>;
 
+export const localStorySceneScopeSchema = z
+	.strictObject({
+		sceneId: z.uuid(),
+		startUs: z.number().int().nonnegative(),
+		endUs: z.number().int().positive(),
+	})
+	.refine((value) => value.startUs < value.endUs);
+export type LocalStorySceneScope = z.infer<typeof localStorySceneScopeSchema>;
+
+const localStorySceneFrameBoundsSchema = z
+	.strictObject({
+		fromFrame: z.number().int().nonnegative(),
+		toFrame: z.number().int().positive(),
+	})
+	.refine((value) => value.fromFrame < value.toFrame);
+export type LocalStorySceneFrameBounds = z.infer<
+	typeof localStorySceneFrameBoundsSchema
+>;
+
 export type LocalStoryField = {
 	pointer: string;
 	kind: "AISA" | "ASR";
@@ -121,6 +171,12 @@ export type LocalStoryShot = {
 	shotIndex?: number;
 	fromFrame: number;
 	toFrame: number;
+	exclusionWindow?: { fromFrame: number; toFrame: number };
+	preparedBoundary?: {
+		startInSeconds: number;
+		endInSeconds: number;
+		videoToFrame: number;
+	};
 	text: string;
 	fields: LocalStoryField[];
 };
@@ -131,13 +187,19 @@ export type LocalStoryInput = {
 	timeMap: CfrTimeMap;
 	timeMapHash: string;
 	normalizationReceiptHash?: string;
+	sceneScope?: LocalStorySceneScope;
+	sceneFrameBounds?: LocalStorySceneFrameBounds;
 	scenes: { sceneId: string; text: string; fields: LocalStoryField[] }[];
 	shots: LocalStoryShot[];
+	excludedWindows?: readonly { fromFrame: number; toFrame: number }[];
+	trailerSelection?: true;
 	coverage: {
 		ref: string;
 		status: "ELIGIBLE" | "EXCLUDED" | "OUTSIDE_MEDIA" | "UNREPRESENTABLE";
 	}[];
 	segments: { startUs: number; endUs: number; text: string }[];
+	/** Optional VAD bounds on the original presentation clock, separate from textual evidence. */
+	speechIntervals?: readonly { startUs: number; endUs: number }[];
 };
 export type LocalStoryChunk = {
 	id: string;
@@ -177,6 +239,9 @@ export const localStoryEvidenceSchema = z
 		blueprint: localStoryBlueprintSchema,
 		selection: localStorySelectionSchema,
 		inputCoverage: localStoryInputCoverageSchema,
+		sceneScope: localStorySceneScopeSchema.optional(),
+		sceneFrameBounds: localStorySceneFrameBoundsSchema.optional(),
+		trailer: localStoryTrailerEvidenceSchema.optional(),
 	})
 	.superRefine((value, ctx) => {
 		const events = new Set(value.ledger.events.map((v) => v.id));
@@ -208,6 +273,49 @@ export const localStoryEvidenceSchema = z
 				message:
 					"Local story selection must fulfill its declared complete blueprint",
 			});
+		}
+		if (
+			(value.sceneScope === undefined) !==
+			(value.sceneFrameBounds === undefined)
+		)
+			ctx.addIssue({
+				code: "custom",
+				message: "Scene-scoped evidence requires verified frame bounds",
+			});
+		if (value.sceneScope && value.trailer)
+			ctx.addIssue({
+				code: "custom",
+				message: "Scene-scoped evidence cannot be a trailer",
+			});
+		if (value.trailer) {
+			const intent = value.trailer.intent;
+			const blocked = new Set(
+				value.ledger.events
+					.filter((event) => !localStoryTrailerAllowsEvent(event, intent))
+					.flatMap((event) => event.refs),
+			);
+			const usableRoles = new Map(
+				value.ledger.events
+					.filter((event) => event.refs.every((ref) => !blocked.has(ref)))
+					.map((event) => [event.id, event.role]),
+			);
+			if (
+				value.blueprint.mode !== "FLOW" ||
+				value.blueprint.beats[0]?.role !== "CONTEXT" ||
+				value.blueprint.beats.some((beat) =>
+					beat.eventIds.some((id) => usableRoles.get(id) !== beat.role),
+				) ||
+				value.trailer.windows.some(
+					(window, index, windows) =>
+						index > 0 &&
+						window.sourceInUs <= (windows[index - 1]?.sourceInUs ?? -1),
+				)
+			)
+				ctx.addIssue({
+					code: "custom",
+					message:
+						"Trailer evidence requires a source-ordered opening and eligible references",
+				});
 		}
 	});
 export type LocalStoryEvidence = z.infer<typeof localStoryEvidenceSchema>;

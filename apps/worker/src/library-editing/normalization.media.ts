@@ -5,8 +5,16 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { cfrTimeMapSchema } from "@bitovp/core";
-import { normalizeEditingMedia } from "./normalization";
+import { fileURLToPath } from "node:url";
+import {
+	cfrTimeMapSchema,
+	editingNormalizationEvidenceSchema,
+} from "@bitovp/core";
+import { probeEditingMedia } from "./media";
+import {
+	normalizeEditingMedia,
+	probeEditingNormalizationSource,
+} from "./normalization";
 import { runMediaProcess } from "./process";
 
 const digest = (value: Buffer) =>
@@ -18,12 +26,22 @@ async function source(path: string, fps = "24/1", frames = 48, vfr = false) {
 		"-v",
 		"error",
 		"-nostdin",
+		"-cpucount",
+		"2",
+		"-filter_threads",
+		"1",
+		"-filter_complex_threads",
+		"1",
 		"-f",
 		"lavfi",
+		"-threads",
+		"1",
 		"-i",
 		`nullsrc=s=160x90:r=${fps},geq=lum='32+mod(N,8)*24':cb=128:cr=128`,
 		"-f",
 		"lavfi",
+		"-threads",
+		"1",
 		"-i",
 		"sine=frequency=440:sample_rate=48000:duration=3",
 		"-vf",
@@ -67,6 +85,14 @@ async function grayFrames(path: string, output: string) {
 		"-v",
 		"error",
 		"-nostdin",
+		"-cpucount",
+		"2",
+		"-filter_threads",
+		"1",
+		"-filter_complex_threads",
+		"1",
+		"-threads",
+		"1",
 		"-i",
 		path,
 		"-map",
@@ -80,6 +106,8 @@ async function grayFrames(path: string, output: string) {
 		"passthrough",
 		"-f",
 		"rawvideo",
+		"-threads",
+		"1",
 		output,
 	]);
 	const bytes = await readFile(output);
@@ -97,6 +125,14 @@ async function audioOnset(path: string, output: string) {
 		"-v",
 		"error",
 		"-nostdin",
+		"-cpucount",
+		"2",
+		"-filter_threads",
+		"1",
+		"-filter_complex_threads",
+		"1",
+		"-threads",
+		"1",
 		"-i",
 		path,
 		"-map",
@@ -142,8 +178,16 @@ for (const [fps, frames] of [
 				expectedSourceSha256: digest(bytes),
 			});
 			assert.equal(result.originalSha256, digest(bytes));
+			assert.equal(result.preparedSha256, digest(await readFile(result.path)));
+			assert.equal(result.facts.width, 160);
+			assert.equal(result.facts.height, 90);
+			assert.deepEqual(result.facts.fps, { num: 30, den: 1 });
 			assert.equal(result.facts.frameCount, 60);
+			assert.equal(result.facts.durationUs, 2_000_000);
 			assert.equal(result.facts.hasAudio, true);
+			assert.equal(result.normalization.schemaVersion, 1);
+			assert.equal(result.normalization.profile, "SDR_CFR30_INDEXED_V1");
+			editingNormalizationEvidenceSchema.parse(result.normalization);
 			const before = await grayFrames(original, join(dir, "original.gray"));
 			const after = await grayFrames(result.path, join(dir, "prepared.gray"));
 			assert.equal(before.length, frames);
@@ -221,6 +265,66 @@ for (const [fps, frames, expectedFrames] of [
 		}
 	});
 }
+test("native identity normalization checks both clocks with one video decode", {
+	timeout: 60000,
+}, async () => {
+	const dir = await mkdtemp(join(tmpdir(), "bitovp-normalize-single-decode-"));
+	try {
+		const original = join(dir, "source.mp4");
+		const destination = join(dir, "prepared.mp4");
+		const trace = join(dir, "probe.jsonl");
+		const malformedTime = join(dir, "malformed-time");
+		// The media gate mounts TMPDIR with noexec. Run the fixture from
+		// the read-only source tree and write only its trace under TMPDIR.
+		const shim = fileURLToPath(
+			new URL("./fixtures/normalization-ffprobe-fixture.mjs", import.meta.url),
+		);
+		await source(original, "30/1", 60);
+		const input = {
+			sourcePath: original,
+			destinationPath: destination,
+			expectedSourceSha256: digest(await readFile(original)),
+			ffprobePath: shim,
+		};
+		const result = await normalizeEditingMedia(input);
+		assert.equal(result.normalization.mode, "IDENTITY_COPY");
+		assert.deepEqual(
+			result.facts,
+			await probeEditingMedia({ sourcePath: original }),
+		);
+		assert.deepEqual(
+			result.normalization.source,
+			(await probeEditingNormalizationSource({ sourcePath: original })).source,
+		);
+		const calls: string[][] = (await readFile(trace, "utf8"))
+			.trim()
+			.split("\n")
+			.map((line) => JSON.parse(line));
+		assert.equal(
+			calls.filter((args) => args.includes("-show_streams")).length,
+			1,
+		);
+		assert.equal(
+			calls.filter(
+				(args) => args.includes("v:0") && args.includes("-show_frames"),
+			).length,
+			1,
+		);
+		assert.equal(
+			calls.filter(
+				(args) => args.includes("a:0") && args.includes("-show_frames"),
+			).length,
+			1,
+		);
+		await writeFile(malformedTime, "");
+		await assert.rejects(normalizeEditingMedia(input), {
+			code: "UNSUPPORTED_MEDIA",
+		});
+		await assert.rejects(access(destination));
+	} finally {
+		await rm(dir, { recursive: true, force: true });
+	}
+});
 test("native VFR is rejected before a normalized artifact is published", {
 	timeout: 60000,
 }, async () => {
@@ -232,6 +336,8 @@ test("native VFR is rejected before a normalized artifact is published", {
 		const timeline = await runMediaProcess("ffprobe", [
 			"-v",
 			"error",
+			"-threads",
+			"1",
 			"-i",
 			original,
 			"-select_streams",

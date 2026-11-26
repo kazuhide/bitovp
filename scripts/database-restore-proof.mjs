@@ -101,6 +101,8 @@ async function snapshot(compose, database = "") {
 	return value;
 }
 
+export { snapshot as snapshotDatabase };
+
 // The caller verifies Compose ownership and stops all fixture writers first.
 // This proves fixture data/schema restoration, not a production rollback.
 export async function proveDatabaseRestore({

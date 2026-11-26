@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { buildPlan } from "../wizard/build-plan";
+import { tryImportPresetIntoWizard } from "../wizard/plan-to-wizard";
 import { compilePlan } from "./compiler";
 import {
 	checkDeliverySpec,
@@ -10,6 +12,7 @@ import {
 } from "./delivery-presets";
 import { encodingPlanSchema } from "./schema";
 import { planToEncodingTemplateYaml } from "./template";
+import { validatePlan } from "./validate";
 
 /**
  * Delivery presets . Three layers, per the design's §8:
@@ -46,10 +49,13 @@ describe("shipped delivery specs", () => {
 				DELIVERY_SPECS.map((spec) => [spec.id, spec.constraints.length]),
 			),
 		).toEqual({
+			// Still 9: the row for a second, audio-only MP4 became the row that
+			// requires the audio inside the video's file.
 			"mezz-h264-1080p-50m": 9,
 			// 6→7 (review-205 I1): the audio-codec row H265 was missing —
 			// the sentence said AAC, the row checked only the rate.
-			"mezz-h265-2160p": 7,
+			// 7→8: the one-file row, which this spec did not have a counterpart for.
+			"mezz-h265-2160p": 8,
 		});
 	});
 
@@ -58,13 +64,73 @@ describe("shipped delivery specs", () => {
 	)("%s compiles and exports to template YAML (in-repo C25 half)", (_id, spec) => {
 		const ops = compilePlan(spec.plan);
 		expect(ops.length).toBeGreaterThan(0);
-		expect(ops.filter((op) => op.kind === "CREATE_MUXING_MP4")).toHaveLength(2);
+		// One file per spec: the video is its first stream and the audio is
+		// muxed into it. Two MP4s, one of them audio-only, is not a mezzanine.
+		const files = ops.filter((op) => op.kind === "CREATE_MUXING_MP4");
+		expect(files).toHaveLength(1);
+		expect(files[0]?.refs).toMatchObject({
+			streamId: `stream:${spec.plan.renditions[0]?.key}`,
+			additionalStreamIds: ["stream:aac"],
+		});
 		// No manifests on a file-delivery plan — nothing to start beyond
 		// the encoding itself.
 		expect(ops.some((op) => op.kind === "CREATE_MANIFEST_HLS")).toBe(false);
 		const yaml = planToEncodingTemplateYaml(spec.plan);
 		expect(() => parse(yaml)).not.toThrow();
 		expect(parse(yaml)).toBeTruthy();
+	});
+
+	it.each(
+		DELIVERY_SPECS.map((spec) => [spec.id, spec] as const),
+	)("%s passes plan validation and opens in the wizard's form", (_id, spec) => {
+		expect(
+			validatePlan(spec.plan).filter((issue) => issue.level === "error"),
+		).toEqual([]);
+		// A spec the form cannot hold opens as raw JSON, where the drift banner
+		// has no fields to follow. Loading one is the gallery's main action.
+		expect(tryImportPresetIntoWizard(structuredClone(spec.plan))).toMatchObject(
+			{ ok: true },
+		);
+	});
+
+	it.each(
+		DELIVERY_SPECS.map((spec) => [spec.id, spec] as const),
+	)("%s deviates when the audio is taken back out of the file", (_id, spec) => {
+		const [file] = spec.plan.muxings;
+		if (file?.kind !== "MP4") throw new Error("expected one MP4");
+		const { additionalStreamKeys: _audio, ...videoOnly } = file;
+		const split = {
+			...spec.plan,
+			muxings: [
+				videoOnly,
+				{
+					...videoOnly,
+					key: "audio",
+					streamKey: "aac",
+					filename: "audio.mp4",
+				},
+			],
+		};
+		expect(encodingPlanSchema.safeParse(split).success).toBe(true);
+		expect(checkDeliverySpec(split, spec).map((d) => d.requirement)).toEqual([
+			"Video and audio in one file",
+		]);
+	});
+
+	it.each(
+		DELIVERY_SPECS.map((spec) => [spec.id, spec] as const),
+	)("%s still conforms after the audio bitrate is raised in the form", (_id, spec) => {
+		// The form derives an audio key from the bitrate unless the plan names one.
+		// A row that names a derived key would call a louder track a deviation.
+		const mapping = tryImportPresetIntoWizard(structuredClone(spec.plan));
+		if (!mapping.ok) throw new Error(mapping.reasonKey);
+		const [audio] = mapping.state.audios;
+		if (!audio) throw new Error("expected an audio track");
+		const louder = buildPlan({
+			...mapping.state,
+			audios: [{ ...audio, bitrate: 384_000 }],
+		});
+		expect(checkDeliverySpec(louder, spec)).toEqual([]);
 	});
 
 	it("suggested gates are schema-valid and advisory-shaped", () => {

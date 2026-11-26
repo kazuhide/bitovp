@@ -3,10 +3,12 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
 	decodePresentation,
+	encodeWithX264,
 	validateAvProbe,
 	validateBandingMeasurement,
 	validateVideoSegments,
 	validateVmafReports,
+	x264Capabilities,
 } from "./media-smoke";
 
 const frames = (count = 48, start = 0) =>
@@ -206,6 +208,133 @@ describe("offline media validation", () => {
 				report(40),
 			),
 		).toThrow();
+	});
+
+	it("reads the processor capabilities that x264 reports, once, from an encode's log", () => {
+		// The lines of an encode at FFmpeg's level "info", around x264's report.
+		const log = (...reports: string[]) =>
+			[
+				"Stream mapping:",
+				"  Stream #0:0 -> #0:0 (h264 (native) -> h264 (libx264))",
+				"[libx264 @ 0x580814cad8c0] using SAR=1/1",
+				...reports,
+				"[libx264 @ 0x580814cad8c0] profile High, level 1.2, 4:2:0, 8-bit",
+				"Output #0, mp4, to 'bbb-10s.mp4':",
+				"",
+			].join("\n");
+		const report = (capabilities: string) =>
+			`[libx264 @ 0x580814cad8c0] using cpu capabilities: ${capabilities}`;
+		for (const capabilities of [
+			"MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2 AVX512",
+			"MMX2 SSE2Fast SSSE3 SSE4.2 AVX FMA3 BMI2 AVX2",
+			"ARMv8 NEON",
+			"ARMv8 NEON DotProd I8MM SVE SVE2",
+			"none!",
+			// x264's longest name, and the most and the longest that the rule takes.
+			"UnalignedStack",
+			`${"A".repeat(14)}.1`,
+			Array.from({ length: 32 }, () => `${"A".repeat(14)}.1`).join(" "),
+		])
+			expect(x264Capabilities(log(report(capabilities)))).toBe(capabilities);
+		// Line ends of another platform do not become a part of the names.
+		expect(
+			x264Capabilities(log(report("ARMv8 NEON")).replaceAll("\n", "\r\n")),
+		).toBe("ARMv8 NEON");
+
+		// At the level "error" the log holds no report, and two encodes are two
+		// reports.
+		expect(() => x264Capabilities(log())).toThrow(/once/);
+		expect(() => x264Capabilities("")).toThrow(/once/);
+		expect(() =>
+			x264Capabilities(log(report("AVX2"), report("AVX2 AVX512"))),
+		).toThrow(/once/);
+		expect(() => x264Capabilities(log(report("AVX2"), report("AVX2")))).toThrow(
+			/once/,
+		);
+		// Only x264's own line counts, from its start.
+		for (const line of [
+			"[libx265 @ 0x580814cad8c0] using cpu capabilities: AVX2",
+			"[libx264rgb @ 0x580814cad8c0] using cpu capabilities: AVX2",
+			"x [libx264 @ 0x580814cad8c0] using cpu capabilities: AVX2",
+			"using cpu capabilities: AVX2",
+			"[libx264 @ 0x580814cad8c0] using CPU capabilities: AVX2",
+			// The prefix ends on the line on which it starts.
+			"[libx264 @ 0x580814cad8c0\nx] using cpu capabilities: AVX2",
+		])
+			expect(() => x264Capabilities(log(line))).toThrow(/once/);
+		// A report that does not have the shape of x264's names does not leave
+		// the container.
+		for (const capabilities of [
+			"",
+			" AVX2",
+			"AVX2  AVX512",
+			"AVX2 ",
+			"AVX2, AVX512",
+			"/home/runner",
+			"none! AVX2",
+			"token=abc",
+			"10.1.0.4",
+			"192.168.100.200",
+			"example.internal",
+			"0123456789abcdef",
+			"1AVX",
+			"AVX.",
+			".AVX",
+			"SSE4.12",
+			"SSE4.x",
+			"SSE4.1.2",
+			"A".repeat(15),
+			`AVX2 ${"A".repeat(15)}`,
+			"SSE4 2",
+			`${"A".repeat(14)}1`,
+			Array.from({ length: 33 }, () => "AVX2").join(" "),
+			// Every other character of ASCII that does not end the line, between
+			// two names.
+			...Array.from({ length: 128 }, (_, code) => String.fromCharCode(code))
+				.filter((character) => !/[A-Za-z0-9. \n\r]/.test(character))
+				.flatMap((character) => [
+					`AVX2${character}AVX512`,
+					// Where a name starts, in place of the dot and after it.
+					`${character}AVX2`,
+					`SSE4${character}2`,
+					`SSE4.${character}`,
+				]),
+		])
+			expect(
+				() => x264Capabilities(log(report(capabilities))),
+				JSON.stringify(capabilities),
+			).toThrow(/Unexpected x264 processor capabilities/);
+	});
+
+	it("runs an x264 encode at the level that holds x264's report and reads the log", async () => {
+		const report =
+			"[libx264 @ 0x580814cad8c0] using cpu capabilities: ARMv8 NEON\n";
+		const run = vi.fn().mockResolvedValue({ stdout: "", stderr: report });
+		await expect(
+			encodeWithX264(["-i", "reference.mkv", "bbb-10s.mp4"], run),
+		).resolves.toBe("ARMv8 NEON");
+		expect(run.mock.calls).toEqual([
+			[
+				"/usr/local/bin/ffmpeg",
+				[
+					"-v",
+					"info",
+					"-nostats",
+					"-nostdin",
+					"-y",
+					"-i",
+					"reference.mkv",
+					"bbb-10s.mp4",
+				],
+			],
+		]);
+		// The report is the log's. What an encode writes to its output is not read.
+		await expect(
+			encodeWithX264(
+				[],
+				vi.fn().mockResolvedValue({ stdout: report, stderr: "" }),
+			),
+		).rejects.toThrow(/once/);
 	});
 
 	it("uses an absolute presentation path so DASH resolves local fragments once", async () => {

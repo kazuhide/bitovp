@@ -2,9 +2,13 @@
 // Copyright (c) 2026 Kazuhide Yamamoto
 #pragma once
 #include "bitovp_gpu.hpp"
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
+
+struct AVBufferRef;
 
 namespace bitovp::gpu {
 struct VideoInfo {
@@ -12,7 +16,22 @@ struct VideoInfo {
     unsigned bit_depth = 0;
     double frames_per_second = 0;
     std::string codec;
+    bool self_contained_mov = false;
 };
+
+struct PresentationTime {
+    std::int64_t pts;
+    int numerator, denominator;
+};
+
+struct ExperimentCudaDecoders {
+    // Retain the actual driver and NVDEC images through decoder attestation.
+    std::shared_ptr<void> driver, nvdec;
+    std::shared_ptr<AVBufferRef> device_context;
+    std::vector<std::string> codecs;
+};
+
+ExperimentCudaDecoders load_experiment_cuda_decoders(int device);
 
 // A CPU picture whose pixels and presentation timestamp survive the decoder's
 // next() call and destruction. Keeping the owner private prevents a dangling
@@ -38,7 +57,9 @@ public:
     // bit_depth=0 preserves supported original precision and validates the
     // standalone CAMBI input scope; existing explicit-depth decoding is unchanged.
     Decoder(const std::string &path, unsigned width, unsigned height,
-            unsigned bit_depth, unsigned threads, bool cuda = false, int device = 0);
+            unsigned bit_depth, unsigned threads, bool cuda = false, int device = 0,
+            bool attest_local_mov = false, bool experiment_input = false,
+            const AVBufferRef *cuda_context = nullptr);
     ~Decoder();
     Decoder(const Decoder &) = delete;
     Decoder &operator=(const Decoder &) = delete;
@@ -48,6 +69,7 @@ public:
     RetainedPicture retain_picture() const;
     // Relative presentation time in seconds. Throws if timestamps are absent.
     double timestamp() const;
+    PresentationTime presentation_time() const;
     // Actual decoded-frame duration in seconds. No frame-rate estimate is used.
     double duration() const;
     double decode_ms() const;

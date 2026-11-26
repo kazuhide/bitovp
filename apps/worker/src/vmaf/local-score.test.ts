@@ -52,6 +52,15 @@ function harness(
 }
 
 describe("local VMAF execution", () => {
+	it("refuses a prepared-reference binding on the CPU path before any child starts", async () => {
+		const h = harness();
+		await expect(
+			runLocalVmafScore(h.deps, OPTIONS, {
+				expectedReferenceSha256: "a".repeat(64),
+			}),
+		).rejects.toThrow("NATIVE_INTERNAL_CONTROLS_REQUIRE_NATIVE_SCORING");
+		expect(h.run).not.toHaveBeenCalled();
+	});
 	it("runs the unchanged CPU argv without hardware discovery by default", async () => {
 		const h = harness();
 		const result = await runLocalVmafScore(h.deps, OPTIONS);

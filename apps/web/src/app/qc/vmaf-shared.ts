@@ -1,15 +1,27 @@
-import type {
-	BandingPooled,
-	LocalVmafExecution,
-	PooledMetrics,
-	VmafCloudProfile,
-	VmafExecution,
+import {
+	type BandingPooled,
+	type HdrMeasurement,
+	type HlsQcEvidence,
+	hdrMeasurementOf,
+	isHdrVmafModel,
+	type LocalVmafExecution,
+	type PooledMetrics,
+	type VmafCloudProfile,
+	type VmafExecution,
+	type VmafReferencePreparationEvidence,
+	vmafComparableScoringVersion,
 } from "@bitovp/core";
 import type {
 	PublicBandingAssessment,
 	PublicBandingExecution,
 } from "@/lib/server/banding-public";
-import type { BandingChartFrame, ChartFrame } from "@/lib/server/vmaf-frames";
+import type {
+	BandingChartFrame,
+	ChartFrame,
+	VmafScoreDistribution,
+} from "@/lib/server/vmaf-frames";
+
+export type { VmafScoreDistribution } from "@/lib/server/vmaf-frames";
 
 export type VmafComputeProfileSummary = Pick<
 	VmafCloudProfile,
@@ -197,9 +209,22 @@ export type MeasuredMediaPreview =
 	  };
 
 export type VmafResultDetail = BandingResultData & {
+	hdrMeasurement?: HdrMeasurement;
+	hlsSource?: Pick<
+		HlsQcEvidence,
+		| "version"
+		| "method"
+		| "segmentCount"
+		| "durationSeconds"
+		| "assembledSha256"
+		| "assembledBytes"
+		| "complete"
+	>;
 	id: string;
 	/** Validated local decode/scoring implementation; absent on historical reports. */
 	localExecution?: LocalVmafExecution;
+	/** Validated manual display-scale preparation; comparison uses the coded raster. */
+	referencePreparation?: VmafReferencePreparationEvidence;
 	/** Version-pinned QC mirror; absent on older API payloads. */
 	preview?: MeasuredMediaPreview;
 	renditionRef: RenditionRef;
@@ -208,6 +233,8 @@ export type VmafResultDetail = BandingResultData & {
 	frames: ChartFrame[];
 	/** Original frame count before downsampling (so the UI can disclose it). */
 	frameCount: number;
+	/** Full measured-frame histogram; absent on older payloads, null without stored scores. */
+	distribution?: VmafScoreDistribution | null;
 	/** Present only for LIVE results — the PR6a alignment summary. */
 	live?: LiveReportMetadata;
 };
@@ -503,10 +530,17 @@ export function scoringGenerations(
 	);
 }
 
+/**
+ * Two numbers are not always two pipelines: owned GPU scoring keeps a
+ * generation for each backend and gives the numbers of the ordinary method, so
+ * such reports are compared as that method's (`vmafComparableScoringVersion`).
+ */
 export function mixesScoringGenerations(
 	jobs: readonly { scoringVersion?: number }[],
 ): boolean {
-	return scoringGenerations(jobs).length > 1;
+	return (
+		new Set(scoringGenerations(jobs).map(vmafComparableScoringVersion)).size > 1
+	);
 }
 
 /** Equal canvases keep legacy and SAR-aware 1:1 measurements comparable. */
@@ -600,4 +634,38 @@ export function mixesSubsampling(
 	jobs: readonly { subsample?: number | null }[],
 ): boolean {
 	return comparedSubsamples(jobs).length > 1;
+}
+
+/** HDR and SDR models, and HLG's explicit reference-display normalization,
+ * describe different measurement conditions even when their model agrees. */
+export type HdrMeasurementContext =
+	| "SDR"
+	| "HDR_PQ"
+	| "HDR_HLG_PQ_1000"
+	| "HDR_UNVERIFIED";
+
+export function hdrMeasurementContext(
+	job: { model?: string | null },
+	result: { hdrMeasurement?: HdrMeasurement } = {},
+): HdrMeasurementContext {
+	const evidence = hdrMeasurementOf(result);
+	if (evidence)
+		return evidence.hlgReferenceDisplay ? "HDR_HLG_PQ_1000" : "HDR_PQ";
+	return isHdrVmafModel(job.model ?? "") ? "HDR_UNVERIFIED" : "SDR";
+}
+
+export function mixesHdrMeasurementContexts(
+	jobs: readonly {
+		model?: string | null;
+		results?: readonly { hdrMeasurement?: HdrMeasurement }[];
+	}[],
+): boolean {
+	const domains = new Set<HdrMeasurementContext>();
+	for (const job of jobs) {
+		const results = job.results?.length ? job.results : [{}];
+		for (const result of results) {
+			domains.add(hdrMeasurementContext(job, result));
+		}
+	}
+	return domains.size > 1;
 }

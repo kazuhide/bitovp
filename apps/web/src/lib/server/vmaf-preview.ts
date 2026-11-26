@@ -3,7 +3,10 @@ import "server-only";
 import {
 	encodingPlanSchema,
 	enumerateBandingTargets,
+	enumerateExistingHlsQcTargets,
 	enumerateExistingQcMirrorTargets,
+	hlsQcEvidenceOf,
+	retainedHlsQcKey,
 	vmafSourceFor,
 } from "@bitovp/core";
 import { z } from "zod";
@@ -11,6 +14,7 @@ import type { VmafResultDetail } from "@/app/qc/vmaf-shared";
 import { hasBanding } from "@/lib/qc-kind";
 
 type PreviewJob = {
+	id?: string;
 	mode: string;
 	params: unknown;
 	encodingJob?: { plan: unknown } | null;
@@ -27,6 +31,10 @@ const recorded = z.object({
 			key: z.string().min(1),
 			pinned: z.literal(true),
 			bytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+			sha256: z
+				.string()
+				.regex(/^[a-f0-9]{64}$/)
+				.optional(),
 			identity: z
 				.object({
 					size: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
@@ -80,10 +88,62 @@ function resolvePreview(
 		.safeParse(result.renditionRef);
 	if (!plan.success || !ref.success) return unavailable("UNSUPPORTED_SOURCE");
 	const persistedSource = z
-		.object({ source: z.enum(["QC_MIRROR", "OUTPUT_MP4"]).optional() })
+		.object({
+			source: z.enum(["QC_MIRROR", "OUTPUT_MP4", "OUTPUT_HLS"]).optional(),
+		})
 		.safeParse(job.params);
 	if (metric === "BANDING" && !persistedSource.success)
 		return unavailable("UNSUPPORTED_SOURCE");
+	if (persistedSource.data?.source === "OUTPUT_HLS") {
+		const evidence = hlsQcEvidenceOf(result.provenance);
+		const [target] = enumerateExistingHlsQcTargets(plan.data);
+		const output = plan.data.outputs.find(
+			(item) => item.key === target?.distorted.outputKey,
+		);
+		if (
+			!evidence ||
+			!target ||
+			!output ||
+			!job.id ||
+			ref.data.perTitleVariant !== undefined
+		)
+			return unavailable("UNSUPPORTED_SOURCE");
+		const source = vmafSourceFor(output);
+		const actual = provenance.data.distorted;
+		if (
+			!source.streamable ||
+			source.bucket !== actual.bucket ||
+			evidence.bucket !== actual.bucket ||
+			evidence.vmafJobId !== job.id ||
+			evidence.renditionKey !== target.renditionKey ||
+			ref.data.renditionKey !== target.renditionKey ||
+			evidence.muxingKey !== target.hls.muxingKey ||
+			evidence.masterKey !== target.distorted.path ||
+			evidence.objects[2]?.key !== target.hls.initKey ||
+			!evidence.mediaKey.startsWith(target.hls.rootPrefix) ||
+			!evidence.objects
+				.slice(2)
+				.every((object) => object.key.startsWith(target.hls.outputPrefix)) ||
+			evidence.assembledSha256 !== actual.sha256 ||
+			evidence.assembledBytes !== actual.bytes
+		)
+			return unavailable("UNSUPPORTED_SOURCE");
+		let expectedKey: string;
+		try {
+			expectedKey = retainedHlsQcKey(target, job.id, evidence.assembledSha256);
+		} catch {
+			return unavailable("UNSUPPORTED_SOURCE");
+		}
+		if (actual.key !== expectedKey) return unavailable("UNSUPPORTED_SOURCE");
+		return {
+			credentialId: source.credentialId,
+			bucket: source.bucket,
+			key: expectedKey,
+			size: actual.bytes,
+			expect: actual.identity,
+			contentType: "video/mp4",
+		};
+	}
 	const primaryBandingMp4 =
 		metric === "BANDING" && persistedSource.data?.source === "OUTPUT_MP4";
 	const targets =
@@ -162,7 +222,7 @@ export function previewDescriptor(
 	result: PreviewResult,
 	organizationId: string,
 ): NonNullable<VmafResultDetail["preview"]> {
-	const target = resolveVmafPreview(job, result);
+	const target = resolveVmafPreview({ ...job, id }, result);
 	return "unavailableReason" in target
 		? target
 		: {
@@ -179,7 +239,7 @@ export function bandingPreviewDescriptor(
 	result: PreviewResult,
 	organizationId: string,
 ): NonNullable<VmafResultDetail["bandingPreview"]> {
-	const target = resolveBandingPreview(job, result);
+	const target = resolveBandingPreview({ ...job, id }, result);
 	return "unavailableReason" in target
 		? target
 		: {

@@ -79,6 +79,8 @@ export type NativeExpected = {
 	sourceSha256: string;
 	width: number;
 	height: number;
+	/** The bit depth at which the scorer was told to compare. */
+	bitDepth: 8 | 10;
 	distortedOriginal: { width: number; height: number; bitdepth: number };
 	referenceSha256: string;
 	distortedSha256: string;
@@ -130,6 +132,20 @@ export function verifyNativeReceipt(
 		report.distortedOriginal.bitdepth !== expected.distortedOriginal.bitdepth
 	)
 		return fail("PROVENANCE_MISMATCH");
+	// The score is that of libvmaf through FFmpeg only when the pictures have
+	// the reference's bit depth and CAMBI was told nothing of the encode before
+	// scaling. The receipt holds every option of every extractor, so a scorer
+	// that was built from an earlier source, which declared the encode in each
+	// run, is refused here and gives no result.
+	const cambi = report.extractors.find(({ name }) => name === "cambi");
+	if (
+		report.bitDepth !== expected.bitDepth ||
+		!cambi ||
+		["enc_width", "enc_height", "enc_bitdepth"].some(
+			(option) => (cambi.options[option] ?? "0") !== "0",
+		)
+	)
+		return fail("COMPARISON_MISMATCH");
 	if (
 		report.requestedDeviceIndex !== expected.device ||
 		report.device.index !== expected.device ||
@@ -231,7 +247,7 @@ export function verifyNativeReceipt(
 			model: model.id,
 			modelSha256: model.sha256,
 			features: [...required].sort(),
-			bitDepth: 10,
+			bitDepth: report.bitDepth,
 			distortedOriginal: report.distortedOriginal,
 			officialRevision: report.officialRevision,
 			sourceSha256: report.sourceSha256,

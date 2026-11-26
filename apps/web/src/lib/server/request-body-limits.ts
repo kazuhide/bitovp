@@ -1,3 +1,8 @@
+import {
+	MOQ_ARCHIVE_MAX_BYTES,
+	MOQ_OBSERVATION_MAX_BODY_BYTES,
+} from "../../../config/moq-policy";
+
 export const MAX_LOGIN_BODY_BYTES = 4 * 1024;
 export const MAX_SETUP_BODY_BYTES = 8 * 1024;
 export const MAX_WEBHOOK_BODY_BYTES = 1_000_000;
@@ -14,7 +19,31 @@ export function declaredBodyTooLarge(
 	);
 }
 
-function policyForPath(path: string) {
+type BodyPolicy = {
+	limit: number;
+	error: string;
+	moqUpload?: "archive" | "observation";
+};
+
+function policyForPath(path: string, method: string): BodyPolicy | null {
+	if (method === "PUT") {
+		const upload =
+			/^\/api\/live-channels\/[^/]+\/runs\/[^/]+\/moq-observations\/[^/]+(\/archive)?$/.exec(
+				path,
+			);
+		if (!upload) return null;
+		return upload[1]
+			? {
+					limit: MOQ_ARCHIVE_MAX_BYTES,
+					error: "MoQ archive is too large",
+					moqUpload: "archive",
+				}
+			: {
+					limit: MOQ_OBSERVATION_MAX_BODY_BYTES,
+					error: "MoQ observation body is too large",
+					moqUpload: "observation",
+				};
+	}
 	if (path === "/api/auth/login") {
 		return { limit: MAX_LOGIN_BODY_BYTES, error: "Request body is too large" };
 	}
@@ -27,12 +56,12 @@ function policyForPath(path: string) {
 	return null;
 }
 
-/** Match the three public POST routes, including Next's decoded path lookup. */
+/** Match bounded POST routes and MoQ PUTs through Next's path lookup. */
 export function publicRequestBodyPolicy(
 	method: string | undefined,
 	target: string | undefined,
 ) {
-	if (method !== "POST" || !target) return null;
+	if ((method !== "POST" && method !== "PUT") || !target) return null;
 	let pathname: string;
 	try {
 		const url = /^https?:\/\//i.test(target)
@@ -54,15 +83,18 @@ export function publicRequestBodyPolicy(
 		pathname = dataPath;
 		// Conservatively cover indexed aliases without copying Next's dynamic
 		// and interception-route parsing. The policy below still names only
-		// the three limited endpoints, and the forwarded URL stays untouched.
+		// the limited endpoints, and the forwarded URL stays untouched.
 		if (pathname.startsWith("/index/")) {
 			pathname = pathname.slice(6);
 		}
 	}
-	const direct = policyForPath(pathname);
+	const direct = policyForPath(pathname, method);
 	if (direct) return direct;
 	try {
-		return policyForPath(decodeURIComponent(pathname).replace(/\/$/, ""));
+		return policyForPath(
+			decodeURIComponent(pathname).replace(/\/$/, ""),
+			method,
+		);
 	} catch {
 		return null;
 	}

@@ -11,6 +11,7 @@ import { officialCambiOptions, runNativeBandingScore } from "./banding-native";
 import {
 	assertBandingGeometry,
 	bandingInputFromProbe,
+	type HdrBandingMethod,
 	runCpuBandingScore,
 } from "./banding-score";
 import type { LocalSelection, NativeLocalSelection } from "./local-selection";
@@ -57,11 +58,12 @@ export async function measureBanding(
 		signal: AbortSignal;
 		allocation?: LocalResourcePlan;
 		assertOwned?: () => Promise<void>;
+		hdrMethod?: HdrBandingMethod;
 	},
 ) {
 	const { signal, allocation, assertOwned, run } = request;
 	signal.throwIfAborted();
-	const input = bandingInputFromProbe(request.probe);
+	const input = bandingInputFromProbe(request.probe, request.hdrMethod);
 	const selection = run.selection;
 	let result: {
 		frames: BandingFrame[];
@@ -75,6 +77,7 @@ export async function measureBanding(
 		} & Record<string, unknown>;
 	};
 	if (selection.backend !== "cpu") {
+		if (request.hdrMethod) throw new Error("BANDING_HDR_REQUIRES_CPU");
 		assertBandingGeometry(input);
 		if (
 			!deps.nativePath ||
@@ -110,22 +113,36 @@ export async function measureBanding(
 			signal,
 			allocation?.threads ?? 1,
 			request.probe,
+			request.hdrMethod,
 		);
 		result = {
 			frames: cpu.frames,
 			execution: {
 				version: 1,
 				metric: "CAMBI_NR",
-				scoringVersion: BANDING_SCORING_VERSION,
+				scoringVersion: request.hdrMethod ? 2 : BANDING_SCORING_VERSION,
 				backend: "cpu",
 				decodeBackend: "cpu",
 				implementation: "libvmaf",
 				libvmafVersion: cpu.libvmafVersion,
 				decisionSource: "CPU_REFERENCE",
+				...(request.hdrMethod
+					? {
+							eotf: "PQ",
+							inputTransfer: request.hdrMethod === "PQ" ? "PQ" : "HLG",
+							normalization:
+								request.hdrMethod === "PQ"
+									? "NONE"
+									: "HLG_TO_PQ_1000_NITS_444_16",
+						}
+					: {}),
 				extractor: {
 					name: "cambi",
 					featureName: cpu.featureName,
-					options: officialCambiOptions(input),
+					options: {
+						...officialCambiOptions(input),
+						...(request.hdrMethod ? { eotf: "pq" } : {}),
+					},
 				},
 			},
 		};
@@ -133,7 +150,11 @@ export async function measureBanding(
 	signal.throwIfAborted();
 	await assertOwned?.();
 	const pooled = computeBandingPooled(result.frames);
-	const thresholds = bandingThresholdsFor(run.gate, request.rendition);
+	// Existing delivery rules were configured for the SDR detector. Manual HDR
+	// measurements use a different EOTF/protocol and have no calibrated gate yet.
+	const thresholds = request.hdrMethod
+		? {}
+		: bandingThresholdsFor(run.gate, request.rendition);
 	const assessment = {
 		...assessBandingFrames(result.frames, thresholds),
 		...thresholds,

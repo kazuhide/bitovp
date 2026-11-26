@@ -43,6 +43,32 @@ function pair(overrides: Partial<ResourcePair> = {}): ResourcePair {
 }
 
 describe("local quality resource planning", () => {
+	it("reserves HDR normalization and model conversion at 16-bit 4:4:4 precision", () => {
+		const ordinary = planLocalResources(
+			resources,
+			pair({ model: "vmaf_v1.0.16_3d0h" }),
+			{ threads: 1 },
+			1,
+		);
+		const hdr = planLocalResources(
+			resources,
+			pair({ model: "hdr_vmaf_v1.1.8_3d0h_2160" }),
+			{ threads: 1 },
+			1,
+		);
+		expect(hdr.exclusive).toBe(true);
+		expect(hdr.estimatedBytes).toBeGreaterThanOrEqual(
+			ordinary.estimatedBytes * 3,
+		);
+		expect(() =>
+			planLocalResources(
+				{ ...resources, budgetBytes: undefined },
+				pair({ model: "hdr_vmaf_v1.1.8_3d0h_2160" }),
+				{ threads: 1, concurrency: 1 },
+				1,
+			),
+		).toThrow();
+	});
 	it("serializes native pairs and reserves for 10-bit CPU verification even from 8-bit inputs", () => {
 		const ordinary = planLocalResources(
 			resources,

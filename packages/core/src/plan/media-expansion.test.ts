@@ -186,6 +186,38 @@ describe("IMSC and Opus contracts", () => {
 			),
 		).toBe(true);
 	});
+	it("names the refused Opus leg by its place in the plan, not among the legs the manifest selects", () => {
+		const plan = opusPlan();
+		const base = sourcePlan("fixed-bitrate-dash-hls-streamcondition-on-aws");
+		const hls = base.manifests.find((m) => m.kind === "HLS");
+		if (!hls) throw new Error("Missing HLS");
+		plan.manifests.push({
+			...hls,
+			audioMuxingKind: undefined,
+			generationMode: "DEFAULT",
+		});
+		// A muxing of another encoding, which a Default manifest does not select,
+		// ahead of the legs it does.
+		const [first] = plan.renditions;
+		const leg = plan.muxings.find((m) => m.streamKey === first?.key);
+		if (!first || !leg) throw new Error("Missing leg");
+		plan.renditions.push({ ...first, key: "elsewhere", encodingKey: "second" });
+		plan.muxings.unshift({
+			...leg,
+			key: "elsewhere-mux",
+			streamKey: "elsewhere",
+		});
+		const opus = plan.muxings.findIndex(
+			(m) =>
+				plan.renditions.find((r) => r.key === m.streamKey)?.codec === "OPUS",
+		);
+		expect(opus).toBeGreaterThan(1);
+		expect(
+			validatePlan(plan)
+				.filter((x) => x.code === "PLAN_HLS_OPUS_WEBM_UNSUPPORTED")
+				.map((x) => x.path),
+		).toEqual([`muxings[${opus}]`]);
+	});
 	it("rejects a relative IMSC URL pointing to a different output storage", () => {
 		const plan = imscPlan();
 		const mux = plan.muxings.find((m) => m.kind === "TEXT");

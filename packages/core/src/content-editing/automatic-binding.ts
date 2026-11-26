@@ -1,6 +1,10 @@
 import { z } from "zod";
+import { captionOmissionsSchema } from "./caption-omissions";
 import { isLocalStoryPolicy } from "./local-semantic-protocol";
-import { localStoryEvidenceSchema } from "./local-story-contracts";
+import {
+	localStoryEvidenceSchema,
+	localStoryTrailerIntentSchema,
+} from "./local-story-contracts";
 import {
 	isContentHighlightPolicy,
 	semanticEvidenceSchema,
@@ -91,10 +95,26 @@ export const automaticGenerationSchema = z
 		semanticEvidence: semanticEvidenceSchema.optional(),
 		storyEvidence: storyEvidenceSchema.optional(),
 		localStoryEvidence: localStoryEvidenceSchema.optional(),
+		trailer: localStoryTrailerIntentSchema.optional(),
+		captionOmissions: captionOmissionsSchema.optional(),
 	})
 	.refine(
 		(value) => value.generatedDurationFrames <= value.requestedDurationFrames,
 	)
+	.refine((value) => {
+		const evidence = value.localStoryEvidence?.trailer;
+		return (
+			canonicalEditingJson(value.trailer ?? null) ===
+				canonicalEditingJson(evidence?.intent ?? null) &&
+			(!evidence ||
+				(evidence.windows.reduce(
+					(sum, window) => sum + window.durationFrames,
+					0,
+				) === value.generatedDurationFrames &&
+					(evidence.intent.durationMode !== "EXACT" ||
+						value.generatedDurationFrames === value.requestedDurationFrames)))
+		);
+	}, "Trailer metadata must agree with the selected windows and editorial intent")
 	.refine(
 		(value) =>
 			value.query === undefined ||

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { transcriptionSpeechIntervalSchema } from "../content-production/transcription-quality";
+import { transcriptionSpeechIntervalSchema } from "../content-production/transcription-schema";
 import {
 	COMPOSITION_CAPTION_SELECTION_POLICY,
 	compositionCaptionClipSnapshot,

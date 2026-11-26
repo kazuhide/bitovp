@@ -57,6 +57,117 @@ DASH suggested presentation delay and minimum update period use milliseconds in
 the form and are converted to API seconds. DVR retains a playback window; its
 manifest-element budget is checked rather than silently clamped.
 
+## Experimental MoQ delivery
+
+Create a **MoQ relay (live delivery)** credential first. In the Live wizard,
+select it under **Output** and set the MoQT draft and track namespace.
+**Copy settings and edit** opens the saved settings in the wizard when the
+form can reproduce the plan. Other valid plans remain editable as JSON.
+
+The credential's encrypted secret holds a
+`moqt://host[:port][/path]` relay URL and an optional authorization token/type;
+userinfo, query strings, and fragments are rejected. Keep the token out of the
+plan. When a token is present, its optional type accepts integers from 0 to
+2,147,483,647. To correct an older credential with a larger value, edit the
+credential, select **Replace secret material**, and re-enter the publishing URL,
+token and assigned token type. Re-enter the subscribe-only **Playback URL** if
+the credential is also used for preview. Saving replaces all the secret fields.
+
+Use one `MOQ` output referencing that credential, `trackNamespace` as a tuple of
+1–32 nonempty strings, and `draftVersion` as `DRAFT_16` or `DRAFT_18`. Each H264
+video or AAC audio rendition needs one FMP4 or CMAF muxing directed to that
+output. A CMAF muxing can specify `framesPerCmafChunk`.
+The relay publishes a catalog. Set `liveManifests` to an empty array when
+authoring expert JSON. Keep storage outputs and mirrors, DRM, SCTE-35, and ad
+insertion off in the MoQ plan.
+
+This uses Custom Live and requires Bitmovin's account-level MoQ Beta access.
+Relay interoperability and Player Web X playback need independent verification;
+the MoQ preview uses a separate Player Web X build. Requested and actual Encoder
+versions can be compared in the run's `kind=summary` diagnostics when the
+provider returns them. A selected version is never inferred from `BETA` or
+`STABLE`.
+
+For MoQ preview, set the credential's optional **Playback URL** to a separate
+HTTPS subscribe-only URL before starting the channel. Configure an own Bitmovin
+Player license in Player settings. The preview uses that key independently of
+the ordinary HLS/DASH engine choice. The current MoQ Player build is separate
+from the public npm SDK: an operator supplies a licensed local bundle with
+`BITOVP_MOQ_PLAYER_BUNDLE_PATH` and its digest in
+`BITOVP_MOQ_PLAYER_BUNDLE_SHA256`. The asset route verifies the file before serving
+it; the repository does not include this proprietary bundle.
+
+Before creating an imported MoQ plan or starting another run, check **MoQ preview**
+readiness beside the start button. It checks the saved credential, namespace,
+organization Player license and verified Web X bundle. Publishing-only plans
+can proceed. Relay connectivity and playback are checked once the run starts.
+
+Use **Play** to start MoQ playback and **Stop** to release the player. Playback
+starts muted by default. Open **Playback settings** to adjust the target buffer in
+milliseconds or the volume. Apply the buffer before or during playback. The
+video quality selector appears when the player offers another video track.
+The buffer target and volume carry over when restarting playback on the same
+page. Frame progress indicates received video; a successful
+start request alone does not. Preview supports one namespace component and
+draft16/18. Missing configuration, a changed credential, or unavailable video
+remains explicit. Publisher tokens are never used as browser playback tokens.
+
+**Open player** opens the same preview at `/live/[id]/runs/[runId]/moq` for an
+OPERATOR. Both views show configured namespace/draft/catalog, received quality
+metadata, measured video FPS, resolution, frames, startup time and buffer level.
+The 2-second target buffer is a setting. **Video latency (barcode)** is the
+Player's timestamp-in-image estimate, requiring compatible live timestamp bars
+and synchronized source/client clocks; it is not RTT or a guaranteed compositor
+display measurement. Missing or stale values remain unmeasured. Configured
+Cloudflare Relay ID/expiry/permissions come from unverified subscriber-token
+claims, not server telemetry. Relay bytes/objects/RTT counters are not exposed
+by the Player API used here.
+
+Both pages retain observations after the run ends. A playback session saves
+Player latency, FPS, buffer source and frame counters on a UTC timeline, with
+missing measurements left as gaps. The received preview is recorded for up to
+90 seconds/16MiB and saved as a seekable WebM. A slightly late browser stop can
+be trimmed to the recording limit. Canvas capture records video only. Play or
+download it from
+**Saved MoQ observations** after stopping. Recording covers the preview's
+received interval. The historical client clock estimates UTC from the saved
+browser capture time and the current recording position, even if capture
+began after the observation window. Recording status shows recording, saving, saved, unsupported or
+failure. Each run keeps up to five observation sessions. Saved data remains
+available when the live player is inactive. Playback can start while history
+and Analytics are preparing. The playback stage timeline shows UTC timestamps
+for subscriber requests, observed frames, gaps, recovery, and termination.
+After ending, saved video and observations appear before the collapsed live
+preview. Historical namespace/draft/catalog come from the original output proof.
+Use `#moq-preview` on either page to open this section directly. Browser-native
+bundle and recording requests carry the document's organization assertion;
+switching organizations requires reloading the page.
+
+Configure the tenant's Analytics key in Player settings to collect the same
+barcode latency through Collector 2.62.0's public HTML5 adapter. **Bitmovin
+Analytics** reads back `customData1` milliseconds for the saved impression and
+run, alongside the browser measurements and persisted Encoder heartbeat
+metrics. This is collection of the Player's measurement, rather than an
+independent latency clock or the native Analytics `LATENCY` field. Use
+**Refresh** after ending if ingestion is still pending. Input bitrate/FPS,
+cumulative packet anomalies and segment processing time retain their own units;
+segment processing time does not measure end-to-end video delay.
+
+Set `BITOVP_MOQ_ARCHIVE_DIR` to persistent local storage. The Web image includes
+FFprobe/FFmpeg for bounded validation and stream-copy remuxing; the Compose
+deployments attach a dedicated persistent archive volume. Channel deletion or
+reset removes only the corresponding owned recordings after the database
+commit and required provider-stop checks succeed.
+
+The same API accepts `kind=task` for fresh provider task status and metadata
+from at most 100 messages. It reports truncation and positive message counts.
+The SDK maps an absent list to an empty array, so missing or empty mapped lists
+have `totalMessageCount: null` (unknown). Free-form text is withheld by default.
+Administrators may request `kind=task&download=task` as a bounded private
+attachment; its text is never saved in audits. Fixed
+protocol mentions describe task messages, not negotiated ALPN or successful
+Relay delivery.
+
 ## Encrypted outputs and fallback regions
 
 In **Packaging → Encryption**, add CENC, FairPlay, or SPEKE to an fMP4 track,
@@ -210,8 +321,10 @@ leave that confirmation pending.
 
 The worker reserves one Live processing slot for stop commands and startup
 cancellation, so other channels waiting to start cannot occupy every slot.
-`LIVE_CHANNEL_CONCURRENCY` sets the total per worker (default `8`, minimum `2`);
-ordinary Live actions use at most one fewer slot. Blank uses the default.
+`LIVE_CHANNEL_CONCURRENCY` sets the action slots per worker (default `8`, minimum
+`2`). Ordinary Live actions use at most one fewer slot. Scheduled encoder
+status and heartbeat reads have a dedicated slot and can use spare ordinary
+slots when a previous read is still running. Blank uses the default.
 Invalid values prevent the worker from starting. This reservation lets a stop
 begin during a busy startup period; provider or network failures can still
 prevent confirmed termination.

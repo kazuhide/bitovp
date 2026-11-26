@@ -18,7 +18,7 @@ import {
 	localStoryFlowNativeRootEvidence,
 	localStoryFlowRecordIdentity,
 	localStoryFlowSourceArchiveEvidence,
-} from "@bitovp/core/local-story-flow-server";
+} from "@bitovp/core/local-story-flow-hierarchy";
 
 export type PreparedLocalStoryFlowPublication = Readonly<object>;
 type CommonPublicationEvidence = {

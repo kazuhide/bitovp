@@ -14,6 +14,13 @@ export const RESET_INTERNAL_MODELS = [
 	"vmafComputeTask",
 ] as const;
 
+/** Keep experiment results and accepted batch receipts with their campaign. */
+export const RESET_RETAINED_EXPERIMENT_MODELS = [
+	"encodingExperimentCampaign",
+	"encodingExperimentTrial",
+	"encodingExperimentBatch",
+] as const;
+
 /** Editing references form retained revision/derivative chains; this release never deletes them by reset. */
 export const RESET_PROTECTED_EDITING_MODELS = [
 	"libraryAnalysisBinding",
@@ -42,8 +49,14 @@ export const RESET_CATALOG = [
 		],
 	},
 	{ category: "webhookHistory", models: ["webhookEvent"] },
-	{ category: "auditHistory", models: ["auditLog", "accessEvent"] },
-	{ category: "storageChecks", models: ["storageInspection"] },
+	{
+		category: "auditHistory",
+		models: ["auditLog", "accessEvent", "operationAttempt"],
+	},
+	{
+		category: "storageChecks",
+		models: ["vodInputPreviewTask", "storageInspection"],
+	},
 	{ category: "watchFolderHistory", models: ["watchedObject"] },
 	{ category: "alertHistory", models: ["alertEvent"] },
 	{

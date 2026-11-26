@@ -1,5 +1,9 @@
 "use client";
-import { mediaTaskCreateSchema, mediaTaskReceiptSchema } from "@bitovp/core";
+import {
+	type LocalStoryTrailerIntent,
+	mediaTaskCreateSchema,
+	mediaTaskReceiptSchema,
+} from "@bitovp/core";
 import { useRouter } from "next/navigation";
 import {
 	type ReactNode,
@@ -12,10 +16,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
+import { useT } from "@/lib/i18n/context";
+import {
+	editingErrorMessage,
+	editingFailureCode,
+} from "../../edits/editing-errors";
 import { AssociationReview } from "./association-review";
 import {
 	GenerationSettings,
 	type GenerationSettingsValue,
+	withTrailerIntent,
 } from "./generation-settings";
 import { productionFailure, useProductionCopy } from "./production-copy";
 import { useEditingActor } from "./use-editing-actor";
@@ -35,6 +45,7 @@ type Props = {
 	disabled: boolean;
 	onBusyChange?(busy: boolean): void;
 	renderMode?: "DRAFT" | "EXPORT";
+	trailer?: LocalStoryTrailerIntent;
 	hasAudio?: boolean;
 	localStoryAvailable?: boolean;
 	captionTranslationAvailable?: boolean;
@@ -64,6 +75,7 @@ function GenerationControlsView({
 	disabled,
 	onBusyChange,
 	renderMode,
+	trailer,
 	hasAudio,
 	localStoryAvailable = false,
 	captionTranslationAvailable = false,
@@ -77,6 +89,7 @@ function GenerationControlsView({
 	const c = useProductionCopy(),
 		id = useId(),
 		router = useRouter();
+	const { t } = useT();
 	const canMutate = useMutationAccess("library.edits.edit");
 	const [settings, setSettings] = useState<GenerationSettingsValue>(
 		initialSettings ?? {
@@ -127,6 +140,7 @@ function GenerationControlsView({
 		analysisRevisionId,
 		targetDurationFrames,
 		renderMode,
+		trailer,
 		hasAudio,
 		actorIdentity,
 	});
@@ -152,6 +166,7 @@ function GenerationControlsView({
 			allowPresentation={renderMode === "DRAFT"}
 			allowLocalStory={localStoryAvailable}
 			allowJapaneseCaptions={captionTranslationAvailable}
+			trailerMode={Boolean(trailer)}
 			value={hasAudio === false ? { ...settings, captions: "OFF" } : settings}
 			hasAudio={hasAudio}
 			disabled={blocked || (renderMode === "DRAFT" && uncertain)}
@@ -188,8 +203,16 @@ function GenerationControlsView({
 		controller.current = pending;
 		try {
 			if (!(uncertain && request.current?.boundary === boundary)) {
+				const effective = withTrailerIntent(settings, trailer);
 				const parameters = {
-					...settings,
+					...effective,
+					storySceneId:
+						effective.policy === "LOCAL_STORY" &&
+						renderMode === "DRAFT" &&
+						!effective.trailer &&
+						effective.storyWorkflowVersion === undefined
+							? effective.storySceneId
+							: undefined,
 					contentId,
 					targetDurationFrames,
 					...(renderMode ? { renderMode } : {}),
@@ -197,7 +220,7 @@ function GenerationControlsView({
 						? { draftPolicyVersion: "duration-review-v2" as const }
 						: {}),
 					...(hasAudio === false ? { captions: "OFF" as const } : {}),
-					...(settings.policy !== "COHESION" ? { query: undefined } : {}),
+					...(effective.policy !== "COHESION" ? { query: undefined } : {}),
 				};
 				const value = mediaTaskCreateSchema.parse({
 					kind: "GENERATE",
@@ -249,9 +272,15 @@ function GenerationControlsView({
 			else if (request.current) request.current.uncertain = true;
 			if (isCurrent()) {
 				setError(
-					failure instanceof ApiError && failure.message.startsWith("STORY_")
-						? productionFailure(failure.message, c)
-						: c.error,
+					failure instanceof ApiError &&
+						failure.status !== 401 &&
+						failure.status !== 403
+						? productionFailure(
+								editingFailureCode(failure),
+								c,
+								editingErrorMessage(failure, t),
+							)
+						: editingErrorMessage(failure, t),
 				);
 				setUncertain(unknown);
 				keepReservation = renderMode === "DRAFT" && unknown;

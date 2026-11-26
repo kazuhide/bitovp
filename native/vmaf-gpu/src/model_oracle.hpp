@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,8 @@ struct ModelInput {
     // Official extractor name -> official option name -> value.
     // For example, cambi -> enc_width/enc_height/enc_bitdepth.
     std::map<std::string, std::map<std::string, std::string>> feature_overrides;
+    // A snapshot to load in place of reopening the source path.
+    std::optional<std::string> bytes{};
 };
 
 // Explicit features are independent of prediction models. Options not supplied

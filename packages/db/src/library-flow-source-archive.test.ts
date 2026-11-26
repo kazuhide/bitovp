@@ -3,11 +3,7 @@ import {
 	canonicalEditingJson,
 	editingAnalysisBindingSchema,
 	hashEditingEvidence as H,
-	LOCAL_STORY_FLOW_CLOSURE_POLICY,
-	LOCAL_STORY_FLOW_CONTEXT_POLICY,
 	LOCAL_STORY_FLOW_H1_POLICY,
-	LOCAL_STORY_FLOW_ROUTE_POLICY,
-	LOCAL_STORY_FLOW_SCOPE_POLICY,
 	localStoryFlowGenerationPolicyFingerprint,
 	localStoryStageRegistry,
 	mediaTaskCacheKey,
@@ -19,20 +15,26 @@ import {
 import {
 	admitLocalStoryFlowArchiveTranscript,
 	buildLocalStoryFlowSourceArchive,
-	createLocalStoryLegacyLedgerCacheRecipe,
-	createLocalStoryLegacyLedgerStageRecipe,
+	LOCAL_STORY_FLOW_CLOSURE_POLICY,
+	LOCAL_STORY_FLOW_CONTEXT_POLICY,
 	LOCAL_STORY_FLOW_NATIVE_PROMPT_POLICY,
-	LOCAL_STORY_LEGACY_LEDGER_RECIPE_POLICY,
-	type LocalStoryArtifactCacheRow,
+	LOCAL_STORY_FLOW_ROUTE_POLICY,
+	LOCAL_STORY_FLOW_SCOPE_POLICY,
 	localStoryFlowArchiveLedgerRequests,
 	localStoryFlowArchiveLedgerStageRequest,
 	localStoryFlowArchivePreparationEvidence,
 	localStoryFlowArchiveTranscriptEvidence,
-	localStoryFlowIdentityForModelPin,
 	localStoryFlowSourceArchiveEvidence,
+	prepareLocalStoryFlowArchiveSource,
+} from "@bitovp/core/local-story-flow-hierarchy";
+import {
+	createLocalStoryLegacyLedgerCacheRecipe,
+	createLocalStoryLegacyLedgerStageRecipe,
+	LOCAL_STORY_LEGACY_LEDGER_RECIPE_POLICY,
+	type LocalStoryArtifactCacheRow,
+	localStoryFlowIdentityForModelPin,
 	localStoryIdentityForModelPin,
 	localStoryLegacyLedgerPrompt,
-	prepareLocalStoryFlowArchiveSource,
 } from "@bitovp/core/local-story-flow-server";
 import { describe, expect, it } from "vitest";
 import {
@@ -590,6 +592,7 @@ it("stops on missing audio transcript before any pointer lookup", async () => {
 	expect(lookups).toBe(1);
 });
 // This timeout includes construction of 128 original cache fixtures. App RR remains 15 seconds.
+// The test took 16.4 s on a CI runner with two workers, so 30 s left too little room.
 it("measures complete 128-chunk source resolution with 512+128 fixed candidates", async () => {
 	const fixtureStarted = performance.now(),
 		f = legacyFixture(256),
@@ -625,4 +628,4 @@ it("measures complete 128-chunk source resolution with 512+128 fixed candidates"
 			fixtureAndResolutionElapsedMs: performance.now() - fixtureStarted,
 		}),
 	);
-}, 30_000);
+}, 60_000);

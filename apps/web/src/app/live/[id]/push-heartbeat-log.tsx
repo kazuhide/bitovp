@@ -8,6 +8,11 @@ import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import type { HeartbeatReceiptPage } from "@/lib/server/heartbeat-receipt-value";
 import { incomingMbps } from "./heartbeat";
+import {
+	type HeartbeatWindow,
+	heartbeatWindowContains,
+} from "./heartbeat-correlation";
+import { SectionHelp } from "./section-card";
 
 const RECEIPTS_API = "/api/live-channels/[id]/runs/[runId]/heartbeat-receipts";
 const ended = (status: string | undefined) =>
@@ -19,15 +24,19 @@ export function PushHeartbeatLog({
 	runId,
 	currentRunId,
 	currentRunActive,
+	currentRunEnded = false,
 	currentRunStatus,
 	open,
+	timeWindow,
 }: {
 	channelId: string;
 	runId: string;
 	currentRunId: string | null;
 	currentRunActive: boolean;
+	currentRunEnded?: boolean;
 	currentRunStatus?: LiveChannelStatus;
 	open: boolean;
+	timeWindow?: HeartbeatWindow;
 }) {
 	const { t } = useT();
 	const [cursor, setCursor] = useState<string>();
@@ -45,7 +54,13 @@ export function PushHeartbeatLog({
 		return () => document.removeEventListener("visibilitychange", update);
 	}, []);
 	const eligible =
-		open && visible && !cursor && currentRunActive && runId === currentRunId;
+		!timeWindow &&
+		open &&
+		visible &&
+		!cursor &&
+		currentRunActive &&
+		!currentRunEnded &&
+		runId === currentRunId;
 	const log = useQuery({
 		queryKey: [
 			"live-run-heartbeat-receipts",
@@ -64,35 +79,48 @@ export function PushHeartbeatLog({
 		refetchIntervalInBackground: false,
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
-		queryFn: () => {
+		queryFn: async () => {
 			const path = RECEIPTS_API.replace("[id]", channelId).replace(
 				"[runId]",
 				runId,
 			);
 			const query = new URLSearchParams({ limit: "100" });
 			if (cursor) query.set("cursor", cursor);
-			return apiFetch<HeartbeatReceiptPage>(`${path}?${query}`);
+			const value = await apiFetch<HeartbeatReceiptPage>(`${path}?${query}`);
+			if (timeWindow && value.run?.id !== runId)
+				throw new Error("Heartbeat correlation unavailable");
+			return value;
 		},
 	});
 	// Receipt order, not provider sample order; never force the reader's scroll.
 	// Freeze inspection even if a read already in flight completes after opening.
-	const rows = inspectionRows ?? log.data?.rows ?? [];
+	const loadedRows = inspectionRows ?? log.data?.rows ?? [];
+	const rows = timeWindow
+		? loadedRows.filter((row) =>
+				heartbeatWindowContains(timeWindow, row.receivedAt),
+			)
+		: loadedRows;
 	const canResume = eligible && !ended(log.data?.run.status);
+	const history =
+		runId !== currentRunId || currentRunEnded || ended(log.data?.run.status);
+	const title = t("pushLog.title");
 	return (
-		<section className="space-y-2" aria-label={t("pushLog.title")}>
-			<h4 className="font-medium text-sm text-zinc-200">
-				{t("pushLog.title")}
-			</h4>
-			<p className="text-xs text-zinc-500">{t("pushLog.hint")}</p>
-			<p className="text-xs text-zinc-400">
-				{t(
-					canResume && inspecting.size
-						? "pushLog.inspecting"
-						: canResume
-							? "pushLog.auto"
-							: "pushLog.paused",
-				)}
-			</p>
+		<section className="space-y-2" aria-label={title}>
+			<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+				<h4 className="font-medium text-sm text-zinc-200">{title}</h4>
+				<SectionHelp title={title} help={t("pushLog.hint")} />
+				<span className="ml-auto text-xs text-zinc-400">
+					{t(
+						history
+							? "pushLog.history"
+							: !canResume
+								? "pushLog.paused"
+								: inspecting.size
+									? "pushLog.inspecting"
+									: "pushLog.auto",
+					)}
+				</span>
+			</div>
 			{log.isError ? (
 				<div role="status" className="text-amber-300 text-xs">
 					{t("status.readUnavailable")}{" "}
@@ -107,7 +135,9 @@ export function PushHeartbeatLog({
 						? null
 						: log.isPending
 							? t("heartbeatLog.loading")
-							: t("pushLog.empty")}
+							: t(
+									timeWindow ? "moqPlayback.correlationEmpty" : "pushLog.empty",
+								)}
 				</p>
 			) : (
 				<div className="max-h-96 overflow-auto rounded-md border border-zinc-800">
@@ -150,7 +180,9 @@ export function PushHeartbeatLog({
 											{row.receivedAt}
 										</td>
 										<td className="px-2 py-1.5">
-											{ingest?.status ?? t("common.unknown")}
+											{ingest?.status && ingest.status !== "UNKNOWN"
+												? ingest.status
+												: "—"}
 										</td>
 										<td className="px-2 py-1.5">
 											{incomingMbps(video?.incomingBitrate)}
@@ -192,7 +224,7 @@ export function PushHeartbeatLog({
 				</div>
 			)}
 			<div className="flex flex-wrap items-center gap-3">
-				{log.data ? (
+				{rows.length > 0 ? (
 					<span className="text-xs text-zinc-500">
 						{t("heartbeatLog.rowsLoaded", { count: rows.length })}
 					</span>

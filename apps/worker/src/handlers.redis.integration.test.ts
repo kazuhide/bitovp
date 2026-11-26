@@ -38,6 +38,7 @@ it.skipIf(!process.env.VOD_REDELIVERY_TEST_REDIS_URL)(
 			feeder: async () => {},
 			vmaf: async () => {},
 			storageInspect: async () => {},
+			vodInputPreview: async () => ({ status: "SUCCEEDED" }),
 			notify: async () => {},
 			startupProbe: async () => {},
 			slateNormalize: async () => {},

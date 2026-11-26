@@ -36,20 +36,23 @@ The default local application address is **http://localhost:3100**.
 You configure Bitmovin accounts and storage credentials in the application.
 They are not required to open the application or check its health.
 
-For the Content Library editing branch, `pnpm preview:editing up` starts an
-isolated local Docker environment. It includes synthetic footage, an optional
+For Content Library clip editing, configure the GPU-backed Local LLM and run
+`pnpm preview:editing up --local-llm` to start an isolated local Docker preview.
+Without `--local-llm`, the preview starts with clip editing disabled.
+It includes synthetic footage, an optional
 licensed animation demo, and a bundled dialogue sample for captions. Authored
 demo metadata is identified separately from real AISA results. Editing loads the
 encoding output and AISA automatically. Choose a length and create a project to
 open an edited timeline with immediate preview. MP4 encoding starts only after
 you review the timeline and choose Generate. Caption-enabled proposals use
 observed speech boundaries and identify uncertain edits for review.
-See the [Japanese branch preview guide](./docs/EDITING-PREVIEW.ja.md).
+See the [Japanese preview guide](./docs/EDITING-PREVIEW.ja.md).
 
 ## What you can configure
 
 - VOD: fixed and Per-Title ladders, video/audio/subtitles, filters, trimming,
-  packaging, HLS/DASH manifests, encryption, and quality checks.
+  packaging, HLS/DASH manifests, file export (MP4, MPEG-TS, QuickTime),
+  encryption, and quality checks.
 - Live: RTMP, redundant RTMP, SRT, Zixi, and HLS pull inputs; output storage and
   delivery; heartbeat monitoring; schedules; slate insertion; Live-to-VOD;
   and optional MP4 archives.
@@ -64,13 +67,7 @@ Availability also depends on your Bitmovin account and encoder version.
 
 ## Releases
 
-**[v1.2.0](https://github.com/kazuhide/bitovp/releases/tag/v1.2.0)**
-adds editable Library clips, measured caption timing and local CAMBI banding
-reports. New clip work requires a configured GPU-backed Local LLM; it is
-disabled when that runtime is unavailable. See the
-[Library guide](./docs/user-guide/LIBRARY-AND-ADMIN.md) and
-[banding guide](./docs/user-guide/BANDING-QUALITY.md) for setup and limits.
-Download a source archive from the release and
+Download a source archive from the [published releases](https://github.com/kazuhide/bitovp/releases) and
 follow the installation guide; the application is built locally. Release
 assets include source archives and SHA-256 checksums.
 See the [changelog](./CHANGELOG.md) for released and unreleased changes.
@@ -86,6 +83,19 @@ Starting an encoding or creating a live channel can incur provider charges.
 
 For service administration, read [Operations](./docs/OPERATIONS.md).
 For automation alongside the GUI, read [API usage](./docs/API-USAGE.md).
+
+## Development checks
+
+Install [actionlint 1.7.12](https://github.com/rhysd/actionlint/releases/tag/v1.7.12)
+for local development checks. `pnpm check` runs Biome and validates every GitHub
+Actions workflow, including expression contexts. CI installs a checksum-pinned
+copy of the same tool.
+
+Use `pnpm verify:change plan --base <local-base-revision>` to select the fixed
+contracts affected by a change and show integration checks that remain pending.
+The [change workflow](./docs/verification/change-workflow.md) explains running
+them and reading their receipts. The [verification foundation contract](./docs/verification/completion-contract.md)
+defines the required CI, defect-detection controls and speed measurements.
 
 ## License
 

@@ -7,10 +7,17 @@ import {
 	type DeliveryConstraint,
 	INTERNAL_HEVC_V2_BCF_VERSION,
 } from "@bitovp/core";
+import {
+	MAX_VOD_TIMELINE_SOURCES,
+	type VodInputTimelineSourceFacts,
+	validateVodInputTimeline,
+	vodInputTimelineNeedsPreparation,
+} from "@bitovp/core/vod-input-timeline";
+import { applyVodInputFavorite } from "@bitovp/core/wizard";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BitmovinAccountDto } from "@/app/settings/bitmovin/types";
 import { StoragePicker } from "@/components/storage-picker";
 import { Button } from "@/components/ui/button";
@@ -27,17 +34,42 @@ import {
 	renameOutputBase,
 	splitOutputFolder,
 } from "@/lib/output-path";
+import type { VodFlow } from "@/lib/vod-flow";
 import { draftFingerprint, mergeWizardDraft } from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
-import { reconcileAutomaticAudioPackaging } from "./automatic-audio-packaging";
+import {
+	followRenamedAudioKeys,
+	reconcileAutomaticAudioPackaging,
+} from "./automatic-audio-packaging";
 import {
 	applyMirrorCredentialSelection,
+	applyPreparedVodInputTimeline,
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
 	hasInvalidHevcV2Ladder,
 	type WizardState,
 	wizardUsesCodecEncodingMode,
 } from "./build-plan";
+import {
+	bcfOverrideAlone,
+	collapseToFileOutput,
+	FILE_OUTPUT_DEFAULT_STATE,
+	type FileJobWrite,
+	type FileOutputBlocker,
+	fileJobFolder,
+	fileJobWrites,
+	fileOutputBlockers,
+	renameFileJob,
+	withoutHevcV2Settings,
+} from "./file-output";
+import { FileOutputSection } from "./file-output-section";
+import { VodFlowSwitch } from "./flow-switch";
+import { VodInputTimelineEditor } from "./input-timeline/input-timeline-editor";
+import { importPreparedImageFile } from "./input-timeline/prepared-image-placement";
+import {
+	type TimelinePreparation,
+	timelinePreparationKey,
+} from "./input-timeline/timeline-preparation";
 import { MuxingsSection } from "./muxings-section";
 import { PlaceholderRefsList } from "./placeholder-refs-list";
 import {
@@ -79,6 +111,7 @@ import {
 	EncodingOptionsSection,
 	LadderSection,
 	ManifestSection,
+	measureOnlyLabel,
 } from "./wizard-sections";
 
 const STEPS: MessageKey[] = [
@@ -91,6 +124,41 @@ const STEPS: MessageKey[] = [
 	"wizard.manifests",
 	"wizard.review",
 ];
+const ALL_STEPS = STEPS.map((label, step) => ({ step, label }));
+
+/**
+ * The file-output flow's short view. Step numbers stay the full wizard's, so moving
+ * between the two views never renumbers a draft: the two steps that describe a
+ * streaming package are left out (Packaging, Manifests), two are named for what
+ * they hold here, and Encoding follows the destination as it does in the full view.
+ */
+const FILE_STEPS: { step: number; label: MessageKey }[] = [
+	{ step: 0, label: "wizard.basics" },
+	{ step: 1, label: "wizard.sources" },
+	{ step: 2, label: "vodFlow.stepFormat" },
+	{ step: 3, label: "vodFlow.stepDestination" },
+	{ step: 5, label: "wizard.encoding" },
+	{ step: 7, label: "wizard.review" },
+];
+const FILE_FORMAT_STEP = 2;
+
+/** What the Review step calls a write that is not one of the files. */
+const WRITE_LABEL: Record<Exclude<FileJobWrite["kind"], "file">, MessageKey> = {
+	analysis: "vodFlow.reviewAnalysis",
+	qcMirror: "vodFlow.reviewQcMirrors",
+	kantarReport: "vodFlow.reviewKantarReport",
+};
+const BLOCKER_STEP: Record<FileOutputBlocker, MessageKey> = {
+	// The simple view has the Sources step too, so what it holds back is named.
+	encodings: "vodFlow.blockerEncodings",
+	ladder: "wizard.ladder",
+	packaging: "wizard.packaging",
+	// As is what it holds back from the Encoding step.
+	perTitle: "vodFlow.blockerPerTitle",
+	qualityGate: "vodFlow.blockerQualityGate",
+	gateTargets: "vodFlow.blockerGateTargets",
+	manifests: "wizard.manifests",
+};
 
 const ENCODER_VERSION_OPTIONS = ["STABLE", "BETA"] as const;
 
@@ -99,7 +167,12 @@ const ENCODER_VERSION_OPTIONS = ["STABLE", "BETA"] as const;
  * delivery mirror (by index — 's rows had no picker at all until
  * the owner asked for one).
  */
-type PickerTarget = "output" | { file: number } | { mirror: number } | null;
+type PickerTarget =
+	| "output"
+	| { file: number }
+	| { mirror: number }
+	| { timelineAdd: true }
+	| null;
 
 export function VodWizard({
 	copiedJob,
@@ -108,7 +181,15 @@ export function VodWizard({
 	deliveryPresetId,
 	editPresetId,
 	submitLabel,
+	timelinePreviewNotice,
+	flow,
 }: {
+	/**
+	 * What a job started from nothing is for; shows the switch between the two.
+	 * Absent when something else decides the form: a template, a delivery spec or a
+	 * copied job brings its own plan and opens in the full wizard.
+	 */
+	flow?: VodFlow;
 	copiedJob?: { id: string; plan: Record<string, unknown> };
 	presetName?: string;
 	userPresetId?: string;
@@ -117,12 +198,109 @@ export function VodWizard({
 	/* Template edit mode loads through the same import path as userPreset. Its primary action updates the template with the loaded updatedAt concurrency token instead of submitting an encoding job. */
 	editPresetId?: string;
 	submitLabel?: string;
+	timelinePreviewNotice?: string;
 }) {
-	const { t } = useT();
+	const { t, locale } = useT();
 	const router = useRouter();
+	const fileFlow =
+		flow === "file" &&
+		!copiedJob &&
+		[presetName, userPresetId, deliveryPresetId, editPresetId].every(
+			(source) => source === undefined,
+		);
+	const fresh = fileFlow ? FILE_OUTPUT_DEFAULT_STATE : DEFAULT_WIZARD_STATE;
 	const [step, setStep] = useState(0);
-	const [state, setState] = useState<WizardState>(DEFAULT_WIZARD_STATE);
-	const draftBase = useRef(DEFAULT_WIZARD_STATE);
+	const [state, setState] = useState<WizardState>(fresh);
+	const timelineSourcesSignature = JSON.stringify(
+		state.inputFiles
+			.filter((file) => file.purpose !== "FILTER_IMAGE")
+			.map(({ key, credentialId, bucket, path, kind }) => ({
+				key,
+				credentialId,
+				bucket,
+				path,
+				kind,
+			})),
+	);
+	const [timelineReadiness, setTimelineReadiness] = useState<{
+		ready: boolean;
+		probeId?: string | null;
+		facts: VodInputTimelineSourceFacts[];
+		sourceSignature: string;
+	}>({ ready: false, facts: [], sourceSignature: "" });
+	const onTimelineReadiness = useCallback(
+		(status: {
+			ready: boolean;
+			probeId?: string | null;
+			facts: VodInputTimelineSourceFacts[];
+		}) =>
+			setTimelineReadiness({
+				...status,
+				sourceSignature: timelineSourcesSignature,
+			}),
+		[timelineSourcesSignature],
+	);
+	const [timelinePreparation, setTimelinePreparation] =
+		useState<TimelinePreparation | null>(null);
+	const preparationKey = state.inputTimeline
+		? timelinePreparationKey(
+				state.inputTimeline,
+				state.inputFiles,
+				{
+					credentialId: state.output.credentialId,
+					bucket: state.output.bucket,
+					prefix: state.output.basePath,
+				},
+				timelineReadiness.probeId,
+			)
+		: null;
+	const preparationRequired =
+		!!state.inputTimeline &&
+		vodInputTimelineNeedsPreparation(state.inputTimeline);
+	const prepared =
+		timelinePreparation?.key === preparationKey &&
+		timelinePreparation.task.status === "SUCCEEDED" &&
+		Date.parse(timelinePreparation.task.expiresAt) > Date.now()
+			? timelinePreparation.task
+			: null;
+	const submissionState =
+		prepared && state.inputTimeline
+			? applyPreparedVodInputTimeline(state, prepared)
+			: state;
+	const timelineBlocked = Boolean(
+		state.inputTimeline &&
+			(!timelineReadiness.ready ||
+				(preparationRequired && !prepared) ||
+				timelineReadiness.sourceSignature !== timelineSourcesSignature ||
+				validateVodInputTimeline(state.inputTimeline, timelineReadiness.facts, {
+					requireVideo: true,
+				}).length > 0),
+	);
+	const draftBase = useRef(fresh);
+	// The file flow opens on its short view; every step stays one click away.
+	const [expanded, setExpanded] = useState(false);
+	const simple = fileFlow && !expanded;
+	const visibleSteps = simple ? FILE_STEPS : ALL_STEPS;
+	const position = Math.max(
+		0,
+		visibleSteps.findIndex((item) => item.step === step),
+	);
+	// Named only while it can be acted on: the full view of the file flow.
+	const blockers = fileFlow && expanded ? fileOutputBlockers(state) : [];
+	/**
+	 * A state that arrives whole — a draft, a loaded plan — opens in the view that can
+	 * show all of it, so nothing it sets is out of sight from the start.
+	 */
+	const openState = (next: WizardState, at: number) => {
+		const hidden = fileFlow && fileOutputBlockers(next).length > 0;
+		setExpanded(hidden);
+		setState(fileFlow && !hidden ? collapseToFileOutput(next) : next);
+		setStep(
+			!fileFlow || hidden || FILE_STEPS.some((item) => item.step === at)
+				? at
+				: FILE_FORMAT_STEP,
+		);
+	};
 	const [appliedDraftContext, setAppliedDraftContext] = useState<string | null>(
 		null,
 	);
@@ -169,7 +347,7 @@ export function VodWizard({
 	};
 	const evaluation = imported
 		? evaluatePlanDocument(imported.raw, t, validationOptions)
-		: evaluateWizardState(state, t, validationOptions);
+		: evaluateWizardState(submissionState, t, validationOptions);
 	// Delivery-spec drift : the CURRENT plan — form-built or
 	// verbatim-imported — checked against the spec the operator loaded. The
 	// RAW plan object, deliberately not `evaluation.plan`: mapping a preset
@@ -182,13 +360,16 @@ export function VodWizard({
 	// spec may carry up to 200 constraint rows.
 	const driftDeviations = useMemo(
 		() =>
-			driftSpec && (imported || !hasInvalidHevcV2Ladder(state))
+			driftSpec &&
+			(imported ||
+				(!hasInvalidHevcV2Ladder(state) &&
+					(!state.inputTimeline || evaluation.ok)))
 				? checkDeliverySpec(
-						imported ? imported.raw : buildPlan(state),
+						imported ? imported.raw : buildPlan(submissionState),
 						driftSpec,
 					)
 				: [],
-		[driftSpec, imported, state],
+		[driftSpec, imported, submissionState, state, evaluation.ok],
 	);
 	// Preset map-and-gate: a preset's sample-path tokens (<INSERT…>/{YOUR…})
 	// prefill the form's path fields verbatim. They're valid strings, so they
@@ -427,21 +608,24 @@ export function VodWizard({
 			imported || jsonLoadedForEditing
 				? null
 				: presetKey === undefined
-					? "new"
+					? // Each flow keeps its own unfinished job.
+						fileFlow
+						? "new:file"
+						: "new"
 					: appliedPreset === presetKey
 						? appliedDraftContext
 						: null,
 		value: state,
 		step,
 		onRestore: (saved) => {
-			setState(
-				mergeWizardDraft(
-					presetKey === undefined ? DEFAULT_WIZARD_STATE : draftBase.current,
-					saved.value,
-					"vod",
-				),
+			const restored = mergeWizardDraft(
+				presetKey === undefined ? fresh : draftBase.current,
+				saved.value,
+				"vod",
 			);
-			setStep(saved.step);
+			// Source facts and preview tasks are deliberately absent from the draft.
+			// Mount their preparation before resuming a later wizard step.
+			openState(restored, restored.inputTimeline ? 1 : saved.step);
 		},
 	});
 
@@ -469,17 +653,20 @@ export function VodWizard({
 	const creation = useCreationSubmission(
 		"vod",
 		presetKey === undefined
-			? "wizard:new"
+			? fileFlow
+				? "wizard:new:file"
+				: "wizard:new"
 			: `wizard:${presetKey}:${presetUpdatedAt ?? ""}`,
 	);
 	const submit = useMutation({
 		mutationFn: () => {
 			if (internalBlocked) throw new Error(t("hevcV2.unavailable"));
+			if (timelineBlocked) throw new Error(t("vodTimeline.notReady"));
 			if (qcExecutionValidation.invalid) throw new Error(qcExecutionMessage);
 			return creation.submit<{ id: string }>({
 				plan: imported
 					? buildSubmissionPlan(imported, state.accountId)
-					: buildPlan(state),
+					: buildPlan(submissionState),
 			});
 		},
 		onSuccess: (job) => {
@@ -499,7 +686,7 @@ export function VodWizard({
 				body: JSON.stringify({
 					plan: imported
 						? buildSubmissionPlan(imported, state.accountId)
-						: buildPlan(state),
+						: buildPlan(submissionState),
 					expectedUpdatedAt: appliedTemplateUpdatedAt,
 				}),
 			});
@@ -526,6 +713,11 @@ export function VodWizard({
 											...video,
 											codec: "H265" as const,
 											encodingMode: undefined,
+											// The simple view has no panel to read the refusal in
+											// that the settings only HEVCv2 has would bring.
+											...(simple
+												? { h265: withoutHevcV2Settings(video.h265) }
+												: {}),
 										}
 									: video,
 							),
@@ -541,9 +733,18 @@ export function VodWizard({
 			) {
 				next.startOptions = { ...next.startOptions, encodingMode: undefined };
 			}
+			Object.assign(next, followRenamedAudioKeys(prev, next));
 			next.audios = reconcileAutomaticAudioPackaging(next);
 			return next;
 		});
+
+	const collapse = () => {
+		setState((prev) => collapseToFileOutput(prev));
+		setExpanded(false);
+		setStep((at) =>
+			FILE_STEPS.some((item) => item.step === at) ? at : FILE_FORMAT_STEP,
+		);
+	};
 
 	// Apply only on an explicit selection; drafts and imported plans keep their values.
 	function selectAccount(accountId: string) {
@@ -579,7 +780,9 @@ export function VodWizard({
 				? undefined
 				: "mirror" in picker
 					? state.additionalOutputs[picker.mirror]
-					: state.inputFiles[picker.file];
+					: "file" in picker
+						? state.inputFiles[picker.file]
+						: state.inputFiles.at(-1);
 
 	const allCredentials = credentials.data ?? [];
 	const outputSelectable = (provider: string) =>
@@ -651,8 +854,10 @@ export function VodWizard({
 	}
 
 	return (
-		<section className="grid min-h-[70vh] grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-			<div>
+		<section
+			className={`grid min-h-[70vh] grid-cols-1 gap-6 ${state.inputTimeline && step === 1 ? "" : "xl:grid-cols-[minmax(0,1fr)_420px]"}`}
+		>
+			<div className="min-w-0">
 				{copiedJob ? (
 					<p role="status" className="mb-3 text-sm text-zinc-400">
 						{t("wizard.copiedJobHint")}
@@ -693,6 +898,13 @@ export function VodWizard({
 						) : null}
 					</div>
 				</header>
+				{/* A plan loaded from JSON has its own shape, and leaving it would lose it. */}
+				{flow !== undefined &&
+				presetKey === undefined &&
+				!imported &&
+				!jsonLoadedForEditing ? (
+					<VodFlowSwitch flow={flow} />
+				) : null}
 				<WizardDraftOffer {...draft} />
 				{[
 					{ query: accounts, message: t("wizard.accountsLoadFailed") },
@@ -884,12 +1096,11 @@ export function VodWizard({
 								if (mapping.ok) {
 									draftBase.current = mapping.state;
 									setJsonLoadedForEditing(true);
-									setState(mapping.state);
+									openState(mapping.state, 0);
 									setImported(null);
 									setShowImport(false);
 									setFallbackReason(null);
 									setMappedPresetName(null);
-									setStep(0);
 								} else {
 									setImported(loaded);
 									setShowImport(true);
@@ -984,6 +1195,7 @@ export function VodWizard({
 							<Button
 								disabled={
 									internalBlocked ||
+									timelineBlocked ||
 									!evaluation.ok ||
 									evaluation.issues.some((i) => i.level === "error") ||
 									pendingPlaceholders > 0 ||
@@ -1000,6 +1212,7 @@ export function VodWizard({
 								disabled={
 									internalBlocked ||
 									qcExecutionValidation.invalid ||
+									timelineBlocked ||
 									!evaluation.ok ||
 									(!state.accountId && !planAccount) ||
 									evaluation.issues.some((i) => i.level === "error") ||
@@ -1016,26 +1229,65 @@ export function VodWizard({
 					</div>
 				) : null}
 				{imported ? <PlanPresetsPanel evaluation={evaluation} /> : null}
-				<nav
-					aria-label={t("wizard.wizardSteps")}
-					className={`mt-4 flex flex-wrap gap-1 ${imported ? "hidden" : ""}`}
+				<div
+					className={`mt-4 flex flex-wrap items-start justify-between gap-2 ${imported ? "hidden" : ""}`}
 				>
-					{STEPS.map((labelKey, index) => (
-						<button
-							key={labelKey}
-							type="button"
-							aria-current={index === step ? "step" : undefined}
-							className={`rounded-md px-3 py-1.5 text-sm ${
-								index === step
-									? "bg-zinc-800 text-zinc-50"
-									: "text-zinc-400 hover:bg-zinc-900"
-							}`}
-							onClick={() => setStep(index)}
+					<nav
+						aria-label={t("wizard.wizardSteps")}
+						className="flex flex-wrap gap-1"
+					>
+						{visibleSteps.map(({ step: index, label }, at) => (
+							<button
+								key={label}
+								type="button"
+								aria-current={index === step ? "step" : undefined}
+								className={`rounded-md px-3 py-1.5 text-sm ${
+									index === step
+										? "bg-zinc-800 text-zinc-50"
+										: "text-zinc-400 hover:bg-zinc-900"
+								}`}
+								onClick={() => setStep(index)}
+							>
+								{at + 1}. {t(label)}
+							</button>
+						))}
+					</nav>
+					{simple ? (
+						<Button
+							variant="ghost"
+							size="sm"
+							className="ml-auto"
+							onClick={() => setExpanded(true)}
 						>
-							{index + 1}. {t(labelKey)}
-						</button>
-					))}
-				</nav>
+							{t("vodFlow.showAll")}
+						</Button>
+					) : fileFlow ? (
+						<Button
+							variant="ghost"
+							size="sm"
+							className="ml-auto"
+							disabled={blockers.length > 0}
+							aria-describedby={
+								blockers.length > 0 ? "wz-simple-blocked" : undefined
+							}
+							onClick={collapse}
+						>
+							{t("vodFlow.backToSimple")}
+						</Button>
+					) : null}
+				</div>
+				{blockers.length > 0 && !imported ? (
+					<p
+						id="wz-simple-blocked"
+						className="mt-1 text-right text-xs text-zinc-500"
+					>
+						{t("vodFlow.simpleBlocked", {
+							steps: new Intl.ListFormat(locale, {
+								type: "conjunction",
+							}).format(blockers.map((home) => t(BLOCKER_STEP[home]))),
+						})}
+					</p>
+				) : null}
 
 				<div className={`mt-6 space-y-4 ${imported ? "hidden" : ""}`}>
 					{step === 0 ? (
@@ -1045,22 +1297,28 @@ export function VodWizard({
 									id="wz-name"
 									value={state.name}
 									placeholder="my-first-encoding"
-									onChange={(e) =>
-										setState((prev) => ({
-											...prev,
-											name: e.target.value,
-											// Keep the name-namespaced output base in sync (no-op
-											// unless the base still follows the folder/name shape).
-											output: {
-												...prev.output,
-												basePath: renameOutputBase(
-													prev.output.basePath,
-													prev.name,
-													e.target.value,
-												),
-											},
-										}))
-									}
+									onChange={(e) => {
+										const name = e.target.value;
+										setState((prev) =>
+											fileFlow
+												? // File names follow the job name; the folder is used as given.
+													{ ...prev, ...renameFileJob(prev, name) }
+												: {
+														...prev,
+														name,
+														// Keep the name-namespaced output base in sync (no-op
+														// unless the base still follows the folder/name shape).
+														output: {
+															...prev.output,
+															basePath: renameOutputBase(
+																prev.output.basePath,
+																prev.name,
+																name,
+															),
+														},
+													},
+										);
+									}}
 								/>
 							</Field>
 							<Field
@@ -1149,6 +1407,8 @@ export function VodWizard({
 												/>
 											) : null}
 										</div>
+										{/* The codec this override needs is chosen in the ladder step,
+										    and in the format step of the file-output flow. */}
 										{internalAllowed ? (
 											<div className="flex flex-wrap items-center gap-2">
 												<label className="flex items-center gap-2 text-sm text-zinc-300">
@@ -1156,6 +1416,11 @@ export function VodWizard({
 														type="checkbox"
 														className="h-4 w-4 accent-emerald-600"
 														checked={!!state.internal?.hevcV2}
+														aria-describedby={
+															simple && bcfOverrideAlone(state)
+																? "wz-bcf-alone"
+																: undefined
+														}
 														onChange={(event) =>
 															patch({
 																internal: event.target.checked
@@ -1188,6 +1453,17 @@ export function VodWizard({
 												) : null}
 											</div>
 										) : null}
+										{/* The full view says this of the ladder, in the validation
+										    panel. Here the codec is a field of the format step. */}
+										{internalAllowed && simple && bcfOverrideAlone(state) ? (
+											<p
+												id="wz-bcf-alone"
+												role="alert"
+												className="text-red-400 text-xs"
+											>
+												{t("vodFlow.bcfOverrideAlone")}
+											</p>
+										) : null}
 									</div>
 								</Field>
 							</div>
@@ -1196,17 +1472,154 @@ export function VodWizard({
 
 					{step === 1 ? (
 						<>
-							<InputFilesEditor
-								state={state}
-								credentials={allCredentials}
-								onPatch={patch}
-								onBrowse={(index) => setPicker({ file: index })}
-							/>
-							<SourcesSection state={state} onPatch={patch} />
+							<div className="flex flex-wrap items-center justify-between gap-3">
+								<div className="flex items-center gap-2">
+									<h2 className="font-medium text-zinc-100">
+										{t("vodTimeline.title")}
+									</h2>
+									{timelinePreviewNotice === undefined && (
+										<HelpOverlay label={t("vodTimeline.title")}>
+											<span className="whitespace-pre-line">
+												{t("vodTimeline.help")}
+											</span>
+										</HelpOverlay>
+									)}
+								</div>
+								<Button
+									variant="secondary"
+									size="sm"
+									disabled={
+										!state.inputTimeline &&
+										(state.sources?.encodings?.length ?? 0) > 0
+									}
+									onClick={() =>
+										patch(
+											state.inputTimeline
+												? { inputTimeline: undefined }
+												: {
+														inputTimeline: {
+															schemaVersion: 2,
+															id: crypto.randomUUID(),
+															audioEnabled: state.audios.length > 0,
+															durationMs: 0,
+															videoClips: [],
+															audioClips: [],
+														},
+													},
+										)
+									}
+								>
+									{t(
+										state.inputTimeline
+											? "vodTimeline.ordinary"
+											: "vodTimeline.edit",
+									)}
+								</Button>
+							</div>
+							{state.inputTimeline ? (
+								<>
+									<VodInputTimelineEditor
+										document={state.inputTimeline}
+										previewNotice={timelinePreviewNotice}
+										onChange={(document) => patch({ inputTimeline: document })}
+										sources={state.inputFiles}
+										onAddSource={() => setPicker({ timelineAdd: true })}
+										onUseFavorite={(favorite) => {
+											const imported = applyVodInputFavorite(
+												state,
+												favorite,
+												() => crypto.randomUUID().replaceAll("-", ""),
+											);
+											setState(imported.state);
+											// An output logo is a filter of the Ladder step. The
+											// simple view cannot show it, so the job goes on in
+											// the view that can.
+											if (
+												simple &&
+												fileOutputBlockers(imported.state).length > 0
+											)
+												setExpanded(true);
+										}}
+										canUseLogo={
+											state.videos.length > 0 &&
+											state.inputFiles.some(
+												(file) => file.path && file.purpose !== "FILTER_IMAGE",
+											)
+										}
+										canUseMedia={
+											state.inputFiles.filter(
+												(file) => file.path && file.purpose !== "FILTER_IMAGE",
+											).length < MAX_VOD_TIMELINE_SOURCES
+										}
+										imageOutput={{
+											credentialId: state.output.credentialId,
+											bucket: state.output.bucket,
+											prefix: state.output.basePath,
+										}}
+										imageCredentials={allCredentials}
+										onImportPreparedSource={(file) =>
+											patch({
+												inputFiles: importPreparedImageFile(
+													state.inputFiles,
+													file,
+												),
+											})
+										}
+										onReadinessChange={onTimelineReadiness}
+										onPreparationChange={setTimelinePreparation}
+									/>
+									<details className="rounded-md border border-zinc-800 p-3">
+										<summary className="cursor-pointer text-sm text-zinc-400">
+											{t("vodTimeline.sourceSettings")}
+										</summary>
+										<div className="mt-4">
+											<InputFilesEditor
+												state={state}
+												credentials={allCredentials}
+												onPatch={patch}
+												onBrowse={(index) => setPicker({ file: index })}
+											/>
+										</div>
+									</details>
+								</>
+							) : (
+								<>
+									<InputFilesEditor
+										state={state}
+										credentials={allCredentials}
+										onPatch={patch}
+										onBrowse={(index) => setPicker({ file: index })}
+									/>
+									<SourcesSection
+										state={state}
+										onPatch={patch}
+										fileView={simple}
+									/>
+								</>
+							)}
 						</>
 					) : null}
 
-					{step === 2 ? (
+					{step === 2 && simple ? (
+						<>
+							{/* The files stay editable: their height, bitrate and codec
+							    are what gets measured. */}
+							{qcOnly ? (
+								<p className="rounded-md border border-amber-700/40 bg-amber-950/30 px-3 py-2 text-amber-200/90 text-xs">
+									{t("vodFlow.measureOnlyFormatNote", {
+										option: t(measureOnlyLabel(state.qc, simple)),
+									})}
+								</p>
+							) : null}
+							<FileOutputSection
+								state={state}
+								hevcV2Available={internalAllowed}
+								onPatch={patch}
+							/>
+						</>
+					) : null}
+
+					{step === 2 && !simple ? (
 						<>
 							<LadderSection
 								hevcV2Available={internalAllowed}
@@ -1235,6 +1648,8 @@ export function VodWizard({
 							state={state}
 							onPatch={patch}
 							credentials={allCredentials}
+							fileView={simple}
+							jobFolder={fileFlow ? fileJobFolder(state.name) : undefined}
 						/>
 					) : null}
 
@@ -1253,15 +1668,21 @@ export function VodWizard({
 								bucket={state.output.bucket}
 								bucketLabel={locationLabel(state.output.kind)}
 								path={
-									splitOutputFolder(state.output.basePath, state.name) ??
-									state.output.basePath
+									fileFlow
+										? state.output.basePath
+										: (splitOutputFolder(state.output.basePath, state.name) ??
+											state.output.basePath)
 								}
 								pathLabel={t("uiX.outputFolderLabel")}
 								pathPlaceholder="output"
-								pathHelp={t("uiX.jobOutputPathHint", {
-									heightToken: "{height}",
-									bitrateToken: "{bitrate}",
-								})}
+								pathHelp={
+									fileFlow
+										? t("vodFlow.folderHelp")
+										: t("uiX.jobOutputPathHint", {
+												heightToken: "{height}",
+												bitrateToken: "{bitrate}",
+											})
+								}
 								onCredentialChange={(id) => {
 									selectOutputCredential(id);
 									if (id !== "" && isS3Credential(allCredentials, id)) {
@@ -1274,7 +1695,11 @@ export function VodWizard({
 											...state.output,
 											...(p.bucket !== undefined ? { bucket: p.bucket } : {}),
 											...(p.path !== undefined
-												? { basePath: joinOutputName(p.path, state.name) }
+												? {
+														basePath: fileFlow
+															? p.path
+															: joinOutputName(p.path, state.name),
+													}
 												: {}),
 										},
 									})
@@ -1461,6 +1886,7 @@ export function VodWizard({
 							<MuxingsSection
 								state={state}
 								credentials={allCredentials}
+								flatFiles={fileFlow}
 								onPatch={patch}
 							/>
 							<ThumbnailsSection state={state} onPatch={patch} />
@@ -1477,6 +1903,50 @@ export function VodWizard({
 							<p className="text-sm text-zinc-400">
 								{t("wizard.reviewThePlanOnTheRightThe")}
 							</p>
+							{/* Shown while this list is all the job writes: the files,
+							    and what the Encoding step adds to them. A hidden step in
+							    use can add outputs of its own (encrypted copies,
+							    thumbnails, an audio file), and the plan beside this step
+							    lists those. */}
+							{fileFlow && blockers.length === 0 && evaluation.ok ? (
+								<div>
+									<h2 className="font-medium text-sm text-zinc-200">
+										{t("vodFlow.reviewWrites")}
+									</h2>
+									{evaluation.plan.qc?.only ? (
+										<p className="mt-1 text-amber-400 text-xs">
+											{t("vodFlow.reviewMeasureOnly", {
+												option: t(measureOnlyLabel(state.qc, simple)),
+											})}
+										</p>
+									) : null}
+									<ul className="mt-1 space-y-1 break-all font-mono text-xs text-zinc-300">
+										{fileJobWrites(evaluation.plan).map((item, index) => (
+											<li key={`${item.key}:${index}`}>
+												{item.path}
+												{item.kind === "file" ? null : (
+													<span className="ml-2 font-sans text-zinc-500">
+														{t(WRITE_LABEL[item.kind])}
+													</span>
+												)}
+											</li>
+										))}
+									</ul>
+									{/* The list is the first destination. The others get what
+									    the encoder writes as a muxing, which the result of AI
+									    Scene Analysis and the Kantar report are not. */}
+									{(evaluation.plan.deliveryMirrors ?? []).length > 0 ? (
+										<p className="mt-1 text-xs text-zinc-500">
+											{t("vodFlow.reviewAlsoMirrored", {
+												count: (evaluation.plan.deliveryMirrors ?? []).length,
+											})}
+											{evaluation.plan.aiSceneAnalysis || evaluation.plan.kantar
+												? ` ${t("vodFlow.reviewNotMirrored")}`
+												: ""}
+										</p>
+									) : null}
+								</div>
+							) : null}
 							{!state.accountId ? (
 								<p role="alert" className="text-amber-400 text-sm">
 									{t("wizard.selectABitmovinAccountInStep1")}
@@ -1526,6 +1996,7 @@ export function VodWizard({
 								<Button
 									disabled={
 										internalBlocked ||
+										timelineBlocked ||
 										!evaluation.ok ||
 										evaluation.issues.some((i) => i.level === "error") ||
 										formPlaceholders > 0 ||
@@ -1542,6 +2013,7 @@ export function VodWizard({
 									disabled={
 										internalBlocked ||
 										qcExecutionValidation.invalid ||
+										timelineBlocked ||
 										!evaluation.ok ||
 										!state.accountId ||
 										evaluation.issues.some((i) => i.level === "error") ||
@@ -1564,23 +2036,25 @@ export function VodWizard({
 					<Button
 						variant="secondary"
 						size="sm"
-						disabled={step === 0}
-						onClick={() => setStep((s) => Math.max(0, s - 1))}
+						disabled={position === 0}
+						onClick={() => setStep(visibleSteps[position - 1]?.step ?? step)}
 					>
 						{t("wizard.back")}
 					</Button>
 					<Button
 						variant="secondary"
 						size="sm"
-						disabled={step === STEPS.length - 1}
-						onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
+						disabled={position === visibleSteps.length - 1}
+						onClick={() => setStep(visibleSteps[position + 1]?.step ?? step)}
 					>
 						{t("wizard.next")}
 					</Button>
 				</div>
 			</div>
 
-			<PlanPreview evaluation={evaluation} />
+			{state.inputTimeline && step === 1 ? null : (
+				<PlanPreview evaluation={evaluation} />
+			)}
 
 			<StoragePicker
 				open={picker !== null}
@@ -1617,8 +2091,10 @@ export function VodWizard({
 								publicRead: outputKindHasAcl(kind)
 									? prev.output.publicRead
 									: false,
-								// Picked prefix is the folder; namespace it by the job name.
-								basePath: joinOutputName(path, prev.name),
+								// Picked prefix is the folder. A streaming package gets a
+								// folder of its own under it, named after the job; files
+								// are written into the picked folder itself.
+								basePath: fileFlow ? path : joinOutputName(path, prev.name),
 							},
 						}));
 					} else if (picker !== null && "mirror" in picker) {
@@ -1647,6 +2123,54 @@ export function VodWizard({
 								bucket,
 							};
 							return { ...prev, additionalOutputs: mirrors };
+						});
+					} else if (picker !== null && "timelineAdd" in picker) {
+						const kind = inputKindForProvider(provider);
+						if (kind === null) return;
+						setState((prev) => {
+							if (
+								prev.inputFiles.some(
+									(file) =>
+										file.credentialId === credentialId &&
+										file.bucket === bucket &&
+										file.path === path,
+								)
+							)
+								return prev;
+							if (
+								prev.inputFiles.filter(
+									(file) => file.path && file.purpose !== "FILTER_IMAGE",
+								).length >= MAX_VOD_TIMELINE_SOURCES
+							)
+								return prev;
+							const empty = prev.inputFiles.findIndex(
+								(file) => !file.path && !file.credentialId,
+							);
+							const shared = prev.inputFiles.find(
+								(file) =>
+									file.kind === kind &&
+									file.credentialId === credentialId &&
+									file.bucket === bucket,
+							);
+							const key = `file_${crypto.randomUUID().replaceAll("-", "")}`;
+							const file = {
+								key,
+								inputKey: shared?.inputKey ?? key,
+								kind,
+								credentialId,
+								bucket,
+								path,
+							};
+							const files = [...prev.inputFiles];
+							const emptyFile = files[empty];
+							if (empty >= 0 && emptyFile)
+								files[empty] = {
+									...file,
+									key: emptyFile.key,
+									inputKey: shared?.inputKey ?? emptyFile.inputKey,
+								};
+							else files.push(file);
+							return { ...prev, inputFiles: files };
 						});
 					} else if (picker !== null) {
 						const index = picker.file;

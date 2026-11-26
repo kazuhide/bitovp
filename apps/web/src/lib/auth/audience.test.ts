@@ -71,12 +71,24 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		method: "GET",
 	},
 	{
+		page: "/settings/operation-analytics",
+		floor: "ADMIN",
+		api: "/api/operation-analytics",
+		method: "GET",
+	},
+	{
 		page: "/settings/vmaf",
 		floor: "ADMIN",
 		api: "/api/settings/vmaf-profiles",
 		method: "GET",
 	},
 	{ page: "/", floor: "VIEWER", api: "/api/dashboard/usage", method: "GET" },
+	{
+		page: "/encoding-experiments",
+		floor: "VIEWER",
+		api: "/api/encoding-experiments/v1/campaigns",
+		method: "GET",
+	},
 	{ page: "/library", floor: "VIEWER", api: "/api/library", method: "GET" },
 	{
 		page: "/library/[id]",
@@ -97,6 +109,12 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		method: "GET",
 	},
 	{
+		page: "/library/generations",
+		floor: "VIEWER",
+		api: "/api/library/media-tasks",
+		method: "GET",
+	},
+	{
 		page: "/library/generations/[id]",
 		floor: "VIEWER",
 		api: "/api/library/media-tasks/task-1",
@@ -112,6 +130,12 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		page: "/live/[id]",
 		floor: "VIEWER",
 		api: "/api/live-channels/channel-1",
+		method: "GET",
+	},
+	{
+		page: "/live/[id]/runs/[runId]/moq",
+		floor: "OPERATOR",
+		api: "/api/live-channels/channel-1/runs/run-1/moq-playback",
 		method: "GET",
 	},
 	{
@@ -183,6 +207,12 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		page: "/settings/credentials",
 		floor: "VIEWER",
 		api: "/api/credentials",
+		method: "GET",
+	},
+	{
+		page: "/settings/error-definitions",
+		floor: "VIEWER",
+		api: "/api/encoding-error-definitions",
 		method: "GET",
 	},
 	{
@@ -275,6 +305,12 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		floor: "VIEWER",
 	},
 	{
+		page: "/vod/compare",
+		floor: "VIEWER",
+		api: "/api/encoding-jobs/job-1",
+		method: "GET",
+	},
+	{
 		page: "/vod/jobs/[id]",
 		floor: "VIEWER",
 		api: "/api/encoding-jobs/job-1",
@@ -296,6 +332,36 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 
 /** Higher-floor panels/actions embedded in otherwise readable pages. */
 const MIXED_SURFACES: readonly SurfaceContract[] = [
+	{
+		page: "/encoding-experiments",
+		floor: "OPERATOR",
+		api: "/api/encoding-experiments/v1/campaigns",
+		method: "POST",
+	},
+	{
+		page: "/encoding-experiments",
+		floor: "OPERATOR",
+		api: "/api/encoding-experiments/v1/campaigns/campaign-1",
+		method: "PATCH",
+	},
+	{
+		page: "/encoding-experiments",
+		floor: "OPERATOR",
+		api: "/api/encoding-experiments/v1/campaigns/campaign-1/trials",
+		method: "POST",
+	},
+	{
+		page: "/encoding-experiments",
+		floor: "OPERATOR",
+		api: "/api/encoding-experiments/v1/campaigns/campaign-1/cancel",
+		method: "POST",
+	},
+	{
+		page: "/encoding-experiments",
+		floor: "OPERATOR",
+		api: "/api/encoding-experiments/v1/campaigns/campaign-1/select",
+		method: "POST",
+	},
 	{
 		page: "/live/analyses/[analysisId]",
 		floor: "OPERATOR",
@@ -443,6 +509,7 @@ describe("pageAccess", () => {
 		["/verification", "customer", "VIEWER"],
 		["/verification/run-123", "customer", "VIEWER"],
 		["/settings/api-coverage", "operator", "VIEWER"],
+		["/settings/error-definitions", "operator", "VIEWER"],
 		["/settings/users", "operator", "ADMIN"],
 		["/settings/tokens", "operator", "ADMIN"],
 		["/settings/reset", "operator", "ADMIN"],
@@ -455,8 +522,10 @@ describe("pageAccess", () => {
 		["/vod/jobs", "customer", "VIEWER"],
 		["/vod/jobs/abc", "customer", "VIEWER"],
 		["/live/abc", "customer", "VIEWER"],
+		["/live/channel-1/runs/run-1/moq", "customer", "OPERATOR"],
 		["/live/feeders", "customer", "VIEWER"],
 		["/qc", "customer", "VIEWER"],
+		["/encoding-experiments", "customer", "VIEWER"],
 		["/storage", "customer", "OPERATOR"],
 		// Segment boundary: a sibling that merely STARTS with a rule's prefix
 		// is not under it — the same lesson the API table learned from
@@ -511,12 +580,24 @@ describe("page floors agree with the API floors the pages read — the audit's c
 		["/settings/reset", "/api/admin/reset", "POST"],
 		["/settings/features", "/api/settings/features", "GET"],
 		["/settings/bitmovin", "/api/bitmovin-accounts", "GET"],
+		["/settings/error-definitions", "/api/encoding-error-definitions", "GET"],
 		["/vod/jobs", "/api/encoding-jobs", "GET"],
 		["/live", "/api/live-channels", "GET"],
 		["/qc", "/api/vmaf-jobs", "GET"],
 		["/qc", "/api/vmaf-compute-profiles", "GET"],
+		[
+			"/encoding-experiments",
+			"/api/encoding-experiments/v1/capabilities",
+			"GET",
+		],
+		["/encoding-experiments", "/api/encoding-experiments/v1/campaigns", "GET"],
 		["/vod/new", "/api/encoding-jobs", "POST"],
 		["/live/new", "/api/live-channels", "POST"],
+		[
+			"/live/channel-1/runs/run-1/moq",
+			"/api/live-channels/channel-1/runs/run-1/moq-playback",
+			"GET",
+		],
 		["/storage", "/api/credentials/credential-1/storage/objects", "GET"],
 	] as const)("%s ↔ %s %s", (page, api, method) => {
 		for (const role of USER_ROLES) {

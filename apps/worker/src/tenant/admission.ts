@@ -6,6 +6,7 @@ import {
 	slateNormalizeJobSchema,
 	storageInspectJobSchema,
 	vmafJobSchema,
+	vodInputPreviewJobSchema,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 export const INACTIVE_ORGANIZATION_ERROR =
@@ -155,6 +156,22 @@ export async function admitInactiveOrganization(
 		await prisma.storageInspection.updateMany({
 			where: { id, status: "PENDING" },
 			data: { status: "ERROR", error: INACTIVE_ORGANIZATION_ERROR },
+		});
+		return false;
+	}
+	if (key === "vodInputPreview") {
+		const { taskId: id } = vodInputPreviewJobSchema.parse(payload);
+		await prisma.vodInputPreviewTask.updateMany({
+			where: { id, status: { in: ["PENDING", "RUNNING"] } },
+			data: {
+				status: "CANCELED",
+				stage: "CANCELED",
+				cancelRequestedAt: new Date(),
+				error: {
+					code: "ORGANIZATION_INACTIVE",
+					message: INACTIVE_ORGANIZATION_ERROR,
+				},
+			},
 		});
 		return false;
 	}

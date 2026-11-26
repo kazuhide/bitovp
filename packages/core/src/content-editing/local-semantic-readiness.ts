@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { LocalSemanticConfiguration } from "./local-semantic-config";
+import type { NativeEditingPreflight } from "./native-editing-preflight";
 
 export const LOCAL_SEMANTIC_HEARTBEAT_TTL_MS = 45_000;
 export const LOCAL_CLIP_AVAILABILITY_TTL_MS = 15_000;
@@ -127,7 +128,7 @@ export function summarizeClipEditingAvailability(
 export const localSemanticGpuCapabilitySchema = z.strictObject({
 	version: z.literal("bitovp-runtime-gpu-capability-v1"),
 	profile: z.enum(["amd", "nvidia"]),
-	method: z.literal("OLLAMA_NATIVE_DISCOVERY"),
+	method: z.enum(["OLLAMA_NATIVE_DISCOVERY", "PASSIVE_DEVICE_ACCESS"]),
 	backend: z.enum(["CUDA", "ROCm"]),
 	observedAt: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
 });
@@ -172,6 +173,7 @@ export type LocalSemanticReadinessReport = {
 		failedCount: number;
 	};
 	gateway: {
+		native?: NativeEditingPreflight;
 		code:
 			| "NOT_CHECKED"
 			| z.infer<typeof localSemanticGatewayReadinessSchema>["code"]

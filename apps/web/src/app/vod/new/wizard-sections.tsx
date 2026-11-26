@@ -19,6 +19,7 @@ import { InfoHint } from "@/components/ui/info-hint";
 import { Input, SelectNative } from "@/components/ui/input";
 import { NewCredentialLink } from "@/components/ui/new-credential-link";
 import { useQcVmafEnabled } from "@/lib/feature-flags/context";
+import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
 import { AisaScheduleEditor } from "./aisa-schedule";
 import { AUDIO_CHANNEL_LAYOUTS } from "./audio-channel-layouts";
@@ -63,6 +64,7 @@ import {
 	RenditionAddControls,
 	videoCopyLabel,
 } from "./rendition-add-controls";
+import { AUDIO_CODECS, VIDEO_CODECS } from "./rendition-codecs";
 import {
 	addVodAudio,
 	addVodVideo,
@@ -78,9 +80,9 @@ import {
 	LoudnessEditor,
 	manifestPlacement,
 	RenditionPlacement,
-	type SourceOption,
 	Vp9AdvancedEditor,
 } from "./rendition-editors";
+import { renditionSourceOptions } from "./rendition-sources";
 import {
 	flattenStreams,
 	inputFileOptions,
@@ -102,17 +104,6 @@ type LadderSectionProps = {
 	credentials: CredentialSummaryWire[];
 	onPatch: (partial: Partial<WizardState>) => void;
 };
-
-const VIDEO_CODECS: WizardVideoCodec[] = ["H264", "H265", "VP9", "AV1"];
-const AUDIO_CODECS: WizardAudioCodec[] = [
-	"AAC",
-	"AC3",
-	"EAC3",
-	"OPUS",
-	"DOLBY_ATMOS",
-	"DDPLUS",
-	"DD",
-];
 
 /**
  * VMAF models the worker can score with. Two families:
@@ -219,47 +210,11 @@ export function LadderSection({
 	// guidance (HLS audio-group fields, declared DASH adaptation sets with
 	// per-manifest context and cross-manifest type-conflict warnings).
 
-	// Reference streams by a human-readable label (type · input file / object),
-	// not the hidden internal key. The select still stores the key — only the
-	// visible text changes, so the emitted plan is unaffected. WEBVTT streams
-	// are subtitle-only, so they stay out of the video/audio source lists.
 	const allStreams = flattenStreams(sources);
-	// Trimming/concatenation intermediate streams aren't in flattenStreams (they
-	// reference other input streams, not input files) — surface them as selectable
-	// sources so a rendition can read a trim/concat result by key.
-	const trimConcatSources: SourceOption[] = [
-		// `trim`, not `t` — the callback parameter used to be `t`, which shadowed the
-		// translator inside this block.
-		...(sources.trimmingStreams ?? []).map((trim) => ({
-			value: trim.key,
-			label: t("wizardX.trimSourceKey", {
-				source: trim.sourceKey,
-				key: trim.key,
-			}),
-		})),
-		...(sources.concatenationStreams ?? []).map((c) => ({
-			value: c.key,
-			label: t("wizardX.concatenationKey", { key: c.key }),
-		})),
-	];
-	const namedSources: SourceOption[] = [
-		...allStreams
-			.filter((s) => s.type !== "WEBVTT")
-			.map((s) => ({ value: s.key, label: streamReferenceLabel(state, s) })),
-		...trimConcatSources,
-	];
-	const videoSources: SourceOption[] = [
-		{ value: "", label: t("wizard.inputVideoTrackImplicit") },
-		...namedSources,
-	];
-	const audioSources: SourceOption[] = [
-		...(sources.audioMixStreams ?? []).map((s) => ({
-			value: s.key,
-			label: `${t("audioMix.title")} · ${s.key}`,
-		})),
-		{ value: "", label: t("wizard.inputAudioTrackImplicit") },
-		...namedSources,
-	];
+	const { video: videoSources, audio: audioSources } = renditionSourceOptions(
+		state,
+		t,
+	);
 
 	const patchVideos = (
 		next: WizardVideoRendition[],
@@ -2261,7 +2216,37 @@ type EncodingOptionsSectionProps = ManifestSectionProps & {
 	 * wizard always passes the live list.
 	 */
 	credentials?: CredentialSummaryWire[];
+	/**
+	 * The file flow's simple view. It leaves out the three settings that act on
+	 * something the view does not have: the Per-Title configuration (a rendition
+	 * enters Per-Title in the Ladder step), what a quality gate does when it fails
+	 * (the choice is whether to hold the manifests back) and the renditions a rule
+	 * of the gate is for (it names them by key). It names the files and the Format
+	 * step where the full wizard names the ladder and the delivery outputs.
+	 */
+	fileView?: boolean;
+	/**
+	 * The file flow, in either of its views: the folder, relative to the base output
+	 * path, that a job keeps what it writes besides its files in (`fileJobFolder`).
+	 * AI Scene Analysis, the quality check and Kantar start there when they are
+	 * switched on, because a file job writes its files straight into a folder other
+	 * jobs use. Unset in the delivery flow, whose base output path is the job's own.
+	 */
+	jobFolder?: string;
 };
+
+/**
+ * The label of the option that makes a job measure and write none of its delivery.
+ * It is named for what is measured, and the file flow's simple view names the files
+ * where the full wizard names the delivery outputs.
+ */
+export function measureOnlyLabel(
+	qc: Pick<WizardQc, "banding"> | undefined,
+	fileView: boolean,
+): MessageKey {
+	if (qc?.banding) return fileView ? "vodFlow.qcOnly" : "banding.qcOnly";
+	return fileView ? "vodFlow.vmafOnly" : "wizard.vmafOnlySkipDeliveryOutputs";
+}
 
 /**
  * Encoding start options (StartEncodingRequest): encoding mode, Per-Title
@@ -2288,6 +2273,8 @@ export function EncodingOptionsSection({
 	state,
 	onPatch,
 	credentials = [],
+	fileView = false,
+	jobFolder,
 }: EncodingOptionsSectionProps) {
 	const qcVmafEnabled = useQcVmafEnabled();
 	const { t } = useT();
@@ -2335,6 +2322,11 @@ export function EncodingOptionsSection({
 	const qcOnly = Boolean(qcOn && qc.only);
 	const patchQc = (partial: Partial<WizardQc>) =>
 		onPatch({ qc: { ...qc, ...partial } });
+	// Switching the first measure on is switching the quality check on.
+	const qcFolderSeed: Partial<WizardQc> =
+		jobFolder !== undefined && !qcOn && qc.mirrorPath === undefined
+			? { mirrorPath: jobFolder }
+			: {};
 	// QC gate editor . Zero rules = no gate key at all — the
 	// wizard never emits an empty gate the schema would reject (rules min 1).
 	const gateRules = qc.gate?.rules ?? [];
@@ -2389,7 +2381,9 @@ export function EncodingOptionsSection({
 				htmlFor="wz-encmode"
 				help={t(
 					usesCodecMode
-						? "wizard.encodingModeFromLadderHint"
+						? fileView
+							? "vodFlow.encodingModeFromFilesHint"
+							: "wizard.encodingModeFromLadderHint"
 						: "wizard.startencodingrequestEncodingmodeEmptyApiDefa",
 				)}
 			>
@@ -2409,7 +2403,9 @@ export function EncodingOptionsSection({
 					<option value="">
 						{t(
 							usesCodecMode
-								? "wizard.encodingModeFromLadder"
+								? fileView
+									? "vodFlow.encodingModeFromFiles"
+									: "wizard.encodingModeFromLadder"
 								: "wizard.default",
 						)}
 					</option>
@@ -2549,27 +2545,29 @@ export function EncodingOptionsSection({
 					</Field>
 				</Collapsible>
 			</Collapsible>
-			<Collapsible
-				summary={t("wizard.perTitleConfiguration")}
-				help={t("wizard.startRequestPertitleBlocksPairThemWith")}
-			>
-				{(["h264", "h265", "vp9", "av1"] as const).map((codec) => (
-					<PerTitleCodecEditor
-						key={codec}
-						codec={codec}
-						hevcV2={
-							codec === "h265" &&
-							state.videos.some((video) => video.codec === "H265V2")
-						}
-						value={startOptions.perTitle?.[codec]}
-						onChange={(next) =>
-							patchStart({
-								perTitle: { ...startOptions.perTitle, [codec]: next },
-							})
-						}
-					/>
-				))}
-			</Collapsible>
+			{fileView ? null : (
+				<Collapsible
+					summary={t("wizard.perTitleConfiguration")}
+					help={t("wizard.startRequestPertitleBlocksPairThemWith")}
+				>
+					{(["h264", "h265", "vp9", "av1"] as const).map((codec) => (
+						<PerTitleCodecEditor
+							key={codec}
+							codec={codec}
+							hevcV2={
+								codec === "h265" &&
+								state.videos.some((video) => video.codec === "H265V2")
+							}
+							value={startOptions.perTitle?.[codec]}
+							onChange={(next) =>
+								patchStart({
+									perTitle: { ...startOptions.perTitle, [codec]: next },
+								})
+							}
+						/>
+					))}
+				</Collapsible>
+			)}
 			<Collapsible
 				summary={
 					t("wizardX.aiSceneAnalysis") +
@@ -2578,7 +2576,10 @@ export function EncodingOptionsSection({
 			>
 				{qcOnly ? (
 					<p className="text-amber-400 text-xs">
-						{t("wizard.aisaDisabledQcOnly")}
+						{t("wizard.skippedWhileMeasureOnly", {
+							option: t(measureOnlyLabel(qc, fileView)),
+							feature: t("wizardX.aiSceneAnalysis"),
+						})}
 					</p>
 				) : null}
 				<fieldset disabled={qcOnly} className="space-y-3">
@@ -2594,7 +2595,7 @@ export function EncodingOptionsSection({
 							onChange={(e) =>
 								patchStart({
 									aiSceneAnalysis: e.target.checked
-										? { filename: "analysis.json", path: "" }
+										? { filename: "analysis.json", path: jobFolder ?? "" }
 										: undefined,
 								})
 							}
@@ -2622,7 +2623,11 @@ export function EncodingOptionsSection({
 								<Field
 									label={t("wizard.destinationPath")}
 									htmlFor="wz-ai-path"
-									help={t("wizard.relativeToTheBaseOutputPath")}
+									help={t(
+										fileView
+											? "vodFlow.relativeToDestination"
+											: "wizard.relativeToTheBaseOutputPath",
+									)}
 								>
 									<Input
 										id="wz-ai-path"
@@ -2803,6 +2808,7 @@ export function EncodingOptionsSection({
 														backend: "LOCAL",
 														localMode: "CPU",
 													},
+													...qcFolderSeed,
 												}
 											: { vmaf: false, psnr: false },
 									)
@@ -2812,7 +2818,11 @@ export function EncodingOptionsSection({
 						</label>
 						<InfoHint
 							label={t("wizard.runVmafQcAfterEncodingMoreInformation")}
-							text={t("wizard.addsAProgressiveMp4QcMirrorPer")}
+							text={t(
+								fileView
+									? "vodFlow.qcHelp"
+									: "wizard.addsAProgressiveMp4QcMirrorPer",
+							)}
 						/>
 					</div>
 					<div className="mt-2 space-y-1">
@@ -2831,6 +2841,7 @@ export function EncodingOptionsSection({
 										...(e.target.checked && !qc.execution
 											? { execution: { backend: "LOCAL", localMode: "CPU" } }
 											: {}),
+										...(e.target.checked ? qcFolderSeed : {}),
 									})
 								}
 							/>
@@ -2902,17 +2913,117 @@ export function EncodingOptionsSection({
 										checked={qc.only ?? false}
 										onChange={(e) => patchQc({ only: e.target.checked })}
 									/>
-									{t(
-										qc.banding
-											? "banding.qcOnly"
-											: "wizard.vmafOnlySkipDeliveryOutputs",
-									)}
+									{t(measureOnlyLabel(qc, fileView))}
 								</label>
 								<InfoHint
-									label={t("wizard.vmafOnlySkipDeliveryOutputsMoreInformation")}
-									text={t("wizard.producesOnlyThePerVideoQcMirror")}
+									label={
+										fileView
+											? t("uiX.moreInformationFor", {
+													label: t(measureOnlyLabel(qc, fileView)),
+												})
+											: t("wizard.vmafOnlySkipDeliveryOutputsMoreInformation")
+									}
+									text={t(
+										fileView
+											? "vodFlow.measureOnlyHelp"
+											: "wizard.producesOnlyThePerVideoQcMirror",
+									)}
 								/>
 							</div>
+							{/* Where the measured copies go. A copy is named by its rendition
+							    key and nothing else, so jobs whose renditions share an output
+							    folder need a folder each. In the file view every file is
+							    written to the one folder, so "beside the rendition" and "" are
+							    one place and the field alone says it. */}
+							{fileView ? (
+								<Field
+									label={t("wizard.qcMirrorFolder")}
+									htmlFor="wz-qc-mirror-path"
+									help={t("vodFlow.qcMirrorFolderHelp")}
+								>
+									<Input
+										id="wz-qc-mirror-path"
+										value={qc.mirrorPath ?? ""}
+										onChange={(e) =>
+											patchQc({
+												mirrorPath:
+													e.target.value === "" ? undefined : e.target.value,
+											})
+										}
+									/>
+								</Field>
+							) : (
+								<>
+									<div className="flex items-center gap-1">
+										<label
+											htmlFor="wz-qc-mirror-own"
+											className="flex items-center gap-2 text-xs text-zinc-300"
+										>
+											<input
+												id="wz-qc-mirror-own"
+												type="checkbox"
+												className="h-3.5 w-3.5 accent-emerald-600"
+												checked={qc.mirrorPath !== undefined}
+												onChange={(e) =>
+													patchQc({
+														mirrorPath: e.target.checked ? "" : undefined,
+													})
+												}
+											/>
+											{t("wizard.qcMirrorOwnFolder")}
+										</label>
+										<InfoHint
+											label={t("uiX.moreInformationFor", {
+												label: t("wizard.qcMirrorOwnFolder"),
+											})}
+											text={t("wizard.qcMirrorOwnFolderHelp")}
+										/>
+									</div>
+									{qc.mirrorPath !== undefined ? (
+										<Field
+											label={t("wizard.qcMirrorFolder")}
+											htmlFor="wz-qc-mirror-path"
+											help={t("wizard.qcMirrorFolderHelp")}
+										>
+											<Input
+												id="wz-qc-mirror-path"
+												value={qc.mirrorPath}
+												onChange={(e) =>
+													patchQc({ mirrorPath: e.target.value })
+												}
+											/>
+										</Field>
+									) : null}
+								</>
+							)}
+							{/* No step sets this: it comes with a loaded plan, and it changes
+							    how the job is scored. Shown so that it is not in the plan
+							    unseen, with the one edit there is, which is taking it out. */}
+							{qc.measurementMethod !== undefined ? (
+								<Field
+									label={t("qc.measureMethod")}
+									htmlFor="wz-qc-method"
+									help={t("wizard.qcMeasurementMethodHelp")}
+								>
+									<SelectNative
+										id="wz-qc-method"
+										value={qc.measurementMethod}
+										onChange={(e) =>
+											patchQc({
+												measurementMethod:
+													e.target.value === ""
+														? undefined
+														: qc.measurementMethod,
+											})
+										}
+									>
+										<option value="">{t("qc.measureMethodDefault")}</option>
+										<option value="FRAME_INDEX_BT709_10BIT">
+											{t("qc.measureMethodFrameIndex")}
+										</option>
+									</SelectNative>
+								</Field>
+							) : null}
 							{/* QC gate editor : threshold rules that turn
 							    the measurement into enforcement. Zero rules = no gate key;
 							    the schema shape is carried VERBATIM into plan.qc.gate. */}
@@ -2923,7 +3034,9 @@ export function EncodingOptionsSection({
 									</span>
 									<InfoHint
 										label={t("wizardX.qcGateHintMoreInformation")}
-										text={t("wizardX.qcGateHint")}
+										text={t(
+											fileView ? "vodFlow.qcGateHint" : "wizardX.qcGateHint",
+										)}
 									/>
 								</div>
 								{gateRules.map((rule, index) => (
@@ -3073,66 +3186,70 @@ export function EncodingOptionsSection({
 												{t("wizard.remove")}
 											</Button>
 										</div>
-										<div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-											<span>{t("wizardX.qcGateTargets")}</span>
-											{/* review-204 N1: keys a ladder edit ORPHANED render as
+										{/* The simple view has no keys to name a file by, so there a
+										    rule is for every file. */}
+										{fileView ? null : (
+											<div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+												<span>{t("wizardX.qcGateTargets")}</span>
+												{/* review-204 N1: keys a ladder edit ORPHANED render as
 											    checked boxes too — invisible-and-unclearable was the
 											    only GUI recovery being rule deletion. The C29 rail
 											    still blocks the plan; this gives the untick. */}
-											{(rule.renditions ?? [])
-												.filter((key) => !gateVideoKeys.includes(key))
-												.map((orphan) => (
-													<label
-														key={orphan}
-														className="flex items-center gap-1 text-amber-400 text-xs"
-													>
-														<input
-															type="checkbox"
-															className="h-3 w-3 accent-amber-500"
-															checked
-															onChange={() => {
-																const next = (rule.renditions ?? []).filter(
-																	(k) => k !== orphan,
-																);
-																patchGateRule(index, {
-																	renditions:
-																		next.length > 0 ? next : undefined,
-																});
-															}}
-														/>
-														{orphan}
-													</label>
-												))}
-											{gateVideoKeys.map((key) => {
-												const selected =
-													rule.renditions?.includes(key) ?? false;
-												return (
-													<label
-														key={key}
-														className="flex items-center gap-1 text-xs text-zinc-300"
-													>
-														<input
-															type="checkbox"
-															className="h-3 w-3 accent-emerald-600"
-															checked={selected}
-															onChange={(e) => {
-																const current = rule.renditions ?? [];
-																const next = e.target.checked
-																	? [...current, key]
-																	: current.filter((k) => k !== key);
-																// Empty selection = rule.renditions ABSENT
-																// (= every measured-expected rendition).
-																patchGateRule(index, {
-																	renditions:
-																		next.length > 0 ? next : undefined,
-																});
-															}}
-														/>
-														{key}
-													</label>
-												);
-											})}
-										</div>
+												{(rule.renditions ?? [])
+													.filter((key) => !gateVideoKeys.includes(key))
+													.map((orphan) => (
+														<label
+															key={orphan}
+															className="flex items-center gap-1 text-amber-400 text-xs"
+														>
+															<input
+																type="checkbox"
+																className="h-3 w-3 accent-amber-500"
+																checked
+																onChange={() => {
+																	const next = (rule.renditions ?? []).filter(
+																		(k) => k !== orphan,
+																	);
+																	patchGateRule(index, {
+																		renditions:
+																			next.length > 0 ? next : undefined,
+																	});
+																}}
+															/>
+															{orphan}
+														</label>
+													))}
+												{gateVideoKeys.map((key) => {
+													const selected =
+														rule.renditions?.includes(key) ?? false;
+													return (
+														<label
+															key={key}
+															className="flex items-center gap-1 text-xs text-zinc-300"
+														>
+															<input
+																type="checkbox"
+																className="h-3 w-3 accent-emerald-600"
+																checked={selected}
+																onChange={(e) => {
+																	const current = rule.renditions ?? [];
+																	const next = e.target.checked
+																		? [...current, key]
+																		: current.filter((k) => k !== key);
+																	// Empty selection = rule.renditions ABSENT
+																	// (= every measured-expected rendition).
+																	patchGateRule(index, {
+																		renditions:
+																			next.length > 0 ? next : undefined,
+																	});
+																}}
+															/>
+															{key}
+														</label>
+													);
+												})}
+											</div>
+										)}
 									</div>
 								))}
 								<Button
@@ -3159,10 +3276,12 @@ export function EncodingOptionsSection({
 								</Button>
 								{gateRules.some((rule) => rule.metric === "CAMBI_MAX") ? (
 									<p className="text-xs text-zinc-500">
-										{t("banding.gateHint")}
+										{t(
+											fileView ? "vodFlow.bandingGateHint" : "banding.gateHint",
+										)}
 									</p>
 								) : null}
-								{gateRules.length > 0 ? (
+								{gateRules.length > 0 && !fileView ? (
 									<div className="space-y-1">
 										<span className="text-xs text-zinc-400">
 											{t("wizardX.qcGateOnFail")}
@@ -3199,161 +3318,193 @@ export function EncodingOptionsSection({
 			<Collapsible
 				summary={
 					t("wizardX.kantarAudioWatermarking") +
-					(kantar ? t("wizardX.onSuffix") : "")
+					(kantar && !qcOnly ? t("wizardX.onSuffix") : "")
 				}
-				help={t("ui.embedsAnInaudibleKantarWatermarkInThe")}
+				help={t(
+					fileView
+						? "vodFlow.kantarHelp"
+						: "ui.embedsAnInaudibleKantarWatermarkInThe",
+				)}
 			>
-				<label
-					htmlFor="wz-kantar-enable"
-					className="flex items-center gap-2 text-xs text-zinc-300"
-				>
-					<input
-						id="wz-kantar-enable"
-						type="checkbox"
-						className="h-3.5 w-3.5 accent-emerald-600"
-						checked={kantar !== undefined}
-						onChange={(e) =>
-							onPatch({
-								kantar: e.target.checked
-									? {
-											credentialId: "",
-											channelName: "",
-											contentReference: "",
-											serverUrl: "",
-											reportPath: "",
-										}
-									: undefined,
-							})
-						}
-					/>
-					{t("wizard.enableKantarAudioWatermarking")}
-				</label>
-				{kantar ? (
-					<div className="space-y-3">
-						{state.audios.length === 0 ? (
-							<p className="text-amber-400 text-xs">
-								{t("wizard.thisPlanHasNoAudioRenditionAdd")}
-							</p>
-						) : null}
-						<Field
-							label={t("wizard.kantarCredential")}
-							htmlFor="wz-kantar-cred"
-							help={t("wizard.vaultCredentialTheServiceLoginPasswordNever")}
-						>
-							<SelectNative
-								id="wz-kantar-cred"
-								value={kantar.credentialId}
-								onChange={(e) => patchKantar({ credentialId: e.target.value })}
-							>
-								<option value="">{t("wizard.selectCredential")}</option>
-								{kantarCredentials.map((credential) => (
-									<option key={credential.id} value={credential.id}>
-										{credential.label}
-									</option>
-								))}
-							</SelectNative>
-							<NewCredentialLink />
-						</Field>
-						<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-							<Field
-								label={t("wizard.licenseId")}
-								htmlFor="wz-kantar-license"
-								help={t("wizard.kantarLicenseIdInteger")}
-							>
-								<Input
-									id="wz-kantar-license"
-									type="number"
-									min={1}
-									placeholder="4711"
-									value={kantar.licenseId ?? ""}
-									onChange={(e) =>
-										// Blank stays blank (undefined) so the preview says
-										// "expected number" rather than the form inventing a 0.
-										patchKantar({
-											licenseId:
-												e.target.value === ""
-													? undefined
-													: Number(e.target.value),
-										})
-									}
-								/>
-							</Field>
-							<Field
-								label={t("wizard.channelName")}
-								htmlFor="wz-kantar-channel"
-								help={t("wizard.kantarChannelThisContentIsReportedUnder")}
-							>
-								<Input
-									id="wz-kantar-channel"
-									placeholder={t("wizard.demoChannelJp")}
-									value={kantar.channelName}
-									onChange={(e) => patchKantar({ channelName: e.target.value })}
-								/>
-							</Field>
-							<Field
-								label={t("wizard.contentReference")}
-								htmlFor="wz-kantar-content-ref"
-								help={t("wizard.yourIdentifierForThisAssetInKantar")}
-							>
-								<Input
-									id="wz-kantar-content-ref"
-									placeholder="bbb-2026-08-06-ep01"
-									value={kantar.contentReference}
-									onChange={(e) =>
-										patchKantar({ contentReference: e.target.value })
-									}
-								/>
-							</Field>
-							<Field
-								label={t("wizard.serverUrl")}
-								htmlFor="wz-kantar-server-url"
-								help={t("wizard.kantarWatermarkingServiceEndpoint")}
-							>
-								<Input
-									id="wz-kantar-server-url"
-									placeholder="https://kantar.example.com/watermark"
-									value={kantar.serverUrl}
-									onChange={(e) => patchKantar({ serverUrl: e.target.value })}
-								/>
-							</Field>
-						</div>
-						<Field
-							label={t("wizard.reportPath")}
-							htmlFor="wz-kantar-report-path"
-							help={t("wizard.relativeToTheBaseOutputPathWhere")}
-						>
-							<Input
-								id="wz-kantar-report-path"
-								placeholder={t("wizard.reports")}
-								value={kantar.reportPath}
-								onChange={(e) => patchKantar({ reportPath: e.target.value })}
-							/>
-						</Field>
-						<div className="flex items-center gap-1">
-							<label
-								htmlFor="wz-kantar-report-private"
-								className="flex items-center gap-2 text-xs text-zinc-300"
-							>
-								<input
-									id="wz-kantar-report-private"
-									type="checkbox"
-									className="h-3.5 w-3.5 accent-emerald-600"
-									checked={kantar.reportPrivate ?? false}
-									onChange={(e) =>
-										patchKantar({
-											reportPrivate: e.target.checked ? true : undefined,
-										})
-									}
-								/>
-								{t("wizard.writeTheReportPrivatelyAclPrivate")}
-							</label>
-							<InfoHint
-								label={t("wizard.writeTheReportPrivatelyAclPrivateMore")}
-								text={t("wizard.theProcessingReportIsOperationalDataSo")}
-							/>
-						</div>
-					</div>
+				{/* A job that only measures encodes no audio, and Kantar marks audio
+				    and nothing else: the block stays here and out of the plan. */}
+				{qcOnly ? (
+					<p className="text-amber-400 text-xs">
+						{t("wizard.skippedWhileMeasureOnly", {
+							option: t(measureOnlyLabel(qc, fileView)),
+							feature: t("wizardX.kantarAudioWatermarking"),
+						})}
+					</p>
 				) : null}
+				<fieldset disabled={qcOnly} className="space-y-3">
+					<label
+						htmlFor="wz-kantar-enable"
+						className="flex items-center gap-2 text-xs text-zinc-300"
+					>
+						<input
+							id="wz-kantar-enable"
+							type="checkbox"
+							className="h-3.5 w-3.5 accent-emerald-600"
+							checked={kantar !== undefined}
+							onChange={(e) =>
+								onPatch({
+									kantar: e.target.checked
+										? {
+												credentialId: "",
+												channelName: "",
+												contentReference: "",
+												serverUrl: "",
+												reportPath: jobFolder ?? "",
+											}
+										: undefined,
+								})
+							}
+						/>
+						{t("wizard.enableKantarAudioWatermarking")}
+					</label>
+					{kantar ? (
+						<div className="space-y-3">
+							{!qcOnly && state.audios.length === 0 ? (
+								<p className="text-amber-400 text-xs">
+									{t(
+										fileView
+											? "vodFlow.kantarNeedsAudio"
+											: "wizard.thisPlanHasNoAudioRenditionAdd",
+									)}
+								</p>
+							) : null}
+							<Field
+								label={t("wizard.kantarCredential")}
+								htmlFor="wz-kantar-cred"
+								help={t("wizard.vaultCredentialTheServiceLoginPasswordNever")}
+							>
+								<SelectNative
+									id="wz-kantar-cred"
+									value={kantar.credentialId}
+									onChange={(e) =>
+										patchKantar({ credentialId: e.target.value })
+									}
+								>
+									<option value="">{t("wizard.selectCredential")}</option>
+									{kantarCredentials.map((credential) => (
+										<option key={credential.id} value={credential.id}>
+											{credential.label}
+										</option>
+									))}
+								</SelectNative>
+								<NewCredentialLink />
+							</Field>
+							<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+								<Field
+									label={t("wizard.licenseId")}
+									htmlFor="wz-kantar-license"
+									help={t("wizard.kantarLicenseIdInteger")}
+								>
+									<Input
+										id="wz-kantar-license"
+										type="number"
+										min={1}
+										placeholder="4711"
+										value={kantar.licenseId ?? ""}
+										onChange={(e) =>
+											// Blank stays blank (undefined) so the preview says
+											// "expected number" rather than the form inventing a 0.
+											patchKantar({
+												licenseId:
+													e.target.value === ""
+														? undefined
+														: Number(e.target.value),
+											})
+										}
+									/>
+								</Field>
+								<Field
+									label={t("wizard.channelName")}
+									htmlFor="wz-kantar-channel"
+									help={t("wizard.kantarChannelThisContentIsReportedUnder")}
+								>
+									<Input
+										id="wz-kantar-channel"
+										placeholder={t("wizard.demoChannelJp")}
+										value={kantar.channelName}
+										onChange={(e) =>
+											patchKantar({ channelName: e.target.value })
+										}
+									/>
+								</Field>
+								<Field
+									label={t("wizard.contentReference")}
+									htmlFor="wz-kantar-content-ref"
+									help={t("wizard.yourIdentifierForThisAssetInKantar")}
+								>
+									<Input
+										id="wz-kantar-content-ref"
+										placeholder="bbb-2026-08-06-ep01"
+										value={kantar.contentReference}
+										onChange={(e) =>
+											patchKantar({ contentReference: e.target.value })
+										}
+									/>
+								</Field>
+								<Field
+									label={t("wizard.serverUrl")}
+									htmlFor="wz-kantar-server-url"
+									help={t("wizard.kantarWatermarkingServiceEndpoint")}
+								>
+									<Input
+										id="wz-kantar-server-url"
+										placeholder="https://kantar.example.com/watermark"
+										value={kantar.serverUrl}
+										onChange={(e) => patchKantar({ serverUrl: e.target.value })}
+									/>
+								</Field>
+							</div>
+							<Field
+								label={t("wizard.reportPath")}
+								htmlFor="wz-kantar-report-path"
+								help={t(
+									fileView
+										? "vodFlow.kantarReportPathHelp"
+										: "wizard.relativeToTheBaseOutputPathWhere",
+								)}
+							>
+								<Input
+									id="wz-kantar-report-path"
+									placeholder={t("wizard.reports")}
+									value={kantar.reportPath}
+									onChange={(e) => patchKantar({ reportPath: e.target.value })}
+								/>
+							</Field>
+							<div className="flex items-center gap-1">
+								<label
+									htmlFor="wz-kantar-report-private"
+									className="flex items-center gap-2 text-xs text-zinc-300"
+								>
+									<input
+										id="wz-kantar-report-private"
+										type="checkbox"
+										className="h-3.5 w-3.5 accent-emerald-600"
+										checked={kantar.reportPrivate ?? false}
+										onChange={(e) =>
+											patchKantar({
+												reportPrivate: e.target.checked ? true : undefined,
+											})
+										}
+									/>
+									{t("wizard.writeTheReportPrivatelyAclPrivate")}
+								</label>
+								<InfoHint
+									label={t("wizard.writeTheReportPrivatelyAclPrivateMore")}
+									text={t(
+										fileView
+											? "vodFlow.kantarReportPrivateHelp"
+											: "wizard.theProcessingReportIsOperationalDataSo",
+									)}
+								/>
+							</div>
+						</div>
+					) : null}
+				</fieldset>
 			</Collapsible>
 		</div>
 	);

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/lib/i18n/context";
 import type { PublicBandingAssessment } from "@/lib/server/banding-public";
+import { observePresentationOrigin } from "./presentation-origin";
 
 type Interval = Pick<
 	PublicBandingAssessment["ranges"][number],
@@ -33,7 +34,7 @@ function useIntervalVideo(url: string, range: Interval) {
 		let pendingPlay = true;
 		let pendingStart = true;
 		let animation = 0;
-		let frameCallback = 0;
+		let cancelOrigin = () => {};
 		let seekTimeout = 0;
 		const timeout = window.setTimeout(() => fail("timing"), 10_000);
 		function pause(next: Status = "paused") {
@@ -159,20 +160,11 @@ function useIntervalVideo(url: string, range: Interval) {
 				}
 			},
 		};
-		if (typeof video.requestVideoFrameCallback !== "function") fail("timing");
-		else {
-			frameCallback = video.requestVideoFrameCallback((_now, metadata) => {
+		cancelOrigin = observePresentationOrigin(
+			video,
+			(mediaTime) => {
 				if (disposed || failed) return;
-				// Registered before loading: a later/skipped initial frame cannot establish the origin.
-				if (
-					!Number.isFinite(metadata.mediaTime) ||
-					metadata.mediaTime < 0 ||
-					metadata.presentedFrames !== 1 ||
-					video.seeking ||
-					!video.paused
-				)
-					return fail("timing");
-				origin = metadata.mediaTime;
+				origin = mediaTime;
 				start = origin + range.startSeconds;
 				end = origin + range.endSeconds;
 				if (
@@ -186,7 +178,10 @@ function useIntervalVideo(url: string, range: Interval) {
 					return fail("range");
 				window.clearTimeout(timeout);
 				seekAndPlay();
-			});
+			},
+			() => fail("timing"),
+		);
+		if (!failed) {
 			video.src = url;
 			video.load();
 		}
@@ -196,7 +191,7 @@ function useIntervalVideo(url: string, range: Interval) {
 			window.clearTimeout(timeout);
 			window.clearTimeout(seekTimeout);
 			cancelAnimationFrame(animation);
-			if (frameCallback) video.cancelVideoFrameCallback?.(frameCallback);
+			cancelOrigin();
 			for (const [name, listener] of Object.entries(listeners))
 				video.removeEventListener(name, listener);
 			actions.current = null;

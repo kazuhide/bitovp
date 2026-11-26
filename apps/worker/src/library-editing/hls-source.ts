@@ -130,6 +130,7 @@ export function parseEditingHlsPlaylist(text: string): EditingHlsPlaylist {
 		initUri: string | undefined,
 		targetDuration = 0,
 		ended = false,
+		cueOpen = false,
 		kind: "MASTER" | "MEDIA" | undefined,
 		durationSeconds = 0;
 	for (const line of lines.slice(1)) {
@@ -199,6 +200,28 @@ export function parseEditingHlsPlaylist(text: string): EditingHlsPlaylist {
 			if (line !== "#EXT-X-PLAYLIST-TYPE:VOD") unsupported();
 			continue;
 		}
+		// Numeric ad-break annotations are advisory, not media or fetch targets.
+		// Validate their bounded paired form, then omit them from the local remux.
+		if (line.startsWith("#EXT-X-CUE-OUT:")) {
+			const value = line.slice(15);
+			const duration = Number(value);
+			if (
+				kind === "MASTER" ||
+				cueOpen ||
+				!/^\d+(?:\.\d+)?$/.test(value) ||
+				!Number.isFinite(duration) ||
+				duration > HLS_PREPARATION_LIMITS.durationSeconds
+			)
+				unsupported();
+			kind = "MEDIA";
+			cueOpen = true;
+			continue;
+		}
+		if (line === "#EXT-X-CUE-IN") {
+			if (kind !== "MEDIA" || !cueOpen) unsupported();
+			cueOpen = false;
+			continue;
+		}
 		if (line.startsWith("#EXT-X-VERSION:")) {
 			if (!/^\d+$/.test(line.slice(15))) unsupported();
 			continue;
@@ -246,7 +269,7 @@ export function parseEditingHlsPlaylist(text: string): EditingHlsPlaylist {
 			pendingDuration = undefined;
 		} else unsupported();
 	}
-	if (pendingVariant || pendingDuration !== undefined) unsupported();
+	if (pendingVariant || pendingDuration !== undefined || cueOpen) unsupported();
 	if (kind === "MASTER") {
 		if (!variants.length || variants.length > 128 || audio.length > 128)
 			unsupported();

@@ -32,6 +32,7 @@ const ADMIN_AREA_HREFS = [
 	"/settings/reset",
 	"/settings/organizations",
 	"/settings/access-audit",
+	"/settings/operation-analytics",
 ] as const;
 
 const COVERAGE_HREF = "/settings/api-coverage";
@@ -53,6 +54,7 @@ describe("SettingsAreas — role-aware ADMIN cards", () => {
 		await waitFor(() => expect(screen.getByText("Users")).toBeInTheDocument());
 		expect(areaHrefs()).toEqual(expect.arrayContaining([...ADMIN_AREA_HREFS]));
 		expect(areaHrefs()).toContain(COVERAGE_HREF);
+		expect(areaHrefs()).toContain("/settings/error-definitions");
 		expect(areaHrefs()).not.toContain("/verification");
 	});
 
@@ -242,7 +244,15 @@ describe("SettingsAreas — category panels", () => {
 					"/settings/access-audit",
 				],
 			],
-			["詳細・診断", ["/settings/clip-editing", "/settings/api-coverage"]],
+			[
+				"詳細・診断",
+				[
+					"/settings/error-definitions",
+					"/settings/clip-editing",
+					"/settings/operation-analytics",
+					"/settings/api-coverage",
+				],
+			],
 		];
 		for (const [name, hrefs] of groups) {
 			const panel = screen.getByRole("region", { name });
@@ -256,7 +266,13 @@ describe("SettingsAreas — category panels", () => {
 			}
 		}
 		const preferences = screen.getByRole("region", { name: "自分の表示設定" });
-		expect(within(preferences).getAllByRole("combobox")).toHaveLength(2);
+		// Language, appearance, and the flow a new VOD job opens in.
+		expect(within(preferences).getAllByRole("combobox")).toHaveLength(3);
+		expect(
+			within(preferences).getByRole("combobox", {
+				name: "新規 VOD の作成フロー",
+			}),
+		).toHaveValue("streaming");
 		expect(screen.getAllByRole("heading", { level: 2 })[0]).toHaveTextContent(
 			"自分の表示設定",
 		);

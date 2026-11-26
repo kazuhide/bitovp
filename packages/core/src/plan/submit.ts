@@ -51,7 +51,8 @@ export type SubmitRefusal = {
 		| "INTERNAL_FEATURE_DISABLED"
 		| "QC_DISABLED"
 		| "QC_CLOUD_UNAVAILABLE"
-		| "QC_CLOUD_PROFILE_INVALID";
+		| "QC_CLOUD_PROFILE_INVALID"
+		| "INPUT_PREPARATION_INVALID";
 	message: string;
 	details?: unknown;
 	issues?: PlanIssue[];
@@ -93,6 +94,8 @@ export type EncodingJobCreateData = {
 };
 
 export type SubmitEncodingJobDeps = {
+	/** Prepared inputs are admitted only after an owned, current storage receipt is checked. */
+	validateInputPreparation?: (plan: EncodingPlan) => Promise<void>;
 	validationOptions: PlanValidationOptions;
 	/** Absent means disabled, including replay/watch/copy submission paths. */
 	internalHevcV2AccountId?: string;
@@ -155,7 +158,7 @@ export type SubmitEncodingJobDeps = {
  * an unknown spec id, which the first cut refused unconditionally because
  * the level was computed after that branch returned (review-210 C1).
  */
-function deliveryVerdict(plan: EncodingPlan): {
+export function checkDeliveryCommitment(plan: EncodingPlan): {
 	refusal?: SubmitRefusal;
 	warnings?: PlanIssue[];
 } {
@@ -241,6 +244,20 @@ export async function submitEncodingJob(
 		};
 	}
 	const rawPlan = parsed.data;
+	if (rawPlan.inputTimelinePreparation) {
+		try {
+			if (!deps.validateInputPreparation)
+				throw new Error("INPUT_PREPARATION_VALIDATOR_REQUIRED");
+			await deps.validateInputPreparation(rawPlan);
+		} catch {
+			return {
+				ok: false,
+				code: "INPUT_PREPARATION_INVALID",
+				message:
+					"The prepared timeline is unavailable or changed. Prepare the timeline again before starting a new job.",
+			};
+		}
+	}
 	if (
 		rawPlan.internal?.hevcV2 &&
 		!isInternalHevcV2Account(
@@ -337,7 +354,7 @@ export async function submitEncodingJob(
 	 */
 	let deliveryWarnings: PlanIssue[] = [];
 	if (!deps.skipDeliveryCommitment) {
-		const verdict = deliveryVerdict(plan);
+		const verdict = checkDeliveryCommitment(plan);
 		if (verdict.refusal) {
 			return verdict.refusal;
 		}

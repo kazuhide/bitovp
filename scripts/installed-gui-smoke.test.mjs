@@ -3,10 +3,13 @@ import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import {
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	realpathSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,16 +19,20 @@ import {
 	classifyBrowserError,
 	PHASED_GUI_STATES,
 } from "../tests/browser/diagnostics.ts";
+import { seedLibraryRemovalFixture } from "../tests/browser/library-fixture.ts";
 import {
 	browserExecutionAllowed,
 	CASES,
 	childEnvironment,
 	cleanupFixture,
 	composeOverride,
+	exportHdrScreenshots,
 	failureSummary,
 	inside,
+	runFixture,
 	validateExecutionMode,
 	validateReport,
+	verifyFfmpeg,
 	workerReady,
 } from "./installed-gui-smoke.mjs";
 
@@ -103,6 +110,162 @@ test("all browser definitions load in collection-only mode without running a cas
 	}
 });
 
+const hdrPng = Buffer.from(
+	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jL1sAAAAASUVORK5CYII=",
+	"base64",
+);
+function withHdrScreenshots(run) {
+	const parent = realpathSync(mkdtempSync(join(tmpdir(), "bitovp-hdr-test-")));
+	const directory = join(parent, "bitovp-gui-owned");
+	const screenshots = join(directory, "browser-output", "qc-case");
+	mkdirSync(screenshots, { recursive: true, mode: 0o700 });
+	writeFileSync(join(directory, ".owner"), id, { mode: 0o600 });
+	const statePath = join(parent, "state.json");
+	try {
+		run({
+			parent,
+			state: { id, directory },
+			statePath,
+			screenshots,
+			output: `${statePath}.hdr-screenshots`,
+		});
+	} finally {
+		rmSync(parent, { recursive: true, force: true });
+	}
+}
+
+test("HDR screenshots are not exported without an explicit state path", () => {
+	withHdrScreenshots(({ parent, state, screenshots }) => {
+		writeFileSync(join(screenshots, "hdr-controls-en-1440.png"), hdrPng);
+		assert.deepEqual(exportHdrScreenshots(state), []);
+		assert.deepEqual(readdirSync(parent), ["bitovp-gui-owned"]);
+	});
+});
+
+test("HDR export keeps only exact observed PNG names and ignores private reports and traversal paths", () => {
+	withHdrScreenshots(({ parent, state, statePath, screenshots, output }) => {
+		const names = [
+			"hdr-controls-en-1440.png",
+			"hdr-controls-ja-320.png",
+			"hdr-pq-en-1440.png",
+			"hdr-pq-ja-320.png",
+			"hdr-hlg-hfr-en-1440.png",
+			"hdr-hlg-hfr-ja-320.png",
+			"hdr-compare-sdr-pq-en-1440.png",
+			"hdr-compare-sdr-pq-ja-320.png",
+			"hdr-compare-pq-hlg-en-1440.png",
+			"hdr-compare-pq-hlg-ja-320.png",
+			"hdr-compare-pq-pq-en-1440.png",
+			"hdr-compare-pq-pq-ja-320.png",
+		].sort();
+		for (const name of names) writeFileSync(join(screenshots, name), hdrPng);
+		writeFileSync(join(screenshots, "credentials.png"), hdrPng);
+		writeFileSync(join(screenshots, "hdr-controls-en-1440.png.txt"), "private");
+		writeFileSync(join(parent, "hdr-controls-en-1440.png"), "outside");
+		writeFileSync(
+			join(state.directory, "browser-results.json"),
+			JSON.stringify({
+				attachments: [{ path: "../hdr-controls-en-1440.png" }],
+			}),
+		);
+		writeFileSync(join(state.directory, "browser.json"), "private fixture");
+		assert.deepEqual(exportHdrScreenshots(state, statePath), names);
+		assert.deepEqual(readdirSync(output).sort(), names);
+		for (const name of names)
+			assert.deepEqual(readFileSync(join(output, name)), hdrPng);
+		assert.equal(
+			readFileSync(join(state.directory, "browser.json"), "utf8"),
+			"private fixture",
+		);
+	});
+});
+
+test("HDR export requires the owned canonical private directory and its sibling state path", () => {
+	withHdrScreenshots(({ state, statePath, screenshots, output }) => {
+		writeFileSync(join(screenshots, "hdr-controls-en-1440.png"), hdrPng);
+		writeFileSync(join(state.directory, ".owner"), "wrong");
+		assert.throws(() => exportHdrScreenshots(state, statePath), /ownership/);
+		writeFileSync(join(state.directory, ".owner"), id);
+		assert.throws(() => exportHdrScreenshots(state, join(root, "state.json")));
+		assert.throws(() =>
+			exportHdrScreenshots(state, join(state.directory, "state.json")),
+		);
+		assert.equal(existsSync(output), false);
+	});
+});
+
+test("HDR export rejects symlinked screenshot roots, cases and PNGs", () => {
+	for (const target of [
+		"browser-output",
+		"qc-case",
+		"hdr-controls-en-1440.png",
+	]) {
+		withHdrScreenshots(({ parent, state, statePath, screenshots, output }) => {
+			const outside = join(parent, "outside");
+			mkdirSync(outside, { mode: 0o700 });
+			writeFileSync(join(outside, "hdr-controls-en-1440.png"), hdrPng);
+			const link =
+				target === "browser-output"
+					? join(state.directory, target)
+					: target === "qc-case"
+						? screenshots
+						: join(screenshots, target);
+			rmSync(link, { recursive: true, force: true });
+			symlinkSync(
+				target.endsWith(".png") ? join(outside, target) : outside,
+				link,
+			);
+			assert.throws(
+				() => exportHdrScreenshots(state, statePath),
+				/canonical|regular|symlink/,
+			);
+			assert.equal(existsSync(output), false);
+		});
+	}
+});
+
+test("HDR export rejects invalid PNG bytes, excessive files and ambiguous names", () => {
+	for (const kind of ["not-png", "too-large", "duplicate"]) {
+		withHdrScreenshots(({ state, statePath, screenshots, output }) => {
+			writeFileSync(
+				join(screenshots, "hdr-controls-en-1440.png"),
+				kind === "not-png"
+					? "private text"
+					: kind === "too-large"
+						? Buffer.alloc(5_000_001)
+						: hdrPng,
+			);
+			if (kind === "duplicate") {
+				const duplicate = join(
+					state.directory,
+					"browser-output",
+					"duplicate-case",
+				);
+				mkdirSync(duplicate);
+				writeFileSync(join(duplicate, "hdr-controls-en-1440.png"), hdrPng);
+			}
+			assert.throws(
+				() => exportHdrScreenshots(state, statePath),
+				/PNG|size|duplicate/,
+			);
+			assert.equal(existsSync(output), false);
+		});
+	}
+});
+
+test("HDR export preserves preexisting output paths and writes nothing when no observations exist", () => {
+	withHdrScreenshots(({ state, statePath, screenshots, output }) => {
+		assert.deepEqual(exportHdrScreenshots(state, statePath), []);
+		assert.equal(existsSync(output), false);
+		mkdirSync(output);
+		writeFileSync(join(output, "keep"), "existing");
+		writeFileSync(join(screenshots, "hdr-controls-en-1440.png"), hdrPng);
+		assert.throws(() => exportHdrScreenshots(state, statePath), /EEXIST/);
+		assert.equal(readFileSync(join(output, "keep"), "utf8"), "existing");
+		assert.deepEqual(readdirSync(output), ["keep"]);
+	});
+});
+
 test("private state paths cannot use a dot-prefixed child or the checkout itself", () => {
 	assert(inside("/checkout", "/checkout"));
 	assert(inside("/checkout", "/checkout/..hidden/state"));
@@ -177,6 +340,352 @@ test("installed application builds refresh their base image", () => {
 		"Installed application builds must refresh the base image",
 	);
 });
+test("only the builds of the Worker's Dockerfile take a directory of built FFmpeg in place of the stage, and only when one is given", () => {
+	const plain = composeOverride({ id, directory: "/private/smoke" });
+	assert(!plain.includes("additional_contexts"));
+	const ffmpeg = "/private/native-media";
+	const text = composeOverride({ id, directory: "/private/smoke", ffmpeg });
+	// The form of the Compose specification: the name of the stage, then the
+	// directory that stands for it.
+	const context = `\n      additional_contexts:\n        ffmpeg: "${ffmpeg}"`;
+	// One service of the override, up to the next one.
+	const service = (name) =>
+		new RegExp(`\\n {2}${name}:\\n(?: {4}.*\\n)+`).exec(text)[0];
+	for (const name of ["migrate", "worker"])
+		assert(
+			service(name).includes(
+				`\n    build:\n      context: ${JSON.stringify(root)}\n      dockerfile: Dockerfile${context}\n      labels:\n`,
+			),
+			name,
+		);
+	// The Web image has no such stage.
+	assert(
+		service("web").includes(
+			"\n      dockerfile: Dockerfile.web\n      labels:\n",
+		),
+	);
+	// Nothing else differs from the override without a directory.
+	assert.equal(text.split(context).length - 1, 2);
+	assert.equal(text.replaceAll(context, ""), plain);
+	// Whatever the path holds, it stays one value.
+	const odd = '/private/a "b": #c';
+	assert(
+		composeOverride({ id, directory: "/private/smoke", ffmpeg: odd }).includes(
+			`\n        ffmpeg: ${JSON.stringify(odd)}\n`,
+		),
+	);
+	// Compose would look for any other path in the checkout, and would put
+	// the value of a variable where a dollar sign starts one: the build would
+	// get another directory than the one that was checked.
+	for (const unsafe of [
+		"native-media",
+		"./native-media",
+		"",
+		"/private/with$dollar",
+		"/private/native-media$",
+		"/private/a\nb",
+		"/private/a\rb",
+	])
+		assert.throws(
+			() =>
+				composeOverride({ id, directory: "/private/smoke", ffmpeg: unsafe }),
+			{ message: "Invalid FFmpeg directory" },
+			JSON.stringify(unsafe),
+		);
+	// Both installations of a run are given the directory that was checked.
+	const source = readFileSync(
+		new URL("./installed-gui-smoke.mjs", import.meta.url),
+		"utf8",
+	);
+	assert(
+		source.includes(
+			"composeOverride({ ...state, imageId, ffmpeg, ffmpegHdr })",
+		),
+	);
+	assert.equal(source.match(/^\t+ffmpeg: prebuilt,$/gm)?.length, 2);
+});
+test("HDR native output replaces only the worker HDR stage alongside or without SDR", () => {
+	const id = "a".repeat(32);
+	for (const ffmpeg of [undefined, "/private/sdr"]) {
+		const text = composeOverride({
+			id,
+			directory: "/private/smoke",
+			ffmpeg,
+			ffmpegHdr: "/private/hdr",
+		});
+		assert.equal(text.match(/ffmpeg-hdr: "\/private\/hdr"/g)?.length, 2);
+		assert(
+			!text
+				.slice(text.indexOf("  web:"), text.indexOf("  gateway:"))
+				.includes("additional_contexts"),
+		);
+	}
+	for (const ffmpegHdr of ["relative", "/private/a$b", "/private/a\nb"])
+		assert.throws(() =>
+			composeOverride({ id, directory: "/private/smoke", ffmpegHdr }),
+		);
+	const directory = realpathSync(mkdtempSync(join(tmpdir(), "gui-hdr-test-")));
+	try {
+		mkdirSync(join(directory, "bin"));
+		for (const name of ["ffmpeg-hdr", "ffprobe-hdr"])
+			writeFileSync(join(directory, "bin", name), "", { mode: 0o755 });
+		assert.equal(verifyFfmpeg(directory, true), directory);
+		rmSync(join(directory, "bin/ffprobe-hdr"));
+		assert.throws(() => verifyFfmpeg(directory, true), /ffprobe-hdr/);
+		const result = spawnSync(
+			process.execPath,
+			[
+				join(import.meta.dirname, "installed-gui-smoke.mjs"),
+				"--cleanup",
+				"--ffmpeg-hdr",
+				directory,
+			],
+			{ encoding: "utf8" },
+		);
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /Cleanup builds no image/);
+	} finally {
+		rmSync(directory, { recursive: true });
+	}
+});
+test("a directory of built FFmpeg is taken only whole and from outside the checkout, and the command says why it refuses one", () => {
+	const directory = realpathSync(
+		mkdtempSync(join(tmpdir(), "bitovp-gui-ffmpeg-test-")),
+	);
+	try {
+		// As scripts/native-media-tools.sh leaves it.
+		const holding = (name, programs = ["ffmpeg", "ffprobe"]) => {
+			const path = join(directory, name);
+			mkdirSync(join(path, "bin"), { recursive: true });
+			for (const program of programs)
+				writeFileSync(join(path, "bin", program), "", { mode: 0o755 });
+			return path;
+		};
+		const built = holding("native-media");
+		assert.equal(verifyFfmpeg(built), built);
+		// A link to the directory names the directory itself, which is what
+		// Compose is given: the link's own name does not count.
+		symlinkSync(built, join(directory, "linked"));
+		assert.equal(verifyFfmpeg(join(directory, "linked")), built);
+		symlinkSync(built, join(directory, "linked$dollar"));
+		assert.equal(verifyFfmpeg(join(directory, "linked$dollar")), built);
+
+		const ABSOLUTE = "FFmpeg directory must be an absolute path";
+		const OUTSIDE = "FFmpeg directory must be a directory outside the checkout";
+		const UNSUPPORTED = "Unsupported FFmpeg directory path";
+		const program = (name) => `FFmpeg directory must hold the file bin/${name}`;
+		const other = holding("other", ["ffmpeg"]);
+		symlinkSync(join(built, "bin/ffprobe"), join(other, "bin/ffprobe"));
+		mkdirSync(join(holding("folder", ["ffprobe"]), "bin/ffmpeg"));
+		mkdirSync(join(directory, "empty"));
+		symlinkSync(holding("with$dollar"), join(directory, "plain"));
+		symlinkSync(import.meta.dirname, join(directory, "into"));
+		const refused = [
+			["native-media", ABSOLUTE],
+			["", ABSOLUTE],
+			[join(directory, "absent"), "FFmpeg directory does not exist"],
+			[join(built, "bin/ffmpeg"), OUTSIDE],
+			// The checkout, a directory in it, and a link outside the checkout
+			// that leads to one.
+			[root, OUTSIDE],
+			[import.meta.dirname, OUTSIDE],
+			[join(directory, "into"), OUTSIDE],
+			// Compose would read the dollar sign as the start of a variable,
+			// also where a link with a plain name leads to the directory. A
+			// line break has no place in a path that is written into a file.
+			[join(directory, "with$dollar"), UNSUPPORTED],
+			[join(directory, "plain"), UNSUPPORTED],
+			[holding("a\nb"), UNSUPPORTED],
+			[holding("a\rb"), UNSUPPORTED],
+			[join(directory, "empty"), program("ffmpeg")],
+			[holding("one", ["ffmpeg"]), program("ffprobe")],
+			[holding("two", ["ffprobe"]), program("ffmpeg")],
+			// A program is a file of the directory: no link, no directory.
+			[other, program("ffprobe")],
+			[join(directory, "folder"), program("ffmpeg")],
+		];
+		for (const [path, message] of refused)
+			assert.throws(() => verifyFfmpeg(path), { message }, path);
+		assert.throws(() => verifyFfmpeg(undefined), { message: ABSOLUTE });
+
+		// The command without the settings of a hosted runner: it starts no
+		// installation, whatever it is given.
+		const run = (...args) =>
+			spawnSync(
+				process.execPath,
+				[join(import.meta.dirname, "installed-gui-smoke.mjs"), ...args],
+				{ env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 30_000 },
+			);
+		const statePath = join(directory, "state.json");
+		// A refused option ends the command with its reason.
+		for (const [args, reason] of [
+			...refused.map(([path, message]) => [["--ffmpeg", path], message]),
+			[["--state-file", statePath, "--ffmpeg", "native-media"], ABSOLUTE],
+			[["--ffmpeg"], "Unknown installed GUI smoke option"],
+			[
+				["--ffmpeg", built, "--ffmpeg", built],
+				"Unknown installed GUI smoke option",
+			],
+			[["--ffmpeg", built, "more"], "Unknown installed GUI smoke option"],
+			[["--other", built], "Unknown installed GUI smoke option"],
+			[
+				["--state-file", statePath, "--state-file", statePath],
+				"Unknown installed GUI smoke option",
+			],
+			[
+				["--cleanup", "--ffmpeg", built, "--state-file", statePath],
+				"Cleanup builds no image and takes no FFmpeg directory",
+			],
+		]) {
+			const result = run(...args);
+			assert.equal(result.status, 1, args.join(" "));
+			assert.equal(result.stdout, "");
+			assert(
+				result.stderr.includes(`\nAssertionError [ERR_ASSERTION]: ${reason}\n`),
+				`${args.join(" ")}: ${result.stderr}`,
+			);
+		}
+		// With one that is accepted, in either order with the state file, the
+		// command ends as it does without the option: it names no reason, and
+		// the run that it starts ends at once, because this is no hosted
+		// runner. That the run is given the directory is not seen here; the
+		// next test shows it.
+		for (const args of [
+			["--ffmpeg", built],
+			["--ffmpeg", built, "--state-file", statePath],
+			["--state-file", statePath, "--ffmpeg", built],
+			["--state-file", statePath],
+			[],
+		]) {
+			const result = run(...args);
+			assert.equal(result.status, 1, args.join(" "));
+			assert.equal(result.stdout, "");
+			assert.equal(
+				result.stderr,
+				"Installed GUI smoke did not complete successfully\n",
+			);
+			assert.equal(existsSync(statePath), false);
+		}
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+test("the command hands the FFmpeg directory that it checked to the run, whose installation writes it into the override before its first program starts", () => {
+	const directory = realpathSync(
+		mkdtempSync(join(tmpdir(), "bitovp-gui-handover-test-")),
+	);
+	try {
+		// As scripts/native-media-tools.sh leaves it, and a link to it.
+		const built = join(directory, "native-media");
+		mkdirSync(join(built, "bin"), { recursive: true });
+		for (const program of ["ffmpeg", "ffprobe"])
+			writeFileSync(join(built, "bin", program), "", { mode: 0o755 });
+		symlinkSync(built, join(directory, "linked"));
+		// One run of the command on this machine, with stand-ins for the two
+		// programs that a run starts. The first program of an installation is
+		// pnpm, and its arguments name the installation's private directory:
+		// the stand-in keeps the override that it finds there and fails, which
+		// ends the run. docker then lists nothing for the run to remove. A run
+		// gives its programs an environment of its own, so the stand-in writes
+		// beside itself.
+		const run = (name, ...args) => {
+			const tools = join(directory, name, "tools");
+			const place = join(directory, name, "place");
+			for (const path of [tools, place]) mkdirSync(path, { recursive: true });
+			writeFileSync(
+				join(tools, "pnpm"),
+				'#!/bin/sh\nhere=$(dirname "$0")\nprintf \'%s\\n\' "$1 $2 $3" >> "$here/calls"\nwhile [ "$#" -gt 1 ]; do\n\t[ "$1" != --admin-env ] || cp "$(dirname "$2")/compose.yml" "$here/override.yml"\n\tshift\ndone\nexit 1\n',
+				{ mode: 0o700 },
+			);
+			writeFileSync(join(tools, "docker"), "#!/bin/sh\n", { mode: 0o700 });
+			const result = spawnSync(
+				process.execPath,
+				[
+					join(import.meta.dirname, "installed-gui-smoke.mjs"),
+					"--runtime-only",
+					...args,
+					"--state-file",
+					join(place, "state.json"),
+				],
+				{
+					env: { PATH: `${tools}:${process.env.PATH}` },
+					encoding: "utf8",
+					timeout: 60_000,
+				},
+			);
+			// The run came to the first program of its first installation and
+			// no further, and removed what it had made.
+			assert.equal(result.status, 1, result.stderr);
+			assert.equal(
+				result.stdout,
+				"Installed GUI smoke failed during primary database initialization\nOwned smoke containers, volumes, images and private files removed\n",
+			);
+			assert.equal(
+				result.stderr,
+				"Installed GUI smoke did not complete successfully\n",
+			);
+			assert.equal(
+				readFileSync(join(tools, "calls"), "utf8"),
+				"--filter @bitovp/db db:runtime:init\n",
+			);
+			assert.deepEqual(readdirSync(place), ["state.json.failure.log"]);
+			return readFileSync(join(tools, "override.yml"), "utf8");
+		};
+		// With the option, both builds of the Worker's Dockerfile are given
+		// the directory that the link leads to, which is the one that was
+		// checked. Without it, no build is given a directory.
+		const given = run("given", "--ffmpeg", join(directory, "linked"));
+		assert.equal(
+			given.split(
+				`\n      additional_contexts:\n        ffmpeg: ${JSON.stringify(built)}\n`,
+			).length - 1,
+			2,
+			given,
+		);
+		assert.equal(given.split("additional_contexts").length - 1, 2);
+		const plain = run("plain");
+		assert.match(plain, /^services:\n/);
+		assert(!plain.includes("additional_contexts"));
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+test("a run that refuses the FFmpeg directory it is given ends before it makes or announces anything", async () => {
+	const directory = realpathSync(
+		mkdtempSync(join(tmpdir(), "bitovp-gui-refusal-test-")),
+	);
+	try {
+		// A run makes its private directory beside its state file. Its PATH
+		// names nothing: a run that went on would find no program to start.
+		const notes = [];
+		await assert.rejects(
+			runFixture({
+				statePath: join(directory, "state.json"),
+				ffmpeg: join(directory, "absent"),
+				runtimeOnly: true,
+				env: { PATH: join(directory, "absent") },
+				notify: (note) => notes.push(note),
+			}),
+			{ message: "FFmpeg directory does not exist" },
+		);
+		assert.deepEqual(readdirSync(directory), []);
+		assert.deepEqual(notes, []);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+test("retains decoded QC coverage and requires installed Bombadil and durable cancellation", () => {
+	assert.equal(CASES.length, 14);
+	assert.equal(
+		CASES[11],
+		"decode and seek QC comparison previews and inspect violin distributions",
+	);
+	assert.deepEqual(CASES.slice(12), [
+		"explore installed VOD configuration with Bombadil and replay a fault",
+		"cancel LOCAL QC and retain its result after reload",
+	]);
+});
+
 test("requires every named browser case to run and pass once without skipping or retrying", () => {
 	validateReport(report());
 	for (const key of ["skipped", "flaky", "unexpected"]) {
@@ -215,8 +724,54 @@ test("failure summaries expose only known case names and safe statuses", () => {
 		`Browser case: ${CASES[7]}; status=passed`,
 		`Browser case: ${CASES[8]}; status=passed`,
 		`Browser case: ${CASES[9]}; status=passed`,
+		`Browser case: ${CASES[10]}; status=passed`,
+		`Browser case: ${CASES[11]}; status=passed`,
+		`Browser case: ${CASES[12]}; status=passed`,
+		`Browser case: ${CASES[13]}; status=passed`,
 	]);
 	assert(!summary.join("\n").includes("private"));
+});
+
+test("Library browser seeding rejects foreign or malformed container identity before writing", () => {
+	const postgresContainer = "a".repeat(64);
+	for (const labels of [
+		{},
+		{
+			"io.bitovp.gui-smoke": id,
+			"com.docker.compose.project": "foreign",
+			"com.docker.compose.service": "postgres",
+		},
+		{
+			"io.bitovp.gui-smoke": "foreign",
+			"com.docker.compose.project": `bitovp-gui-${id}`,
+			"com.docker.compose.service": "postgres",
+		},
+		{
+			"io.bitovp.gui-smoke": id,
+			"com.docker.compose.project": `bitovp-gui-${id}`,
+			"com.docker.compose.service": "web",
+		},
+	]) {
+		const calls = [];
+		assert.throws(() =>
+			seedLibraryRemovalFixture({ id, postgresContainer }, (args) => {
+				calls.push(args);
+				return JSON.stringify(labels);
+			}),
+		);
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0][0], "inspect");
+	}
+	for (const identity of [
+		{ id: "foreign", postgresContainer },
+		{ id, postgresContainer: "--privileged" },
+	]) {
+		assert.throws(() =>
+			seedLibraryRemovalFixture(identity, () => {
+				throw new Error("Docker must not run");
+			}),
+		);
+	}
 });
 test("failed browser cases expose only the last fixed submission stage", () => {
 	const changed = report();
@@ -1450,6 +2005,175 @@ test("failed cases expose only bounded line numbers from the known browser test 
 		);
 	}
 });
+test("QC helper failures expose known bounded lines alongside the browser entry without private data", () => {
+	const changed = report();
+	const result = changed.suites[0].specs.at(-1).tests[0].results[0];
+	result.status = "failed";
+	result.error = {
+		message: "private password, cookie and <html>body</html>",
+		location: { file: "/private/qc-comparison-fixture.ts", line: 525 },
+		stack:
+			"private URL and token\n at /private/qc-comparison-fixture.ts:525:17\n at /private/installed-gui.test.ts:1253:8",
+	};
+	result.errors = [
+		{
+			location: {
+				file: "C:\\private\\qc-comparison-fixture.ts",
+				line: 526,
+			},
+			stack: "at C:\\private\\qc-comparison-fixture.ts:527:2",
+		},
+	];
+	assert.equal(
+		failureSummary(JSON.stringify(changed)).at(-1),
+		`Browser case: ${CASES.at(-1)}; status=failed; lines=1253; qc-lines=525,526,527`,
+	);
+	const summary = failureSummary(JSON.stringify(changed)).join("\n");
+	for (const privateText of [
+		"private",
+		"password",
+		"cookie",
+		"<html>",
+		"URL",
+		"token",
+		"C:\\",
+		"qc-comparison-fixture.ts",
+	])
+		assert(!summary.includes(privateText));
+});
+test("QC helper diagnostics reject other files and invalid lines and cap each known file independently", () => {
+	const changed = report();
+	const result = changed.suites[0].specs.at(-1).tests[0].results[0];
+	result.status = "failed";
+	for (const file of [
+		"unknown-helper.ts",
+		"other-qc-comparison-fixture.ts",
+		"xqc-comparison-fixture.ts",
+		"other qc-comparison-fixture.ts",
+		"qc-comparison-fixture.tsx",
+		"qc-comparison-fixture.ts.backup",
+	]) {
+		result.error = {
+			location: { file: `/private/${file}`, line: 525 },
+			stack: `private cookie\n at /private/${file}:526:2\n at /private/installed-gui.test.ts:1253:8`,
+		};
+		assert.equal(
+			failureSummary(JSON.stringify(changed)).at(-1),
+			`Browser case: ${CASES.at(-1)}; status=failed; lines=1253`,
+		);
+	}
+	for (const line of [0, -1, 10_001, "525", 2.5, null]) {
+		result.error = {
+			location: { file: "/private/qc-comparison-fixture.ts", line },
+			stack: "private cookie\n at /private/installed-gui.test.ts:1253:8",
+		};
+		assert.equal(
+			failureSummary(JSON.stringify(changed)).at(-1),
+			`Browser case: ${CASES.at(-1)}; status=failed; lines=1253`,
+		);
+	}
+	result.error = {
+		location: { file: "/private/installed-gui.test.ts", line: 1253 },
+		stack: [
+			"private cookie",
+			...Array.from(
+				{ length: 5 },
+				(_, i) => `at /private/qc-comparison-fixture.ts:${525 + i}:2`,
+			),
+			...Array.from(
+				{ length: 5 },
+				(_, i) => `at /private/installed-gui.test.ts:${1253 + i}:2`,
+			),
+		].join("\n"),
+	};
+	assert.equal(
+		failureSummary(JSON.stringify(changed)).at(-1),
+		`Browser case: ${CASES.at(-1)}; status=failed; lines=1253,1254,1255; qc-lines=525,526,527`,
+	);
+	result.error = {
+		location: { file: "/private/qc-comparison-fixture.ts", line: 10_000 },
+	};
+	assert.equal(
+		failureSummary(JSON.stringify(changed)).at(-1),
+		`Browser case: ${CASES.at(-1)}; status=failed; qc-lines=10000`,
+	);
+});
+test("combined QC helper diagnostics retain only exact known bounded line groups without private data", () => {
+	const changed = report();
+	const result = changed.suites[0].specs.at(-1).tests[0].results[0];
+	result.status = "failed";
+	result.error = {
+		message: "private password, cookie and <html>body</html>",
+		location: { file: "C:\\private\\qc-combined-fixture.ts", line: 197 },
+		stack: [
+			"private URL and token",
+			...Array.from(
+				{ length: 4 },
+				(_, i) => `at /private/qc-combined-fixture.ts:${198 + i}:2`,
+			),
+			...Array.from(
+				{ length: 4 },
+				(_, i) => `at /private/installed-gui.test.ts:${1253 + i}:2`,
+			),
+			...Array.from(
+				{ length: 4 },
+				(_, i) => `at /private/qc-comparison-fixture.ts:${525 + i}:2`,
+			),
+		].join("\n"),
+	};
+	assert.equal(
+		failureSummary(JSON.stringify(changed)).at(-1),
+		`Browser case: ${CASES.at(-1)}; status=failed; lines=1253,1254,1255; qc-lines=525,526,527; combined-lines=197,198,199`,
+	);
+	const summary = failureSummary(JSON.stringify(changed)).join("\n");
+	for (const privateText of [
+		"private",
+		"password",
+		"cookie",
+		"<html>",
+		"URL",
+		"token",
+		"C:\\",
+		"qc-combined-fixture.ts",
+	])
+		assert(!summary.includes(privateText));
+	const knownStack =
+		"at /private/installed-gui.test.ts:1253:2\n at /private/qc-comparison-fixture.ts:525:2";
+	for (const file of [
+		"unknown-helper.ts",
+		"other-qc-combined-fixture.ts",
+		"xqc-combined-fixture.ts",
+		"other qc-combined-fixture.ts",
+		"qc-combined-fixture.tsx",
+		"qc-combined-fixture.ts.backup",
+	]) {
+		result.error = {
+			location: { file: `/private/${file}`, line: 197 },
+			stack: `private cookie\n at /private/${file}:198:2\n${knownStack}`,
+		};
+		assert.equal(
+			failureSummary(JSON.stringify(changed)).at(-1),
+			`Browser case: ${CASES.at(-1)}; status=failed; lines=1253; qc-lines=525`,
+		);
+	}
+	for (const line of [0, -1, 10_001, "197", 2.5, null]) {
+		result.error = {
+			location: { file: "/private/qc-combined-fixture.ts", line },
+			stack: knownStack,
+		};
+		assert.equal(
+			failureSummary(JSON.stringify(changed)).at(-1),
+			`Browser case: ${CASES.at(-1)}; status=failed; lines=1253; qc-lines=525`,
+		);
+	}
+	result.error = {
+		location: { file: "/private/qc-combined-fixture.ts", line: 10_000 },
+	};
+	assert.equal(
+		failureSummary(JSON.stringify(changed)).at(-1),
+		`Browser case: ${CASES.at(-1)}; status=failed; combined-lines=10000`,
+	);
+});
 test("a process being up is insufficient without all worker queue registrations", () => {
 	const queues = [
 		"usageStatistics",
@@ -1503,6 +2227,61 @@ test("cleanup checks directory and Docker labels before removing anything", asyn
 	} finally {
 		rmSync(directory, { recursive: true });
 	}
+});
+
+test("Bombadil failure summaries retain only fixed stages, categories and known helper lines", () => {
+	const changed = report();
+	const spec = changed.suites[0].specs.find(
+		(entry) => entry.title === CASES[12],
+	);
+	spec.tests[0].annotations = [
+		{ type: "bombadil-stage", description: "current:browser-launch" },
+		{ type: "bombadil-stage", description: "current:driver-target" },
+		{ type: "bombadil-category", description: "assertion" },
+		{ type: "bombadil-stage", description: "private URL cookie credential" },
+		{ type: "bombadil-category", description: "private-token" },
+	];
+	spec.tests[0].results[0] = {
+		status: "failed",
+		error: {
+			location: { file: "/private/installed-bombadil.ts", line: 179 },
+			stack:
+				"private credential\n at /private/installed-bombadil.ts:208:3\n at /private/installed-gui.test.ts:1270:3",
+		},
+	};
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[12],
+		`Browser case: ${CASES[12]}; status=failed; lines=1270; bombadil-lines=179,208; bombadil-stage=current:driver-target; bombadil-category=assertion`,
+	);
+	spec.tests[0].results[0].status = "passed";
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[12],
+		`Browser case: ${CASES[12]}; status=passed`,
+	);
+});
+
+test("Bombadil diagnostics reject injected stages, categories, filenames and unbounded lines", () => {
+	const changed = report();
+	const spec = changed.suites[0].specs.find(
+		(entry) => entry.title === CASES[12],
+	);
+	spec.tests[0].annotations = [
+		{ type: "bombadil-stage", description: "current:driver-target:private" },
+		{ type: "bombadil-stage", description: "unknown:browser-launch" },
+		{ type: "bombadil-category", description: "timeout private" },
+	];
+	spec.tests[0].results[0] = {
+		status: "failed",
+		error: {
+			location: { file: "/private/installed-bombadil.ts", line: 10001 },
+			stack:
+				"private credential\n at /private/other-installed-bombadil.ts:208:3\n at /private/installed-bombadil.ts:0:3",
+		},
+	};
+	assert.equal(
+		failureSummary(JSON.stringify(changed))[12],
+		`Browser case: ${CASES[12]}; status=failed`,
+	);
 });
 
 test("cleanup removes both independent installations and their child temporary files", async () => {

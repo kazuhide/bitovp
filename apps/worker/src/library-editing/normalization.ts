@@ -11,7 +11,9 @@ import {
 import {
 	assertLocalMediaPath,
 	type EditingMediaFacts,
+	inspectEditingProbe,
 	probeEditingMedia,
+	validateEditingFrameTimes,
 } from "./media";
 import { MediaOperationError, runMediaProcess } from "./process";
 import { MAX_EDITING_SOURCE_BYTES } from "./source-limits";
@@ -245,6 +247,8 @@ export function buildNormalizationRecipe(
 }
 
 const readInput = (path: string) => [
+	"-threads",
+	"2",
 	"-protocol_whitelist",
 	"file,pipe",
 	"-format_whitelist",
@@ -275,15 +279,45 @@ async function digestFile(path: string) {
 	}
 }
 
-export async function probeEditingNormalizationSource(input: {
+type NormalizationSourceInput = {
 	sourcePath: string;
 	ffprobePath?: string;
 	signal?: AbortSignal;
 	timeoutMs?: number;
-}): Promise<{
-	source: EditingNormalizationSource;
-	metadata: NormalizationMetadata;
-}> {
+};
+
+function isIdentitySource(metadata: NormalizationMetadata) {
+	return (
+		metadata.codec === "h264" &&
+		metadata.fps.num === 30 &&
+		metadata.fps.den === 1 &&
+		metadata.colorProfile === "BT709_8BIT_LIMITED"
+	);
+}
+
+/** Project only the leading frame fields. Nested side data may follow them. */
+function pairedFrameTimes(stdout: string) {
+	const ticks: string[] = [];
+	const seconds: string[] = [];
+	const tickKey = "best_effort_timestamp=";
+	const timeKey = "best_effort_timestamp_time=";
+	for (const row of stdout.split(/\r?\n/)) {
+		if (!row.trim()) continue;
+		const [section, ...fields] = row.split("|", 3);
+		const tick = fields.find((field) => field.startsWith(tickKey));
+		const time = fields.find((field) => field.startsWith(timeKey));
+		if (section !== "frame" || tick === undefined || time === undefined)
+			return undefined;
+		ticks.push(tick.slice(tickKey.length));
+		seconds.push(time.slice(timeKey.length));
+	}
+	return { ticks: ticks.join("\n"), seconds: seconds.join("\n") };
+}
+
+async function readNormalizationSource(
+	input: NormalizationSourceInput,
+	collectIdentityFacts: boolean,
+) {
 	assertLocalMediaPath(input.sourcePath);
 	const options = { signal: input.signal, timeoutMs: input.timeoutMs };
 	const read = async (args: string[]) => {
@@ -294,35 +328,63 @@ export async function probeEditingNormalizationSource(input: {
 		);
 		if (result.stderr.trim())
 			throw new MediaOperationError("SOURCE_INCOMPLETE");
-		return result.stdout;
+		return result;
 	};
-	const metadata = inspectNormalizationSourceMetadata(
-		JSON.parse(await read(["-show_streams", "-show_format", "-of", "json"])),
-	);
+	const probe = await read(["-show_streams", "-show_format", "-of", "json"]);
+	const rawProbe: unknown = JSON.parse(probe.stdout);
+	const metadata = inspectNormalizationSourceMetadata(rawProbe);
+	const videoArgs = ["-select_streams", "v:0", "-show_frames", "-show_entries"];
+	let paired:
+		| {
+				times: NonNullable<ReturnType<typeof pairedFrameTimes>>;
+				stderr: string;
+		  }
+		| undefined;
+	if (collectIdentityFacts && isIdentitySource(metadata)) {
+		try {
+			const decoded = await read([
+				...videoArgs,
+				"frame=best_effort_timestamp,best_effort_timestamp_time",
+				"-of",
+				"compact=p=1:nk=0",
+			]);
+			const times = pairedFrameTimes(decoded.stdout);
+			if (times) paired = { times, stderr: decoded.stderr };
+		} catch (error) {
+			// The named writer can be larger than the two individual outputs.
+			if (
+				!(error instanceof MediaOperationError) ||
+				error.code !== "OUTPUT_LIMIT"
+			)
+				throw error;
+		}
+	}
 	const videoPtsHash = validateNormalizationVideoIndex(
 		metadata,
-		await read([
-			"-select_streams",
-			"v:0",
-			"-show_frames",
-			"-show_entries",
-			"frame=best_effort_timestamp",
-			"-of",
-			"csv=p=0",
-		]),
+		paired?.times.ticks ??
+			(
+				await read([
+					...videoArgs,
+					"frame=best_effort_timestamp",
+					"-of",
+					"csv=p=0",
+				])
+			).stdout,
 	);
 	const audio = metadata.audio
 		? audioIndex(
 				metadata.audio,
-				await read([
-					"-select_streams",
-					"a:0",
-					"-show_frames",
-					"-show_entries",
-					"frame=best_effort_timestamp,nb_samples",
-					"-of",
-					"csv=p=0",
-				]),
+				(
+					await read([
+						"-select_streams",
+						"a:0",
+						"-show_frames",
+						"-show_entries",
+						"frame=best_effort_timestamp,nb_samples",
+						"-of",
+						"csv=p=0",
+					])
+				).stdout,
 			)
 		: null;
 	const source = editingNormalizationSourceSchema.parse({
@@ -330,6 +392,25 @@ export async function probeEditingNormalizationSource(input: {
 		audio,
 		videoPtsHash,
 	});
+	let identityFacts: EditingMediaFacts | undefined;
+	if (paired) {
+		if (probe.stderr.length > 0 || paired.stderr.length > 0)
+			throw new MediaOperationError("SOURCE_INCOMPLETE");
+		identityFacts = validateEditingFrameTimes(
+			inspectEditingProbe(rawProbe),
+			paired.times.seconds,
+		);
+	}
+	return { source, metadata, identityFacts };
+}
+
+export async function probeEditingNormalizationSource(
+	input: NormalizationSourceInput,
+): Promise<{
+	source: EditingNormalizationSource;
+	metadata: NormalizationMetadata;
+}> {
+	const { source, metadata } = await readNormalizationSource(input, false);
 	return { source, metadata };
 }
 
@@ -361,16 +442,14 @@ export async function normalizeEditingMedia(input: {
 	if (original.sha256 !== input.expectedSourceSha256)
 		throw new MediaOperationError("SOURCE_CHANGED");
 	const options = { signal: input.signal, timeoutMs: input.timeoutMs };
-	const { source, metadata } = await probeEditingNormalizationSource(input);
+	const { source, metadata, identityFacts } = await readNormalizationSource(
+		input,
+		true,
+	);
 	const audio = source.audio;
 	const recipe = buildNormalizationRecipe(metadata);
-	let facts: EditingMediaFacts | undefined;
-	if (
-		metadata.codec === "h264" &&
-		metadata.fps.num === 30 &&
-		metadata.fps.den === 1 &&
-		metadata.colorProfile === "BT709_8BIT_LIMITED"
-	)
+	let facts = identityFacts;
+	if (!facts && isIdentitySource(metadata))
 		facts = await probeEditingMedia({
 			sourcePath: input.sourcePath,
 			ffprobePath: input.ffprobePath,
@@ -389,6 +468,8 @@ export async function normalizeEditingMedia(input: {
 					"-v",
 					"error",
 					"-nostdin",
+					"-filter_threads",
+					"2",
 					"-y",
 					"-noautorotate",
 					...readInput(input.sourcePath),
@@ -411,10 +492,11 @@ export async function normalizeEditingMedia(input: {
 						: []),
 					"-c:v",
 					"libx264",
+					// Bound CPU use while keeping long-source preparation within its deadline.
 					"-threads",
-					"2",
+					"4",
 					"-preset",
-					"fast",
+					"veryfast",
 					"-crf",
 					"18",
 					"-pix_fmt",

@@ -2,9 +2,15 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
 	capturePerTitleResults,
+	encodingPlanSchema,
+	enumerateExistingHlsQcTargets,
+	HDR_LIBVMAF_REVISION,
+	HDR_VMAF_MODELS,
+	hdrInputFromProbe,
+	hdrMeasurementSchema,
 	type LocalVmafExecution,
 	NATIVE_OFFICIAL_REVISION,
 	PER_TITLE_ATTRIBUTION_VERSION,
@@ -12,6 +18,7 @@ import {
 	PER_TITLE_RESULT_MODE,
 	PER_TITLE_SCHEMA_VERSION,
 	type PerTitleCapturePort,
+	retainedHlsQcKey,
 	type ScannedMuxing,
 	type ScannedStream,
 	VMAF_SCORING_VERSION,
@@ -21,13 +28,25 @@ import { labManualTriggerPrefix } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProcessRunner } from "../feeder/supervisor";
 import type { ResolvedCredential } from "../orchestrator/executor";
+import { createBandingResourcePlanner } from "./banding-resources";
+import * as bandingScoring from "./banding-score";
 import type { VmafDownload } from "./download";
+import * as hdrScoring from "./hdr-score";
+import * as hlsAcquisition from "./hls-source";
 import {
 	createLocalVmafResources,
 	type LocalVmafResources,
 } from "./local-resources";
 import * as localScoring from "./local-score";
+import { verifyNativeReceipt } from "./native-contract";
+import { nativeExpected, nativeReceipt } from "./native-fixture.test-helper";
+import { NativePairRefusal } from "./native-score";
 import { createVmafProcessor, type VmafProcessorDeps } from "./processor";
+import * as referencePreparation from "./reference-preparation";
+import type { VmafResourceLeaseRequest } from "./resource-leases";
+import type { LocalResourcePlan } from "./resource-plan";
+import { planLocalResources } from "./resource-plan";
+import { createSharedVmafExecution } from "./shared-execution";
 
 /**
  * Processor units run WITHOUT ffmpeg (CI has none): an injected
@@ -227,6 +246,7 @@ function setup(
 		decodePolicy?: VmafProcessorDeps["decodePolicy"];
 		scoringBackend?: VmafProcessorDeps["scoringBackend"];
 		nativePath?: string;
+		reuseVerifiedNativeResults?: boolean;
 		download?: VmafDownload;
 		concurrency?: number;
 		cloudScore?: VmafProcessorDeps["cloudScore"];
@@ -294,7 +314,12 @@ function setup(
 		),
 		updateMany: vi.fn(async ({ where, data }: { where: Row; data: Row }) => {
 			const statusOk =
-				where.status === undefined || where.status === job.status;
+				where.status === undefined ||
+				where.status === job.status ||
+				(typeof where.status === "object" &&
+					where.status !== null &&
+					"in" in where.status &&
+					(where.status.in as unknown[]).includes(job.status));
 			if (where.id === job.id && statusOk) {
 				Object.assign(job, data);
 				return { count: 1 };
@@ -329,6 +354,12 @@ function setup(
 		}),
 	};
 	const vmafResult = {
+		findFirst: vi.fn(
+			async (
+				_args: unknown,
+			): Promise<{ framesGzip: Uint8Array; provenance: unknown } | null> =>
+				null,
+		),
 		create: vi.fn(async ({ data }: { data: Row }) => {
 			results.push(data);
 			return { id: `r${results.length}`, ...data };
@@ -533,6 +564,7 @@ function setup(
 	const deps: VmafProcessorDeps = {
 		decodePolicy: opts.decodePolicy,
 		nativePath: opts.nativePath,
+		reuseVerifiedNativeResults: opts.reuseVerifiedNativeResults,
 		selectLocalNative: opts.selectLocalNative,
 		nativeSelectionFailure: opts.nativeSelectionFailure,
 		scoringBackend: opts.scoringBackend,
@@ -591,6 +623,422 @@ beforeEach(() => {
 });
 afterEach(() => {
 	rmSync(workDir, { recursive: true, force: true });
+});
+
+describe("HDR QC execution policy", () => {
+	const hdrRequest = {
+		model: "hdr_vmaf_v1.1.8_3d0h_2160",
+		scoringVersion: 14,
+		triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}hdr`,
+		params: {
+			source: "OUTPUT_HLS",
+			execution: { backend: "LOCAL", localMode: "CPU" },
+		},
+	};
+	it("refuses missing HDR runtime before any media transfer", async () => {
+		const t = setup({ job: hdrRequest });
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("HDR_RUNTIME_NOT_CONFIGURED");
+		expect(t.downloaded).toHaveLength(0);
+		expect(t.results).toHaveLength(0);
+	});
+	it("refuses cloud or AUTO HDR even when an HDR runtime is configured", async () => {
+		for (const execution of [
+			{ backend: "CLOUD", profileId: "cloud", budgetUsd: 1 },
+			{ backend: "LOCAL", localMode: "AUTO" },
+		]) {
+			const t = setup({
+				job: { ...hdrRequest, params: { ...hdrRequest.params, execution } },
+			});
+			Object.assign(t.deps, {
+				hdrFfmpegPath: "ffmpeg-hdr",
+				hdrFfprobePath: "ffprobe-hdr",
+			});
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow("HDR_MEASUREMENT_POLICY_INVALID");
+			expect(t.downloaded).toHaveLength(0);
+		}
+	});
+	it("never treats a forged HDR generation as an ordinary SDR run", async () => {
+		const t = setup({ job: { ...hdrRequest, model: "vmaf_v0.6.1" } });
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("HDR_SCORING_VERSION_MISMATCH");
+		expect(t.results).toHaveLength(0);
+	});
+	it("never scores PQ-tagged pictures using an SDR model", async () => {
+		const t = setup({
+			probeJson: JSON.stringify({
+				streams: [
+					{
+						codec_type: "video",
+						codec_name: "av1",
+						width: 3840,
+						height: 2160,
+						pix_fmt: "yuv420p10le",
+						r_frame_rate: "24/1",
+						color_transfer: "smpte2084",
+					},
+				],
+			}),
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("HDR_MODEL_REQUIRED");
+		expect(t.filterComplexArgs).toHaveLength(0);
+	});
+	it("requires CPU/memory admission for HDR even with an explicitly configured runtime", async () => {
+		const t = setup({
+			job: hdrRequest,
+			resolveModelPath: () => "/models/hdr.json",
+		});
+		Object.assign(t.deps, {
+			hdrFfmpegPath: "ffmpeg-hdr",
+			hdrFfprobePath: "ffprobe-hdr",
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("HDR_RESOURCE_ADMISSION_REQUIRED");
+		expect(t.downloaded).toHaveLength(0);
+	});
+	it.each([
+		{ transfer: "smpte2084", banding: false, externalPlanner: false },
+		{ transfer: "smpte2084", banding: true, externalPlanner: false },
+		{ transfer: "arib-std-b67", banding: true, externalPlanner: false },
+		{ transfer: "smpte2084", banding: true, externalPlanner: true },
+		{ transfer: "arib-std-b67", banding: true, externalPlanner: true },
+		{
+			transfer: "smpte2084",
+			banding: false,
+			externalPlanner: false,
+			referenceMxf: true,
+		},
+	])("retains full-frame HDR/HLS and CAMBI evidence ($transfer, banding=$banding, externalPlanner=$externalPlanner)", async ({
+		transfer,
+		banding,
+		externalPlanner,
+		...extra
+	}) => {
+		const referenceMxf = "referenceMxf" in extra && extra.referenceMxf;
+		const plan = qcPlan();
+		delete plan.qc;
+		plan.generation = { timing: "POST_ENCODING" };
+		plan.renditions = [
+			{
+				key: "v360",
+				ingestKey: "video",
+				codec: "AV1",
+				width: 3840,
+				height: 2160,
+				bitrate: 8000000,
+				rate: 24,
+			},
+		];
+		plan.muxings = [
+			{
+				key: "fmp4",
+				kind: "FMP4",
+				streamKey: "v360",
+				segmentLength: 2,
+				segmentNaming: "seg_%number%.m4s",
+				initSegmentName: "init.mp4",
+				destination: { outputKey: "origin", path: "out/video" },
+			},
+		];
+		plan.manifests = [
+			{
+				key: "hls",
+				kind: "HLS",
+				manifestName: "stream.m3u8",
+				destination: { outputKey: "origin", path: "out" },
+			},
+		];
+		const video = {
+			codec_type: "video",
+			codec_name: "av1",
+			width: 3840,
+			height: 2160,
+			pix_fmt: "yuv420p10le",
+			color_range: "tv",
+			color_space: "bt2020nc",
+			color_primaries: "bt2020",
+			color_transfer: transfer,
+			sample_aspect_ratio: "1:1",
+			r_frame_rate: "24/1",
+			avg_frame_rate: "24/1",
+			duration: "0.041666667",
+			nb_frames: "1",
+		};
+		const probe = JSON.stringify({ streams: [video] });
+		const input = hdrInputFromProbe(probe, "distorted");
+		const referenceProbe = referenceMxf
+			? JSON.stringify({
+					streams: [
+						{
+							...video,
+							codec_name: "jpeg2000",
+							pix_fmt: "rgb48le",
+							bits_per_raw_sample: "12",
+							field_order: "progressive",
+							color_primaries: undefined,
+							color_transfer: undefined,
+							color_range: undefined,
+							color_space: undefined,
+						},
+					],
+					format: { format_name: "mxf" },
+				})
+			: probe;
+		const referenceInput = referenceMxf
+			? hdrInputFromProbe(referenceProbe, "reference", "P3_D65_PQ_RGB_FULL")
+			: input;
+		const readResources = () => ({
+			cpuCapacity: 4,
+			memoryLimitBytes: 9 * 1024 ** 3,
+			headroomBytes: 9 * 1024 ** 3,
+			reserveBytes: 1024 ** 3,
+			budgetBytes: 8 * 1024 ** 3,
+		});
+		const resources = createLocalVmafResources({
+			threads: 1,
+			readResources,
+		});
+		const t = setup({
+			plan,
+			job: {
+				...hdrRequest,
+				params: {
+					...hdrRequest.params,
+					banding,
+					subsample: 8,
+					...(referenceMxf ? { hdrReferenceColor: "P3_D65_PQ_RGB_FULL" } : {}),
+				},
+			},
+			subsample: 4,
+			probeJson: probe,
+			resolveModelPath: () => "/models/hdr.json",
+			localResources: resources,
+			...(referenceMxf
+				? {
+						download: async (args: Parameters<VmafDownload>[0]) => {
+							await writeFile(
+								args.destPath,
+								Buffer.from("060e2b34020501010d01020101020400", "hex"),
+							);
+							return {
+								bucket: args.bucket,
+								key: args.key,
+								pinned: true,
+								sha256: "a".repeat(64),
+								bytes: 16,
+							};
+						},
+					}
+				: {}),
+		});
+		if (referenceMxf) {
+			const run = vi.mocked(t.runner.run);
+			const original = run.getMockImplementation();
+			run.mockImplementation(async (command, args, options) => {
+				if (
+					args.includes("-show_streams") &&
+					args.at(-1)?.endsWith("ref-0.mp4")
+				)
+					return command === "ffprobe-hdr" && args.includes("-seekable")
+						? { code: 0, stderr: "", stdout: referenceProbe }
+						: { code: 1, stderr: "MXF footer seek is unsupported", stdout: "" };
+				if (!original) throw new Error("Missing fixture runner");
+				return original(command, args, options);
+			});
+		}
+		Object.assign(t.deps, {
+			hdrFfmpegPath: "ffmpeg-hdr",
+			hdrFfprobePath: "ffprobe-hdr",
+		});
+		if (externalPlanner) {
+			t.deps.resolveLocalResources = vi.fn(async (request) =>
+				planLocalResources(
+					readResources(),
+					request.pair,
+					{ threads: 1 },
+					request.pairCount,
+				),
+			);
+			t.deps.resolveBandingResources = vi.fn(
+				createBandingResourcePlanner({
+					runner: t.deps.runner,
+					nativePath: "/native-unused-for-cpu",
+					hostKey: async () => "d".repeat(64),
+					shared: {} as never,
+					readResources,
+				}),
+			);
+		}
+		const [target] = enumerateExistingHlsQcTargets(
+			encodingPlanSchema.parse(plan),
+		);
+		if (!target) throw new Error("HDR fixture target missing");
+		const hash = "a".repeat(64);
+		const witness = {
+			version: 1 as const,
+			method: "FMP4_INIT_SEGMENTS" as const,
+			vmafJobId: VMAF_JOB_ID,
+			renditionKey: "v360",
+			muxingKey: "fmp4",
+			bucket: "out-bucket",
+			masterKey: "out/stream.m3u8",
+			mediaKey: "out/video.m3u8",
+			segmentCount: 1,
+			durationSeconds: 1 / 24,
+			assembledSha256: hash,
+			assembledBytes: 2,
+			complete: true as const,
+			objects: (["MASTER", "MEDIA", "INIT", "SEGMENT"] as const).map(
+				(role, n) => ({
+					role,
+					key:
+						[
+							"out/stream.m3u8",
+							"out/video.m3u8",
+							target.hls.initKey,
+							"out/video/seg_1.m4s",
+						][n] ?? "out/invalid",
+					bytes: 1,
+					sha256: hash,
+					identity: { size: 1, etag: '"one"' },
+				}),
+			),
+		};
+		const retainedKey = retainedHlsQcKey(target, VMAF_JOB_ID, hash);
+		const acquire = vi
+			.spyOn(hlsAcquisition, "acquireHlsQcOutput")
+			.mockImplementation(async () => {
+				const path = join(workDir, VMAF_JOB_ID, "hls-v360.mp4");
+				await writeFile(path, "12");
+				return {
+					path,
+					provenance: {
+						bucket: "out-bucket",
+						key: retainedKey,
+						bytes: 2,
+						sha256: hash,
+						pinned: true,
+						identity: { etag: '"retained"', size: 2 },
+					},
+					hlsSource: witness,
+					target: {
+						...target,
+						distorted: { outputKey: "origin", path: retainedKey },
+					},
+				};
+			});
+		const hdrMeasurement = hdrMeasurementSchema.parse({
+			version: 1,
+			method: "HDR_VMAF_PQ_ICTCP_16",
+			scope: "HDR_BASE_LAYER",
+			dolbyRpuApplied: false,
+			model: HDR_VMAF_MODELS[0].id,
+			modelSha256: HDR_VMAF_MODELS[0].sha256,
+			libvmafRevision: HDR_LIBVMAF_REVISION,
+			normalization: "ZIMG_BT2020_PQ_YUV444_16",
+			comparison: "LIMITED_BT2020_PQ_ICTCP420_16_DISPLAY2160",
+			reference: referenceInput,
+			distorted: input,
+			frameCount: 1,
+			...(transfer === "arib-std-b67"
+				? {
+						hlgReferenceDisplay: {
+							peakNits: 1000,
+							blackNits: 0,
+							systemGamma: 1.2,
+							approximateGamma: false,
+						},
+					}
+				: {}),
+		});
+		const score = vi.spyOn(hdrScoring, "runHdrVmafScore").mockResolvedValue({
+			run: { code: 0, stdout: "", stderr: "" },
+			log: JSON.parse(vmafJson([95])),
+			hdrMeasurement,
+			execution: {
+				version: 1,
+				requestedDecode: "cpu",
+				decode: {
+					reference: { backend: "cpu" },
+					distorted: { backend: "cpu" },
+				},
+				scoring: {
+					backend: "cpu",
+					implementation: "libvmaf",
+					model: HDR_VMAF_MODELS[0].id,
+				},
+				attempts: 1,
+			},
+		});
+		const cambi = vi
+			.spyOn(bandingScoring, "runCpuBandingScore")
+			.mockResolvedValue({
+				frames: [
+					{
+						frameNum: 0,
+						timestampSeconds: 0,
+						durationSeconds: 1 / 24,
+						cambi: 12,
+					},
+				],
+				libvmafVersion: "a6ed0f1",
+				featureName: "cambi_encbd_10_ench_2160_encw_3840_eotf_pq",
+			});
+		try {
+			await t.processor.process({ vmafJobId: VMAF_JOB_ID });
+			expect(t.results).toHaveLength(1);
+			expect(t.results[0]?.provenance).toMatchObject({
+				hdrMeasurement,
+				hlsSource: witness,
+				distorted: { key: retainedKey },
+				localExecution: { selection: { requested: "CPU" } },
+			});
+			expect(t.encodingJobWrites).toHaveLength(0);
+			expect(score).toHaveBeenCalledOnce();
+			expect(score.mock.calls[0]?.[1]).toMatchObject({
+				decoderThreads: 2,
+			});
+			expect(t.job.params).toMatchObject({ subsample: 1 });
+			if (banding) {
+				expect(cambi).toHaveBeenCalledOnce();
+				expect(cambi.mock.calls[0]?.[4]).toBe(1);
+				expect(t.results[0]?.pooled).toMatchObject({
+					banding: { max: 12, frameCount: 1 },
+				});
+				expect(t.results[0]?.provenance).toMatchObject({
+					bandingExecution: {
+						eotf: "PQ",
+						inputTransfer: transfer === "arib-std-b67" ? "HLG" : "PQ",
+						normalization:
+							transfer === "arib-std-b67"
+								? "HLG_TO_PQ_1000_NITS_444_16"
+								: "NONE",
+					},
+				});
+			}
+			if (externalPlanner) {
+				expect(t.deps.resolveLocalResources).toHaveBeenCalledOnce();
+				expect(t.deps.resolveBandingResources).toHaveBeenCalledOnce();
+				const localPlanner = t.deps.resolveLocalResources;
+				if (!localPlanner)
+					throw new Error("External HDR resource planner missing");
+				expect(
+					vi.mocked(localPlanner).mock.calls[0]?.[0].options,
+				).toMatchObject({ subsample: 1 });
+			}
+		} finally {
+			acquire.mockRestore();
+			score.mockRestore();
+			cambi.mockRestore();
+		}
+	});
 });
 
 describe("createVmafProcessor", () => {
@@ -3042,9 +3490,9 @@ it("a late cloud result cannot overwrite user cancellation with FINISHED", async
 		t.job.status = "ERROR";
 		t.job.error = "Canceled";
 	};
-	await expect(t.processor.process({ vmafJobId: VMAF_JOB_ID })).rejects.toThrow(
-		"terminal status changed",
-	);
+	await expect(
+		t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+	).resolves.toMatchObject({ status: "ERROR", results: 2 });
 	expect(t.job).toMatchObject({ status: "ERROR", error: "Canceled" });
 	expect(t.emitted.some((e) => e.kind === "VMAF_FINISHED")).toBe(false);
 });
@@ -3365,6 +3813,7 @@ const RESOURCE_PROBE_JSON = JSON.stringify({
 			height: 1080,
 			pix_fmt: "yuv420p",
 			r_frame_rate: "30/1",
+			avg_frame_rate: "30/1",
 			duration: "10",
 			nb_frames: "300",
 		},
@@ -4157,7 +4606,15 @@ it("keeps interleaved CPU and AUTO jobs isolated through selection, admission an
 	}
 });
 
-function autoNativeFailureHarness(admitGpu = true) {
+function autoNativeFailureHarness(
+	admitGpu = true,
+	overrides: {
+		download?: VmafDownload;
+		reuseVerifiedNativeResults?: boolean;
+		job?: Row;
+		resolveLocalResources?: VmafProcessorDeps["resolveLocalResources"];
+	} = {},
+) {
 	const chosen = {
 		backend: "cuda" as const,
 		device: 2,
@@ -4170,6 +4627,8 @@ function autoNativeFailureHarness(admitGpu = true) {
 	};
 	const localRunner: ProcessRunner = { spawn: vi.fn(), run: vi.fn() };
 	const t = setup({
+		download: overrides.download,
+		reuseVerifiedNativeResults: overrides.reuseVerifiedNativeResults,
 		nativePath: "/native",
 		localRunner,
 		probeJson: RESOURCE_PROBE_JSON,
@@ -4182,23 +4641,30 @@ function autoNativeFailureHarness(admitGpu = true) {
 			}),
 			execute: async (_plan, signal, work) => work(signal, async () => {}),
 		}),
-		resolveLocalResources: async () => ({
-			threads: 1,
-			concurrency: 1,
-			estimatedBytes: 1024,
-			exclusive: false,
-			manualFallback: false,
-			...(admitGpu
-				? {
-						nativeDevice: 2,
-						gpu: { deviceKey: "e".repeat(64), bytes: 1024, computeCredits: 1 },
-					}
-				: {}),
-		}),
+		resolveLocalResources:
+			overrides.resolveLocalResources ??
+			(async () => ({
+				threads: 1,
+				concurrency: 1,
+				estimatedBytes: 1024,
+				exclusive: false,
+				manualFallback: false,
+				...(admitGpu
+					? {
+							nativeDevice: 2,
+							gpu: {
+								deviceKey: "e".repeat(64),
+								bytes: 1024,
+								computeCredits: 1,
+							},
+						}
+					: {}),
+			})),
 		job: {
 			model: "vmaf_v1.0.16_3d0h",
 			scoringVersion: VMAF_SCORING_VERSION,
 			params: { execution: { backend: "LOCAL", localMode: "AUTO" } },
+			...overrides.job,
 		},
 	});
 	const raw = vi.mocked(t.runner.run).getMockImplementation();
@@ -4206,6 +4672,115 @@ function autoNativeFailureHarness(admitGpu = true) {
 	vi.mocked(localRunner.run).mockImplementation(raw);
 	return t;
 }
+it("limits verified native results to the current organization's exact manual retry predecessor", async () => {
+	const organizationId = "00000000-0000-4000-8000-000000000013";
+	const previous = "00000000-0000-4000-8000-000000000014";
+	const model = "vmaf_v1.0.16_3d0h";
+	const key = "d".repeat(64);
+	const lookupKey = "e".repeat(64);
+	const receiptSha256 = "9".repeat(64);
+	const t = autoNativeFailureHarness(true, {
+		reuseVerifiedNativeResults: true,
+		job: {
+			organizationId,
+			triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}${model}:retry-${previous}`,
+			params: {
+				execution: { backend: "LOCAL", localMode: "AUTO" },
+				retryOf: previous,
+			},
+		},
+	});
+	const predecessor = {
+		framesGzip: gzipSync(JSON.stringify([{ frameNum: 0, vmaf: 95 }])),
+		provenance: { verifiedNativeScore: { lookupKey } },
+	};
+	t.vmafResult.findFirst.mockResolvedValue(predecessor);
+	const score = vi
+		.spyOn(localScoring, "runLocalVmafScore")
+		.mockImplementation(async (_deps, _options, context) => {
+			if (!context?.verifiedReuse?.load) throw new Error("Missing retry scope");
+			expect(await context.verifiedReuse.load(lookupKey)).toEqual(predecessor);
+			const { identity } = context.verifiedReuse.selection;
+			const owned = verifyNativeReceipt(
+				nativeReceipt(),
+				nativeExpected,
+			).scoring;
+			return {
+				run: { code: 0, stderr: "" },
+				execution: {
+					version: 1,
+					requestedDecode: "cpu",
+					decode: {
+						reference: { backend: "cpu" },
+						distorted: { backend: "cpu" },
+					},
+					scoring: {
+						...owned,
+						backend: "cuda",
+						device: {
+							...owned.device,
+							index: 2,
+							uuid: identity.deviceUuid,
+							vendorId: 0x10de,
+						},
+						sourceSha256: identity.sourceSha256,
+					},
+					attempts: 1,
+					reusedVerifiedResult: true,
+				},
+				log: JSON.parse(vmafJson([95])),
+				verifiedNativeScore: {
+					key,
+					lookupKey,
+					receiptSha256,
+					decoderRuntimeSha256: "8".repeat(64),
+					scoringRuntimeSha256: "7".repeat(64),
+				},
+			};
+		});
+	try {
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{
+				status: "FINISHED",
+				results: 2,
+			},
+		);
+		expect(t.vmafResult.findFirst).toHaveBeenCalledWith({
+			where: {
+				organizationId,
+				vmafJobId: previous,
+				vmafJob: {
+					organizationId,
+					encodingJobId: ENCODING_JOB_ID,
+					mode: "VOD",
+					status: "ERROR",
+					triggerKey: `retry-history:${previous}`,
+					model,
+					scoringVersion: t.job.scoringVersion,
+				},
+				provenance: {
+					path: ["verifiedNativeScore", "lookupKey"],
+					equals: lookupKey,
+				},
+			},
+			select: { provenance: true, framesGzip: true },
+		});
+		for (const row of t.results) {
+			expect(row.vmafJobId).toBe(VMAF_JOB_ID);
+			const framePayload = row.framesGzip as Buffer;
+			expect(framePayload).not.toBe(predecessor.framesGzip);
+			expect(framePayload).toEqual(predecessor.framesGzip);
+			expect(row.provenance).toMatchObject({
+				localExecution: { reusedVerifiedResult: true },
+				reusedNativeScore: { key, receiptSha256 },
+			});
+			expect(row.provenance).not.toHaveProperty("verifiedNativeScore");
+		}
+	} finally {
+		score.mockRestore();
+	}
+});
+
 it.each([
 	"NATIVE_RECEIPT_CPU_PARITY_MISMATCH",
 	"NATIVE_MODEL_SHA256_MISMATCH",
@@ -4248,6 +4823,380 @@ it("refuses AUTO GPU execution without an owned GPU admission", async () => {
 		score.mockRestore();
 	}
 });
+describe("a pair of a Local (GPU if available) measurement that the GPU scorer does not take", () => {
+	/** What ffprobe says of a file, as `RESOURCE_PROBE_JSON` with other values. */
+	const probeWith = (extra: Row = {}) =>
+		JSON.stringify({
+			streams: [{ ...JSON.parse(RESOURCE_PROBE_JSON).streams[0], ...extra }],
+		});
+	/**
+	 * A measurement of two encodes, `v360` and `v540`, on a worker with a
+	 * qualified GPU. The planner answers as the automatic one does: the GPU
+	 * for a pair that asks for the scorer, CPU threads for one that does not.
+	 */
+	const autoPairs = (probes: {
+		reference?: string;
+		v360?: string;
+		v540?: string;
+	}) => {
+		const planned = vi.fn<
+			NonNullable<VmafProcessorDeps["resolveLocalResources"]>
+		>(async (request) => ({
+			threads: 1,
+			concurrency: 1,
+			estimatedBytes: 1024,
+			exclusive: false,
+			manualFallback: false,
+			...(request.options.scoring
+				? {
+						nativeDevice: 2,
+						gpu: { deviceKey: "e".repeat(64), bytes: 1024, computeCredits: 1 },
+					}
+				: {}),
+		}));
+		const t = autoNativeFailureHarness(true, {
+			resolveLocalResources: planned,
+		});
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		const localRunner = t.deps.localRunner;
+		if (!raw || !localRunner) throw new Error("Missing runner fixture");
+		const probed = async (bin: string, argv: string[], options?: unknown) => {
+			const path = argv.at(-1) ?? "";
+			return argv.includes("-show_streams")
+				? {
+						code: 0,
+						stderr: "",
+						stdout:
+							(/\/ref-\d+\./.test(path)
+								? probes.reference
+								: path.includes("dist-v360-")
+									? probes.v360
+									: probes.v540) ?? RESOURCE_PROBE_JSON,
+					}
+				: raw(bin, argv, options as never);
+		};
+		vi.mocked(t.runner.run).mockImplementation(probed);
+		vi.mocked(localRunner.run).mockImplementation(probed);
+		// The scorer's stand-in answers a pair that asks for it; a pair that
+		// does not goes to the ordinary method, which runs FFmpeg.
+		const ordinaryScore = localScoring.runLocalVmafScore;
+		const score = vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockImplementation(async (deps, options, context) =>
+				options.scoring
+					? {
+							run: { code: 0, stderr: "" },
+							log: JSON.parse(vmafJson([95, 96, 94, 97, 93])),
+							execution: {
+								version: 1,
+								requestedDecode: "cpu",
+								decode: {
+									reference: { backend: "cpu" },
+									distorted: { backend: "cpu" },
+								},
+								attempts: 1,
+								scoring: {
+									backend: "cuda",
+									implementation: "bitovp-owned",
+									model: options.model,
+									modelSha256: "f".repeat(64),
+									features: ["a", "b", "c", "d", "e", "f", "g"],
+									bitDepth: 8,
+									distortedOriginal: { width: 1920, height: 1080, bitdepth: 8 },
+									officialRevision: NATIVE_OFFICIAL_REVISION,
+									sourceSha256: "a".repeat(64),
+									device: {
+										index: 2,
+										name: "Fixture GPU",
+										uuid: "GPU-fixture",
+										vendorId: 0x10de,
+										deviceId: 1,
+										integrated: false,
+									},
+									cpuParity: {
+										checked: true,
+										featureCount: 35,
+										scoreCount: 5,
+										maxFeatureError: 0,
+										maxScoreError: 0,
+									},
+								},
+							} satisfies LocalVmafExecution,
+						}
+					: ordinaryScore(deps, options, context),
+			);
+		const of = (rendition: string) => {
+			const result = t.results.find(
+				(row) => (row.renditionRef as Row).renditionKey === rendition,
+			);
+			if (!result) throw new Error(`No result for ${rendition}`);
+			return (result.provenance as Row).localExecution as LocalVmafExecution;
+		};
+		const scored = (rendition: string) =>
+			score.mock.calls.filter(([, options]) =>
+				options.distortedPath.includes(`dist-${rendition}-`),
+			);
+		return Object.assign(t, { planned, score, ordinaryScore, of, scored });
+	};
+
+	it("scores that pair with the ordinary method on the CPU and the other pair on the GPU", async () => {
+		// The encode of 360 lines is full range and the reference is not.
+		const t = autoPairs({ v360: probeWith({ color_range: "pc" }) });
+		try {
+			expect(
+				await t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			// The pair that the scorer takes: on the GPU, as before.
+			expect(t.scored("v540")).toHaveLength(1);
+			expect(t.scored("v540")[0]?.[1]).toMatchObject({
+				scoring: { backend: "cuda", device: 2 },
+			});
+			expect(t.scored("v540")[0]?.[1]).not.toHaveProperty("fpsConform");
+			expect(t.of("v540")).toMatchObject({
+				selection: { requested: "AUTO" },
+				scoring: { backend: "cuda", implementation: "bitovp-owned" },
+			});
+			expect(t.of("v540").selection).not.toHaveProperty("reason");
+			// The other pair: the options of a Local CPU measurement, with
+			// nothing of the scorer in them.
+			expect(t.scored("v360")).toHaveLength(1);
+			const [, options, context] = t.scored("v360")[0] ?? [];
+			expect(options).toMatchObject({
+				fpsConform: 30,
+				scaleToReference: { width: 1920, height: 1080 },
+				threads: 1,
+			});
+			expect(options).not.toHaveProperty("scoring");
+			expect(options).not.toHaveProperty("distortedOriginal");
+			expect(context).not.toHaveProperty("expectedReferenceSha256");
+			expect(context?.nativeInflightFrames).toBeUndefined();
+			// One run of FFmpeg, with the ordinary method's graph.
+			expect(t.filterComplexArgs).toHaveLength(1);
+			expect(t.filterComplexArgs[0]).toMatch(
+				/^\[0:v\]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[dist\];\[1:v\]setpts=PTS-STARTPTS,fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[ref\];\[dist\]\[ref\]libvmaf=/,
+			);
+			// The result names the processor and the kind of the reason.
+			expect(t.of("v360")).toMatchObject({
+				selection: { requested: "AUTO", reason: "GPU_PAIR_COLOR_RANGE" },
+				scoring: { backend: "cpu", implementation: "libvmaf" },
+			});
+			// Resources: CPU threads for that pair and the GPU for the other.
+			const plans = new Map(
+				t.planned.mock.calls.map(([request]) => [
+					request.options.distortedPath.includes("dist-v360-")
+						? "v360"
+						: "v540",
+					request,
+				]),
+			);
+			expect(plans.get("v360")?.options).not.toHaveProperty("scoring");
+			expect(plans.get("v360")?.pair).not.toHaveProperty("scoringBackend");
+			expect(plans.get("v360")).not.toHaveProperty("selectedNativeDevice");
+			expect(plans.get("v360")).not.toHaveProperty("selectedNativeIdentity");
+			expect(plans.get("v540")).toMatchObject({
+				options: { scoring: { backend: "cuda" } },
+				pair: { scoringBackend: "cuda" },
+				selectedNativeDevice: 2,
+			});
+			// The measurement keeps its choice of the GPU and its generation.
+			expect((t.job.params as Row).localSelection).toMatchObject({
+				requested: "AUTO",
+				backend: "cuda",
+				device: 2,
+			});
+			expect((t.job.params as Row).localSelection).not.toHaveProperty("reason");
+			expect(t.job.scoringVersion).not.toBe(VMAF_SCORING_VERSION);
+			expect(t.job.status).toBe("FINISHED");
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+
+	it.each([
+		["GPU_PAIR_PIXEL_FORMAT", { pix_fmt: "gbrp" }],
+		["GPU_PAIR_COLOR_RANGE", { pix_fmt: "yuvj420p", color_range: "pc" }],
+		["GPU_PAIR_COLOR_MATRIX", { color_space: "bt709" }],
+		// 299 frames over the duration of 300: one slot is left out.
+		["GPU_PAIR_FRAME_TIMES", { avg_frame_rate: "2990/100", nb_frames: "299" }],
+		["GPU_PAIR_FRAME_TIMES", { r_frame_rate: "25/1", avg_frame_rate: "25/1" }],
+		["GPU_PAIR_FRAME_TIMES", { nb_frames: "301" }],
+		["GPU_PAIR_INPUT", { sample_aspect_ratio: "4:3" }],
+		["GPU_PAIR_INPUT", { color_transfer: "smpte2084" }],
+	] as const)("keeps %s as the reason of the result (%#)", async (reason, encode) => {
+		const t = autoPairs({ v360: probeWith(encode) });
+		try {
+			expect(
+				await t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(t.of("v360")).toMatchObject({
+				selection: { requested: "AUTO", reason },
+				scoring: { backend: "cpu" },
+			});
+			expect(t.scored("v360")[0]?.[1]).not.toHaveProperty("scoring");
+			expect(t.of("v540")).toMatchObject({ scoring: { backend: "cuda" } });
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+
+	it("scores every pair on the CPU when it is the reference that the scorer does not take", async () => {
+		const t = autoPairs({
+			reference: probeWith({ pix_fmt: "yuv422p10le" }),
+		});
+		try {
+			expect(
+				await t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			for (const rendition of ["v360", "v540"]) {
+				expect(t.of(rendition)).toMatchObject({
+					selection: { requested: "AUTO", reason: "GPU_PAIR_PIXEL_FORMAT" },
+					scoring: { backend: "cpu" },
+				});
+				expect(t.scored(rendition)[0]?.[1]).not.toHaveProperty("scoring");
+			}
+			expect(t.filterComplexArgs).toHaveLength(2);
+			expect((t.job.params as Row).localSelection).toMatchObject({
+				requested: "AUTO",
+				backend: "cuda",
+			});
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+
+	it("still ends the measurement when the scorer fails on the pair that it took", async () => {
+		// Only a pair that the scorer does not take is scored on the CPU: a
+		// run of the scorer that fails is an error, as it was.
+		const t = autoPairs({ v360: probeWith({ color_range: "pc" }) });
+		t.score.mockImplementation(async (deps, options, context) => {
+			if (options.scoring)
+				throw new Error("NATIVE_RECEIPT_CPU_PARITY_MISMATCH");
+			return t.ordinaryScore(deps, options, context);
+		});
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow("NATIVE_RECEIPT_CPU_PARITY_MISMATCH");
+			expect(t.job.status).toBe("ERROR");
+			// The scorer ran once, and no FFmpeg ran for that pair in its place.
+			expect(t.scored("v540")).toHaveLength(1);
+			expect(
+				t.scored("v540").every(([, options]) => options.scoring !== undefined),
+			).toBe(true);
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+
+	/** What the scorer says of the encode of 360 lines when it has the pair open. */
+	const scorerSays = (said: string) =>
+		new NativePairRefusal(
+			`NATIVE_SCORING_FAILED (1): bitovp-vmaf: ${said}\n`,
+			"GPU_PAIR_FRAME_TIMES",
+		);
+	const of360 = (path: string) => path.includes("dist-v360-");
+
+	it.each([
+		"Inputs must have the same known frame rate; conform them before comparison",
+		"Comparison presentation timestamps do not align",
+		"Comparison inputs have different frame counts",
+		"Comparison frame times do not follow the frame rate",
+	])("scores once more, on the CPU, a pair that the scorer refuses while it runs: %s", async (said) => {
+		// ffprobe says the same of every file here, as it does of a Matroska
+		// file that leaves frames out: nothing refuses the pair before the run.
+		const t = autoPairs({});
+		const standIn = t.score.getMockImplementation();
+		if (!standIn) throw new Error("Missing scorer stand-in");
+		t.score.mockImplementation(async (deps, options, context) => {
+			if (options.scoring && of360(options.distortedPath))
+				throw scorerSays(said);
+			return standIn(deps, options, context);
+		});
+		try {
+			expect(
+				await t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			// The scorer first, then the ordinary method with the options of a
+			// Local CPU measurement.
+			const runs = t.scored("v360");
+			expect(runs).toHaveLength(2);
+			expect(runs[0]?.[1]).toMatchObject({
+				scoring: { backend: "cuda", device: 2 },
+			});
+			expect(runs[1]?.[1]).toMatchObject({ fpsConform: 30, threads: 1 });
+			expect(runs[1]?.[1]).not.toHaveProperty("scoring");
+			expect(runs[1]?.[1]).not.toHaveProperty("distortedOriginal");
+			expect(runs[1]?.[2]?.nativeInflightFrames).toBeUndefined();
+			expect(t.filterComplexArgs).toHaveLength(1);
+			expect(t.filterComplexArgs[0]).toMatch(
+				/^\[0:v\]scale=1920:1080:flags=bicubic,setpts=PTS-STARTPTS,fps=30,settb=AVTB,setpts=N\/FRAME_RATE\/TB\[dist\];\[1:v\]setpts=PTS-STARTPTS,fps=30,/,
+			);
+			expect(t.of("v360")).toMatchObject({
+				selection: { requested: "AUTO", reason: "GPU_PAIR_FRAME_TIMES" },
+				scoring: { backend: "cpu", implementation: "libvmaf" },
+			});
+			// One result for each encode, and the other pair on the GPU.
+			expect(t.results).toHaveLength(2);
+			expect(t.scored("v540")).toHaveLength(1);
+			expect(t.of("v540")).toMatchObject({ scoring: { backend: "cuda" } });
+			// Resources: the GPU for the first pass, CPU threads for the second.
+			const plans = t.planned.mock.calls
+				.map(([request]) => request)
+				.filter((request) => of360(request.options.distortedPath));
+			expect(plans).toHaveLength(2);
+			expect(plans[0]).toMatchObject({
+				options: { scoring: { backend: "cuda" } },
+				pair: { scoringBackend: "cuda" },
+				selectedNativeDevice: 2,
+			});
+			expect(plans[1]?.options).not.toHaveProperty("scoring");
+			expect(plans[1]?.pair).not.toHaveProperty("scoringBackend");
+			expect(plans[1]).not.toHaveProperty("selectedNativeDevice");
+			// The first pass removed the encode, so the second fetched it again.
+			const fetched = (rendition: string) =>
+				t.downloaded.filter(({ destPath }) =>
+					destPath.includes(`dist-${rendition}-`),
+				);
+			expect(fetched("v360")).toHaveLength(2);
+			expect(fetched("v540")).toHaveLength(1);
+			// The measurement keeps its choice of the GPU.
+			expect((t.job.params as Row).localSelection).toMatchObject({
+				requested: "AUTO",
+				backend: "cuda",
+				device: 2,
+			});
+			expect(t.job.status).toBe("FINISHED");
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+
+	it("scores a pair no third time", async () => {
+		// The ordinary method refuses no pair. Were the second pass to end
+		// with a refusal, the measurement ends with it.
+		const t = autoPairs({});
+		const standIn = t.score.getMockImplementation();
+		if (!standIn) throw new Error("Missing scorer stand-in");
+		t.score.mockImplementation(async (deps, options, context) => {
+			if (of360(options.distortedPath))
+				throw scorerSays("Comparison presentation timestamps do not align");
+			return standIn(deps, options, context);
+		});
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(
+				"NATIVE_SCORING_FAILED (1): bitovp-vmaf: Comparison presentation timestamps do not align",
+			);
+			expect(t.scored("v360")).toHaveLength(2);
+			expect(t.scored("v360")[1]?.[1]).not.toHaveProperty("scoring");
+			expect(t.job.status).toBe("ERROR");
+		} finally {
+			t.score.mockRestore();
+		}
+	});
+});
+
 it("does not score when its CPU selection cannot be persisted", async () => {
 	const t = setup({
 		job: {
@@ -4516,6 +5465,74 @@ describe("banding measurement integration", () => {
 		expect(t.encodingJobWrites).toHaveLength(0);
 	});
 
+	it.each([
+		2, 4,
+	])("retains %s admitted VMAF decoder threads in the SDR CPU CAMBI fallback", async (decoderThreads) => {
+		const host = {
+			cpuCapacity: 32,
+			reserveBytes: 0,
+			budgetBytes: 80 * 1024 ** 3,
+		};
+		const basePlans: LocalResourcePlan[] = [];
+		const admitted: LocalResourcePlan[] = [];
+		const localResources = createLocalVmafResources({
+			threads: 20,
+			concurrency: 1,
+			readResources: () => host,
+			execute: async (plan, signal, work) => {
+				admitted.push(plan);
+				return work(signal, async () => {});
+			},
+		});
+		const plan = qcPlan();
+		plan.qc = { vmaf: true, banding: true, model: "vmaf_v0.6.1" };
+		const t = setup({
+			plan,
+			frameScores: [95, 96],
+			bandingScores: [0, 6],
+			localResources,
+			resolveLocalResources: async ({ pair }) => {
+				const base = {
+					...planLocalResources(host, pair, { threads: 20, concurrency: 1 }, 1),
+					decoderThreads,
+					cpuChargePerComparison: 20 + 2 * decoderThreads + 1,
+				};
+				basePlans.push(base);
+				return base;
+			},
+			job: { params: { banding: true } },
+		});
+		expect(t.deps.resolveBandingResources).toBeUndefined();
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).resolves.toMatchObject({ status: "FINISHED", results: 2 });
+		expect(admitted).toHaveLength(2);
+		for (const [index, allocation] of admitted.entries()) {
+			expect(allocation.decoderThreads).toBe(decoderThreads);
+			expect(allocation.cpuChargePerComparison).toBe(
+				20 + 2 * decoderThreads + 1,
+			);
+			expect(allocation.estimatedBytes).toBeGreaterThan(
+				basePlans[index]?.estimatedBytes ?? 0,
+			);
+			expect(allocation.exclusive).toBe(true);
+		}
+		const scoring = vi.mocked(t.runner.run).mock.calls.filter(([, argv]) => {
+			const graph = argv[argv.indexOf("-filter_complex") + 1] ?? "";
+			return graph.includes("libvmaf=") && !graph.includes("model=:");
+		});
+		expect(scoring).toHaveLength(2);
+		for (const [, argv] of scoring) {
+			expect(
+				argv.flatMap((value, i) => (value === "-threads" ? [argv[i + 1]] : [])),
+			).toEqual([String(decoderThreads), String(decoderThreads)]);
+			expect(argv[argv.indexOf("-filter_complex") + 1]).toContain(
+				"n_threads=20",
+			);
+		}
+		expect(t.results).toHaveLength(2);
+	});
+
 	it("keeps full timing decode, persistence and private cleanup within one composite lease", async () => {
 		let active = false;
 		let owned = 0;
@@ -4754,4 +5771,1506 @@ it("rejects a pinned native selection with an inconsistent CPU generation before
 	expect(t.job.scoringVersion).toBe(VMAF_SCORING_VERSION);
 	expect(t.results).toHaveLength(1);
 	expect(t.runner.run).not.toHaveBeenCalled();
+});
+
+describe("explicit lossless reference preparation", () => {
+	const evidence = {
+		version: 1 as const,
+		method: "LOSSLESS_DISPLAY_SCALE_REMUX" as const,
+		comparisonSpace: "CODED_RASTER" as const,
+		inputSha256: "d".repeat(64),
+		preparedSha256: "e".repeat(64),
+		preparedBytes: 1024,
+		sourceDisplayMatrix: [34475, 0, 0, 0, 34467, 0, 0, 0, 1073741824] as [
+			number,
+			number,
+			number,
+			number,
+			number,
+			number,
+			number,
+			number,
+			number,
+		],
+		width: 1920,
+		height: 1080,
+		codec: "h264",
+		pixelFormat: "yuv420p",
+		timeBase: "1/2400",
+		packetCount: 5,
+		frameCount: 5,
+		packetSha256: "1".repeat(64),
+		frameSha256: "2".repeat(64),
+		streamIdentitySha256: "3".repeat(64),
+		packetTimingVerified: true as const,
+		frameTimingVerified: true as const,
+	};
+
+	function preparedHarness() {
+		const fetched: string[] = [];
+		const t = autoNativeFailureHarness(true, {
+			download: async (args) => {
+				fetched.push(args.destPath);
+				return {
+					bucket: args.bucket,
+					key: args.key,
+					pinned: true,
+					sha256: evidence.inputSha256,
+					bytes: 1234,
+				};
+			},
+			job: {
+				triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}prepared`,
+				params: {
+					execution: { backend: "LOCAL", localMode: "AUTO" },
+					referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+				},
+			},
+		});
+		return Object.assign(t, { fetched });
+	}
+
+	function mockScore() {
+		return vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockImplementation(async (_deps, options) => ({
+				run: { code: 0, stderr: "" },
+				log: JSON.parse(vmafJson([95, 96, 94, 97, 93])),
+				execution: {
+					version: 1,
+					requestedDecode: "cpu",
+					decode: {
+						reference: { backend: "cpu" },
+						distorted: { backend: "cpu" },
+					},
+					attempts: 1,
+					scoring: {
+						backend: "cuda",
+						implementation: "bitovp-owned",
+						model: options.model,
+						modelSha256: "f".repeat(64),
+						features: ["a", "b", "c", "d", "e", "f", "g"],
+						bitDepth: 10,
+						distortedOriginal: { width: 1920, height: 1080, bitdepth: 8 },
+						officialRevision: NATIVE_OFFICIAL_REVISION,
+						sourceSha256: "a".repeat(64),
+						device: {
+							index: 2,
+							name: "Fixture GPU",
+							uuid: "GPU-fixture",
+							vendorId: 0x10de,
+							deviceId: 1,
+							integrated: false,
+						},
+						cpuParity: {
+							checked: true,
+							featureCount: 35,
+							scoreCount: 5,
+							maxFeatureError: 0,
+							maxScoreError: 0,
+						},
+					},
+				} satisfies LocalVmafExecution,
+			}));
+	}
+
+	function preparationResources() {
+		const requests: VmafResourceLeaseRequest[] = [];
+		const events: string[] = [];
+		const requested = resourceDeferred(),
+			grant = resourceDeferred();
+		const lease = new AbortController();
+		let cpuHeld = false;
+		let denied = false;
+		const readResources = () => ({
+			cpuCapacity: 8,
+			memoryLimitBytes: 8 * 1024 ** 3,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		});
+		const shared = createSharedVmafExecution({
+			hostKey: async () => "a".repeat(64),
+			readResources,
+			leases: {
+				async run(request, signal, work) {
+					requests.push(request);
+					if (request.deviceKey) {
+						events.push("gpu-request");
+						expect(cpuHeld).toBe(false);
+						return work({
+							signal,
+							assertOwned: async () => signal.throwIfAborted(),
+							fitsHeadroom: async () => true,
+						});
+					}
+					events.push("cpu-request");
+					requested.resolve();
+					await grant.promise;
+					if (denied) throw new Error("PREPARATION_ADMISSION_DENIED");
+					cpuHeld = true;
+					const runSignal = AbortSignal.any([signal, lease.signal]);
+					try {
+						return await work({
+							signal: runSignal,
+							assertOwned: async () => {
+								expect(cpuHeld).toBe(true);
+								runSignal.throwIfAborted();
+							},
+							fitsHeadroom: async () => true,
+						});
+					} finally {
+						cpuHeld = false;
+						events.push("cpu-release");
+					}
+				},
+			},
+		});
+		shared.registerDevice({
+			deviceKey: "e".repeat(64),
+			read: async () => ({
+				totalBytes: 8 * 1024 ** 3,
+				availableBytes: 8 * 1024 ** 3,
+			}),
+		});
+		const resources = createLocalVmafResources({
+			concurrency: 1,
+			readResources,
+			execute: (plan, signal, work) => shared.run(plan, signal, work),
+		});
+		return {
+			resources,
+			requests,
+			events,
+			requested,
+			grant,
+			lease,
+			get cpuHeld() {
+				return cpuHeld;
+			},
+			deny() {
+				denied = true;
+			},
+		};
+	}
+
+	it("admits the complete proof under a whole-host CPU lease before capacity-one GPU preparation", async () => {
+		const authority = preparationResources(),
+			proofEntered = resourceDeferred(),
+			finishProof = resourceDeferred();
+		const t = preparedHarness();
+		t.deps.localResources = authority.resources;
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => {
+				authority.events.push("proof");
+				proofEntered.resolve();
+				await finishProof.promise;
+				expect(authority.cpuHeld).toBe(true);
+				expect(args.signal?.aborted).toBe(false);
+				return {
+					path: args.preparedPath,
+					probe: RESOURCE_PROBE_JSON,
+					evidence: {
+						...evidence,
+						get inputSha256() {
+							expect(authority.cpuHeld).toBe(true);
+							return evidence.inputSha256;
+						},
+					},
+				};
+			});
+		const score = mockScore();
+		const running = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		const outcome = running.catch((error: unknown) => error);
+		try {
+			await vi.waitFor(() =>
+				expect(authority.events.length).toBeGreaterThan(0),
+			);
+			expect(authority.events).toEqual(["cpu-request"]);
+			expect(prepare).not.toHaveBeenCalled();
+			expect(score).not.toHaveBeenCalled();
+			expect(authority.requests[0]?.requested).toEqual({
+				cpuMilliCores: 8000,
+				hostBytes: 8 * 1024 ** 3,
+			});
+			authority.grant.resolve();
+			await proofEntered.promise;
+			expect(authority.cpuHeld).toBe(true);
+			expect(score).not.toHaveBeenCalled();
+			finishProof.resolve();
+			expect(await outcome).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(prepare).toHaveBeenCalledTimes(1);
+			expect(authority.events.slice(0, 4)).toEqual([
+				"cpu-request",
+				"proof",
+				"cpu-release",
+				"gpu-request",
+			]);
+			expect(score).toHaveBeenCalledTimes(2);
+		} finally {
+			authority.grant.resolve();
+			finishProof.resolve();
+			t.vmafJob.findUnique.mockResolvedValue(null);
+			await outcome;
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it.each([
+		"denied",
+		"lost",
+		"missing",
+	] as const)("does not score or publish when preparation authority is %s", async (failure) => {
+		const authority = preparationResources();
+		authority.grant.resolve();
+		if (failure === "denied") authority.deny();
+		const t = preparedHarness();
+		t.deps.localResources =
+			failure === "missing"
+				? {
+						begin(signal) {
+							return {
+								...authority.resources.begin(signal),
+								exclusivePrepared: undefined,
+							};
+						},
+					}
+				: authority.resources;
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => {
+				if (failure === "lost") {
+					expect(authority.cpuHeld).toBe(true);
+					authority.lease.abort(new Error("PREPARATION_LEASE_LOST"));
+					expect(args.signal?.aborted).toBe(true);
+				}
+				return {
+					path: args.preparedPath,
+					probe: RESOURCE_PROBE_JSON,
+					evidence,
+				};
+			});
+		const score = mockScore();
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(/PREPARATION_(?:ADMISSION|LEASE)/);
+			expect(t.job.status).toBe("ERROR");
+			expect(t.results).toHaveLength(0);
+			expect(score).not.toHaveBeenCalled();
+			if (failure !== "lost") expect(prepare).not.toHaveBeenCalled();
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it("scores the prepared raster once per reference and persists its proof with each unchanged source identity", async () => {
+		const t = preparedHarness();
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => ({
+				path: args.preparedPath,
+				probe: RESOURCE_PROBE_JSON,
+				evidence,
+			}));
+		const score = mockScore();
+		try {
+			expect(
+				await t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(prepare).toHaveBeenCalledTimes(1);
+			const preparedPath = prepare.mock.calls[0]?.[0].preparedPath;
+			for (const call of score.mock.calls)
+				expect(call[1].referencePath).toBe(preparedPath);
+			for (const result of t.results)
+				expect(result.provenance).toMatchObject({
+					reference: {
+						bucket: "src-bucket",
+						key: "src/master.mkv",
+						sha256: evidence.inputSha256,
+					},
+					referencePreparation: evidence,
+					localExecution: { scoring: { backend: "cuda" } },
+				});
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it("ends with the refusal, and scores nothing on the CPU, when the scorer does not take a pair of a prepared reference", async () => {
+		// A prepared reference is a request for the scorer itself: the CPU
+		// path takes no prepared reference, so no pair is scored in its place.
+		const t = preparedHarness();
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => ({
+				path: args.preparedPath,
+				probe: JSON.stringify({
+					streams: [
+						{
+							...JSON.parse(RESOURCE_PROBE_JSON).streams[0],
+							color_range: "pc",
+						},
+					],
+				}),
+				evidence,
+			}));
+		const score = mockScore();
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(
+				"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference is full range and the encode is limited range, and FFmpeg converts one of the two before libvmaf compares them. Use Local CPU for this pair.",
+			);
+			expect(t.job.status).toBe("ERROR");
+			expect(score).not.toHaveBeenCalled();
+			expect(t.results).toHaveLength(0);
+			expect(t.filterComplexArgs).toHaveLength(0);
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it("ends with what the scorer says of a pair of a prepared reference while it runs, and scores nothing on the CPU", async () => {
+		const t = preparedHarness();
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => ({
+				path: args.preparedPath,
+				probe: RESOURCE_PROBE_JSON,
+				evidence,
+			}));
+		const failure =
+			"NATIVE_SCORING_FAILED (1): bitovp-vmaf: Comparison presentation timestamps do not align";
+		const score = vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockRejectedValue(
+				new NativePairRefusal(`${failure}\n`, "GPU_PAIR_FRAME_TIMES"),
+			);
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(failure);
+			expect(t.job.status).toBe("ERROR");
+			expect(score).toHaveBeenCalled();
+			expect(
+				score.mock.calls.every(
+					([, options]) => options.scoring?.backend === "cuda",
+				),
+			).toBe(true);
+			expect(t.results).toHaveLength(0);
+			expect(t.filterComplexArgs).toHaveLength(0);
+			// No second pass: each encode that reached the scorer was fetched
+			// once.
+			expect(
+				t.fetched.filter((destPath) => destPath.includes("dist-")),
+			).toHaveLength(score.mock.calls.length);
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it("keeps the measurement failed when verified reference coverage does not match the scores", async () => {
+		const t = preparedHarness();
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockImplementation(async (args) => ({
+				path: args.preparedPath,
+				probe: RESOURCE_PROBE_JSON,
+				evidence: { ...evidence, frameCount: 4 },
+			}));
+		const score = mockScore();
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow("VMAF_REFERENCE_PREPARATION_FRAME_COUNT_MISMATCH");
+			expect(t.job.status).toBe("ERROR");
+			expect(t.results).toHaveLength(0);
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+
+	it("stops before scoring if reference preparation fails", async () => {
+		const t = preparedHarness();
+		const prepare = vi
+			.spyOn(referencePreparation, "prepareDisplayScaleReference")
+			.mockRejectedValue(
+				new Error("REFERENCE_PREPARATION_CONTENT_OR_TIMING_MISMATCH"),
+			);
+		const score = mockScore();
+		try {
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow("REFERENCE_PREPARATION_CONTENT_OR_TIMING_MISMATCH");
+			expect(t.results).toHaveLength(0);
+			expect(score).not.toHaveBeenCalled();
+		} finally {
+			prepare.mockRestore();
+			score.mockRestore();
+		}
+	});
+	it.each([
+		{
+			name: "unknown policy",
+			triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}test`,
+			policy: "IGNORE_ALL_TRANSFORMS",
+			localMode: "CPU",
+		},
+		{
+			name: "automatic QC",
+			triggerKey: `vod-auto:${ENCODING_JOB_ID}`,
+			policy: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			localMode: "AUTO",
+		},
+		{
+			name: "explicit CPU mode",
+			triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}test`,
+			policy: "LOSSLESS_DISPLAY_SCALE_REMUX",
+			localMode: "CPU",
+		},
+	])("rejects $name before downloading media", async (item) => {
+		const t = setup({
+			job: {
+				triggerKey: item.triggerKey,
+				params: {
+					referencePreparation: item.policy,
+					execution: { backend: "LOCAL", localMode: item.localMode },
+				},
+			},
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("VMAF_REFERENCE_PREPARATION_POLICY_INVALID");
+		expect(t.job.status).toBe("ERROR");
+		expect(t.results).toHaveLength(0);
+		expect(t.downloaded).toHaveLength(0);
+	});
+
+	it("rejects AUTO selecting CPU rather than preparing an unrequested CPU comparison", async () => {
+		const t = setup({
+			job: {
+				triggerKey: `${labManualTriggerPrefix(ENCODING_JOB_ID)}test`,
+				params: {
+					referencePreparation: "LOSSLESS_DISPLAY_SCALE_REMUX",
+					execution: { backend: "LOCAL", localMode: "AUTO" },
+				},
+			},
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("VMAF_REFERENCE_PREPARATION_GPU_REQUIRED");
+		expect(t.job.status).toBe("ERROR");
+		expect(t.results).toHaveLength(0);
+		expect(t.downloaded).toHaveLength(0);
+	});
+});
+
+describe("picture sizes that libvmaf cannot score with a VMAF v1 model", () => {
+	const v1 = "vmaf_v1.0.16_3d0h";
+	/** A probe with other values for its video stream. */
+	const streamWith = (probe: string, extra: Row) => {
+		const parsed = JSON.parse(probe);
+		Object.assign(parsed.streams[0], extra);
+		return JSON.stringify(parsed);
+	};
+	const probeOf = (width: number, height: number, pixelFormat?: string) =>
+		JSON.stringify({
+			streams: [
+				{
+					codec_type: "video",
+					codec_name: "h264",
+					width,
+					height,
+					...(pixelFormat ? { pix_fmt: pixelFormat } : {}),
+					r_frame_rate: "25/1",
+					avg_frame_rate: "25/1",
+					sample_aspect_ratio: "1:1",
+					duration: "10",
+					nb_frames: "250",
+				},
+			],
+		});
+	const scoringRuns = (t: ReturnType<typeof setup>) =>
+		vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(([, argv]) => argv.includes("-filter_complex"));
+
+	it("refuses a reference that is too small before FFmpeg scores, and says what to do", async () => {
+		const t = setup({
+			job: { model: v1 },
+			probeJson: probeOf(256, 144, "yuv420p"),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			`VMAF model "${v1}" cannot score 4:2:0 pictures of 256x144: it needs at least 160 pixels in width and in height, and at least 216 in one of the two. The two pictures are compared at the size of the reference. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures, or a larger reference.`,
+		);
+		expect(t.job.status).toBe("ERROR");
+		expect(String(t.job.error)).toContain("cannot score 4:2:0 pictures");
+		expect(scoringRuns(t)).toHaveLength(0);
+		expect(t.results).toHaveLength(0);
+	});
+
+	it.each([
+		// The same reference with a model that has no such limit.
+		["vmaf_v0.6.1", 256, 144, "yuv420p"],
+		// 4:4:4 chroma planes are as large as the pictures.
+		[v1, 256, 144, "yuv444p10le"],
+		// The smallest 4:2:0 pictures that the model scores.
+		[v1, 216, 160, "yuv420p"],
+		// A reference that FFmpeg converts before libvmaf, to a format that
+		// follows from an encode of which it is not known: the layout of the
+		// comparison is not known, so libvmaf decides. Every file has this
+		// format here.
+		[v1, 256, 144, "nv12"],
+		[v1, 256, 144, undefined],
+	] as const)("scores %s at %ix%i (%s)", async (model, width, height, pixelFormat) => {
+		const t = setup({
+			job: { model },
+			probeJson: probeOf(width, height, pixelFormat),
+			resolveModelPath: (name) => `/opt/vmaf/model/${name}.json`,
+		});
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "FINISHED", results: 2 },
+		);
+		expect(scoringRuns(t)).toHaveLength(2);
+		// The check takes the reference's chroma layout as the comparison's
+		// where libvmaf takes the reference's format, and the encode's where
+		// FFmpeg converts the reference. Both hold while the encode's leg has a
+		// scale filter and the reference's has none: FFmpeg then lets that
+		// filter give the encode the reference's format, or converts the
+		// reference to the format that the filter gives the encode.
+		for (const [, argv] of scoringRuns(t))
+			expect(argv[argv.indexOf("-filter_complex") + 1]).toMatch(
+				new RegExp(
+					`^\\[0:v\\][^;]*scale=${width}:${height}:flags=bicubic[^;]*\\[dist\\];\\[1:v\\](?![^;]*scale=)`,
+				),
+			);
+	});
+
+	it("names the limit when libvmaf meets it in a comparison whose chroma layout was not known", async () => {
+		const t = setup({ job: { model: v1 } });
+		const crash = (stderr: string) =>
+			vi
+				.mocked(t.runner.run)
+				.mockImplementation(async (_bin: string, argv: string[]) =>
+					argv.includes("-show_streams")
+						? { code: 0, stdout: probeOf(256, 144, "nv12"), stderr: "" }
+						: { code: null, stdout: "", stderr },
+				);
+		// libvmaf's last words before its segmentation fault.
+		crash(
+			"[Parsed_libvmaf_4 @ 0x5581] libvmaf WARNING something\nlibvmaf ERROR SpEED: image too small, operating width or height is 0\n",
+		);
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			`VMAF model "${v1}" cannot score pictures of 256x144: libvmaf reports that they are too small for its SpEED feature. The two pictures are compared at the size of the reference. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures, or a larger reference.`,
+		);
+		expect(t.job.status).toBe("ERROR");
+		expect(scoringRuns(t).length).toBeGreaterThan(0);
+	});
+
+	it("leaves every other crash of libvmaf as it reports it", async () => {
+		const t = setup({ job: { model: v1 } });
+		vi.mocked(t.runner.run).mockImplementation(
+			async (_bin: string, argv: string[]) =>
+				argv.includes("-show_streams")
+					? { code: 0, stdout: probeOf(256, 144, "nv12"), stderr: "" }
+					: { code: null, stdout: "", stderr: "double free or corruption\n" },
+		);
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			/libvmaf failed for rendition v\d+ \(code null\): double free or corruption/,
+		);
+	});
+
+	const nativeRun = (run: { code: number | null; stderr: string }) =>
+		vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockImplementation(async (_deps, options) => ({
+				run,
+				execution: {
+					version: 1,
+					requestedDecode: "cpu",
+					decode: {
+						reference: { backend: "cpu" },
+						distorted: { backend: "cpu" },
+					},
+					scoring: {
+						backend: "cpu",
+						implementation: "libvmaf",
+						model: options.model,
+					},
+					attempts: 1,
+				},
+				log: JSON.parse(vmafJson([95])),
+			}));
+	const nativeSetup = (
+		backend: "cuda" | "vulkan",
+		reference: string,
+		encode: string = reference,
+	) => {
+		const localRunner: ProcessRunner = {
+			spawn: vi.fn(() => {
+				throw new Error("Unexpected spawn");
+			}),
+			run: vi.fn(),
+		};
+		const planned = vi.fn<
+			NonNullable<VmafProcessorDeps["resolveLocalResources"]>
+		>(async () => ({
+			threads: 1,
+			concurrency: 2,
+			estimatedBytes: 1024,
+			exclusive: false,
+			manualFallback: false,
+			nativeDevice: 2,
+			nativeInflightFrames: 2,
+		}));
+		const t = setup({
+			localResources: sharedTestResources(),
+			localRunner,
+			scoringBackend: backend,
+			job: { model: v1, scoringVersion: VMAF_SCORING_VERSION },
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+			resolveLocalResources: planned,
+		});
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		if (!raw) throw new Error("Missing raw runner fixture");
+		const probed = async (bin: string, argv: string[], options?: unknown) =>
+			argv.includes("-show_streams")
+				? {
+						code: 0,
+						stderr: "",
+						stdout: /\/ref-\d+\./.test(argv.at(-1) ?? "") ? reference : encode,
+					}
+				: raw(bin, argv, options as never);
+		vi.mocked(t.runner.run).mockImplementation(probed);
+		vi.mocked(localRunner.run).mockImplementation(probed);
+		return Object.assign(t, { planned });
+	};
+
+	it.each([
+		"cuda",
+		"vulkan",
+	] as const)("holds the %s scorer to libvmaf's limits for 4:2:0 pictures before it runs", async (backend) => {
+		const native = nativeRun({ code: 0, stderr: "" });
+		try {
+			// The scorer compares 4:2:0 pictures and declares no encode, so its
+			// limits are those of libvmaf for that layout. It refuses in words
+			// that name none.
+			const small = nativeSetup(backend, probeOf(256, 144, "yuv420p"));
+			await expect(
+				small.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(
+				`VMAF model "${v1}" cannot score 4:2:0 pictures of 256x144: it needs at least 160 pixels in width and in height, and at least 216 in one of the two. The two pictures are compared at the size of the reference. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures, or a larger reference.`,
+			);
+			expect(small.job.status).toBe("ERROR");
+			expect(native).not.toHaveBeenCalled();
+			expect(small.planned).not.toHaveBeenCalled();
+
+			// The smallest pictures that the model scores, and an encode below
+			// CAMBI's range for a declared encode: nothing of it is declared.
+			const edge = nativeSetup(
+				backend,
+				probeOf(216, 160, "yuv420p"),
+				probeOf(128, 72, "yuv420p"),
+			);
+			expect(
+				await edge.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(native).toHaveBeenCalledTimes(2);
+			// A pair that is scored has resources planned for it, by the planner
+			// that the refusals of this file leave uncalled.
+			expect(edge.planned).toHaveBeenCalled();
+			for (const [, options] of native.mock.calls)
+				expect(options).toMatchObject({
+					scoring: { backend },
+					distortedOriginal: { width: 128, height: 72, bitdepth: 8 },
+				});
+		} finally {
+			native.mockRestore();
+		}
+	});
+
+	it.each([
+		"cuda",
+		"vulkan",
+	] as const)("leaves a failure of the %s scorer in its own words", async (backend) => {
+		// A run of the scorer that fails throws what the scorer printed
+		// (`runNativeVmafScore`). The sentences about libvmaf's limits are for
+		// the check before the run and for a run of FFmpeg.
+		const failure =
+			"NATIVE_SCORING_FAILED (1): bitovp-vmaf: input is too small or too large for official SpEED chroma blocks";
+		const native = vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockRejectedValue(new Error(failure));
+		try {
+			const t = nativeSetup(backend, probeOf(640, 360, "yuv420p"));
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toMatchObject({ message: failure });
+			expect(t.job.status).toBe("ERROR");
+			expect(native).toHaveBeenCalled();
+		} finally {
+			native.mockRestore();
+		}
+	});
+
+	it.each([
+		[
+			"cuda",
+			probeOf(1920, 1080, "yuv422p10le"),
+			probeOf(960, 540, "yuv420p"),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference's pixel format is yuv422p10le, and GPU scoring compares 8-bit and 10-bit 4:2:0 pictures only, for references in yuv420p and yuv420p10le. Use Local CPU for this pair.",
+		],
+		[
+			"vulkan",
+			probeOf(1920, 1080, "yuvj420p"),
+			probeOf(960, 540, "yuv420p"),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference is full range and the encode is limited range, and FFmpeg converts one of the two before libvmaf compares them. Use Local CPU for this pair.",
+		],
+		[
+			"cuda",
+			probeOf(1920, 1080, "yuv420p"),
+			probeOf(960, 540, "gbrp"),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: GPU scoring takes no encode in the pixel format gbrp. Use Local CPU for this pair.",
+		],
+		// A pair that is refused so is not held to a size limit first: Local CPU
+		// compares it in another layout, with other limits.
+		[
+			"vulkan",
+			probeOf(256, 144, "yuv444p"),
+			probeOf(256, 144, "yuv420p"),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference's pixel format is yuv444p, and GPU scoring compares 8-bit and 10-bit 4:2:0 pictures only, for references in yuv420p and yuv420p10le. Use Local CPU for this pair.",
+		],
+		// Frames that FFmpeg would repeat or drop, which the scorer pairs in
+		// their order: an encode that leaves a slot out, and one of another
+		// frame rate.
+		[
+			"cuda",
+			probeOf(1920, 1080, "yuv420p"),
+			streamWith(probeOf(960, 540, "yuv420p"), {
+				avg_frame_rate: "249/10",
+				nb_frames: "249",
+			}),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the encode's frames are not evenly spaced by what ffprobe says of it (r_frame_rate 25/1, avg_frame_rate 249/10), and FFmpeg gives each file one frame per slot of the reference's frame rate, repeating and dropping frames, before libvmaf compares them. Use Local CPU for this pair.",
+		],
+		[
+			"vulkan",
+			probeOf(1920, 1080, "yuv420p"),
+			streamWith(probeOf(960, 540, "yuv420p"), {
+				r_frame_rate: "30/1",
+				avg_frame_rate: "30/1",
+			}),
+			"GPU scoring cannot compare this pair as libvmaf through FFmpeg does: the reference's frame rate is 25/1 and the encode's is 30/1, and GPU scoring takes two files only where FFmpeg names one frame rate for both. Use Local CPU for this pair.",
+		],
+	] as const)("refuses for the %s scorer a pair that it cannot compare as libvmaf through FFmpeg does, before any scorer runs (%#)", async (backend, reference, encode, message) => {
+		const native = nativeRun({ code: 0, stderr: "" });
+		try {
+			const t = nativeSetup(backend, reference, encode);
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(message);
+			expect(t.job.status).toBe("ERROR");
+			expect(t.job.error).toContain(message);
+			// Neither the GPU scorer nor libvmaf in its place, and no resources
+			// planned for either.
+			expect(native).not.toHaveBeenCalled();
+			expect(scoringRuns(t)).toHaveLength(0);
+			expect(t.planned).not.toHaveBeenCalled();
+		} finally {
+			native.mockRestore();
+		}
+	});
+
+	it.each([
+		"cuda",
+		"vulkan",
+	] as const)("ends with what the %s scorer says of a pair while it runs, on a worker whose environment names the scorer", async (backend) => {
+		// No choice of "Local (GPU if available)" is recorded for such a
+		// measurement, so nothing is scored in the scorer's place.
+		const failure =
+			"NATIVE_SCORING_FAILED (1): bitovp-vmaf: Comparison presentation timestamps do not align";
+		const native = vi
+			.spyOn(localScoring, "runLocalVmafScore")
+			.mockRejectedValue(
+				new NativePairRefusal(`${failure}\n`, "GPU_PAIR_FRAME_TIMES"),
+			);
+		try {
+			const t = nativeSetup(
+				backend,
+				probeOf(1920, 1080, "yuv420p"),
+				probeOf(960, 540, "yuv420p"),
+			);
+			await expect(
+				t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+			).rejects.toThrow(failure);
+			expect(t.job.status).toBe("ERROR");
+			expect(t.job.error).toContain(failure);
+			expect(native).toHaveBeenCalled();
+			expect(
+				native.mock.calls.every(
+					([, options]) => options.scoring?.backend === backend,
+				),
+			).toBe(true);
+			expect(scoringRuns(t)).toHaveLength(0);
+			expect(t.results).toHaveLength(0);
+			// No second pass: each encode that reached the scorer was fetched
+			// once.
+			expect(
+				t.downloaded.filter(({ destPath }) => destPath.includes("dist-")),
+			).toHaveLength(native.mock.calls.length);
+		} finally {
+			native.mockRestore();
+		}
+	});
+
+	it("refuses a too small reference of a cloud job before any pair reaches the cloud", async () => {
+		const cloudScore = vi.fn();
+		const t = setup({
+			cloudScore,
+			probeJson: probeOf(200, 200, "yuv420p"),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+			job: {
+				model: v1,
+				params: {
+					execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
+				},
+			},
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			/cannot score 4:2:0 pictures of 200x200: it needs at least 160 pixels in width and in height, and at least 216 in one of the two\./,
+		);
+		expect(cloudScore).not.toHaveBeenCalled();
+		expect(t.job.status).toBe("ERROR");
+	});
+
+	it("refuses the encode whose size the frame-index method cannot declare, and sends the other pair to the cloud", async () => {
+		const plan = qcPlan();
+		delete plan.qc;
+		const cloudScore = vi.fn(async (request) => {
+			await writeFile(request.options.logPath, vmafJson([96, 97]));
+		});
+		const t = setup({
+			plan,
+			cloudScore,
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+			job: {
+				model: v1,
+				scoringVersion: 6,
+				triggerKey: `lab-manual:${ENCODING_JOB_ID}:output`,
+				params: {
+					source: "OUTPUT_MP4",
+					measurementMethod: "FRAME_INDEX_BT709_10BIT",
+					execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
+				},
+			},
+		});
+		// The reference is 1080p; the encode of one rendition is below CAMBI's
+		// range, the other is in it.
+		vi.mocked(t.runner.run).mockImplementation(
+			async (_bin: string, argv: string[]) => {
+				if (!argv.includes("-show_streams"))
+					throw new Error("A cloud job runs no local FFmpeg");
+				const path = argv.at(-1) ?? "";
+				return {
+					code: 0,
+					stderr: "",
+					stdout: /\/ref-\d+\./.test(path)
+						? probeOf(1920, 1080, "yuv422p10le")
+						: path.includes("dist-v360-")
+							? probeOf(240, 134, "yuv420p")
+							: probeOf(960, 540, "yuv420p"),
+				};
+			},
+		);
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			`VMAF model "${v1}" cannot score an encode of 240x134: it takes no encode below 144 pixels in width or in height. Use a model of the vmaf_v0.6.1 family, which scores smaller pictures.`,
+		);
+		expect(t.job.status).toBe("ERROR");
+		expect(cloudScore).toHaveBeenCalledTimes(1);
+		expect(cloudScore.mock.calls[0]?.[0]).toMatchObject({
+			targetKey: expect.stringMatching(/^v540\//),
+			options: {
+				measurementMethod: "FRAME_INDEX_BT709_10BIT",
+				distortedOriginal: { width: 960, height: 540 },
+			},
+		});
+	});
+
+	/** Answers each ffprobe call by the file it names: the reference or an encode. */
+	const probeByFile = (
+		t: ReturnType<typeof setup>,
+		reference: string,
+		encode: string,
+	) => {
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		if (!raw) throw new Error("Missing runner fixture");
+		vi.mocked(t.runner.run).mockImplementation(async (bin, argv, options) =>
+			argv.includes("-show_streams")
+				? {
+						code: 0,
+						stderr: "",
+						stdout: /\/ref-\d+\./.test(argv.at(-1) ?? "") ? reference : encode,
+					}
+				: raw(bin, argv, options),
+		);
+	};
+	const cloudJob = {
+		execution: { backend: "CLOUD", profileId: "gcp", budgetUsd: 10 },
+	};
+
+	it("holds a frame-index comparison to the 4:2:0 that the method converts to, whatever the reference's own layout", async () => {
+		const plan = qcPlan();
+		delete plan.qc;
+		const cloudScore = vi.fn();
+		const t = setup({
+			plan,
+			cloudScore,
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+			job: {
+				model: v1,
+				scoringVersion: 6,
+				triggerKey: `lab-manual:${ENCODING_JOB_ID}:output`,
+				params: {
+					source: "OUTPUT_MP4",
+					measurementMethod: "FRAME_INDEX_BT709_10BIT",
+					...cloudJob,
+				},
+			},
+		});
+		// The ordinary method scores a 4:4:4 reference of 256x144. Its declared
+		// encode passes CAMBI's rules too, so the pictures decide.
+		probeByFile(t, probeOf(256, 144, "yuv444p"), probeOf(256, 144, "yuv444p"));
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow(
+			`VMAF model "${v1}" cannot score 4:2:0 pictures of 256x144: it needs at least 160 pixels in width and in height, and at least 216 in one of the two.`,
+		);
+		expect(cloudScore).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		// 256x144 is too small in 4:2:0 and enough in 4:4:4.
+		["yuv420p", "yuv444p", false],
+		["yuv444p", "yuv420p", true],
+	] as const)("takes the layout of a %s reference and not that of its %s encode, when it has probed both", async (reference, encode, scores) => {
+		// A job with local resources probes each encode before it scores.
+		const t = setup({
+			job: { model: v1 },
+			localResources: sharedTestResources(),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		probeByFile(t, probeOf(256, 144, reference), probeOf(640, 360, encode));
+		const processed = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		if (scores) {
+			expect(await processed).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(scoringRuns(t)).toHaveLength(2);
+		} else {
+			await expect(processed).rejects.toThrow(
+				"cannot score 4:2:0 pictures of 256x144",
+			);
+			expect(scoringRuns(t)).toHaveLength(0);
+		}
+	});
+
+	/** The ffprobe runs that named an encode, by the file that each read. */
+	const encodeProbes = (t: ReturnType<typeof setup>) =>
+		vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(
+				([, argv]) =>
+					argv.includes("-show_streams") &&
+					!/\/ref-\d+\./.test(argv.at(-1) ?? ""),
+			);
+
+	it.each([
+		// 256x144 is too small in 4:2:0 and enough in 4:4:4. FFmpeg converts
+		// each of these references to the format that the encode's scale filter
+		// writes.
+		["yuvj420p", "yuv420p", true],
+		["yuvj444p", "yuvj420p", true],
+		["nv12", "yuv420p10le", true],
+		["yuvj420p", "yuv444p", false],
+		["gbrp", "yuvj444p", false],
+		// An encode of which the conversion is not known: libvmaf decides.
+		["yuvj420p", "nv12", false],
+		["yuvj420p", undefined, false],
+	] as const)("takes the layout of the encode for a %s reference, which libvmaf does not take as it is (encode %s)", async (reference, encode, refused) => {
+		const cloudScore = vi.fn(async (request) => {
+			await writeFile(request.options.logPath, vmafJson([96, 97]));
+		});
+		const t = setup({
+			cloudScore,
+			job: { model: v1, params: cloudJob },
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		probeByFile(t, probeOf(256, 144, reference), probeOf(256, 144, encode));
+		const processed = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		if (refused) {
+			await expect(processed).rejects.toThrow(
+				`VMAF model "${v1}" cannot score 4:2:0 pictures of 256x144: it needs at least 160 pixels in width and in height, and at least 216 in one of the two.`,
+			);
+			// Before any pair reaches the cloud.
+			expect(cloudScore).not.toHaveBeenCalled();
+			expect(t.job.status).toBe("ERROR");
+		} else {
+			expect(await processed).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(cloudScore).toHaveBeenCalledTimes(2);
+		}
+		expect(encodeProbes(t).length).toBeGreaterThan(0);
+	});
+
+	it.each([
+		["yuv420p", true],
+		["yuv444p", false],
+	] as const)("reads the layout from the probe that a job with local resources has made of its %s encode", async (encode, refused) => {
+		// Such a job probes each encode before it scores. The check for a
+		// converted reference reads that probe and starts no other.
+		const t = setup({
+			job: { model: v1 },
+			localResources: sharedTestResources(),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		probeByFile(t, probeOf(256, 144, "yuvj420p"), probeOf(640, 360, encode));
+		const processed = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		if (refused) {
+			await expect(processed).rejects.toThrow(
+				"cannot score 4:2:0 pictures of 256x144",
+			);
+			expect(scoringRuns(t)).toHaveLength(0);
+			expect(encodeProbes(t)).toHaveLength(1);
+		} else {
+			expect(await processed).toMatchObject({ status: "FINISHED", results: 2 });
+			expect(scoringRuns(t)).toHaveLength(2);
+			expect(encodeProbes(t)).toHaveLength(2);
+		}
+	});
+
+	it("leaves the layout unknown when the encode cannot be probed, and libvmaf decides", async () => {
+		const t = setup({
+			job: { model: v1 },
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		const raw = vi.mocked(t.runner.run).getMockImplementation();
+		if (!raw) throw new Error("Missing runner fixture");
+		vi.mocked(t.runner.run).mockImplementation(async (bin, argv, options) =>
+			argv.includes("-show_streams")
+				? /\/ref-\d+\./.test(argv.at(-1) ?? "")
+					? { code: 0, stderr: "", stdout: probeOf(256, 144, "yuvj420p") }
+					: { code: 1, stderr: "Invalid data found", stdout: "" }
+				: raw(bin, argv, options),
+		);
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "FINISHED", results: 2 },
+		);
+		expect(encodeProbes(t)).toHaveLength(2);
+		expect(scoringRuns(t)).toHaveLength(2);
+	});
+
+	it.each([
+		// The reference's layout is known.
+		[256, 144, "yuv444p"],
+		// No layout refuses pictures of this size.
+		[640, 360, "yuvj420p"],
+		// The reference's format is not known, so nothing says that FFmpeg converts it.
+		[256, 144, undefined],
+	] as const)("does not probe the encode for a %ix%i reference in %s", async (width, height, reference) => {
+		const t = setup({
+			job: { model: v1 },
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		probeByFile(
+			t,
+			probeOf(width, height, reference),
+			probeOf(256, 144, "yuv420p"),
+		);
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "FINISHED", results: 2 },
+		);
+		expect(encodeProbes(t)).toHaveLength(0);
+	});
+
+	it("scores encodes below CAMBI's range with the ordinary method, which declares no encode", async () => {
+		const plan = qcPlan();
+		const [first, second] = plan.renditions as { height: number }[];
+		if (!first || !second) throw new Error("Missing renditions");
+		first.height = 108;
+		second.height = 120;
+		const t = setup({
+			plan,
+			job: { model: v1 },
+			localResources: sharedTestResources(),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+		});
+		probeByFile(
+			t,
+			probeOf(1920, 1080, "yuv420p"),
+			probeOf(192, 108, "yuv420p"),
+		);
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "FINISHED", results: 2 },
+		);
+		expect(scoringRuns(t)).toHaveLength(2);
+	});
+
+	it("holds a cloud job to libvmaf's limits on a worker whose own scorer is the GPU's", async () => {
+		const cloudScore = vi.fn();
+		const t = setup({
+			cloudScore,
+			scoringBackend: "vulkan",
+			probeJson: probeOf(200, 200, "yuv420p"),
+			resolveModelPath: () => `/opt/vmaf/model/${v1}.json`,
+			job: { model: v1, params: cloudJob },
+		});
+		await expect(
+			t.processor.process({ vmafJobId: VMAF_JOB_ID }),
+		).rejects.toThrow("cannot score 4:2:0 pictures of 200x200");
+		expect(cloudScore).not.toHaveBeenCalled();
+	});
+});
+
+describe("local cancellation and absolute deadlines", () => {
+	it("expires queued local work without downloads or subprocesses and wakes its blocking gate", async () => {
+		const plan = qcPlan();
+		plan.qc = {
+			vmaf: true,
+			gate: {
+				onFail: "BLOCK_MANIFESTS",
+				rules: [{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }],
+			},
+		};
+		const t = setup({
+			plan,
+			job: {
+				params: {
+					execution: { backend: "LOCAL", deadlineAt: "2020-01-01T00:00:00Z" },
+				},
+			},
+		});
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "ERROR", results: 0 },
+		);
+		expect(t.job.error).toContain("deadline");
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(t.downloaded).toHaveLength(0);
+		expect(t.queueAdds).toHaveLength(1);
+	});
+	it.each([
+		"cancel",
+		"deadline",
+	] as const)("drains active local work before releasing its lease after %s and retains partial results", async (reason) => {
+		vi.useFakeTimers();
+		const started = resourceDeferred(),
+			close = resourceDeferred();
+		let aborted = false,
+			released = false;
+		const resources = createLocalVmafResources({
+			concurrency: 1,
+			readResources: () => ({
+				cpuCapacity: 8,
+				budgetBytes: 8 * 1024 ** 3,
+				reserveBytes: 0,
+			}),
+			execute: async (_plan, signal, work) => {
+				try {
+					return await work(signal, async () => {});
+				} finally {
+					released = true;
+				}
+			},
+		});
+		const plan = qcPlan();
+		plan.qc = {
+			vmaf: true,
+			gate: {
+				onFail: "BLOCK_MANIFESTS",
+				rules: [{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }],
+			},
+		};
+		const t = setup({
+			plan,
+			localResources: resources,
+			probeJson: RESOURCE_PROBE_JSON,
+			concurrency: 1,
+			job: {
+				params: {
+					execution: {
+						backend: "LOCAL",
+						...(reason === "deadline"
+							? { deadlineAt: new Date(Date.now() + 1000).toISOString() }
+							: {}),
+					},
+				},
+			},
+		});
+		const original = vi.mocked(t.runner.run).getMockImplementation();
+		if (!original) throw new Error("Missing fixture implementation");
+		let scores = 0;
+		vi.mocked(t.runner.run).mockImplementation(async (bin, argv, options) => {
+			if (!argv.includes("-filter_complex") || ++scores === 1)
+				return original(bin, argv, options);
+			released = false;
+			options?.signal?.addEventListener(
+				"abort",
+				() => {
+					aborted = true;
+				},
+				{ once: true },
+			);
+			started.resolve();
+			await close.promise;
+			return { code: null, stdout: "", stderr: "stopped" };
+		});
+		const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+		pending.catch(() => {});
+		try {
+			await started.promise;
+			expect(t.results).toHaveLength(1);
+			if (reason === "cancel") {
+				t.job.status = "ERROR";
+				t.job.error = "Cancellation requested";
+			}
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(aborted).toBe(true);
+			expect(released).toBe(false);
+			close.resolve();
+			expect(await pending).toMatchObject({ status: "ERROR", results: 1 });
+			expect(released).toBe(true);
+			expect(t.results).toHaveLength(1);
+			expect(t.queueAdds).toHaveLength(1);
+			expect(t.emitted.some((event) => event.kind === "VMAF_FINISHED")).toBe(
+				false,
+			);
+		} finally {
+			t.vmafJob.findUnique.mockResolvedValue(null);
+			close.resolve();
+			await vi.advanceTimersByTimeAsync(2000);
+			await pending.catch(() => {});
+			vi.useRealTimers();
+		}
+	});
+	it("does not overwrite a local cancellation that wins just before terminal persistence", async () => {
+		const t = setup();
+		const original = t.vmafJob.update.getMockImplementation();
+		if (!original) throw new Error("Missing fixture implementation");
+		t.vmafJob.update.mockImplementation(async (args) => {
+			if (args.data.status === "FINISHED") {
+				t.job.status = "ERROR";
+				t.job.error = "Cancellation requested";
+			}
+			return original(args);
+		});
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "ERROR", results: 2 },
+		);
+		expect(t.job).toMatchObject({
+			status: "ERROR",
+			error: "Cancellation requested",
+		});
+		expect(t.emitted.some((event) => event.kind === "VMAF_FINISHED")).toBe(
+			false,
+		);
+	});
+});
+
+it.each([
+	"cancel",
+	"deadline",
+] as const)("stops a local preparation waiting for capacity after %s without media I/O", async (reason) => {
+	vi.useFakeTimers();
+	const resources = sharedTestResources(),
+		entered = resourceDeferred(),
+		release = resourceDeferred();
+	const holder = resources.begin(new AbortController().signal);
+	const holding = holder.prepared("occupied", async () => {
+		entered.resolve();
+		await release.promise;
+	});
+	await entered.promise;
+	const t = setup({
+		localResources: resources,
+		probeJson: RESOURCE_PROBE_JSON,
+		job: {
+			params: {
+				execution: {
+					backend: "LOCAL",
+					...(reason === "deadline"
+						? { deadlineAt: new Date(Date.now() + 1000).toISOString() }
+						: {}),
+				},
+			},
+		},
+	});
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	pending.catch(() => {});
+	try {
+		// Let the async setup enter the existing admission queue.
+		await vi.waitFor(() => expect(holder.report().queued).toBeGreaterThan(0));
+		if (reason === "cancel") {
+			t.job.status = "ERROR";
+			t.job.error = "Cancellation requested";
+		}
+		await vi.advanceTimersByTimeAsync(1000);
+		expect(await pending).toMatchObject({ status: "ERROR", results: 0 });
+		expect(t.runner.run).not.toHaveBeenCalled();
+		expect(t.downloaded).toHaveLength(0);
+		expect(holder.report().queued).toBe(0);
+	} finally {
+		t.vmafJob.findUnique.mockResolvedValue(null);
+		release.resolve();
+		await holding;
+		await vi.advanceTimersByTimeAsync(1000);
+		await pending.catch(() => {});
+		vi.useRealTimers();
+	}
+});
+it("does not start a pending job whose cancellation won the atomic claim", async () => {
+	const t = setup();
+	const original = t.vmafJob.updateMany.getMockImplementation();
+	if (!original) throw new Error("Missing fixture implementation");
+	t.vmafJob.updateMany.mockImplementation(async (args) => {
+		if (args.data.status === "RUNNING") {
+			t.job.status = "ERROR";
+			t.job.error = "Cancellation requested";
+		}
+		return original(args);
+	});
+	expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject({
+		status: "ERROR",
+	});
+	expect(t.runner.run).not.toHaveBeenCalled();
+	expect(t.downloaded).toHaveLength(0);
+});
+
+it("checks the absolute deadline again before FINISHED even when the timer has not run", async () => {
+	vi.useFakeTimers();
+	const deadline = Date.now() + 1000;
+	const t = setup({
+		job: {
+			params: {
+				execution: {
+					backend: "LOCAL",
+					deadlineAt: new Date(deadline).toISOString(),
+				},
+			},
+		},
+	});
+	const original = t.vmafResult.create.getMockImplementation();
+	if (!original) throw new Error("Missing fixture");
+	t.vmafResult.create.mockImplementation(async (args) => {
+		const result = await original(args);
+		if (t.results.length === 2) vi.setSystemTime(deadline + 1);
+		return result;
+	});
+	try {
+		expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject(
+			{ status: "ERROR", results: 2 },
+		);
+		expect(t.job.error).toContain("deadline");
+		expect(t.emitted.some((event) => event.kind === "VMAF_FINISHED")).toBe(
+			false,
+		);
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
+it("reconciles a cancellation winning the error write and wakes its blocking gate", async () => {
+	const plan = qcPlan();
+	plan.qc = {
+		vmaf: true,
+		gate: {
+			onFail: "BLOCK_MANIFESTS",
+			rules: [{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }],
+		},
+	};
+	const t = setup({ plan, ffmpegExit: 1 });
+	const original = t.vmafJob.update.getMockImplementation();
+	if (!original) throw new Error("Missing fixture");
+	t.vmafJob.update.mockImplementation(async (args) => {
+		if (args.data.status === "ERROR") {
+			t.job.status = "ERROR";
+			t.job.error = "Cancellation requested";
+		}
+		return original(args);
+	});
+	expect(await t.processor.process({ vmafJobId: VMAF_JOB_ID })).toMatchObject({
+		status: "ERROR",
+	});
+	expect(t.job.error).toBe("Cancellation requested");
+	expect(t.queueAdds).toHaveLength(1);
+});
+
+it.each([
+	"deadline",
+	"cancel",
+] as const)("does not publish a passing gate when %s is observed during its result read", async (reason) => {
+	vi.useFakeTimers();
+	const deadlineAt = new Date(Date.now() + 1000).toISOString();
+	const plan = qcPlan();
+	plan.qc = {
+		vmaf: true,
+		gate: {
+			onFail: "BLOCK_MANIFESTS",
+			rules: [{ metric: "VMAF_MEAN", scope: "OVERALL", gte: 80 }],
+		},
+	};
+	const t = setup({
+		plan,
+		job: { params: { execution: { backend: "LOCAL", deadlineAt } } },
+	});
+	const entered = resourceDeferred(),
+		release = resourceDeferred();
+	const original = t.vmafResult.findMany.getMockImplementation();
+	if (!original) throw new Error("Missing fixture");
+	let reads = 0;
+	t.vmafResult.findMany.mockImplementation(async () => {
+		const rows = await original();
+		if (++reads === 1) {
+			entered.resolve();
+			await release.promise;
+		}
+		return rows;
+	});
+	const pending = t.processor.process({ vmafJobId: VMAF_JOB_ID });
+	pending.catch(() => {});
+	try {
+		await entered.promise;
+		expect(t.results).toHaveLength(2);
+		if (reason === "cancel") {
+			t.job.status = "ERROR";
+			t.job.error = "Cancellation requested";
+		}
+		await vi.advanceTimersByTimeAsync(reason === "deadline" ? 1000 : 100);
+		release.resolve();
+		expect(await pending).toMatchObject({ status: "ERROR", results: 2 });
+		expect(t.job.status).toBe("ERROR");
+		expect(t.job.gateVerdict).toBeUndefined();
+		expect(t.encodingJobWrites).toEqual([]);
+		expect(t.emitted.some((event) => event.kind === "VMAF_FINISHED")).toBe(
+			false,
+		);
+		expect(t.queueAdds).toHaveLength(1);
+	} finally {
+		release.resolve();
+		await vi.advanceTimersByTimeAsync(2000);
+		await pending.catch(() => {});
+		vi.useRealTimers();
+	}
 });

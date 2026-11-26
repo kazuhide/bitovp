@@ -17,6 +17,7 @@ import { RunsPanel } from "./runs-panel";
 const CHANNEL_ID = "00000000-0000-4000-8000-0000000000c1";
 const RUN_ID = "00000000-0000-4000-8000-0000000000c2";
 const OLDER_RUN_ID = "00000000-0000-4000-8000-0000000000c0";
+const NEXT_RUN_ID = "00000000-0000-4000-8000-0000000000c3";
 const T0 = Date.parse("2026-09-02T07:44:30.000Z");
 const KEYFRAME =
 	"At least one input video stream key-frame interval is larger than the threshold: 2167 ms >= 2000 ms!";
@@ -157,13 +158,280 @@ afterEach(() => vi.useRealTimers());
 
 describe("HeartbeatLogPanel", () => {
 	it.each([
-		["ja", "定期取得の要約: 17 サンプル", "Push受信は別表示"],
-		[
-			"en",
-			"Poll history summary: 17 samples",
-			"Push receipts shown separately",
-		],
-	] as const)("labels the ended-run summary as Poll-only in %s", async (locale, prefix, separate) => {
+		"pinned",
+		"following",
+	] as const)("keeps the run selector %s after a confirmed ended run", async (selection) => {
+		mockApi("ADMIN");
+		const original = apiFetch.getMockImplementation();
+		if (!original) throw new Error("fixture implementation missing");
+		let nextRunStarted = false;
+		const nextRun = {
+			...PAGE_ONE.run,
+			id: NEXT_RUN_ID,
+			seq: 4,
+			status: "RUNNING",
+			endedAt: null,
+		};
+		apiFetch.mockImplementation(async (url: string) => {
+			if (url === `/api/live-channels/${CHANNEL_ID}/runs`) {
+				const { runs } = await original(url);
+				return { runs: nextRunStarted ? [nextRun, ...runs] : runs };
+			}
+			if (url.includes("heartbeat-receipts")) {
+				const run = url.includes(`/runs/${NEXT_RUN_ID}/`)
+					? nextRun
+					: PAGE_ONE.run;
+				return { run, rows: [] };
+			}
+			if (url.includes(`/runs/${NEXT_RUN_ID}/heartbeats?`)) {
+				return { run: nextRun, rows: [], latestEvents: [] };
+			}
+			return original(url);
+		});
+		const view = renderWithQuery(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={RUN_ID}
+				currentRunStatus="ERROR"
+				currentRunEnded
+				open
+			/>,
+		);
+		const opt = await screen.findByRole("option", { name: /Run #3 · Ended ·/ });
+		expect(opt).toHaveAttribute("value", RUN_ID);
+		expect(screen.getAllByRole("option", { name: /Run #3/ })).toHaveLength(1);
+		expect(
+			screen.getByRole("option", { name: "Follow latest run" }),
+		).toHaveProperty("selected", true);
+		await screen.findByText("No Push receipts");
+		const selector = screen.getByRole("combobox");
+		if (selection === "pinned") await userEvent.selectOptions(selector, opt);
+
+		nextRunStarted = true;
+		view.rerender(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={NEXT_RUN_ID}
+				currentRunStatus="RUNNING"
+				currentRunActive
+				open
+			/>,
+		);
+		await screen.findByRole("option", { name: /Run #4 · RUNNING/ });
+		const expectedRunId = selection === "pinned" ? RUN_ID : NEXT_RUN_ID;
+		expect(selector).toHaveValue(selection === "pinned" ? RUN_ID : "");
+		const path = `/api/live-channels/${CHANNEL_ID}/runs/${expectedRunId}`;
+		expect(
+			screen.getByRole("link", { name: "Export JSON (admin)" }),
+		).toHaveAttribute("href", `${path}/heartbeats/export`);
+		for (const resource of ["heartbeats", "heartbeat-receipts"]) {
+			await waitFor(() =>
+				expect(apiFetch).toHaveBeenCalledWith(
+					expect.stringContaining(`${path}/${resource}?`),
+				),
+			);
+		}
+		if (selection === "pinned") {
+			expect(
+				apiFetch.mock.calls.some(([url]) =>
+					String(url).includes(`/runs/${NEXT_RUN_ID}/heartbeat`),
+				),
+			).toBe(false);
+		}
+	});
+
+	it("puts poll column definitions in the help control", async () => {
+		mockApi("OPERATOR");
+		renderWithQuery(
+			<HeartbeatLogPanel channelId={CHANNEL_ID} currentRunId={RUN_ID} />,
+		);
+		await screen.findAllByRole("row");
+		expect(screen.queryByText(/first video stream's measured/)).toBeNull();
+		await userEvent.click(
+			screen.getByRole("button", { name: "Poll history — more information" }),
+		);
+		expect(await screen.findByRole("note")).toHaveTextContent(
+			"keyFrameIntervalAvg",
+		);
+	});
+
+	it("does not claim the whole run has no events when loaded events are outside the window or have unknown times", async () => {
+		mockApi("OPERATOR");
+		const original = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation(async (url: string) => {
+			if (url.includes(`/runs/${OLDER_RUN_ID}/heartbeats?`))
+				return {
+					...PAGE_ONE,
+					run: { ...PAGE_ONE.run, id: OLDER_RUN_ID },
+					rows: [],
+					latestEvents: [
+						{
+							time: new Date(T0 + 70_000).toISOString(),
+							eventType: "WARNING",
+							message: null,
+							key: "outside",
+						},
+						{ time: null, eventType: "WARNING", message: null, key: "unknown" },
+					],
+				};
+			return original?.(url);
+		});
+		renderWithQuery(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={RUN_ID}
+				initialCorrelation={{
+					kind: "requested",
+					runId: OLDER_RUN_ID,
+					from: new Date(T0 + 25_000).toISOString(),
+					to: new Date(T0 + 35_000).toISOString(),
+				}}
+			/>,
+		);
+		expect(
+			await screen.findByText(
+				"No loaded events can be matched to this UTC window.",
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText("The encoder has reported no events for this run."),
+		).toBeNull();
+	});
+	it("selects linked historical run A after reair B and filters Poll and Push by the requested UTC window", async () => {
+		mockApi("OPERATOR");
+		const original = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation(async (url: string) => {
+			if (url.includes(`/runs/${OLDER_RUN_ID}/heartbeats?`))
+				return {
+					...PAGE_ONE,
+					run: { ...PAGE_ONE.run, id: OLDER_RUN_ID },
+					nextCursor: null,
+				};
+			if (url.includes(`/runs/${OLDER_RUN_ID}/heartbeat-receipts?`))
+				return {
+					run: { id: OLDER_RUN_ID, status: "STOPPED" },
+					rows: [
+						{
+							id: "inside-push",
+							receivedAt: new Date(T0 + 30_000).toISOString(),
+							sampledAt: null,
+							value: { ingest: { status: "INSIDE_PUSH" } },
+						},
+						{
+							id: "outside-push",
+							receivedAt: new Date(T0 + 70_000).toISOString(),
+							sampledAt: null,
+							value: { ingest: { status: "OUTSIDE_PUSH" } },
+						},
+					],
+				};
+			return original?.(url);
+		});
+		const from = new Date(T0 + 25_000).toISOString(),
+			to = new Date(T0 + 35_000).toISOString();
+		const rendered = renderWithQuery(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={RUN_ID}
+				open
+				initialCorrelation={{
+					kind: "requested",
+					runId: OLDER_RUN_ID,
+					from,
+					to,
+				}}
+			/>,
+		);
+		await screen.findByText("INSIDE_PUSH");
+		expect(screen.queryByText("OUTSIDE_PUSH")).toBeNull();
+		expect(screen.getByRole("combobox")).toHaveValue(OLDER_RUN_ID);
+		expect(
+			rendered.container.querySelectorAll("[data-heartbeat-row]"),
+		).toHaveLength(1);
+		expect(
+			rendered.container.querySelector("[data-heartbeat-row]"),
+		).toHaveAttribute("data-heartbeat-row", row(1, []).id);
+		const filteredRow = rendered.container.querySelector(
+			"[data-heartbeat-row]",
+		) as HTMLElement;
+		await userEvent.click(within(filteredRow).getByText("JSON"));
+		await waitFor(() =>
+			expect(filteredRow.querySelector("pre")).not.toBeNull(),
+		);
+		expect(
+			JSON.parse(filteredRow.querySelector("pre")?.textContent ?? "{}").at,
+		).toBe(row(1, []).at);
+		expect(
+			rendered.container.querySelector("[data-heartbeat-correlated-run]"),
+		).toHaveAttribute("data-heartbeat-correlated-run", OLDER_RUN_ID);
+		expect(
+			apiFetch.mock.calls.some(
+				([url]) =>
+					String(url).includes(`/runs/${RUN_ID}/heartbeats?`) ||
+					String(url).includes(`/runs/${RUN_ID}/heartbeat-receipts?`),
+			),
+		).toBe(false);
+	});
+	it.each([
+		"invalid",
+		"missing",
+	])("never falls back to current B for an unavailable correlation: %s", async (kind) => {
+		mockApi("OPERATOR");
+		const requested =
+			kind === "invalid"
+				? { kind: "invalid" as const }
+				: {
+						kind: "requested" as const,
+						runId: CHANNEL_ID,
+						from: new Date(T0).toISOString(),
+						to: new Date(T0 + 1000).toISOString(),
+					};
+		const rendered = renderWithQuery(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={RUN_ID}
+				open
+				initialCorrelation={requested}
+			/>,
+		);
+		expect(
+			await screen.findByText("Requested run or UTC window is unavailable."),
+		).toBeInTheDocument();
+		expect(
+			rendered.container.querySelector("[data-heartbeat-correlated-run]"),
+		).toBeNull();
+		expect(
+			apiFetch.mock.calls.some(([url]) =>
+				/\/(?:heartbeats|heartbeat-receipts)\?/.test(String(url)),
+			),
+		).toBe(false);
+	});
+	it("reports an empty loaded window without falling back to another run or treating it as healthy", async () => {
+		mockApi("OPERATOR");
+		const from = new Date(T0 + 500_000).toISOString(),
+			to = new Date(T0 + 501_000).toISOString();
+		const rendered = renderWithQuery(
+			<HeartbeatLogPanel
+				channelId={CHANNEL_ID}
+				currentRunId={RUN_ID}
+				initialCorrelation={{
+					kind: "requested",
+					runId: OLDER_RUN_ID,
+					from,
+					to,
+				}}
+			/>,
+		);
+		expect(
+			await screen.findByText("No loaded samples in this UTC window."),
+		).toBeInTheDocument();
+		expect(rendered.container.querySelector("[data-heartbeat-row]")).toBeNull();
+		expect(screen.queryByText("Healthy")).toBeNull();
+	});
+	it.each([
+		["ja", /定期取得.*17/, /入力接続.*観測/],
+		["en", /Poll.*17/, /observed input/i],
+	] as const)("labels the ended-run summary as Poll-only in %s", async (locale, source, input) => {
 		mockApi("OPERATOR");
 		const original = apiFetch.getMockImplementation();
 		if (!original) throw new Error("fixture missing");
@@ -189,8 +457,8 @@ describe("HeartbeatLogPanel", () => {
 			/>,
 			locale,
 		);
-		const label = await screen.findByText((text) => text.startsWith(prefix));
-		expect(label).toHaveTextContent(separate);
+		const label = await screen.findByText(source);
+		expect(label).toHaveTextContent(input);
 	});
 
 	it("passes exact current-run shutdown status to the Push receipt snapshot query", async () => {
@@ -328,9 +596,7 @@ describe("HeartbeatLogPanel", () => {
 				currentRunActive
 			/>,
 		);
-		await screen.findByText(
-			"No verified Push receipts are stored for this run.",
-		);
+		await screen.findByText("No Push receipts");
 		view.rerender(
 			<HeartbeatLogPanel
 				channelId={CHANNEL_ID}
@@ -358,7 +624,7 @@ describe("HeartbeatLogPanel", () => {
 		view.rerender(
 			<HeartbeatLogPanel
 				channelId={CHANNEL_ID}
-				currentRunId={RUN_ID}
+				currentRunId={NEXT_RUN_ID}
 				open
 				currentRunActive
 			/>,
@@ -366,7 +632,7 @@ describe("HeartbeatLogPanel", () => {
 		expect(screen.getByRole("combobox")).toHaveValue(OLDER_RUN_ID);
 		expect(
 			apiFetch.mock.calls.some((call) =>
-				String(call[0]).includes(`/runs/${RUN_ID}/heartbeat-receipts`),
+				String(call[0]).includes(`/runs/${NEXT_RUN_ID}/heartbeat-receipts`),
 			),
 		).toBe(false);
 		view.unmount();

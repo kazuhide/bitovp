@@ -63,7 +63,12 @@ it.each([
 		status,
 		params: { execution: cloud },
 	});
-	expect((await request()).status).toBe(200);
+	const response = await request();
+	expect(response.status).toBe(200);
+	expect(await response.json()).toMatchObject({
+		cancelRequested: false,
+		stopped: false,
+	});
 	expect(mocks.updateMany).not.toHaveBeenCalled();
 });
 it("does not overwrite a completion that races cancellation", async () => {
@@ -73,15 +78,45 @@ it("does not overwrite a completion that races cancellation", async () => {
 		params: { execution: cloud },
 	});
 	mocks.updateMany.mockResolvedValue({ count: 0 });
-	expect((await request()).status).toBe(200);
+	const response = await request();
+	expect(response.status).toBe(200);
+	expect(await response.json()).toMatchObject({
+		cancelRequested: false,
+		stopped: false,
+	});
 	expect(mocks.updateMany).toHaveBeenCalledTimes(1);
 });
 it.each([
-	{ mode: "VOD", params: {} },
-	{ mode: "VOD", params: { execution: { backend: "LOCAL" } } },
-	{ mode: "LIVE", params: { execution: cloud } },
-])("rejects unsupported jobs", async (job) => {
-	mocks.findUnique.mockResolvedValue({ ...job, status: "RUNNING" });
+	{},
+	{ execution: { backend: "LOCAL" } },
+	{ execution: { backend: "LOCAL", localMode: "CPU" } },
+])("accepts local cancellation without claiming process exit", async (params) => {
+	mocks.findUnique.mockResolvedValue({
+		mode: "VOD",
+		status: "RUNNING",
+		params,
+	});
+	const response = await request();
+	expect(response.status).toBe(200);
+	expect(await response.json()).toMatchObject({
+		cancelRequested: true,
+		stopped: false,
+	});
+	expect(mocks.updateMany).toHaveBeenCalledWith(
+		expect.objectContaining({
+			data: {
+				status: "ERROR",
+				error: "Local measurement cancellation requested; cleanup continues",
+			},
+		}),
+	);
+});
+it("rejects live jobs", async () => {
+	mocks.findUnique.mockResolvedValue({
+		mode: "LIVE",
+		status: "RUNNING",
+		params: { execution: cloud },
+	});
 	expect((await request()).status).toBe(409);
 	expect(mocks.updateMany).not.toHaveBeenCalled();
 });

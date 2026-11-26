@@ -32,6 +32,7 @@ import {
 	AISA_CHANNEL_RESPONSE_HEADERS,
 	aisaChannelViewerProjection,
 	aisaPublisherConnectionAllowed,
+	canRetryEndedAisaFinalization,
 	isAisaLiveChannelView,
 } from "@/lib/server/live-channel-aisa-view";
 import { readHeartbeatReception } from "@/lib/server/live-heartbeat-reception";
@@ -39,6 +40,16 @@ import {
 	liveToVodFamiliesForRole,
 	liveToVodForRole,
 } from "@/lib/server/live-to-vod-view";
+import {
+	cleanupDeletedMoqArchives,
+	type MoqArchiveCleanupSnapshot,
+	snapshotMoqArchiveCleanup,
+} from "@/lib/server/moq-archive-cleanup";
+import {
+	MoqObservationError,
+	moqHistoryError,
+} from "@/lib/server/moq-observations";
+import { publicMoqHistory } from "@/lib/server/moq-public-history";
 import { playbackLinksForLivePlan } from "@/lib/server/playback-links";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -78,6 +89,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 						aisaStatus: true,
 						aisaSnapshot: true,
 						aisaObservedAt: true,
+						aisaFinalization: true,
 						encoderIp: true,
 						streamKey: true,
 						outputPrefix: true,
@@ -151,9 +163,14 @@ export async function GET(req: Request, { params }: RouteParams) {
 		const technicalDetailsAllowed =
 			actor === "session" ||
 			(roleResolvedPrincipal && req.headers.get(ROLE_HEADER) === "ADMIN");
+		const { aisaFinalization: _finalization, ...runFields } = currentRun ?? {
+			stepLog: null,
+			error: null,
+			aisaFinalization: null,
+		};
 		const currentRunView = currentRun
 			? {
-					...currentRun,
+					...publicMoqHistory(runFields),
 					liveToVod: liveToVodForRole(
 						currentRun.liveToVod,
 						technicalDetailsAllowed,
@@ -185,7 +202,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 		// the credential's config never needs to cross .
 		return NextResponse.json(
 			{
-				...channel,
+				...publicMoqHistory(channel),
 				liveToVod: liveToVodForRole(channel.liveToVod, technicalDetailsAllowed),
 				liveToVodFamilies,
 				currentRun: currentRunView,
@@ -198,6 +215,14 @@ export async function GET(req: Request, { params }: RouteParams) {
 					? {
 							playbackLinksAvailability: "unavailable",
 							aisaFeatureAllowed: true,
+							canRetryAisaFinalization:
+								channel.origin !== "AISA_IMPORTED" &&
+								(await canRetryEndedAisaFinalization(
+									ctx.prisma,
+									channel,
+									currentRun,
+									observedNow.getTime(),
+								)),
 						}
 					: {}),
 				// review-260 127-A5 (folded into #126): heartbeat freshness must
@@ -311,6 +336,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 				}),
 			);
 		}
+		let moqArchives: MoqArchiveCleanupSnapshot[] = [];
 		const deletedVmafJobs = await ctx.prisma.$transaction(async (tx) => {
 			// Match Start/provision lock order. The outer read cannot authorize
 			// deletion of a later run or an Analysis created before Encoding binding.
@@ -377,6 +403,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			if (stillScoring > 0) {
 				throw new VmafStillScoring();
 			}
+			moqArchives = await snapshotMoqArchiveCleanup(tx, id);
 			// Status-guarded, matching the assertion above, so the two cannot drift.
 			const vmafJobs = await tx.vmafJob.deleteMany({
 				where: {
@@ -395,6 +422,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 			}
 			return vmafJobs.count;
 		});
+		await cleanupDeletedMoqArchives(moqArchives);
 		await writeAuditLog(
 			ctx,
 			{
@@ -408,6 +436,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
 		);
 		return NextResponse.json({ id, deleted: true });
 	} catch (err) {
+		if (err instanceof MoqObservationError) return moqHistoryError(err);
 		if (err instanceof AisaFinalizationNotConfirmed) {
 			return jsonError(
 				409,

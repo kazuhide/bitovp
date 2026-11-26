@@ -207,48 +207,7 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-describe("ChannelsClient — delete moved out of the primary columns", () => {
-	it("is not in the row's own cells and is reached through the row menu", async () => {
-		mockList([channel({ name: "Stopped one", status: "STOPPED" })]);
-		wrap(<ChannelsClient />);
-		await screen.findByText("Stopped one");
-
-		// The destructive control is not one mis-click from the row link.
-		expect(
-			screen.queryByRole("button", { name: "Delete Stopped one" }),
-		).toBeNull();
-
-		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-		const trigger = screen.getByRole("button", {
-			name: "Actions for Stopped one",
-		});
-		expect(trigger).toHaveAttribute("aria-expanded", "false");
-		await user.click(trigger);
-		expect(trigger).toHaveAttribute("aria-expanded", "true");
-		expect(
-			screen.getByRole("button", { name: "Delete Stopped one" }),
-		).not.toBeDisabled();
-	});
-
-	it("still mirrors the route's 409 guard: an active channel's delete is disabled", async () => {
-		mockList([
-			channel({
-				id: "00000000-0000-4000-8000-0000000000c2",
-				name: "Running one",
-				status: "RUNNING",
-			}),
-		]);
-		wrap(<ChannelsClient />);
-		await screen.findByText("Running one");
-		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-		await user.click(
-			screen.getByRole("button", { name: "Actions for Running one" }),
-		);
-		expect(
-			screen.getByRole("button", { name: /Delete Running one \(disabled\)/ }),
-		).toBeDisabled();
-	});
-
+describe("ChannelsClient — deletion", () => {
 	it("confirms then DELETEs the channel and refetches the list", async () => {
 		mockList([channel({ name: "Stopped one", status: "STOPPED" })]);
 		wrap(<ChannelsClient />);
@@ -256,12 +215,13 @@ describe("ChannelsClient — delete moved out of the primary columns", () => {
 
 		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
 		await user.click(
-			screen.getByRole("button", { name: "Actions for Stopped one" }),
-		);
-		await user.click(
 			screen.getByRole("button", { name: "Delete Stopped one" }),
 		);
-		await user.click(screen.getByRole("button", { name: "Delete" }));
+		await user.click(
+			within(screen.getByRole("dialog")).getByRole("button", {
+				name: "Delete",
+			}),
+		);
 
 		await waitFor(() => {
 			const call = apiFetch.mock.calls.find(
@@ -311,50 +271,37 @@ describe("ChannelsClient — provider-aware status", () => {
 		wrap(<ChannelsClient />);
 		await screen.findByRole("link", { name: "Unconfirmed channel" });
 		const row = rowFor("Unconfirmed channel");
-		const badge = within(row).getByText(
-			"RUNNING · Bitmovin status unconfirmed",
-		);
-		expect(badge.className).toContain("amber");
+		const badge = within(row).getByText("Recorded RUNNING");
+		expect(badge.className).not.toContain("amber");
 		expect(badge.className).not.toContain("emerald");
 		expect(within(row).queryByText("RUNNING")).toBeNull();
 	});
 });
 
-describe("ChannelsClient — anomaly-first order", () => {
-	it("puts ERROR, then an open alert, then a stale heartbeat above the healthy rows — and orders the rest by name", async () => {
+describe("ChannelsClient — selected sort", () => {
+	it("orders by severity then name when Anomalies first is selected, including after reopening", async () => {
 		mockList(FLEET);
-		wrap(<ChannelsClient />);
+		const first = wrap(<ChannelsClient />);
 		await screen.findByText("Bravo healthy");
-		/*
-		 * The pin is the ORDER, not the presence. Sorted by name alone this
-		 * would read Alpha, Bravo, Charlie, Delta, Echo — which is what the
-		 * mutation that drops the rank comparison produces, and why the
-		 * fixture's names run against its severities.
-		 */
-		expect(renderedOrder()).toEqual([
+		const user = userEvent.setup();
+		await user.selectOptions(screen.getByLabelText("Sort"), "anomaly");
+		const anomalyOrder = [
 			"Charlie broken",
 			"Alpha alerting",
 			"Delta stale",
 			"Bravo healthy",
 			"Echo scheduled",
-		]);
-	});
+		];
+		expect(renderedOrder()).toEqual(anomalyOrder);
+		first.unmount();
 
-	it("Newest first restores the server's own order — the operator can leave the anomaly view", async () => {
-		mockList(FLEET);
 		wrap(<ChannelsClient />);
 		await screen.findByText("Bravo healthy");
-		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+		expect(screen.getByLabelText("Sort")).toHaveValue("anomaly");
+		expect(renderedOrder()).toEqual(anomalyOrder);
+
 		await user.selectOptions(screen.getByLabelText("Sort"), "created");
-		// Every fixture shares a createdAt, so the tie-break by name is what
-		// shows — and it is NOT the anomaly order.
-		expect(renderedOrder()).toEqual([
-			"Alpha alerting",
-			"Bravo healthy",
-			"Charlie broken",
-			"Delta stale",
-			"Echo scheduled",
-		]);
+		expect(renderedOrder()).toEqual(FLEET.map((channel) => channel.name));
 	});
 });
 
@@ -413,6 +360,8 @@ describe("ChannelsClient — a post-mortem is not an anomaly (review-359)", () =
 		mockList(POST_MORTEM);
 		wrap(<ChannelsClient />);
 		await screen.findByText("E stopped clean");
+		const user = userEvent.setup();
+		await user.selectOptions(screen.getByLabelText("Sort"), "anomaly");
 		/*
 		 * FEEDER_ERROR outranks OUTPUT_NOT_ADVANCING, so the running pair
 		 * comes back B-then-A — already NOT the name order, which is what
@@ -777,8 +726,8 @@ describe("ChannelsClient — Japanese", () => {
 		expect(facet(row, "output")).toContain("停止");
 		expect(facet(row, "feeder")).toContain("2 件失敗");
 		expect(
-			screen.getByRole("button", { name: "「日本語チャンネル」の操作" }),
-		).toBeInTheDocument();
+			screen.getByRole("button", { name: "日本語チャンネル を削除(無効)" }),
+		).toBeDisabled();
 	});
 });
 

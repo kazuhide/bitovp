@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Kazuhide Yamamoto
 #include "decoder.hpp"
 #include "decoder_pair.hpp"
+#include "decoder_runtime.hpp"
 #include "prefetch.hpp"
 #include "frame_pipeline.hpp"
 #include "cli_options.hpp"
@@ -44,15 +45,45 @@ double elapsed(Clock::time_point start) {
 }
 using bitovp::gpu::protocol::quoted;
 
-std::string file_hash(const std::string &path) {
+bool same_loader_generation(const LoaderGeneration &expected) {
+    const auto actual = runtime_loader_generation();
+    return actual && *actual == expected;
+}
+
+bool experiment_runtime_unchanged(const std::optional<DecoderRuntime> &admitted) {
+    return admitted && same_loader_generation(admitted->generation) && decoder_runtime_unchanged(*admitted) &&
+        same_loader_generation(admitted->generation);
+}
+
+bool attestable_gpu_driver(const DeviceInfo &device) {
+    if (!device.driver_version_known) return false;
+    // The optional NVML query can unload its library before capture.
+    const auto &source = device.driver_version_source;
+    return source == "sysfs-module-version" || source == "proc-driver-nvidia" ||
+           source == "vulkan-raw-driver-version" || source == "vulkan-driver-properties";
+}
+
+bool same_gpu_driver(const DeviceInfo &before, const DeviceInfo &after) {
+    return attestable_gpu_driver(before) && after.driver_version_known &&
+           before.backend == after.backend && before.index == after.index &&
+           before.uuid == after.uuid && before.vendor_id == after.vendor_id &&
+           before.device_id == after.device_id &&
+           before.driver_version == after.driver_version &&
+           before.driver_version_source == after.driver_version_source;
+}
+
+std::string file_hash(const std::string &path, std::string *snapshot = nullptr) {
     std::ifstream in(path, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot open file for SHA-256");
     std::unique_ptr<AVSHA, decltype(&av_free)> state(av_sha_alloc(), &av_free);
     if (!state) throw std::bad_alloc();
     if (av_sha_init(state.get(), 256)) throw std::runtime_error("Cannot initialize SHA-256");
     std::array<char, 1 << 16> buffer{};
-    while (in.read(buffer.data(), buffer.size()) || in.gcount())
-        av_sha_update(state.get(), reinterpret_cast<const std::uint8_t *>(buffer.data()), in.gcount());
+    while (in.read(buffer.data(), buffer.size()) || in.gcount()) {
+        const auto count = static_cast<std::size_t>(in.gcount());
+        av_sha_update(state.get(), reinterpret_cast<const std::uint8_t *>(buffer.data()), count);
+        if (snapshot) snapshot->append(buffer.data(), count);
+    }
     if (!in.eof()) throw std::runtime_error("Cannot read file for SHA-256");
     std::array<std::uint8_t, 32> digest{};
     av_sha_final(state.get(), digest.data());
@@ -125,7 +156,9 @@ void write_output(const Options &o, const OracleResult &result, const FeaturePla
                   double wall_ms, double initialize_ms, double extract_ms,
                   double finish_ms, const Parity &parity,
                   const std::map<std::string, std::string> &model_hashes,
-                  const std::string &reference_hash, const std::string &distorted_hash) {
+                  const std::string &reference_hash, const std::string &distorted_hash,
+                  bool self_contained_mov_inputs, const std::optional<std::string> &decoder_runtime_sha256,
+                  const std::optional<std::string> &scoring_runtime_sha256) {
     std::ostringstream out;
     out.imbue(std::locale::classic());
     out << std::setprecision(17);
@@ -142,8 +175,18 @@ void write_output(const Options &o, const OracleResult &result, const FeaturePla
         << ",\"decodeThreads\":" << o.decode_threads
         << ",\"inflightFrames\":" << o.inflight_frames
         << ",\"requestedDeviceIndex\":" << o.device.device_index
-        << ",\"referenceSha256\":" << quoted(reference_hash) << ",\"distortedSha256\":" << quoted(distorted_hash)
-        << ",\"distortedOriginal\":{\"width\":" << dist.source_info().width
+        << ",\"referenceSha256\":" << quoted(reference_hash) << ",\"distortedSha256\":" << quoted(distorted_hash);
+    if (o.experiment_window)
+        out << ",\"referenceDecodeBackend\":\"cpu\",\"experimentWindow\":{\"startFrame\":"
+            << o.reference_start_frame << ",\"frameCount\":" << o.frame_count << '}';
+    if (self_contained_mov_inputs) out << ",\"selfContainedMovInputs\":true";
+    if (decoder_runtime_sha256) out << ",\"decoderRuntimeSha256\":" << quoted(*decoder_runtime_sha256);
+    if (scoring_runtime_sha256)
+        out << ",\"scoringRuntimeSha256\":" << quoted(*scoring_runtime_sha256);
+    if (scoring_runtime_sha256 || (o.experiment_window && device.backend == "cuda"))
+        out << ",\"gpuDriver\":{\"driverVersion\":" << quoted(device.driver_version)
+            << ",\"driverVersionSource\":" << quoted(device.driver_version_source) << '}';
+    out << ",\"distortedOriginal\":{\"width\":" << dist.source_info().width
         << ",\"height\":" << dist.source_info().height << ",\"bitdepth\":" << dist.source_info().bit_depth
         << "},\"device\":{\"index\":" << device.index << ",\"name\":" << quoted(device.name) << ",\"uuid\":" << quoted(device.uuid)
         << ",\"vendorId\":" << device.vendor_id << ",\"deviceId\":" << device.device_id
@@ -258,6 +301,13 @@ int main(int argc, char **argv) {
                       << "; source=" << BITOVP_NATIVE_SOURCE_SHA256 << '\n';
             return 0;
         }
+        if (argc == 2 && std::string(argv[1]) == "--decoder-runtime") {
+            const auto runtime = capture_decoder_runtime();
+            std::cout << "{\"schemaVersion\":1,\"sourceSha256\":"
+                      << quoted(BITOVP_NATIVE_SOURCE_SHA256) << ",\"sha256\":"
+                      << (runtime ? quoted(runtime->sha256) : "null") << "}\n";
+            return 0;
+        }
         if (argc == 2 && std::string(argv[1]) == "--capabilities") {
             std::vector<std::string> backends{"cpu"};
 #ifdef BITOVP_HAVE_CUDA
@@ -270,8 +320,19 @@ int main(int argc, char **argv) {
             return 0;
         }
         const auto options = parse(argc, argv);
+        const bool experiment_cuda = options.experiment_window && options.backend == "cuda";
+        const int decode_device = options.device.device_index < 0 ? 0 : options.device.device_index;
+        const auto experiment_decoders = experiment_cuda
+            ? load_experiment_cuda_decoders(decode_device) : ExperimentCudaDecoders{};
+        // Initialize both CUDA APIs before fingerprinting. The probe and scoring
+        // start from the same mapped libraries, including the driver's JIT support.
+        auto experiment_backend = experiment_cuda && (options.device_info || experiment_decoders.device_context)
+            ? make_backend(options) : nullptr;
+        const auto admitted_experiment_runtime = experiment_decoders.codecs.empty()
+            ? std::nullopt : capture_decoder_runtime();
         if (options.device_info) {
-            const auto backend = make_backend(options);
+            const auto runtime = options.attest_decoder_runtime ? capture_decoder_runtime() : std::nullopt;
+            const auto backend = experiment_cuda ? std::move(experiment_backend) : make_backend(options);
             std::optional<std::string> binary_hash;
             try {
 #if defined(__linux__)
@@ -293,48 +354,86 @@ int main(int argc, char **argv) {
                 } catch (const std::runtime_error &) {}
             }
 #endif
-            std::cout << protocol::device_info(backend->device(), BITOVP_NATIVE_SOURCE_SHA256,
-                                               oracle_source_revision, binary_hash, supervision) << '\n';
+            const auto device = backend->device();
+            std::optional<std::string> decoder_runtime_sha256, scoring_runtime_sha256;
+            if (runtime && attestable_gpu_driver(device)) {
+                const auto configured = capture_decoder_runtime();
+                if (configured && decoder_runtime_preserved(*runtime, *configured)) {
+                    decoder_runtime_sha256 = runtime->sha256;
+                    scoring_runtime_sha256 = configured->sha256;
+                }
+            }
+            std::optional<std::vector<std::string>> experiment_codecs;
+            if (options.experiment_window) {
+                experiment_codecs.emplace();
+                if (experiment_runtime_unchanged(admitted_experiment_runtime)) {
+                    experiment_codecs = experiment_decoders.codecs;
+                    decoder_runtime_sha256 = admitted_experiment_runtime->sha256;
+                }
+            }
+            std::cout << protocol::device_info(device, BITOVP_NATIVE_SOURCE_SHA256,
+                                               oracle_source_revision, binary_hash, supervision,
+                                               decoder_runtime_sha256, scoring_runtime_sha256, experiment_codecs) << '\n';
             return 0;
         }
         if (options.metric == "cambi")
             return run_banding(options, [&] { return make_backend(options); },
                                BITOVP_NATIVE_SOURCE_SHA256, argv[0]);
+        const bool resident_decode = options.decode == "cuda";
+        const bool experiment = options.experiment_window;
+        if (experiment_cuda && !admitted_experiment_runtime)
+            throw std::runtime_error("Experiment CUDA decoder runtime could not be attested");
+        const bool attest_inputs = options.attest_decoder_runtime && options.inflight_frames == 1 &&
+            !resident_decode && !options.max_frames;
+        if (experiment) {
+            for (const auto *path : {&options.reference, &options.distorted})
+                if (!std::filesystem::path(*path).is_absolute() || !std::filesystem::is_regular_file(*path))
+                    throw std::invalid_argument("Experiment video inputs require absolute regular local files");
+        }
         // Hashes are measured separately: warm file-cache reads are not scoring.
         const auto reference_hash = file_hash(options.reference);
         const auto distorted_hash = file_hash(options.distorted);
         std::map<std::string, std::string> model_hashes;
         auto models = options.models;
-        for (const auto &model : models) model_hashes[model.id] = file_hash(model.path);
+        for (auto &model : models) {
+            // Both oracles must load the very bytes included in the attested digest.
+            auto *snapshot = (attest_inputs || experiment) ? &model.bytes.emplace() : nullptr;
+            model_hashes[model.id] = file_hash(model.path, snapshot);
+        }
         const auto start = Clock::now();
-        const bool resident_decode = options.decode == "cuda";
-        const int decode_device = options.device.device_index < 0 ? 0 : options.device.device_index;
+        const auto decoder_runtime = attest_inputs ? capture_decoder_runtime() : std::nullopt;
         Decoder reference(options.reference, options.width, options.height, options.bits, options.decode_threads,
-                          resident_decode, decode_device);
+                          resident_decode && !experiment, decode_device, attest_inputs, experiment);
         const auto first = reference.source_info();
         const unsigned width = options.width ? options.width : first.width;
         const unsigned height = options.height ? options.height : first.height;
         Decoder distorted(options.distorted, width, height, options.bits, options.decode_threads,
-                          resident_decode, decode_device);
+                          resident_decode, decode_device, attest_inputs, experiment,
+                          experiment_decoders.device_context.get());
         const auto second = distorted.source_info();
-        if (!(first.frames_per_second > 0) || !(second.frames_per_second > 0) ||
-            std::abs(first.frames_per_second - second.frames_per_second) > 1e-6)
+        const bool self_contained_mov_inputs = first.self_contained_mov && second.self_contained_mov;
+        if (!experiment && (!(first.frames_per_second > 0) || !(second.frames_per_second > 0) ||
+            std::abs(first.frames_per_second - second.frames_per_second) > 1e-6))
             throw std::runtime_error("Inputs must have the same known frame rate; conform them before comparison");
-        for (auto &model : models) {
-            model.feature_overrides["cambi"]["enc_width"] = std::to_string(second.width);
-            model.feature_overrides["cambi"]["enc_height"] = std::to_string(second.height);
-            model.feature_overrides["cambi"]["enc_bitdepth"] = std::to_string(second.bit_depth);
-        }
+        // The models score the pictures as libvmaf through FFmpeg does: nothing
+        // about the encode before scaling is declared to CAMBI, so a score is
+        // the one that `ffmpeg -lavfi libvmaf` gives for the same pictures.
         ModelOracleConfig config{width, height, options.bits, options.threads, true};
         ModelOracle oracle(models, config, options.backend == "cpu" ? OracleMode::Cpu : OracleMode::ImportedFeatures);
         std::unique_ptr<ModelOracle> baseline;
         if (options.verify) baseline = std::make_unique<ModelOracle>(models, config, OracleMode::Cpu);
         std::unique_ptr<Decoder> cpu_reference, cpu_distorted;
         if (options.verify && resident_decode) {
-            cpu_reference = std::make_unique<Decoder>(options.reference, width, height, options.bits, options.decode_threads);
-            cpu_distorted = std::make_unique<Decoder>(options.distorted, width, height, options.bits, options.decode_threads);
+            cpu_reference = std::make_unique<Decoder>(options.reference, width, height, options.bits,
+                                                      options.decode_threads, false, 0, false, experiment);
+            cpu_distorted = std::make_unique<Decoder>(options.distorted, width, height, options.bits,
+                                                      options.decode_threads, false, 0, false, experiment);
         }
-        const auto create_backend = [&options] { return make_backend(options); };
+        const bool decoder_open_stable = decoder_runtime && self_contained_mov_inputs &&
+            same_loader_generation(decoder_runtime->generation);
+        const auto create_backend = [&options, &experiment_backend] {
+            return experiment_backend ? std::move(experiment_backend) : make_backend(options);
+        };
         std::unique_ptr<FeatureBackend> backend;
         if (options.inflight_frames > 1) {
             PictureStager stager = stage_host_picture;
@@ -344,15 +443,28 @@ int main(int argc, char **argv) {
             backend = std::make_unique<FramePipeline>(create_backend, options.inflight_frames, std::move(stager));
         } else backend = create_backend();
         if (backend) backend->configure(oracle.feature_plan());
+        DeviceInfo configured_device;
+        std::optional<DecoderRuntime> scoring_runtime;
+        if (decoder_open_stable) {
+            if (backend) configured_device = backend->device();
+            if (!backend || attestable_gpu_driver(configured_device)) {
+                auto configured = capture_decoder_runtime();
+                if (configured && decoder_runtime_preserved(*decoder_runtime, *configured))
+                    scoring_runtime = std::move(*configured);
+            }
+        }
         const double initialize_ms = elapsed(start);
         double extract_ms = 0;
         std::uint64_t count = 0;
-        const auto consume = [&](const Picture &ref, const Picture &dist, double reference_time, double distorted_time) {
-            validate_comparison_timestamps(reference_time, distorted_time, first.frames_per_second);
+        const auto extract = [&](const Picture &ref, const Picture &dist) {
             const auto feature_start = Clock::now();
             if (backend) oracle.import_scores(backend->extract(count, ref, dist));
             else oracle.submit(count, ref, dist);
             extract_ms += elapsed(feature_start);
+        };
+        const auto consume = [&](const Picture &ref, const Picture &dist, double reference_time, double distorted_time) {
+            validate_comparison_timestamps(count, reference_time, distorted_time, first.frames_per_second);
+            extract(ref, dist);
             if (cpu_reference) {
                 if (!cpu_reference->next() || !cpu_distorted->next() ||
                     std::abs(cpu_reference->timestamp() - reference_time) > 0.25 / first.frames_per_second ||
@@ -362,7 +474,24 @@ int main(int argc, char **argv) {
             } else if (baseline) baseline->submit(count, ref, dist);
             ++count;
         };
-        if ((options.backend == "vulkan" || options.backend == "cuda") && !resident_decode) {
+        if (experiment) {
+            for (; count < options.frame_count; ++count) {
+                read_experiment_pair(reference, distorted, options.reference_start_frame, count);
+                extract(reference.picture(), distorted.picture());
+                if (cpu_reference) {
+                    read_experiment_pair(*cpu_reference, *cpu_distorted, options.reference_start_frame, count);
+                    if (cpu_reference->presentation_time().pts != reference.presentation_time().pts ||
+                        cpu_distorted->presentation_time().pts != distorted.presentation_time().pts)
+                        throw std::runtime_error("CPU/NVDEC experiment presentation timestamps differ");
+                    baseline->submit(count, cpu_reference->picture(), cpu_distorted->picture());
+                }
+                if (experiment_cuda && count == 0 && !experiment_runtime_unchanged(admitted_experiment_runtime))
+                    throw std::runtime_error("Experiment CUDA decoder runtime changed during initialization");
+            }
+            const auto end = options.reference_start_frame + options.frame_count;
+            validate_experiment_end(reference, distorted, end);
+            if (cpu_reference) validate_experiment_end(*cpu_reference, *cpu_distorted, end);
+        } else if ((options.backend == "vulkan" || options.backend == "cuda") && !resident_decode) {
             Prefetch<RetainedPair> pictures([&] { return next_retained_pair(reference, distorted); }, options.max_frames);
             for (;;) {
                 // This lease dies before next() gives the producer another
@@ -384,7 +513,7 @@ int main(int argc, char **argv) {
             }
         }
         if (!count) throw std::runtime_error("Comparison input contains no frames");
-        if (cpu_reference && !options.max_frames && (cpu_reference->next() || cpu_distorted->next()))
+        if (!experiment && cpu_reference && !options.max_frames && (cpu_reference->next() || cpu_distorted->next()))
             throw std::runtime_error("CPU/NVDEC reference has additional frames");
         const auto finish_start = Clock::now();
         if (backend) oracle.import_scores(backend->flush());
@@ -397,10 +526,25 @@ int main(int argc, char **argv) {
         device.backend = "cpu";
         device.name = "official libvmaf CPU";
         if (backend) device = backend->device();
+        std::optional<std::string> decoder_runtime_sha256;
+        if (experiment_cuda) {
+            if (!experiment_runtime_unchanged(admitted_experiment_runtime))
+                throw std::runtime_error("Experiment CUDA decoder runtime changed during scoring");
+            decoder_runtime_sha256 = admitted_experiment_runtime->sha256;
+        } else if (decoder_runtime && scoring_runtime &&
+            same_loader_generation(scoring_runtime->generation) &&
+            decoder_runtime_unchanged(*scoring_runtime) &&
+            same_loader_generation(scoring_runtime->generation))
+            decoder_runtime_sha256 = decoder_runtime->sha256;
+        std::optional<std::string> scoring_runtime_sha256;
+        if (decoder_runtime_sha256 && scoring_runtime && same_gpu_driver(configured_device, device) &&
+            same_loader_generation(scoring_runtime->generation))
+            scoring_runtime_sha256 = scoring_runtime->sha256;
         write_output(options, result, oracle.feature_plan(), device,
                      backend ? backend->timings() : BackendTimings{}, reference, distorted,
                      wall_ms, initialize_ms, extract_ms, finish_ms, parity, model_hashes,
-                     reference_hash, distorted_hash);
+                     reference_hash, distorted_hash, self_contained_mov_inputs,
+                     decoder_runtime_sha256, scoring_runtime_sha256);
         std::cout << "PASS " << options.backend << ": " << count << " frames, "
                   << options.models.size() << " models, " << wall_ms << " ms";
         if (options.verify) std::cout << ", CPU parity max feature=" << parity.max_feature_error

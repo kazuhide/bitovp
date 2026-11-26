@@ -77,6 +77,8 @@ docker compose up -d --no-build
 
 The revision command works in both Git checkouts and official source archives. If revision lookup, configuration validation, the build, or migration fails, fix the cause before continuing.
 
+The build compiles FFmpeg for the Worker image from pinned sources. This part took about 3 minutes on a 10-core machine and 8 to 12 minutes on a 4-core one.
+
 ```sh
 curl --connect-timeout 2 --max-time 5 -fsS \
   http://127.0.0.1:3100/api/health
@@ -180,7 +182,11 @@ Paths such as `/vod/new` refer to screens in the installed application. For exam
 
 The [English interactive demo](https://kazuhide.github.io/bitovp/#/demo) requires no registration. You can browse the dashboard, VOD jobs, Live channels, and quality reports, configure VOD and Live plans, and create simulated jobs.
 
-The demo does not connect to the Bitmovin Encoding API or storage, and it does not create cloud resources. Scheduled execution, runtime caps, media playback, and quality computation require the installed application. You do not need to enter credentials or signed media URLs in the demo.
+- In [New VOD job](https://kazuhide.github.io/bitovp/#/demo/vod/new), choose **Edit on timeline** in **Sources** and add the sample file from the demo storage browser. Use the clip edges to trim and drag the clips to change their order.
+- Open a feed from [Pseudo-live](https://kazuhide.github.io/bitovp/#/demo/live/feeders) and choose **Diagnostics** to see a sample log.
+- Open [Content library](https://kazuhide.github.io/bitovp/#/demo/library) to see example AISA results and edit a sample clip timeline.
+
+The demo uses browser-local sample data. Media playback, encoding input preparation, scheduled execution, runtime caps, and quality computation require the installed application. Keep credentials and signed media URLs in your installed workspace.
 
 Jobs you create in the demo are stored in the current browser tab. "Reset demo" removes added jobs and demo drafts while keeping display preferences such as language and theme. The language links open the same demo screen in another language.
 
@@ -226,7 +232,7 @@ Shared-password authentication does not provide separate roles for individual us
 
 ### Language, theme, and field help
 
-Choose the display language and theme in "Settings". Display preferences are stored in your browser. Open the help button beside a field to read about its meaning, units, and conditions of use. Some advanced fields show API parameter names so that you can match them to the Bitmovin API.
+Choose the display language and theme in "Settings". The same place sets which flow a new VOD job opens in (Chapter 4). Display preferences are stored in your browser. Open the help button beside a field to read about its meaning, units, and conditions of use. Some advanced fields show API parameter names so that you can match them to the Bitmovin API.
 
 "Additional API settings" groups less common controls by rate control, frame structure/parallelism, prediction/analysis and colour/pixels. Search by API parameter name to find a field. H.264 includes deblocking, B-frame strategy, partitions and CEA-608/708 caption passthrough. H.265 adds motion/transform search, quantization, grain/noise controls, lookahead and parallelism. VP9 includes client buffers (milliseconds), row multithreading, frame parallelism, tiles and quality controls. These are tuning controls: changing them can affect encode time, quality and decoder compatibility. Leave them unset unless needed.
 
@@ -272,6 +278,44 @@ VOD converts stored video or audio into files for delivery. One encoding operati
 ![Sample VOD configuration screen](../../apps/site/public/screenshots/en/vod-settings.png)
 
 Figure 4-1. VOD ladder and detailed codec settings in the demo. The screen uses sample settings; it does not show execution results or measured values.
+
+### Streaming packages and file export
+
+At the top of the new-job screen, "What to create" selects what the job is for. The choice is stored in your browser and applies the next time you create a job. You can also change it under "New VOD job flow" in "Settings". Switching the purpose opens a new form: what you entered for the other purpose is not carried over. It is saved as that purpose's draft, unless that form was still offering to restore an earlier draft: nothing is saved over a draft that is on offer.
+
+| Purpose | What it creates | Steps |
+|---|---|---|
+| Package for streaming | A rendition ladder with an HLS or DASH manifest, for playback in a player | The 8 steps in the table above |
+| Export files | MP4 or similar files with the audio inside, for editing or hand-off. No manifests are created | 6 steps: Basics, Sources, Format, Destination, Encoding, and Review |
+
+"Export files" starts with one MP4 that holds H.264 1080p video at 8 Mbps and AAC audio at 192 kbps. Public read access is not requested for the files unless you select "ACL PUBLIC_READ (request public read access)" in "Destination"; "Package for streaming" starts with it selected. In "Format", set the container, file name, codec, encoding mode, height, and bitrate of each file, and its audio. Leave the height blank to keep the source height. Use "Add file" when you also need files at other resolutions or in other formats; the new file starts as a smaller copy of the last one.
+
+The container is MP4, MPEG-TS (`.ts`), QuickTime (`.mov`), or WebM (`.webm`). Each offers every codec it can hold:
+
+| Container | Video codec | Audio codec |
+|---|---|---|
+| MP4 | H264, H265, AV1 | AAC, AC3, EAC3, OPUS, DOLBY_ATMOS, DDPLUS, DD |
+| MPEG-TS | H264, H265 | AAC, AC3, EAC3, DDPLUS, DD |
+| QuickTime | H264, H265 | AAC, AC3, DD |
+| WebM | VP9, AV1 | OPUS |
+
+HEVCv2 is offered beside H265 to an account that may use it. It has to be the codec of every file, with "BCF override" left on in "Basics", and each file needs a height and a bitrate. A file changed from H.265 to HEVCv2 keeps the H.265 settings HEVCv2 also has and drops the others, such as a CRF. A file changed from HEVCv2 to another codec, or turned into H.265 because another account was selected, drops the settings only HEVCv2 has. When you change the container, the file keeps a codec that the new container holds and that Bitmovin lists for it. Otherwise it moves to the first codec of the new container: a file changed from MP4 to WebM becomes VP9 with Opus, and changed back it becomes H.264 with AAC. Files in more than one video codec, such as an MP4 in H.264 beside a WebM in VP9, need the same "Encoding mode" on every file, and one other than "(default)", because a job runs in one mode. The fields report it, and the job cannot start until the modes match.
+
+Each file has its own audio. With "Include audio" selected, set the audio codec, channel layout, bitrate, sample rate, and, when the job has more than one source, the audio source. AAC, AC3 and EAC3 also have a cutoff frequency, and Dolby Atmos has loudness control. Without "Include audio", the file is written with no audio track. Files with the same audio settings share one audio track, which is encoded once. Dolby Atmos is encoded from a Dolby Atmos stream: add one in "Sources" and select it as the file's audio source. No other codec can read that stream, so a track changed from Dolby Atmos to another codec goes back to the input's own audio. A Dolby Vision stream can be read by H.264, H.265 or AV1 video only. When a file reads a stream it cannot be made from, the "Video source" or "Audio source" field reports it, and the job cannot start until another source is chosen.
+
+The screen notes four cases in which the job starts but may be refused by Bitmovin, so check the first file. QuickTime and WebM have not been verified on a real encode. No Bitmovin document that was read for this lists OPUS in MP4, EAC3 in MPEG-TS, or AC3 in QuickTime, although each container's format defines the codec; the same holds for Dolby Vision in MPEG-TS and QuickTime, which Bitmovin names for MP4. Bitmovin's release notes say that a WebM file with AV1 video takes no other stream, so write such a file without audio, or use MP4, to be sure. Bitmovin's rules name only AAC and Dolby Atmos audio beside Dolby Vision video in one file, so another audio codec in such a file is noted as well.
+
+AV1 with Dolby Vision can be written as fMP4 only, which no file of this screen is. The "Codec" field reports it, and the job cannot start until another dynamic range is chosen in the AV1 options.
+
+A file name follows the job name until you type one. In a name you type, `?` and `#` are replaced with `-`: a file named with either cannot be fetched by its plain URL. Files are written directly into the folder chosen in "Destination"; no subfolder is added for the job. Two files in one job cannot have the same name: the "File name" fields report it, and the job cannot start until the names differ. In this view you also cannot make two files with the same height and codec and with bitrates that are equal once rounded to kbps: the "Bitrate (bps)" fields report it, and one of the three has to differ on either file. A copy of a file made in "Ladder" under "Show all settings" is kept as a file of its own. A file that already exists in the folder under the same name may be replaced. Check the paths listed in "Review" before you start.
+
+"Encoding" holds the same settings as on the 8-step screen: the encoding mode, labels and infrastructure, AI Scene Analysis, quality control (where quality measurement is enabled), and Kantar audio watermarking. Three settings are left out, because each acts on something this screen does not have. The Per-Title configuration applies to renditions set to Per-Title in "Ladder". The choice of what a QC gate does when it fails is whether to hold manifest generation, so a gate set here holds nothing back: a failed rule is recorded on the job and sends the "QC gate failed" notification, and the files are written either way. The renditions a gate rule applies to are chosen by key, and this screen shows no keys, so a rule set here applies to every file. The AI Scene Analysis result, the copies measured for quality, and the Kantar report are written to a folder named after the job, inside the destination folder. "Destination path" of AI Scene Analysis, "Folder for the measured copies", and "Report path" of Kantar start with that folder and follow the job name until you type another one. The copies go to `qc/` inside their folder. A copy is named after the video settings of its file (`v1080.mp4`, for example) and not after the job, so keep a folder for each job when several jobs write to one destination folder. "Review" lists what these settings write with the files: the AI Scene Analysis result, the folder of the copies measured for quality, and the folder of the Kantar report. When the job has additional destinations, the files and the measured copies are written to them as well. The AI Scene Analysis result and the Kantar report are written only to the destination they were set for and not to the additional ones, which "Review" notes. With "VMAF only (do not write the files)" selected, the job writes only the measured copies, and "Format" and "Review" say so. The option reads "QC only (do not write the files)" when banding is measured. Kantar audio watermarking is skipped for such a job, because nothing with audio is written; its settings are kept for when the option is turned off.
+
+"Sources" has the input sequence editor ("Edit on timeline") in the 6-step screen as well. The files are then written from the edited sequence. While a sequence is on, it decides whether the files have audio: with audio switched off in the sequence, or with no clip on its audio track, every file is written without audio, and "Include audio" in "Format" reports it. The video and audio sources selected for a file are not used, because every file is made from the sequence. Using a saved image as an output logo adds a filter, which is a setting of "Ladder": the screen switches to the 8 steps, where the logo is shown and can be removed.
+
+To use DRM, subtitles, filters, thumbnails, Per-Title, the multi-encoding partition of "Sources", or similar settings, select "Show all settings" to switch to the 8-step screen. What you have entered is kept. "Back to simple view" is available while no setting outside the 6-step screen is in use; otherwise the screen names the steps that hold such settings. While one is in use, "Review" does not list the files, because the job may write other outputs as well: "Plan preview" beside it shows every output.
+
+Jobs started from a preset, a saved template, or a copied job open the 8-step screen with the loaded settings. Drafts are stored separately for each purpose.
 
 ### Basic settings and input files
 
@@ -400,6 +444,7 @@ Packaging combines encoded streams into files or segments. To create more than o
 | fMP4, TS, and WebM | Segment length is in seconds. Also check initialization filenames, segment names, and paths. |
 | MP4 | Filename, fragment duration in milliseconds, and compatible manifest types |
 | CMAF | Check the H.264/AAC and DASH TEMPLATE/TIMELINE compatibility requirements for dedicated CMAF muxings. |
+| Progressive TS, MOV, and WebM | One whole `.ts`, `.mov`, or `.webm` file for each video rendition, with the audio in the same file. TS and MOV hold H.264 or H.265 video; WebM holds VP9 or AV1 video with Opus audio. Set the file name. An audio rendition can also be written as a `.ts` file of its own. The list names them "TS (single file)", "MOV (single file)" and "WebM (single file)". No manifest lists these files and DRM is not offered. MOV and WebM have not been verified on a real encode: check the first output. |
 | Muxed-in audio | Select the audio included in a video container. |
 | Standalone container | Create an audio-only container and reference it from an audio group. |
 | Thumbnails and sprites | Generation positions and intervals, units, image dimensions, layout, image names, and the VTT output destination |
@@ -627,7 +672,7 @@ The calculated count limit bounds arithmetic bitrate placements at the overall m
 
 Select "Review changes", inspect the differences, then "Apply to draft". Opening the dialog or applying settings does not start encoding. Some existing output or DRM bindings cannot be reshaped safely; in those cases applying is unavailable. Check the actual rendition count and bitrates after encoding.
 
-See Chapter 11 for VMAF, PSNR, execution profiles, budgets, and interpreting results. The wizard's "VMAF only (skip delivery outputs)" mode disables delivery packaging, manifests, and AI Scene Analysis. A quality gate can either mark a result or block manifest generation; distinguish these behaviors. Holding delivery requires post-encoding manifest generation. It does not retract outputs that have already been published.
+See Chapter 11 for VMAF, PSNR, execution profiles, budgets, and interpreting results. The wizard's "VMAF only (skip delivery outputs)" mode disables delivery packaging, manifests, and AI Scene Analysis. The measured copies are written to `qc/` beside each rendition; select "Write the measured copies to one folder" to name one folder for them instead. A quality gate can either mark a result or block manifest generation; distinguish these behaviors. Holding delivery requires post-encoding manifest generation. It does not retract outputs that have already been published.
 
 AI Scene Analysis supports scene analysis and placement of ad breaks. Analysis output always includes English. Add `ja` for Japanese, or leave additional languages blank for English only. Configure the asset description file, languages, automatic insertion at scene boundaries, and cue points at specified times. Positions, maximum allowed offsets, and durations are in seconds, and accept zero and fractional values. Even a zero allowed offset does not guarantee identical cut frames across codecs. View completed analysis in the Content Library.
 
@@ -1027,7 +1072,9 @@ Remeasurements from job details and reports created in the lab do not change the
 
 For cloud execution, select the administrator's profile and specify a USD budget greater than 0 for 1 measurement run. The budget covers measurement across all outputs and is used to decide whether new tasks can start. It does not guarantee the final bill, including transfer, startup and interruption costs. Ask an administrator if you do not know an appropriate amount. Chapter 15 covers the configuration.
 
-Cloud execution shows progress for video retrieval, corresponding-frame checks, scoring, result storage and other stages. Resource cleanup can continue after you select “Stop cloud measurement”. Confirm “Cleaned up”, and do not delete required credentials while confirmation is pending.
+Pending and running VOD VMAF measurements, whether local or cloud, offer “Request cancellation”. Measured results are retained. Request acceptance does not confirm that processing has stopped.
+
+Cloud execution shows progress for video retrieval, corresponding-frame checks, scoring, result storage and other stages. Resource cleanup can continue after cancellation is requested. Confirm “Cleaned up”, and do not delete required credentials while confirmation is pending.
 
 The “Frame index · BT.709 · 10-bit” option under “Measurement method” appears when cloud execution and “Existing MP4 outputs” are selected in the lab. It pairs frames by index and compares them under common BT.709, 10-bit conditions. It requires correspondence between the entire original video and the output, and cannot be used with trimming, concatenation or filters. It uses a different scoring generation from the standard method, so do not interpret the numerical change after switching methods as a quality difference. It is not a general-purpose method that automatically detects HDR or other color conditions.
 
@@ -1138,6 +1185,13 @@ Completed VOD jobs are normally imported automatically, with a content entry cre
 To group a source under different content, use the source registration action and choose either new or existing content. You can search existing content by title or tag. If another user updates the same content first, your save is rejected to prevent overwriting their changes. Keep a copy of your edits, reload the latest content, and apply your changes again.
 
 Archiving organizes the catalog; it does not delete output videos from storage, and archived entries can be restored. Check source imports for queued, running, ready, or error states. After an error, correct the permissions or destination before retrying. Imported QC information is a snapshot of the information available at that time, not a new quality measurement. See Chapter 11 for quality assessment and remeasurement.
+
+### Clips and trailer proposals
+
+- The catalog shows how many clips have a successful export. Open the count to view the export or the clips panel. Play each preview directly from its card on the content page. On desktop, drag the panel boundary to adjust the width.
+- Use “Watch export” to review the saved editing settings. The previous successful version stays available after a retry fails. Select “Re-edit” to open a new timeline from that version.
+- Open “Generation history” to find a job by content name, status or update period. Open its progress page or jump to the edit or export when available.
+- On the clip editing page for a source with AISA and local story analysis available, choose “Plan a trailer.” Enter “Make a 30-second trailer. Avoid spoilers.” Review the duration and disclosure before creating the project. The editor shows the selected original source ranges. Check the picture and audio, then adjust the edit before export. Audio sources require a full-source transcript.
 
 ### Scene search
 
@@ -1308,6 +1362,8 @@ With individual user authentication, check the current organization and your rol
 
 The platform owner has administrative authority separate from an organization's ADMIN role. The owner can create and disable organizations and manage users across the platform. An ordinary ADMIN does not automatically have authority over every organization.
 
+In **Settings**, the platform owner can refresh **Queue service memory (entire instance)** to see current usage and the Redis memory limit for the whole installation. Owners without an available organization can find the same reading on the **Organizations** recovery page (`/settings/organizations`). If the Redis limit is unset, the host or container can still impose its own limit.
+
 Check the target under "Organizations". Switching to an organization you belong to is different from the owner's View-as function. View-as opens another organization as VIEWER. While viewing it this way, you cannot create jobs or change settings. To make changes, leave that view and return through the appropriate membership. Reusing the same external account or credentials across app organizations can still give access to the same external resources. Separation within the app does not itself separate permissions in storage or Bitmovin accounts.
 
 ### Users and organization members
@@ -1474,7 +1530,7 @@ Keep encrypted backups of the database, `.env`, and `.env.migrate` outside the r
 
 Before upgrading, record the current app and image versions and active external resources. Stop accepting new work, review migration notes, and update Web and Worker to the same version. While any resource still has unconfirmed shutdown or cleanup, retain the Worker and credentials it needs.
 
-After backups and draining work, run `docker compose pull postgres redis` to fetch the selected data-service pins and `docker compose build --pull --no-cache migrate worker web` to refresh the application base and OS packages. Pulling images does not replace running PostgreSQL/Redis services; recreate them during the maintenance window after checking their upgrade notes and preserving their volumes. See [Operations](../OPERATIONS.md#upgrades) for the upgrade sequence.
+After backups and draining work, run `docker compose pull postgres redis` to fetch the selected data-service pins and `docker compose build --pull --no-cache migrate worker web` to refresh the application base and OS packages. This build compiles the Worker image's FFmpeg again, which takes several minutes. Pulling images does not replace running PostgreSQL/Redis services; recreate them during the maintenance window after checking their upgrade notes and preserving their volumes. See [Operations](../OPERATIONS.md#upgrades) for the upgrade sequence.
 
 See the [database upgrade procedure](../DATABASE-UPGRADES.md) for requirements on existing databases. Reverting an image to an earlier version does not necessarily reverse database changes already applied.
 

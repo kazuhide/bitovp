@@ -9,7 +9,12 @@ import {
 	hlsStreamOptionsSchema,
 	liveDashDetailedOptionsSchema,
 	liveHlsDetailedOptionsSchema,
+	watermarkFilterSchema,
 } from "@bitovp/core";
+import {
+	vodInputTimelineDocumentSchema,
+	vodInputTimelinePreparationReferenceSchema,
+} from "@bitovp/core/vod-input-timeline";
 import { z } from "zod";
 import type { SessionDto } from "./auth/dto";
 
@@ -60,14 +65,17 @@ export function draftFingerprint(value: unknown): string {
 	return (hash >>> 0).toString(16);
 }
 
-// Explicit form shapes only. URLs, raw DRM keys, filter/options JSON and imported plans
+// Explicit form shapes only. URLs, raw DRM keys, arbitrary filter/options JSON and imported plans
 // are deliberately absent; even a nested unknown property cannot enter storage.
-const text = z
-	.string()
-	.max(2048)
-	.refine((value) => !/\w+:\/\/|[?#]|^[^/\s]*:[^/\s]*@/u.test(value))
-	.optional()
-	.catch("");
+/**
+ * Whether a draft keeps this text. An address, a query or fragment, and a login
+ * before a host are refused, and the field comes back empty.
+ */
+export function draftKeepsText(value: string): boolean {
+	return !/\w+:\/\/|[?#]|^[^/\s]*:[^/\s]*@/u.test(value);
+}
+
+const text = z.string().max(2048).refine(draftKeepsText).optional().catch("");
 const number = z.number().finite().nullable().optional().catch(undefined);
 const flag = z.boolean().optional().catch(undefined);
 const strings = z
@@ -133,7 +141,7 @@ const codec = fields(
 );
 const muxing = fields(
 	"acl kind key name path autoPath segmentNaming segmentNamingTemplate initSegmentName initSegmentNameTemplate filename manifestType dolbyVisionTrackSampleEntryName",
-	"segmentLength framesPerCmafChunk fragmentDuration",
+	"segmentLength framesPerCmafChunk fragmentDuration startOffset",
 	"ownContainer autoOwnContainer progressive",
 	{ muxedAudioKeys: strings },
 );
@@ -154,7 +162,7 @@ const extras = fields(
 	},
 );
 const rendition = fields(
-	"codec encodingMode channelLayout name presetConfiguration container autoKey",
+	"codec encodingMode channelLayout name presetConfiguration container autoKey carriedAs",
 	"width height bitrate rate cutoffFrequency",
 	"ownContainer",
 	{
@@ -172,6 +180,30 @@ const rendition = fields(
 		),
 	},
 );
+const watermarkDraft = fields(
+	"kind key inputKey imagePath unit",
+	"left right top bottom",
+).pipe(watermarkFilterSchema);
+const watermarkDrafts = z
+	.array(z.unknown())
+	.max(100)
+	.transform((items) =>
+		items.flatMap((item) => {
+			const parsed = watermarkDraft.safeParse(item);
+			return parsed.success ? [parsed.data] : [];
+		}),
+	)
+	.optional()
+	.catch(undefined);
+const vodRendition = rendition.extend({
+	extras: group(
+		extras.extend({
+			filters: rows(
+				z.object({ filterKey: text, position: z.number().int().min(0) }),
+			),
+		}),
+	),
+});
 const liveRendition = rendition.extend({
 	input: group(fields("key inputPath", "position")),
 });
@@ -328,13 +360,18 @@ const vod = fields(
 	"audioGuard",
 	{
 		...common,
+		videos: rows(vodRendition),
+		filters: watermarkDrafts,
+		inputTimeline: vodInputTimelineDocumentSchema.optional(),
+		inputTimelinePreparation:
+			vodInputTimelinePreparationReferenceSchema.optional(),
 		prewarmedEncoderPoolIds: strings,
 		internal: group(
 			fields("", "", "", { hevcV2: group(fields("bcfVersion")) }),
 		),
 		delivery: group(fields("specId onDeviation")),
 		qc: group(
-			fields("model", "", "vmaf psnr only", {
+			fields("model mirrorPath", "", "vmaf psnr only", {
 				execution: group(fields("backend profileId localMode", "budgetUsd")),
 				gate: group(
 					fields("onFail", "", "", {
@@ -346,7 +383,14 @@ const vod = fields(
 			}),
 		),
 		inputFiles: rows(
-			fields("key inputKey kind credentialId bucket path region name"),
+			fields(
+				"key inputKey kind credentialId bucket path region name displayName",
+				"",
+				"",
+				{
+					purpose: z.literal("FILTER_IMAGE").optional().catch(undefined),
+				},
+			),
 		),
 		additionalOutputs: rows(location),
 		sources: group(
@@ -524,11 +568,24 @@ const liveDrm = z.discriminatedUnion("kind", [
 	}),
 ]);
 const live = fields(
-	"name accountId cloudRegion encoderVersion staticIpId inputKind mirrorKey",
+	"name accountId cloudRegion encoderVersion staticIpId inputKind inputKey mirrorKey",
 	"segmentLength",
 	"scte35AdMarkers",
 	{
 		...common,
+		output: group(
+			location.extend({
+				moq: group(
+					fields("key draftVersion", "", "", {
+						// The namespace is a tuple. Omit it as a unit if a value
+						// cannot be saved, so restore can keep the source tuple.
+						trackNamespace: group(
+							z.array(z.string().max(2048).refine(draftKeepsText)).max(32),
+						),
+					}),
+				),
+			}),
+		),
 		aisaLive: group(
 			fields(
 				"outputId recordingPath analysisPath esVersion aicaVersion",
@@ -708,7 +765,28 @@ export function projectWizardDraft(
 	kind: WizardDraftKind,
 	value: unknown,
 ): DraftValue {
-	return (kind === "vod" ? vod : live).parse(value);
+	const projected = (kind === "vod" ? vod : live).parse(value);
+	if (kind === "vod") {
+		const filters = watermarkDrafts.parse(projected.filters) ?? [];
+		const keys = new Set(filters.map((filter) => filter.key));
+		if (Array.isArray(projected.videos)) {
+			for (const video of projected.videos) {
+				if (!draftRecord(video) || !draftRecord(video.extras)) continue;
+				const attachments = video.extras.filters;
+				if (!Array.isArray(attachments)) continue;
+				video.extras.filters = attachments.filter(
+					(item) =>
+						draftRecord(item) &&
+						typeof item.filterKey === "string" &&
+						keys.has(item.filterKey),
+				);
+			}
+		}
+	}
+	return projected;
+}
+function draftRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Missing unsafe leaves retain the fresh base; saved form values never supply secrets. */
@@ -754,6 +832,7 @@ export function mergeWizardDraft<T>(
 					]),
 		],
 		output: outputFields,
+		"output.moq": ["key", "draftVersion", "trackNamespace"],
 		mirror: outputFields,
 		"additionalOutputs.*": outputFields,
 		"additionalMirrors.*": ["key", "output"],

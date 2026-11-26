@@ -879,6 +879,8 @@ describe("budgeted native VMAF calibration", () => {
 		const h = setup();
 		const target = join(directory, "foreign-directory");
 		await mkdir(target, { mode: 0o755 });
+		// Establish the foreign preimage even when the test runner uses umask077.
+		await chmod(target, 0o755);
 		await symlink(target, h.cacheDirectory);
 		await h.engine.obtain(key, [serial], context());
 		expect(await readdir(target)).toEqual([]);

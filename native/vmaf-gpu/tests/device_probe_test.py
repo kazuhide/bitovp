@@ -4,14 +4,17 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
+from tempfile import TemporaryDirectory
 
 p = argparse.ArgumentParser()
 p.add_argument("--binary", required=True, type=Path)
 p.add_argument("--backend", choices=("cuda", "vulkan"))
 p.add_argument("--vendor", choices=("amd", "nvidia"))
+p.add_argument("--nvdec-library-fixture", type=Path)
 a = p.parse_args()
 invalid = [
     ["--device-info"],
@@ -27,6 +30,8 @@ invalid = [
     ["--device-info", "--backend", "cuda", "--unknown", "value"],
     ["--device-info", "--backend", "cuda", "--device", "-1"],
     ["--device-info", "--backend", "cuda", "--device"],
+    ["--device-info", "--backend", "vulkan", "--experiment-window"],
+    ["--device-info", "--backend", "cuda", "--experiment-window", "--frame-count", "1"],
 ]
 for args in invalid:
     run = subprocess.run([str(a.binary), *args], text=True, capture_output=True, timeout=30)
@@ -40,6 +45,7 @@ if a.backend:
         command += ["--vendor", a.vendor]
     run = subprocess.run(command, check=True, text=True, capture_output=True, timeout=60)
     result = json.loads(run.stdout)
+    assert "experimentCudaDecoders" not in result
     assert result["schemaVersion"] == 1 and result["backend"] == a.backend
     assert re.fullmatch("[0-9a-f]{64}", result["sourceSha256"])
     assert result["binarySha256"] == hashlib.sha256(a.binary.read_bytes()).hexdigest()
@@ -77,6 +83,40 @@ if a.backend:
     assert selected["device"]["driverVersion"] == device["driverVersion"]
     assert selected["sourceSha256"] == result["sourceSha256"]
     assert selected["binarySha256"] == result["binarySha256"]
+    if a.backend == "cuda":
+        experiment_command = [*explicit.args, "--experiment-window"]
+        experiment = subprocess.run(experiment_command, check=True, text=True, capture_output=True, timeout=60)
+        report = json.loads(experiment.stdout)
+        assert report["device"]["uuid"] == device["uuid"]
+        codecs = report["experimentCudaDecoders"]
+        assert isinstance(codecs, list) and codecs == [name for name in ("H264", "HEVC", "AV1") if name in codecs]
+        extra = {"experimentCudaDecoders"}
+        if codecs:
+            extra.add("decoderRuntimeSha256")
+            assert re.fullmatch("[0-9a-f]{64}", report["decoderRuntimeSha256"])
+        assert set(report) == set(selected) | extra
+        if a.nvdec_library_fixture:
+            with TemporaryDirectory(prefix="bitovp-nvdec-probe-test-") as directory:
+                # Load an unrelated library from an isolated search path to exercise missing NVDEC symbols.
+                (Path(directory) / "libnvcuvid.so.1").symlink_to(a.nvdec_library_fixture.resolve(strict=True))
+                env = os.environ.copy()
+                env["LD_LIBRARY_PATH"] = os.pathsep.join(filter(None, (directory, env.get("LD_LIBRARY_PATH"))))
+                blocked = subprocess.run(experiment_command, check=True, env=env,
+                                         text=True, capture_output=True, timeout=60)
+                blocked_report = json.loads(blocked.stdout)
+                assert blocked_report["experimentCudaDecoders"] == [] and "decoderRuntimeSha256" not in blocked_report
+            # The fixture leaves the codec registration intact and makes libavutil's context creation fail.
+            env = os.environ.copy()
+            env["LD_PRELOAD"] = os.pathsep.join(filter(None, (str(a.nvdec_library_fixture.resolve(strict=True)), env.get("LD_PRELOAD"))))
+            unavailable = subprocess.run(experiment_command, check=True, env=env,
+                                         text=True, capture_output=True, timeout=60)
+            unavailable_report = json.loads(unavailable.stdout)
+            assert unavailable_report["experimentCudaDecoders"] == [] and "decoderRuntimeSha256" not in unavailable_report
+            audited = subprocess.run(experiment_command, check=True, env={**os.environ, "LD_AUDIT": ""},
+                                     text=True, capture_output=True, timeout=60)
+            audited_report = json.loads(audited.stdout)
+            assert audited_report["experimentCudaDecoders"] == [] and "decoderRuntimeSha256" not in audited_report
+        print("PASS experiment resident CUDA decoder probe:", codecs)
     print("PASS actual input-free hardware device probe:", a.backend, device["uuid"],
           "available source:", device["memoryAvailableSource"])
 else:

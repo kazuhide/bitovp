@@ -24,6 +24,7 @@ or [Japanese](https://kazuhide.github.io/bitovp/ja/guide/). Editable sources:
 | Review usage and video quality | [Quality and monitoring](./user-guide/QUALITY-AND-MONITORING.md) | `/`, `/qc` |
 | Inspect banding scores and affected intervals | [Banding measurement](./user-guide/BANDING-QUALITY.md) | VOD quality settings, `/qc` |
 | Try local GPU quality measurement | [Experimental GPU processing](./user-guide/GPU-QUALITY.md) | Worker configuration, `/qc` |
+| Run NVENC trials and export training data | [Encoding experiments](./user-guide/ENCODING-EXPERIMENTS.md) | `/encoding-experiments` |
 | Manage content, presets, and settings | [Library and administration](./user-guide/LIBRARY-AND-ADMIN.md) | `/library`, `/presets`, `/settings` |
 | Investigate failures | [Troubleshooting](./user-guide/TROUBLESHOOTING.md) | Job, channel, and report details |
 | Understand encoding terms | [Glossary](./user-guide/GLOSSARY.md) | All screens |

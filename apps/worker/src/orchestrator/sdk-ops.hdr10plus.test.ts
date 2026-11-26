@@ -1,16 +1,24 @@
 import { type CompiledOperation, curlForStep, initStepLog } from "@bitovp/core";
 import { afterEach, expect, it, vi } from "vitest";
+import { auditedOperationCases } from "../../../../scripts/api-coverage-test-cases";
 import { executeStep } from "./executor";
 import { createBitmovinSdkOps } from "./sdk-ops";
 
 afterEach(() => vi.unstubAllGlobals());
 
-it.each([
-	{ selectionMode: "AUTO" },
-	{ selectionMode: "VIDEO_RELATIVE" },
-	{ selectionMode: "VIDEO_RELATIVE", position: 2 },
-	{ selectionMode: "POSITION_ABSOLUTE", position: 0 },
-])("sends HDR10+ video and JSON through the installed SDK: %j", async (selection) => {
+it.each(
+	auditedOperationCases(
+		import.meta.url,
+		"worker-hdr10-plus-create",
+		[
+			{ selectionMode: "AUTO" },
+			{ selectionMode: "VIDEO_RELATIVE" },
+			{ selectionMode: "VIDEO_RELATIVE", position: 2 },
+			{ selectionMode: "POSITION_ABSOLUTE", position: 0 },
+		],
+		() => ["POST /encoding/encodings/{encoding_id}/input-streams/hdr10-plus"],
+	),
+)("sends HDR10+ video and JSON through the installed SDK: %j", async (selection) => {
 	const fetch = vi.fn(
 		async () =>
 			new Response(JSON.stringify({ data: { result: { id: "hdr-stream" } } }), {

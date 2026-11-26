@@ -1,6 +1,7 @@
 import type { CompiledOperation } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { auditedOperationCases } from "../../../../scripts/api-coverage-test-cases";
 import { executeStep } from "./executor";
 import { makeWorkerSdk, withWorkerActor } from "./make-sdk";
 
@@ -18,10 +19,17 @@ afterEach(() => {
 });
 
 describe("makeWorkerSdk — the production seam, to the wire", () => {
-	it.each([
-		["CREATE_INPUT_S3_ROLE_BASED", "/encoding/inputs/s3-role-based"],
-		["CREATE_OUTPUT_S3_ROLE_BASED", "/encoding/outputs/s3-role-based"],
-	] as const)("sends %s with its organization-specific GLOBAL role identity", async (kind, path) => {
+	it.each(
+		auditedOperationCases(
+			import.meta.url,
+			"worker-s3-role-create",
+			[
+				["CREATE_INPUT_S3_ROLE_BASED", "/encoding/inputs/s3-role-based"],
+				["CREATE_OUTPUT_S3_ROLE_BASED", "/encoding/outputs/s3-role-based"],
+			] as const,
+			([, path]) => [`POST ${path}`],
+		),
+	)("sends %s with its organization-specific GLOBAL role identity", async (kind, path) => {
 		const externalId = "organization-external-id-fixture";
 		const roleArn = "arn:aws:iam::123456789012:role/encoding/bitmovin";
 		const transport = vi.fn(async (url: string, init: RequestInit) => {

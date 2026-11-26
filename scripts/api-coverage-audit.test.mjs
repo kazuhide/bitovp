@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildOperationLedger } from "../apps/web/src/lib/api-coverage/operation-ledger.ts";
 import { validateImplementationAudit, operationCoverage } from "./api-coverage-audit.mjs";
+import { auditedOperationCases } from "./api-coverage-test-cases.ts";
 
 function fixture() {
 	const sdkMethod = "encoding.configurations.video.h264.create";
@@ -98,6 +99,66 @@ test("a database-dependent test may use its mandatory PostgreSQL fixture guard",
 		? 'describe.runIf(available)("wire checks", () => { test("wire payload", () => {}); });'
 		: readSource(file);
 	assert.equal(validateImplementationAudit(f).operationSummary.transportConfirmed, 1);
+});
+
+test("an audited each test must register the ledger-bound case dataset", () => {
+	const f = fixture();
+	const proof = withOperationProof(f);
+	const readSource = f.readSource;
+	const imported = 'import { auditedOperationCases } from "../../../scripts/api-coverage-test-cases";';
+	const withCases = (group) => `it.each(auditedOperationCases(import.meta.url, "${group}", rows, targets))("wire payload", () => {});`;
+	const setTest = (source) => { f.readSource = (file) => file === proof.contractTest.file ? source : readSource(file); };
+	setTest('it.each(rows)("wire payload", () => {});');
+	assert.throws(() => validateImplementationAudit(f), /contract-test anchor/i);
+	proof.contractTest.caseGroup = "codec-create";
+	setTest(`${imported}\n${withCases("codec-create")}`);
+	assert.equal(validateImplementationAudit(f).operationSummary.transportConfirmed, 1);
+	for (const source of [
+		`${imported}\n${withCases("another-group")}`,
+		withCases("codec-create"),
+		`${imported}\ndescribe("shadowed guard", () => { const auditedOperationCases = (...args) => args[2]; ${withCases("codec-create")} });`,
+		`${imported}\nit.each(rows)("wire payload", () => { auditedOperationCases(import.meta.url, "codec-create", rows, targets); });`,
+		`${imported}\ndescribe.skipIf(true).each(rows)("suite", () => { ${withCases("codec-create")} });`,
+	]) {
+		setTest(source);
+		assert.throws(() => validateImplementationAudit(f), /contract-test anchor/i);
+	}
+});
+
+test("dropping a row from a paired dataset loses its reviewed operation proof", () => {
+	const file = new URL("../apps/worker/src/orchestrator/make-sdk.test.ts", import.meta.url).href;
+	const cases = ["/encoding/inputs/s3-role-based", "/encoding/outputs/s3-role-based"];
+	const targets = (path) => [`POST ${path}`];
+	assert.equal(auditedOperationCases(file, "worker-s3-role-create", cases, targets), cases);
+	assert.throws(
+		() => auditedOperationCases(file, "worker-s3-role-create", cases.slice(0, 1), targets),
+		/Audit case missing .*encoding\.outputs\.s3RoleBased\.create/i,
+	);
+});
+
+test("transport proof pins the full SDK family and resolves a const alias scope", () => {
+	const f = fixture();
+	const proof = withOperationProof(f);
+	const target = { sdkMethod: "encoding.encodings.muxings.mp4.information.get", httpVerb: "GET", path: "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/information" };
+	Object.assign(f.census.endpoints[0], target);
+	Object.assign(f.contracts.operations[0], target);
+	Object.assign(proof, target);
+	f.audit.entries = [];
+	const readSource = f.readSource;
+	const supplyTransport = (source) => { f.readSource = (file) => file === proof.transport.file ? source : readSource(file); };
+	const direct = "api.encoding.encodings.muxings.mp4.information.get(";
+	const other = "api.encoding.encodings.muxings.fmp4.information.get(";
+	supplyTransport(`${direct}id,muxing);\n${other}id,muxing);`);
+	proof.transport.anchor = direct;
+	assert.equal(validateImplementationAudit(f).operationSummary.transportConfirmed, 1);
+	proof.transport.anchor = other;
+	assert.throws(() => validateImplementationAudit(f), /anchor one SDK call/i);
+
+	proof.transport.anchor = "muxing.information.get(";
+	supplyTransport('const muxing = api.encoding.encodings.muxings.mp4; function inspect() { muxing.information.get(id, resource); }');
+	assert.equal(validateImplementationAudit(f).operationSummary.transportConfirmed, 1);
+	supplyTransport('const muxing = api.encoding.encodings.muxings.mp4; function inspect(muxing) { muxing.information.get(id, resource); }');
+	assert.throws(() => validateImplementationAudit(f), /anchor one SDK call/i);
 });
 
 test("a commented route or detached route anchor cannot prove app reachability", () => {

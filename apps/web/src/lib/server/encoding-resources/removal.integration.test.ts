@@ -28,6 +28,7 @@ import {
 	GET as listLive,
 	DELETE as removeLive,
 } from "@/app/api/live-channels/[id]/runs/[runId]/resources/route";
+import { auditedOperationCases } from "../../../../../../scripts/api-coverage-test-cases";
 import * as auth from "../context";
 import { routeError } from "../http";
 import { resourceFixture } from "./__fixtures__/journal";
@@ -226,7 +227,12 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 			});
 		}
 		it.each(
-			contracts,
+			auditedOperationCases(
+				import.meta.url,
+				"recorded-resource-deletes",
+				contracts,
+				({ detail }) => [`DELETE ${detail}`],
+			),
 		)("removes the recorded $kind through its exact SDK path and persists the result", async (c) => {
 			const s = await seed(own, a, c);
 			wire(s);

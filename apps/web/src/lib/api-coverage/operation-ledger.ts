@@ -24,7 +24,12 @@ const operationProof = z.strictObject({
 		anchor,
 	}),
 	transport: sourceAnchor,
-	contractTest: sourceAnchor,
+	contractTest: sourceAnchor.extend({
+		caseGroup: z
+			.string()
+			.regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+			.optional(),
+	}),
 	provider: z.literal("unverified"),
 });
 

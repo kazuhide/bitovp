@@ -10,6 +10,7 @@ import {
 	validatePlan,
 } from "@bitovp/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { auditedOperationCases } from "../../../../scripts/api-coverage-test-cases";
 import { executeStep } from "./executor";
 import { createBitmovinSdkOps } from "./sdk-ops";
 
@@ -93,10 +94,14 @@ describe("compiled START through the installed SDK transport", () => {
 		expect(body).toMatchObject({ perTitle: plan.perTitle });
 	});
 
-	it.each([
-		"JUST_IN_TIME",
-		"POST_ENCODING",
-	] as const)("preserves VOD START options with %s manifests", async (timing) => {
+	it.each(
+		auditedOperationCases(
+			import.meta.url,
+			"worker-vod-start",
+			["JUST_IN_TIME", "POST_ENCODING"] as const,
+			() => ["POST /encoding/encodings/{encoding_id}/start"],
+		),
+	)("preserves VOD START options with %s manifests", async (timing) => {
 		const plan = encodingPlanSchema.parse(
 			load("plan", "fixed-bitrate-hls-on-aws"),
 		);
@@ -222,10 +227,16 @@ describe("compiled START through the installed SDK transport", () => {
 		});
 	});
 
-	it.each([
-		"CUSTOM",
-		"HD",
-	] as const)("keeps concurrent %s Live reupload controls independent", async (encodingOption) => {
+	it.each(
+		auditedOperationCases(
+			import.meta.url,
+			"worker-live-start",
+			["CUSTOM", "HD"] as const,
+			(variant) => [
+				`POST /encoding/encodings/{encoding_id}/live/${variant === "HD" ? "hd/" : ""}start`,
+			],
+		),
+	)("keeps concurrent %s Live reupload controls independent", async (encodingOption) => {
 		const bodies = new Map<string, Record<string, unknown>>();
 		vi.stubGlobal(
 			"fetch",

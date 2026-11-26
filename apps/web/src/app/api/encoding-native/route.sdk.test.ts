@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { auditedOperationCases } from "../../../../../../scripts/api-coverage-test-cases";
 
 const { getAccount, revealApiKey, revealForEncoding } = vi.hoisted(() => ({
 	getAccount: vi.fn(),
@@ -73,7 +74,11 @@ const ioProtocols = {
 	],
 };
 const ioCases = Object.entries(ioProtocols).flatMap(([kind, protocols]) =>
-	protocols.map((protocol) => ({ kind, protocol })),
+	protocols.map((protocol) => ({
+		kind,
+		protocol,
+		path: `/encoding/${kind}/${protocol}`,
+	})),
 );
 
 function reply(result: unknown) {
@@ -243,10 +248,16 @@ describe("native Encoding resources through the installed SDK", () => {
 	});
 
 	it.each(
-		ioCases,
+		auditedOperationCases(
+			import.meta.url,
+			"native-io-list",
+			ioCases,
+			({ path }) => [`GET ${path}`],
+		),
 	)("lists $kind/$protocol and withholds provider credentials", async ({
 		kind,
 		protocol,
+		path,
 	}) => {
 		const transport = mockTransport({
 			offset: 2,
@@ -272,17 +283,25 @@ describe("native Encoding resources through the installed SDK", () => {
 			totalCount: 3,
 			items: [{ id: RESOURCE, name: "North archive" }],
 		});
-		assertGet(transport, `/v1/encoding/${kind}/${protocol}`, {
+		assertGet(transport, `/v1${path}`, {
 			offset: "2",
 			limit: "5",
 		});
 	});
 
 	it.each(
-		ioCases,
+		auditedOperationCases(
+			import.meta.url,
+			"native-io-get",
+			ioCases,
+			({ kind, path }) => [
+				`GET ${path}/{${kind === "inputs" ? "input_id" : "output_id"}}`,
+			],
+		),
 	)("reads $kind/$protocol details without connection secrets", async ({
 		kind,
 		protocol,
+		path,
 	}) => {
 		const transport = mockTransport({
 			id: RESOURCE,
@@ -307,7 +326,7 @@ describe("native Encoding resources through the installed SDK", () => {
 				createdAt: "2026-11-27T12:00:00Z",
 			},
 		});
-		assertGet(transport, `/v1/encoding/${kind}/${protocol}/${RESOURCE}`);
+		assertGet(transport, `/v1${path}/${RESOURCE}`);
 	});
 
 	it("rejects a foreign account before sending a provider request", async () => {

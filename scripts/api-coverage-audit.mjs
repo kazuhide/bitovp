@@ -67,35 +67,86 @@ function verifyEntrypoint({ path, httpVerb, anchor }, readSource) {
 	if (!hasHandler) throw new Error(`Operation proof lacks an exported route with its evidence anchor: ${file}`);
 }
 
+function propertyPath(expression) {
+	const parts = [];
+	while (ts.isPropertyAccessExpression(expression)) {
+		parts.unshift(expression.name.text);
+		expression = expression.expression;
+	}
+	return ts.isIdentifier(expression) ? { base: expression, parts } : undefined;
+}
+
+function localBindingChecker(source) {
+	const options = { noLib: true, noResolve: true, types: [] };
+	const host = ts.createCompilerHost(options);
+	host.getSourceFile = (file) => file === source.fileName ? source : undefined;
+	return ts.createProgram([source.fileName], options, host).getTypeChecker();
+}
+
+function sdkTarget(expression, checker) {
+	let target = propertyPath(expression);
+	const seen = new Set();
+	while (target) {
+		if (target.parts[0] === "encoding") return target.parts.join(".");
+		const binding = checker().getSymbolAtLocation(target.base)?.valueDeclaration;
+		if (!binding || seen.has(binding) || !ts.isVariableDeclaration(binding) ||
+			!ts.isVariableDeclarationList(binding.parent) || !(binding.parent.flags & ts.NodeFlags.Const) || !binding.initializer) return;
+		seen.add(binding);
+		const alias = propertyPath(binding.initializer);
+		target = alias && { base: alias.base, parts: [...alias.parts, ...target.parts] };
+	}
+}
+
 function verifyTransport(proof, readSource) {
 	const { file, anchor } = proof.transport;
-	const source = ts.createSourceFile(file, readSource(file), ts.ScriptTarget.Latest, true);
-	const method = proof.sdkMethod.split(".").slice(-2).join(".");
+	const source = ts.createSourceFile(resolve(root, file), readSource(file), ts.ScriptTarget.Latest, true);
+	let bindingChecker;
+	const checker = () => bindingChecker ??= localBindingChecker(source);
 	let matches = 0;
 	function visit(node) {
-		if (ts.isCallExpression(node) && node.getText(source).startsWith(anchor)) {
-			const target = node.expression.getText(source).replace(/\s/g, "");
-			if (target === method || target.endsWith(`.${method}`)) matches++;
-		}
+		if (ts.isCallExpression(node) && node.getText(source).startsWith(anchor) &&
+			sdkTarget(node.expression, checker) === proof.sdkMethod) matches++;
 		ts.forEachChild(node, visit);
 	}
 	visit(source);
 	if (matches !== 1) throw new Error(`Operation proof must anchor one SDK call: ${proof.sdkMethod}`);
 }
 
-function hasTestAnchor(source, node, anchor, mandatoryFixture) {
+function callName(node) {
+	if (ts.isIdentifier(node)) return [node.text];
+	if (ts.isCallExpression(node)) return callName(node.expression);
+	if (ts.isPropertyAccessExpression(node)) return [...callName(node.expression), node.name.text];
+	return [];
+}
+
+function hasAuditedCases(source, test, group, checker) {
+	const each = test.expression;
+	if (!ts.isCallExpression(each) || !ts.isPropertyAccessExpression(each.expression) || each.expression.name.text !== "each") return false;
+	const wrapped = each.arguments[0];
+	if (!wrapped || !ts.isCallExpression(wrapped) || !ts.isIdentifier(wrapped.expression) || wrapped.expression.text !== "auditedOperationCases" || wrapped.arguments.length !== 4) return false;
+	const [file, name] = wrapped.arguments;
+	if (file.getText(source) !== "import.meta.url" || !ts.isStringLiteral(name) || name.text !== group) return false;
+	const binding = checker().getSymbolAtLocation(wrapped.expression)?.declarations?.find(ts.isImportSpecifier);
+	if (!binding || binding.isTypeOnly || binding.propertyName) return false;
+	const clause = binding.parent.parent;
+	const statement = clause.parent;
+	if (!ts.isImportClause(clause) || clause.isTypeOnly || !ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) return false;
+	return resolve(dirname(source.fileName), statement.moduleSpecifier.text) === resolve(root, "scripts/api-coverage-test-cases");
+}
+
+function hasTestAnchor(source, node, proof, mandatoryFixture, checker) {
+	const { anchor, caseGroup } = proof;
 	if (ts.isCallExpression(node)) {
-		let callee = node.expression;
-		while (ts.isCallExpression(callee)) callee = callee.expression;
-		const [name, ...modifiers] = callee.getText(source).replace(/\s/g, "").split(".");
+		const [name, ...modifiers] = callName(node.expression);
 		if (["it", "test", "describe", "suite"].includes(name) &&
 			modifiers.some((modifier) => ["skip", "todo", "only"].includes(modifier) ||
 				(!mandatoryFixture && ["skipIf", "runIf"].includes(modifier)))) return false;
 		if ((name === "it" || name === "test") &&
 			node.arguments.some((argument) => ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) &&
+			(modifiers.includes("each") ? caseGroup && hasAuditedCases(source, node, caseGroup, checker) : !caseGroup) &&
 			hasCodeAnchor(source, node, anchor)) return true;
 	}
-	return Boolean(ts.forEachChild(node, (child) => hasTestAnchor(source, child, anchor, mandatoryFixture) || undefined));
+	return Boolean(ts.forEachChild(node, (child) => hasTestAnchor(source, child, proof, mandatoryFixture, checker) || undefined));
 }
 
 /** All unspecified operations and properties remain unconfirmed. No GUI percentage is inferred. */
@@ -116,13 +167,20 @@ export function validateImplementationAudit({ census, contracts, audit, readSour
 		return !contract || !sameOperation(endpoint, contract);
 	})) throw new Error("Request-contract operation denominator differs from source census");
 	const proofs = readOperationProofs(census, audit);
+	const tests = new Map();
 	for (const proof of proofs.values()) {
 		verifyEntrypoint(proof.entrypoint, readSource);
 		checkEvidence([proof.transport], "transport", readSource);
 		verifyTransport(proof, readSource);
 		checkEvidence([proof.contractTest], "contractTests", readSource);
-		const test = ts.createSourceFile(proof.contractTest.file, readSource(proof.contractTest.file), ts.ScriptTarget.Latest, true);
-		if (!hasTestAnchor(test, test, proof.contractTest.anchor, mandatoryFixtures.has(proof.contractTest.file))) throw new Error(`Operation proof lacks an active contract-test anchor: ${proof.contractTest.file}`);
+		const { file } = proof.contractTest;
+		if (!tests.has(file)) {
+			const source = ts.createSourceFile(resolve(root, file), readSource(file), ts.ScriptTarget.Latest, true);
+			let bindingChecker;
+			tests.set(file, { source, checker: () => bindingChecker ??= localBindingChecker(source) });
+		}
+		const { source, checker } = tests.get(file);
+		if (!hasTestAnchor(source, source, proof.contractTest, mandatoryFixtures.has(file), checker)) throw new Error(`Operation proof lacks an active contract-test anchor or bound case group: ${proof.sdkMethod} in ${file}`);
 	}
 	const summary = { auditedTargets: 0, guiConfirmedTargets: 0, jsonOnlyTargets: 0, missingTargets: 0, unconfirmedTargets: 0, providerVerifiedTargets: 0 };
 	const keys = new Set();

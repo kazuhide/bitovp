@@ -3,6 +3,7 @@ import type { StepLogEntry } from "@bitovp/core";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GET as vod } from "@/app/api/encoding-jobs/[id]/resources/route";
 import { GET as live } from "@/app/api/live-channels/[id]/runs/[runId]/resources/route";
+import { auditedOperationCases } from "../../../../../../scripts/api-coverage-test-cases";
 import { resourceFixture } from "./__fixtures__/journal";
 import contracts from "./__fixtures__/sdk-contracts.json";
 import { parseResourceLog, selectResource } from "./selection";
@@ -77,7 +78,12 @@ const muxingInformationKinds = new Set([
 ]);
 
 it.each(
-	contracts.filter(({ kind }) => muxingInformationKinds.has(kind)),
+	auditedOperationCases(
+		import.meta.url,
+		"recorded-muxing-information",
+		contracts.filter(({ kind }) => muxingInformationKinds.has(kind)),
+		({ detail }) => [`GET ${detail}/information`],
+	),
 )("reads output information using the recorded encoding and muxing for $kind", async (contract) => {
 	const { steps, id, expected } = fixture(contract);
 	seeded(steps);
@@ -187,7 +193,17 @@ it("omits invalid and absent measurements and reports unavailable information in
 });
 
 it.each(
-	contracts,
+	auditedOperationCases(
+		import.meta.url,
+		"recorded-resource-reads",
+		contracts,
+		({ detail, collection }) => [
+			`GET ${detail}`,
+			...(collection
+				? [`GET ${detail.slice(0, detail.lastIndexOf("/"))}`]
+				: []),
+		],
+	),
 )("reaches the official typed transport for $kind and projects public fields", async (contract) => {
 	const { steps, id, expected } = fixture(contract);
 	seeded(steps);

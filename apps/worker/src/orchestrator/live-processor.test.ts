@@ -10014,8 +10014,13 @@ describe("the provisioning lease is a WRITE fence (ledger #216, re-audit BLOCKER
 
 	it("the live `failed` handler flips only a row whose lease is stale or absent, and releases it", () => {
 		const index = readFileSync(join(__dirname, "../index.ts"), "utf8");
-		expect(index).toMatch(/await recordExpiredProvisionFailure\(/);
-		expect(index).toMatch(/at.getTime\(\) - PROVISION_LEASE_MS/);
+		const outcomes = readFileSync(
+			join(__dirname, "../live/dead-job-outcome.ts"),
+			"utf8",
+		);
+		expect(index).toMatch(/await recordFinalProvisionFailure\(/);
+		expect(outcomes).toMatch(/return recordExpiredProvisionFailure\(/);
+		expect(outcomes).toMatch(/at.getTime\(\) - PROVISION_LEASE_MS/);
 	});
 });
 

@@ -20,6 +20,13 @@ import {
 import { useT } from "./i18n/context";
 import { draftIdentity, type WizardDraftKind } from "./wizard-draft";
 
+const submissionMessages = {
+	response: "creationSubmission.responseUnavailable",
+	pendingLimit: "creationSubmission.pendingLimit",
+	storage: "creationSubmission.storageUnavailable",
+	legacyReceipt: "creationSubmission.legacyReceiptUnavailable",
+} as const;
+
 export function useCreationSubmission(
 	kind: WizardDraftKind,
 	context: string,
@@ -130,16 +137,7 @@ export function useCreationSubmission(
 				if (creationErrorCode(error) === CREATE_SESSION_CHANGED)
 					throw new ApiError(409, t("creationSubmission.sessionUnavailable"));
 				if (error instanceof CreationSubmissionError)
-					throw new ApiError(
-						409,
-						t(
-							error.reason === "response"
-								? "creationSubmission.responseUnavailable"
-								: error.reason === "pendingLimit"
-									? "creationSubmission.pendingLimit"
-									: "creationSubmission.storageUnavailable",
-						),
-					);
+					throw new ApiError(409, t(submissionMessages[error.reason]));
 				if (error instanceof DOMException && error.name === "SecurityError")
 					throw new ApiError(409, t("creationSubmission.storageUnavailable"));
 				throw error;

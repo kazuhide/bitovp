@@ -826,6 +826,8 @@ export const en = {
 	creationSubmission: {
 		responseUnavailable:
 			"The creation response was incomplete. Retry without changing the form to recover the same job or channel.",
+		legacyReceiptUnavailable:
+			"Check VOD jobs for the result of the previous launch before retrying.",
 		sessionUnavailable:
 			"Your session could not be confirmed. Reload this page before creating a job or channel.",
 		storageUnavailable:

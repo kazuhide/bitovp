@@ -13,12 +13,18 @@ export type CreationBody = (seed: CreationSeed, snapshot: unknown) => unknown;
 export type CreationCompatibility = {
 	legacy?: {
 		intent: unknown;
-		request(seed: CreationSeed): { body: unknown; replayOnly: boolean };
+		request(seed: CreationSeed): {
+			body: unknown;
+			replayOnly: boolean;
+			restoredNameBody?: unknown;
+		};
 		lookupWithheldPreset?: boolean;
 	};
 };
 export class CreationSubmissionError extends Error {
-	constructor(readonly reason: "storage" | "pendingLimit" | "response") {
+	constructor(
+		readonly reason: "storage" | "pendingLimit" | "response" | "legacyReceipt",
+	) {
 		super(reason);
 	}
 }
@@ -180,25 +186,33 @@ export function createSubmissionClient(
 							// A newly protected template can no longer recreate its
 							// old intent digest. Compare its reconstructed wire body
 							// with admitted requests without starting any provider work.
-							let possiblyPending = false;
 							for (const receipt of older) {
-								try {
-									result = await sendRequest(
-										receipt,
-										legacy.request(receipt).body,
-										true,
-									);
-									pending = receipt;
-									foundReplay = true;
-									break;
-								} catch (error) {
-									const code = creationErrorCode(error);
-									if (code === CREATE_REQUEST_NOT_FOUND) possiblyPending = true;
-									else if (code !== "CREATE_REQUEST_CONFLICT") throw error;
+								const { body, restoredNameBody } = legacy.request(receipt);
+								const candidates =
+									restoredNameBody === undefined
+										? [body]
+										: [body, restoredNameBody];
+								for (const candidate of candidates) {
+									try {
+										result = await sendRequest(receipt, candidate, true);
+										pending = receipt;
+										foundReplay = true;
+										break;
+									} catch (error) {
+										const code = creationErrorCode(error);
+										if (
+											code !== CREATE_REQUEST_NOT_FOUND &&
+											code !== "CREATE_REQUEST_CONFLICT"
+										)
+											throw error;
+									}
 								}
+								if (foundReplay) break;
 							}
-							if (!foundReplay && possiblyPending)
-								throw new CreationSubmissionError("response");
+							// A different stored digest can be an effect of projection,
+							// not proof that the operator initiated a new request.
+							if (!foundReplay)
+								throw new CreationSubmissionError("legacyReceipt");
 						}
 					}
 					if (!pending) {

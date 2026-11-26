@@ -795,6 +795,8 @@ export const ja = {
 	creationSubmission: {
 		responseUnavailable:
 			"作成結果を受信できませんでした。フォームを変更せずに再試行すると、同じジョブやチャンネルの結果を確認できます。",
+		legacyReceiptUnavailable:
+			"再試行の前に、VOD ジョブの一覧で前回の作成結果を確認してください。",
 		sessionUnavailable:
 			"セッションを確認できませんでした。このページを再読み込みしてからジョブやチャンネルを作成してください。",
 		storageUnavailable:

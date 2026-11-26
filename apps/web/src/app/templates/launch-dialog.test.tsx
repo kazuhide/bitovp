@@ -3,12 +3,15 @@ import {
 	type EncodingPlan,
 	encodingPlanSchema,
 	instantiateTemplatePlan,
+	markWithheldPlanSources,
+	publicVodSourceProjection,
 	templateSourceSites,
 } from "@bitovp/core";
 import { samplePresetPlan } from "@bitovp/core/presets";
 import { onlineManager } from "@tanstack/react-query";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/lib/api";
 import { createSubmissionClient } from "@/lib/creation-submission";
 import { canonicalCreateRequestJson } from "@/lib/creation-submission-contract";
 import { renderWithOperatorSession as renderWithQuery } from "@/test/render";
@@ -567,15 +570,23 @@ it("submits the exact Quick Launch settings clicked while offline", async () => 
 });
 
 it.each([
-	false,
-	true,
-])("replays a lost 1.3.5 Quick Launch using its original request identity (protected source: %s)", async (protectSource) => {
+	"ordinary",
+	"withheld path",
+	"withheld name",
+	"partially withheld name",
+	"unrecoverable name",
+])("safely replays a lost 1.3.5 Quick Launch (%s)", async (scenario) => {
 	const parsed = encodingPlanSchema.parse(
 		samplePresetPlan("fixed-bitrate-hls-on-aws"),
 	);
 	const [first] = parsed.ingest;
 	if (!first) throw new Error("Missing source");
-	const sourcePath = "safe/replacement.mp4";
+	const originalPath = "private/original.mp4?ticket=protected-preset";
+	const protectSource = scenario !== "ordinary";
+	const sourcePath =
+		scenario === "withheld name" || scenario === "partially withheld name"
+			? originalPath
+			: "safe/replacement.mp4";
 	if (protectSource) {
 		parsed.inputs = parsed.inputs.map((input) =>
 			input.key === first.inputKey
@@ -583,11 +594,17 @@ it.each([
 						key: input.key,
 						kind: "HTTPS",
 						host: "media.invalid",
-						name: input.name,
+						name:
+							scenario === "withheld name"
+								? originalPath
+								: scenario === "partially withheld name" ||
+										scenario === "unrecoverable name"
+									? `Input from ${originalPath}`
+									: input.name,
 					}
 				: input,
 		);
-		first.inputPath = "private/original.mp4?ticket=protected-preset";
+		first.inputPath = originalPath;
 	}
 	const {
 		hdr10PlusStreams: _hdr,
@@ -649,24 +666,23 @@ it.each([
 			return { plan, presetId: ID, presetRevision: 3 };
 		}),
 	).rejects.toThrow("Lost response");
+	const original: unknown = JSON.parse(String(submissions[0]?.body));
+	const originalDigest = createHash("sha256")
+		.update(canonicalCreateRequestJson(original))
+		.digest("hex");
+	const projected = publicVodSourceProjection({ body: presetBody }, presetBody);
+	const publicPreset = markWithheldPlanSources(presetBody, projected.body);
 	apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
-		if (url.startsWith("/api/presets/")) {
-			return detailFor(
-				protectSource
-					? {
-							...presetBody,
-							ingest: parsed.ingest.map((stream) =>
-								stream === first ? { ...stream, inputPath: "" } : stream,
-							),
-							withheldSourcePaths: [
-								[{ collection: "ingest", index: 0, field: "inputPath" }],
-							],
-						}
-					: presetBody,
-			);
-		}
+		if (url.startsWith("/api/presets/")) return detailFor(publicPreset);
 		if (url === "/api/encoding-jobs" && init) {
 			submissions.push(init);
+			if (protectSource && init.method === "GET") {
+				const headers = new Headers(init.headers);
+				if (headers.get("X-BitOVP-Create-Request-Digest") !== originalDigest)
+					throw new ApiError(409, "Receipt digest mismatch", {
+						code: "CREATE_REQUEST_CONFLICT",
+					});
+			}
 			return { id: ID };
 		}
 		return [];
@@ -687,26 +703,42 @@ it.each([
 		target: { value: previous.name },
 	});
 	fireEvent.click(launch);
-	await waitFor(() => expect(routerPush).toHaveBeenCalledOnce());
-	expect(submissions).toHaveLength(2);
-	expect(new Headers(submissions[0]?.headers).get("Idempotency-Key")).toBe(
-		new Headers(submissions[1]?.headers).get("Idempotency-Key"),
+	const originalKey = new Headers(submissions[0]?.headers).get(
+		"Idempotency-Key",
 	);
-	const original: unknown = JSON.parse(String(submissions[0]?.body));
+	if (scenario === "unrecoverable name") {
+		expect(await screen.findByRole("alert")).toBeInTheDocument();
+		expect(routerPush).not.toHaveBeenCalled();
+		expect(submissions.slice(1)).toEqual([
+			expect.objectContaining({ method: "GET" }),
+		]);
+		const journal = sessionStorage.getItem(
+			`bitovp.creation-intent:${JSON.stringify(["org", "user", "vod", `template:${ID}:3`])}`,
+		);
+		expect(journal).toContain(originalKey);
+		return;
+	}
+	await waitFor(() => expect(routerPush).toHaveBeenCalledOnce());
+	const repeated = submissions.slice(1);
+	expect(repeated.length).toBeGreaterThan(0);
+	for (const { headers } of repeated)
+		expect(new Headers(headers).get("Idempotency-Key")).toBe(originalKey);
 	if (protectSource) {
-		expect(submissions[1]?.method).toBe("GET");
-		expect(submissions[1]?.body).toBeUndefined();
+		for (const request of repeated) {
+			expect(request.method).toBe("GET");
+			expect(request.body).toBeUndefined();
+			expect(new Headers(request.headers).get("X-BitOVP-Create-Session")).toBe(
+				'["org","user"]',
+			);
+		}
 		expect(
-			new Headers(submissions[1]?.headers).get(
+			new Headers(repeated.at(-1)?.headers).get(
 				"X-BitOVP-Create-Request-Digest",
 			),
-		).toBe(
-			createHash("sha256")
-				.update(canonicalCreateRequestJson(original))
-				.digest("hex"),
-		);
+		).toBe(originalDigest);
 	} else {
-		expect(submissions[1]?.method).toBe("POST");
-		expect(JSON.parse(String(submissions[1]?.body))).toEqual(original);
+		expect(repeated).toHaveLength(1);
+		expect(repeated[0]?.method).toBe("POST");
+		expect(JSON.parse(String(repeated[0]?.body))).toEqual(original);
 	}
 });

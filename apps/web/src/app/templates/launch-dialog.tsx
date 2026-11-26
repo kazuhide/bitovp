@@ -3,6 +3,7 @@
 import {
 	type EncodingPlan,
 	encodingPlanSchema,
+	hasPrivateStorageLocator,
 	instantiateTemplatePlan,
 	mapDestinationPaths,
 	type PresetLaunchDefaults,
@@ -69,6 +70,53 @@ function legacyOutputPrefix(
 		.replace(/\/{2,}/g, "/")
 		.replace(/^\//, "")
 		.replace(/\/$/, "");
+}
+
+/** Recover only the name of an HTTPS input with one user-supplied signed path.
+ * This candidate is hashed for the old receipt lookup and is never submitted. */
+function legacyInputNames(
+	raw: unknown,
+	inputs: EncodingPlan["inputs"],
+	resolved: readonly { inputKey: string; path: string }[] = [],
+): EncodingPlan["inputs"] | undefined {
+	if (
+		!resolved.length ||
+		!raw ||
+		typeof raw !== "object" ||
+		!("inputs" in raw) ||
+		!Array.isArray(raw.inputs)
+	)
+		return undefined;
+	const publishedInputs = raw.inputs;
+	let recovered = false;
+	const names = inputs.map((input) => {
+		if (input.kind !== "HTTPS") return input;
+		const inputPaths = new Set(
+			resolved
+				.filter(
+					({ inputKey, path }) =>
+						inputKey === input.key &&
+						hasPrivateStorageLocator(path, "HTTPS_PATH"),
+				)
+				.map(({ path }) => path),
+		);
+		const [signedPath] = inputPaths;
+		if (inputPaths.size !== 1 || !signedPath) return input;
+		const publishedName = publishedInputs.find(
+			(row) => row?.key === input.key,
+		)?.name;
+		if (publishedName !== "" && !input.name.includes("[withheld]"))
+			return input;
+		recovered = true;
+		return {
+			...input,
+			name:
+				publishedName === ""
+					? signedPath
+					: input.name.replaceAll("[withheld]", () => signedPath),
+		};
+	});
+	return recovered ? names : undefined;
 }
 
 /**
@@ -295,6 +343,11 @@ export function LaunchDialog({
 				presetId: intent.presetId,
 				presetRevision: intent.presetRevision,
 			};
+			const restoredInputs = legacyInputNames(
+				detail.data.body,
+				result.plan.inputs,
+				replacement.resolvedPaths,
+			);
 			const legacy =
 				result.plan.hdr10PlusStreams.length || result.plan.captionStreams.length
 					? undefined
@@ -321,17 +374,24 @@ export function LaunchDialog({
 									nonce,
 								);
 								const replayOnly = prefix !== rendered.outputPrefix;
-								return {
-									body: {
+								function requestBody(inputs?: EncodingPlan["inputs"]) {
+									const candidate = inputs ? { ...plan, inputs } : plan;
+									return {
 										...provenance,
 										plan: replayOnly
 											? mapDestinationPaths(
-													plan,
+													candidate,
 													(path) =>
 														prefix + path.slice(rendered.outputPrefix.length),
 												)
-											: plan,
-									},
+											: candidate,
+									};
+								}
+								return {
+									body: requestBody(),
+									...(restoredInputs && {
+										restoredNameBody: requestBody(restoredInputs),
+									}),
 									replayOnly,
 								};
 							},
@@ -384,6 +444,7 @@ export function LaunchDialog({
 				"creationSubmission.storageUnavailable",
 				"creationSubmission.pendingLimit",
 				"creationSubmission.responseUnavailable",
+				"creationSubmission.legacyReceiptUnavailable",
 			] as const
 		).find(
 			(key) =>
@@ -502,7 +563,7 @@ export function LaunchDialog({
 						</ul>
 					) : null}
 					{launch.isError || creation.seedError ? (
-						<p className="text-rose-400 text-xs">
+						<p role="alert" className="text-rose-400 text-xs">
 							{localizedCustomerError(t, launchFailure, launchFailureKey)}
 						</p>
 					) : null}

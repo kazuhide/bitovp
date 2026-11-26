@@ -162,6 +162,23 @@ export function withheldPlanSources(value: unknown) {
 				if (row) row[site.field] = paths[index];
 			}
 		}
+		const replaced = new Set(
+			resolvedInputPaths(copy).map(({ inputKey }) => inputKey),
+		);
+		if (Array.isArray(copy.inputs)) {
+			for (const input of copy.inputs) {
+				// Use the schema's normal label when the full HTTPS input name
+				// was the withheld path. The submitted name stays credential-free.
+				if (
+					record(input) &&
+					input.kind === "HTTPS" &&
+					input.name === "" &&
+					typeof input.key === "string" &&
+					replaced.has(input.key)
+				)
+					delete input.name;
+			}
+		}
 		return copy;
 	}
 	function resolvedInputPaths(value: Record<string, unknown>) {

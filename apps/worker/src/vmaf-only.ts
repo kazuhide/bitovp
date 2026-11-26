@@ -83,18 +83,21 @@ const registration = createDedicatedVmafRegistration(ownership, async () => {
 let closing: Promise<void> | undefined;
 function close() {
 	closing ??= (async () => {
-		try {
-			await registration.close();
-		} finally {
-			await Promise.allSettled([
-				waitForVmafBrokerClose(queue.close()),
-				waitForVmafBrokerClose(notifyQueue.close()),
-				waitForVmafBrokerClose(orchestratorProducerQueue.close()),
-			]);
-			redis.disconnect();
-			ownerRedis.disconnect();
-			await basePrisma.$disconnect();
-		}
+		const [ownershipClose] = await Promise.allSettled([registration.close()]);
+		// A stalled sweep can leave Prisma waiting on the same database I/O.
+		const [databaseClose] = await Promise.allSettled([
+			waitForVmafBrokerClose(
+				basePrisma.$disconnect(),
+				"VMAF_QUEUE_DATABASE_DISCONNECT_UNCONFIRMED",
+			),
+			waitForVmafBrokerClose(queue.close()),
+			waitForVmafBrokerClose(notifyQueue.close()),
+			waitForVmafBrokerClose(orchestratorProducerQueue.close()),
+		]);
+		redis.disconnect();
+		ownerRedis.disconnect();
+		if (ownershipClose.status === "rejected") throw ownershipClose.reason;
+		if (databaseClose.status === "rejected") throw databaseClose.reason;
 	})();
 	return closing;
 }
@@ -103,7 +106,7 @@ function shutdown(code: number) {
 		() => process.exit(code),
 		(error: unknown) => {
 			console.error(
-				"[worker:vmafRunner] dedicated shutdown could not verify release:",
+				"[worker:vmafRunner] dedicated shutdown failed:",
 				redactSecrets(error instanceof Error ? error.message : String(error)),
 			);
 			process.exit(1);

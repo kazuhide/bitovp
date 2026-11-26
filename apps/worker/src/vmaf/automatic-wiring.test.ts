@@ -16,6 +16,7 @@ import { queueExcessVmafJobs } from "./job-capacity";
 import {
 	guardVmafQueueOwnership,
 	startStandardVmafConsumer,
+	waitForVmafBrokerClose,
 } from "./queue-ownership";
 import { primaryWorkerQueues } from "./worker-role";
 import { createVmafWorkerServices } from "./worker-services";
@@ -31,22 +32,23 @@ const source = ts.createSourceFile(
 	ts.ScriptTarget.Latest,
 	true,
 );
-function declaration(name: string) {
-	const matches: ts.VariableStatement[] = [];
+function declaration(name: string, file = source) {
+	const matches: ts.Statement[] = [];
 	function visit(node: ts.Node) {
 		if (
-			ts.isVariableStatement(node) &&
-			node.declarationList.declarations.some(
-				(item) => ts.isIdentifier(item.name) && item.name.text === name,
-			)
+			(ts.isVariableStatement(node) &&
+				node.declarationList.declarations.some(
+					(item) => ts.isIdentifier(item.name) && item.name.text === name,
+				)) ||
+			(ts.isFunctionDeclaration(node) && node.name?.text === name)
 		)
 			matches.push(node);
 		ts.forEachChild(node, visit);
 	}
-	visit(source);
+	visit(file);
 	if (matches.length !== 1)
 		throw new Error(`Expected one bootstrap declaration for ${name}`);
-	return matches[0]?.getText(source) ?? "";
+	return matches[0]?.getText(file) ?? "";
 }
 function evaluate(code: string, scope: Record<string, unknown>) {
 	const javascript = ts.transpileModule(code, {
@@ -65,7 +67,7 @@ function load(
 	scope: Record<string, unknown>,
 ): Record<string, unknown> {
 	return evaluate(
-		`${names.map(declaration).join("\n")}\nreturn {${names.join(",")}};`,
+		`${names.map((name) => declaration(name)).join("\n")}\nreturn {${names.join(",")}};`,
 		scope,
 	);
 }
@@ -74,7 +76,7 @@ async function loadAsync(
 	scope: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
 	return evaluate(
-		`return (async () => {${names.map(declaration).join("\n")}\nreturn {${names.join(",")}};})();`,
+		`return (async () => {${names.map((name) => declaration(name)).join("\n")}\nreturn {${names.join(",")}};})();`,
 		scope,
 	);
 }
@@ -529,6 +531,75 @@ it.each([
 		await standardVmaf?.close();
 	}
 	expect(stopSweep).toHaveBeenCalledOnce();
+});
+
+it.each([
+	{ stalled: false, sweepError: undefined, expected: "closed" },
+	{
+		stalled: true,
+		sweepError: "VMAF_QUEUE_SWEEP_DRAIN_UNCONFIRMED",
+		expected: "VMAF_QUEUE_SWEEP_DRAIN_UNCONFIRMED",
+	},
+	{
+		stalled: true,
+		sweepError: undefined,
+		expected: "VMAF_QUEUE_DATABASE_DISCONNECT_UNCONFIRMED",
+	},
+])("settles the dedicated CLI shutdown after ownership drain (PostgreSQL stalled=$stalled, sweep=$sweepError)", async ({
+	stalled,
+	sweepError,
+	expected,
+}) => {
+	vi.useFakeTimers();
+	const owner = barrier();
+	const database = barrier();
+	const disconnectDatabase = vi.fn(async () => {
+		if (stalled) await database.wait;
+	});
+	const disconnectRedis = vi.fn();
+	const producer = { close: vi.fn(async () => {}) };
+	const dedicated = ts.createSourceFile(
+		"vmaf-only.ts",
+		readFileSync(new URL("../vmaf-only.ts", import.meta.url), "utf8"),
+		ts.ScriptTarget.Latest,
+		true,
+	);
+	const close: () => Promise<void> = evaluate(
+		`${declaration("closing", dedicated)}\n${declaration("close", dedicated)}\nreturn close;`,
+		{
+			registration: {
+				async close() {
+					await owner.wait;
+					if (sweepError) throw new Error(sweepError);
+				},
+			},
+			basePrisma: { $disconnect: disconnectDatabase },
+			redis: { disconnect: disconnectRedis },
+			ownerRedis: { disconnect: disconnectRedis },
+			queue: producer,
+			notifyQueue: producer,
+			orchestratorProducerQueue: producer,
+			waitForVmafBrokerClose,
+		},
+	);
+	const settled = close().then(
+		() => "closed",
+		(error: Error) => error.message,
+	);
+	try {
+		expect(disconnectDatabase).not.toHaveBeenCalled();
+		owner.release();
+		await vi.advanceTimersByTimeAsync(7_000);
+		expect(await Promise.race([settled, Promise.resolve("pending")])).toBe(
+			expected,
+		);
+		expect(disconnectDatabase).toHaveBeenCalledOnce();
+		expect(disconnectRedis).toHaveBeenCalledTimes(2);
+		expect(producer.close).toHaveBeenCalledTimes(3);
+	} finally {
+		database.release();
+		vi.useRealTimers();
+	}
 });
 
 it.each([

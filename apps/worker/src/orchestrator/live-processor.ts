@@ -7862,9 +7862,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 									id: scheduleId,
 									liveChannelId,
 									liveChannelRunId: runId,
-									...(job.provisionFenceVersion !== undefined
-										? { startAdmissionFenceVersion: generation }
-										: {}),
+									startAdmissionFenceVersion: generation ?? null,
 								},
 							}
 						: null;

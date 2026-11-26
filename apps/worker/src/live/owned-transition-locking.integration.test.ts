@@ -1379,6 +1379,63 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toEqual(other);
 		});
 
+		it("a retained legacy START failure cannot close a later admission of the same schedule", async () => {
+			const f = await fixture("PROVISIONING", null);
+			await tenant.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { liveEffectFenceVersion: 4, legacyAdmissionFenceVersion: 4 },
+			});
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { legacyProvisionAdmissionAt: now },
+			});
+			const current = await tenant.liveSchedule.create({
+				data: {
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					startAdmissionFenceVersion: 4,
+					action: "START",
+					status: "FIRED",
+					fireAt: now,
+					firedAt: now,
+				},
+			});
+			const legacy = {
+				id: `sched-${current.id}`,
+				data: { liveChannelId: f.channel.id, action: "provision" },
+				timestamp: now.getTime() - 60_000,
+				finishedOn: now.getTime(),
+			};
+			await recordDeadJobScheduleOutcomes(tenant, legacy, "old failed", now);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: current.id },
+				}),
+			).toEqual(current);
+
+			await recordDeadJobScheduleOutcomes(
+				tenant,
+				{
+					...legacy,
+					data: {
+						...legacy.data,
+						plannedLiveChannelRunId: f.run.id,
+						provisionFenceVersion: 4,
+					},
+				},
+				"current failed",
+				now,
+			);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: current.id },
+				}),
+			).toMatchObject({
+				outcome: "UNKNOWN",
+				outcomeNote: expect.stringContaining("current failed"),
+			});
+		});
+
 		it("an older scheduled START cannot retire a revived admission or replace another airing's delivery", async () => {
 			const f = await fixture("PROVISIONING", null);
 			const latest = await tenant.liveChannel.update({

@@ -627,9 +627,9 @@ export function deadJobScheduleWrites(
 							...(data.plannedLiveChannelRunId
 								? { liveChannelRunId: data.plannedLiveChannelRunId }
 								: {}),
-							...(data.provisionFenceVersion !== undefined
-								? { startAdmissionFenceVersion: data.provisionFenceVersion }
-								: {}),
+							// A reused queue key gives a legacy job no evidence about a
+							// later generation of the same scheduled START.
+							startAdmissionFenceVersion: data.provisionFenceVersion ?? null,
 						},
 					},
 					outcome: "UNKNOWN",

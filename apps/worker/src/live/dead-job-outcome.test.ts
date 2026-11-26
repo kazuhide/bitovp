@@ -274,6 +274,32 @@ describe("deadJobScheduleWrites (ledger #238)", () => {
 		).toEqual([]);
 	});
 
+	it("a legacy START failure only targets an unbound schedule generation", () => {
+		const job = {
+			id: `sched-${SCHEDULE_ID}`,
+			data: {
+				liveChannelId: CHANNEL,
+				action: "provision",
+				plannedLiveChannelRunId: RUN,
+			},
+			attemptsMade: 2,
+			opts: { attempts: 2 },
+		};
+		expect(deadJobScheduleWrites(job, "exhausted")).toMatchObject([
+			{
+				target: {
+					scheduledStart: {
+						id: SCHEDULE_ID,
+						liveChannelId: CHANNEL,
+						liveChannelRunId: RUN,
+						startAdmissionFenceVersion: null,
+					},
+				},
+				outcome: "UNKNOWN",
+			},
+		]);
+	});
+
 	it("a bare legacy failure event cannot identify a current STOP by its reused queue key", () => {
 		expect(
 			deadJobScheduleWrites(

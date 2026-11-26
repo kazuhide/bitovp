@@ -4,6 +4,7 @@ import {
 	compileAisaManagedLiveChannel,
 	compileLiveChannel,
 	initStepLog,
+	type LiveChannelJob,
 	type LiveToVodRecord,
 	liveAutoShutdownUpdateReceiptSchema,
 	liveChannelPlanSchema,
@@ -1244,7 +1245,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				now: () => new Date(now.getTime() + 600000),
 				enqueue,
 			}).dispatchPending();
-			expect(enqueue).not.toHaveBeenCalledWith(expect.anything(), id);
+			expect(enqueue).not.toHaveBeenCalledWith(
+				expect.objectContaining({
+					liveChannelId: f.channel.id,
+					action: "provision",
+				}),
+				expect.any(String),
+			);
 			await tenant.liveSchedule.delete({ where: { id: schedule.id } });
 		});
 		it("keeps a scheduled re-air invisible to outbox recovery until its new airing and generation commit", async () => {
@@ -1335,8 +1342,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					plannedLiveChannelRunId: saved.liveChannelRunId,
 					provisionFenceVersion: 1,
 				},
-				`sched-${row.id}`,
+				`sched-${row.id}-start-1`,
 			);
+			expect(saved.dispatchJobId).toBe(`sched-${row.id}-start-1`);
 		});
 
 		it("reports an unbound pre-upgrade FIRED start against an ended broadcast as unknown without creating an encoder", async () => {
@@ -1402,7 +1410,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 			const legacy = {
 				id: `sched-${current.id}`,
-				data: { liveChannelId: f.channel.id, action: "provision" },
+				data: {
+					liveChannelId: f.channel.id,
+					action: "provision",
+				} satisfies LiveChannelJob,
 				timestamp: now.getTime() - 60_000,
 				finishedOn: now.getTime(),
 			};
@@ -1413,16 +1424,88 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				}),
 			).toEqual(current);
 
+			const historicalJob = { ...legacy, getState: async () => "failed" };
+			const queue = new Map<
+				string,
+				{
+					id: string;
+					data: LiveChannelJob;
+					timestamp: number;
+					getState(): Promise<string>;
+				}
+			>([[legacy.id, historicalJob]]);
+			const enqueue = vi.fn(async (data: LiveChannelJob, id: string) => {
+				if (!queue.has(id))
+					queue.set(id, {
+						id,
+						data,
+						timestamp: now.getTime(),
+						getState: async () => "waiting",
+					});
+			});
+			const id = `sched-${current.id}-start-4`;
+			const recover = createExhaustedProvisionRecovery(
+				tenant,
+				async (key) => queue.get(key),
+				enqueue,
+			);
+			for (let i = 0; i < 10 && !queue.has(id); i++) await recover(now);
+			expect(queue.get(legacy.id)).toBe(historicalJob);
+			const job = queue.get(id);
+			expect(job?.data).toEqual({
+				action: "provision",
+				liveChannelId: f.channel.id,
+				plannedLiveChannelRunId: f.run.id,
+				provisionFenceVersion: 4,
+			});
+			if (!job) throw new Error("Missing recovered scheduled START");
+			await expect(
+				resolveProvisionAdmission(
+					tenant,
+					f.channel.id,
+					job.data,
+					job.id,
+					job.timestamp,
+					"dispatch",
+				),
+			).resolves.toEqual({ runId: f.run.id, generation: 4 });
+			await expect(
+				resolveProvisionAdmission(
+					tenant,
+					f.channel.id,
+					job.data,
+					`sched-${current.id}-start-3`,
+					job.timestamp,
+					"dispatch",
+				),
+			).resolves.toBeNull();
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: current.id },
+				}),
+			).toEqual(current);
+
+			// The stranded dispatcher must dedupe against that exact admission too.
+			enqueue.mockClear();
+			const dispatchAt = new Date(now.getTime() + 600_000);
+			await createScheduleSweep({
+				prisma: tenant,
+				now: () => dispatchAt,
+				enqueue,
+			}).dispatchPending();
+			expect(enqueue).toHaveBeenCalledWith(job.data, job.id);
+			expect(queue.get(job.id)).toBe(job);
+			await expect(
+				tenant.liveSchedule.findUniqueOrThrow({ where: { id: current.id } }),
+			).resolves.toMatchObject({
+				dispatchJobId: job.id,
+				dispatchedAt: dispatchAt,
+				outcome: "PENDING",
+			});
+
 			await recordDeadJobScheduleOutcomes(
 				tenant,
-				{
-					...legacy,
-					data: {
-						...legacy.data,
-						plannedLiveChannelRunId: f.run.id,
-						provisionFenceVersion: 4,
-					},
-				},
+				{ ...job, finishedOn: now.getTime() },
 				"current failed",
 				now,
 			);
@@ -1971,7 +2054,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						})
 					: null;
 			const id = schedule
-				? `sched-${schedule.id}`
+				? `sched-${schedule.id}-start-${generation}`
 				: kind === "initial"
 					? f.channel.id
 					: `manual-provision-${f.channel.id}-${f.run.id}-${generation}`;
@@ -1995,6 +2078,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				liveChannelId: f.channel.id,
 				action: "provision",
 				...(kind === "initial" ? {} : { plannedLiveChannelRunId: f.run.id }),
+				...(kind === "scheduled" ? { provisionFenceVersion: generation } : {}),
 			});
 			state = "failed";
 			for (let i = 0; i < 10; i++) await recover(new Date());

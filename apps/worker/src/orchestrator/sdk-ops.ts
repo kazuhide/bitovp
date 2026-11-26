@@ -530,7 +530,6 @@ export type S3RoleStorageParams = {
 	bucketName: string;
 	roleArn: string;
 	region: string;
-	expectedExternalId?: string;
 };
 
 export type SdkOps = {

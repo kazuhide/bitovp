@@ -83,21 +83,6 @@ describe("makeWorkerSdk — the production seam, to the wire", () => {
 			expect(JSON.stringify(result)).not.toContain(value);
 			expect(JSON.stringify(audit.mock.calls)).not.toContain(value);
 		}
-		resolveCredential.mockResolvedValueOnce({
-			provider: "AWS_S3_ROLE_BASED",
-			config: {
-				roleArn,
-				externalId: "different-external-id",
-				region: "ap-northeast-1",
-			},
-			secret: {},
-		});
-		await expect(executeStep(op, ctx)).rejects.toThrow(
-			/External ID does not match/,
-		);
-		expect(JSON.stringify(audit.mock.calls)).not.toContain(
-			"different-external-id",
-		);
 	});
 	it("keeps signed status response bodies out of both SDK failure projections", async () => {
 		const wire = vi.fn(async () =>

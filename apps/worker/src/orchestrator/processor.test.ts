@@ -5,6 +5,7 @@ import {
 	downgradeJitManifests,
 	encodingPlanSchema,
 	initStepLog,
+	reseedFailedSteps,
 	type StepLogEntry,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
@@ -789,6 +790,87 @@ describe("orchestrator processor", () => {
 			"bm-encoding",
 			expect.objectContaining({ inputId: "bm-existing-input" }),
 		);
+	});
+
+	it("retains successful S3 role creates when IAM denies the subsequent start", async () => {
+		const plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		plan.inputs = plan.inputs.map((input) =>
+			input.kind === "S3" ? { ...input, kind: "S3_ROLE_BASED" } : input,
+		);
+		plan.outputs = plan.outputs.map((output) =>
+			output.kind === "S3" ? { ...output, kind: "S3_ROLE_BASED" } : output,
+		);
+		const transport = vi.fn(async (url: string) => {
+			if (url.endsWith("/encoding/inputs/s3-role-based"))
+				return Response.json({
+					data: {
+						result: { id: "role-input", externalId: "provider-global-id" },
+					},
+				});
+			if (url.endsWith("/encoding/outputs/s3-role-based"))
+				return Response.json({ data: { result: { id: "role-output" } } });
+			throw new Error("Unexpected provider call");
+		});
+		vi.stubGlobal("fetch", transport);
+		try {
+			const roleSdk = createBitmovinSdkOps(
+				{ apiKey: "fixture" },
+				async () => {},
+			);
+			const startEncoding = vi.fn(async () => {});
+			startEncoding.mockRejectedValueOnce(
+				new Error("IAM trust policy rejected the role"),
+			);
+			const { processor, row, deps } = setup(
+				{ plan, stepLog: initStepLog(compilePlan(plan)) },
+				{
+					startEncoding,
+					createS3RoleBasedInput: roleSdk.createS3RoleBasedInput,
+					createS3RoleBasedOutput: roleSdk.createS3RoleBasedOutput,
+				},
+			);
+			vi.mocked(deps.resolveCredential).mockResolvedValue({
+				provider: "AWS_S3_ROLE_BASED",
+				config: {
+					roleArn: "arn:aws:iam::123456789012:role/encoding",
+					externalId: "legacy-local-id",
+					region: "us-east-1",
+				},
+				secret: {},
+			});
+			await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow(
+				"IAM trust policy rejected the role",
+			);
+			const persisted = row.stepLog as StepLogEntry[];
+			expect(persisted).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: "CREATE_INPUT_S3_ROLE_BASED",
+						status: "DONE",
+						resourceId: "role-input",
+					}),
+					expect.objectContaining({
+						kind: "CREATE_OUTPUT_S3_ROLE_BASED",
+						status: "DONE",
+						resourceId: "role-output",
+					}),
+					expect.objectContaining({ kind: "START_ENCODING", status: "FAILED" }),
+				]),
+			);
+			expect(JSON.stringify(persisted)).not.toMatch(
+				/legacy-local-id|provider-global-id|arn:aws:/,
+			);
+			row.stepLog = reseedFailedSteps(persisted);
+			row.status = "QUEUED";
+			expect(await processor({ encodingJobId: JOB_ID })).toMatchObject({
+				status: "FINISHED",
+			});
+			expect(transport).toHaveBeenCalledTimes(2);
+			expect(startEncoding).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it("marks the failing step and the job on error, then rethrows", async () => {

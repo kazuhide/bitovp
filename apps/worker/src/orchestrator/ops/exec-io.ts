@@ -109,7 +109,6 @@ export async function executeIoStep(
 				bucketName: str(p.bucketName),
 				roleArn: parsed.data.roleArn,
 				region: parsed.data.region,
-				expectedExternalId: parsed.data.externalId,
 			};
 			const resourceId =
 				op.kind === "CREATE_INPUT_S3_ROLE_BASED"

@@ -210,11 +210,10 @@ presets reference the saved credential as `S3_ROLE_BASED`. New role-based
 destinations default to private access. Delivery mirrors inherit the primary
 destination's ACL.
 
-Configure the IAM trust policy with the GLOBAL External ID from the same
-Bitmovin organization or sub-organization the job uses. If the credential
-includes that value, BitOVP checks it against Bitmovin's response before
-using the resource. Grant the role read access for sources and the required
-write permissions for destinations. See [Bitmovin's role-based setup guide](https://developer.bitmovin.com/encoding/docs/creating-an-s3-role-based-encoding-input-or-output-with-the-bitmovin-api).
+Configure the IAM trust policy using Bitmovin's GLOBAL External ID for the
+organization or sub-organization that runs the job. Bitmovin supplies this
+value when it assumes the role. Grant the role read access for sources and the
+required write permissions for destinations. [Bitmovin's role-based setup guide](https://developer.bitmovin.com/encoding/docs/creating-an-s3-role-based-encoding-input-or-output-with-the-bitmovin-api)
 
 Bitmovin uses the role during encoding. The storage browser, local media
 inspection and QC need independently readable storage and cannot use this

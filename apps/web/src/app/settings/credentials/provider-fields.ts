@@ -66,11 +66,6 @@ export const PROVIDER_FIELDS: Record<
 				placeholder: "arn:aws:iam::123456789012:role/bitmovin",
 				hintKey: "fields.bitmovinAssumesThisRoleNoStatic",
 			},
-			{
-				name: "externalId",
-				labelKey: "fields.externalIdOptional",
-				optional: true,
-			},
 			{ name: "region", labelKey: "fields.region", placeholder: "us-east-1" },
 			PUBLIC_BASE_URLS,
 		],

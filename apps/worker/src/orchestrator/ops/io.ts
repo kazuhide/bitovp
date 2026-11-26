@@ -121,17 +121,8 @@ export function createIoOps(
 			},
 			(result) => ({ id: result.id }),
 		);
-		if (typeof resource.externalId !== "string" || !resource.externalId.trim())
-			throw new Error(
-				"Bitmovin did not return a GLOBAL External ID for S3 role-based storage",
-			);
-		if (
-			p.expectedExternalId !== undefined &&
-			p.expectedExternalId !== resource.externalId
-		)
-			throw new Error(
-				"The GLOBAL External ID does not match the saved S3 role credential for this Bitmovin organization",
-			);
+		// Persist the ID of the completed create. AWS checks the provider-managed
+		// GLOBAL External ID against the role's trust policy when Bitmovin uses it.
 		return id(resource);
 	}
 

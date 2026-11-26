@@ -234,8 +234,8 @@ const s3RoleConfig = z.object({
 			/^arn:aws:iam::\d{12}:role\/.+/,
 			"Must be an IAM role ARN (arn:aws:iam::<account>:role/<name>)",
 		),
-	// Expected GLOBAL External ID from the selected Bitmovin organization.
-	// Only Bitmovin can present this value when it assumes the role.
+	// Older credentials may carry this value. Bitmovin manages the GLOBAL
+	// External ID used by new role-based resources.
 	externalId: z.string().min(1).optional(),
 	region: z.string().min(1, "Region is required"),
 	publicBaseUrls,

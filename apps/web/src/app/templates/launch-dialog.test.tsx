@@ -575,6 +575,10 @@ it.each([
 	"withheld name",
 	"partially withheld name",
 	"unrecoverable name",
+	"protected original found",
+	"protected original empty",
+	"protected original missing",
+	"protected original mismatch",
 ])("safely replays a lost 1.3.5 Quick Launch (%s)", async (scenario) => {
 	const parsed = encodingPlanSchema.parse(
 		samplePresetPlan("fixed-bitrate-hls-on-aws"),
@@ -583,8 +587,11 @@ it.each([
 	if (!first) throw new Error("Missing source");
 	const originalPath = "private/original.mp4?ticket=protected-preset";
 	const protectSource = scenario !== "ordinary";
+	const exactProtectedIntent = scenario.startsWith("protected original");
 	const sourcePath =
-		scenario === "withheld name" || scenario === "partially withheld name"
+		exactProtectedIntent ||
+		scenario === "withheld name" ||
+		scenario === "partially withheld name"
 			? originalPath
 			: "safe/replacement.mp4";
 	if (protectSource) {
@@ -682,6 +689,15 @@ it.each([
 					throw new ApiError(409, "Receipt digest mismatch", {
 						code: "CREATE_REQUEST_CONFLICT",
 					});
+				if (scenario === "protected original empty") return [];
+				if (scenario === "protected original missing")
+					throw new ApiError(404, "Receipt missing", {
+						code: "CREATE_REQUEST_NOT_FOUND",
+					});
+				if (scenario === "protected original mismatch")
+					throw new ApiError(409, "Accepted digest differs", {
+						code: "CREATE_REQUEST_CONFLICT",
+					});
 			}
 			return { id: ID };
 		}
@@ -706,7 +722,19 @@ it.each([
 	const originalKey = new Headers(submissions[0]?.headers).get(
 		"Idempotency-Key",
 	);
-	if (scenario === "unrecoverable name") {
+	if (exactProtectedIntent) {
+		await waitFor(() => expect(submissions).toHaveLength(2));
+		expect(submissions[1]?.method).toBe("GET");
+		expect(submissions[1]?.body).toBeUndefined();
+		const headers = new Headers(submissions[1]?.headers);
+		expect(headers.get("Idempotency-Key")).toBe(originalKey);
+		expect(headers.get("X-BitOVP-Create-Session")).toBe('["org","user"]');
+		expect(headers.get("X-BitOVP-Create-Request-Digest")).toBe(originalDigest);
+	}
+	if (
+		scenario === "unrecoverable name" ||
+		(exactProtectedIntent && scenario !== "protected original found")
+	) {
 		expect(await screen.findByRole("alert")).toBeInTheDocument();
 		expect(routerPush).not.toHaveBeenCalled();
 		expect(submissions.slice(1)).toEqual([

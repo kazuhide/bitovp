@@ -178,15 +178,11 @@ export function createSubmissionClient(
 					if (!pending && legacy && older.length) {
 						const legacyDigest = await sha256(canonicalJson(legacy.intent));
 						pending = older.find((entry) => entry.digest === legacyDigest);
-						if (pending) {
-							const request = legacy.request(pending);
-							build = () => request.body;
-							replayOnly = request.replayOnly;
-						} else if (legacy.lookupWithheldPreset) {
-							// A newly protected template can no longer recreate its
-							// old intent digest. Compare its reconstructed wire body
-							// with admitted requests without starting any provider work.
-							for (const receipt of older) {
+						if (legacy.lookupWithheldPreset) {
+							// Re-entering the original protected path can recreate
+							// the old intent exactly. Even an exact match may only
+							// recover an accepted receipt, never submit the old plan.
+							for (const receipt of pending ? [pending] : older) {
 								const { body, restoredNameBody } = legacy.request(receipt);
 								const candidates =
 									restoredNameBody === undefined
@@ -213,6 +209,10 @@ export function createSubmissionClient(
 							// not proof that the operator initiated a new request.
 							if (!foundReplay)
 								throw new CreationSubmissionError("legacyReceipt");
+						} else if (pending) {
+							const request = legacy.request(pending);
+							build = () => request.body;
+							replayOnly = request.replayOnly;
 						}
 					}
 					if (!pending) {
@@ -252,7 +252,9 @@ export function createSubmissionClient(
 						}
 					}
 					if (!z.object({ id: z.uuid() }).safeParse(result).success)
-						throw new CreationSubmissionError("response");
+						throw new CreationSubmissionError(
+							foundReplay ? "legacyReceipt" : "response",
+						);
 					flights.delete(flightKey);
 					const anotherActive = [...flights.keys()].some((key) =>
 						key.startsWith(`${storageKey}:`),

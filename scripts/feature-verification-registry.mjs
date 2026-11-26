@@ -54,7 +54,7 @@ export const FEATURES = Object.freeze(
 				"src/lib/server/create-request.test.ts": 11,
 				"src/app/api/encoding-jobs/route.test.ts": 71,
 				"src/app/api/live-channels/route.test.ts": 92,
-				"src/app/api/feeder-sessions/route.test.ts": 47,
+				"src/app/api/feeder-sessions/route.test.ts": 50,
 			},
 		},
 		{

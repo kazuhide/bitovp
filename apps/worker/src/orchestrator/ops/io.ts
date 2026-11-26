@@ -77,11 +77,77 @@ export function createIoOps(
 	| "createZixiInput"
 	| "listRtmpInputs"
 > {
-	const { api, audited, id } = ctx;
+	const { api, audited, id, options, stampAuditAdopt } = ctx;
 	async function createS3RoleResource(
 		direction: "inputs" | "outputs",
 		p: S3RoleStorageParams,
 	): Promise<string> {
+		const path = `/encoding/${direction}/s3-role-based`;
+		const journal = options.stamp?.roleStorageCreateJournal?.();
+		// S3 outputs with customData can break JIT manifest startup. Keep the
+		// ownership marker in a typed, non-secret resource description instead.
+		const marker = (receiptId: string) =>
+			`BitOVP role storage create ${receiptId}`;
+		async function recover(receiptId: string, phase: "pre" | "post-failure") {
+			const description = marker(receiptId);
+			const roleApi =
+				direction === "inputs"
+					? api.encoding.inputs.s3RoleBased
+					: api.encoding.outputs.s3RoleBased;
+			let match: string | undefined;
+			let complete = false;
+			try {
+				const limit = 100;
+				for (let offset = 0; offset < 500; offset += limit) {
+					const page = await roleApi.list({ name: p.name, offset, limit });
+					const items = page.items;
+					if (!items) break;
+					for (const item of items) {
+						if (
+							!item.id ||
+							(item.name !== undefined && item.name !== p.name) ||
+							(item.description !== undefined &&
+								item.description !== description)
+						)
+							continue;
+						const candidate = await roleApi.get(item.id);
+						if (
+							candidate.id !== item.id ||
+							candidate.description !== description ||
+							candidate.name !== p.name ||
+							candidate.bucketName !== p.bucketName ||
+							candidate.roleArn !== p.roleArn
+						)
+							continue;
+						if (match && match !== candidate.id)
+							throw new Error(
+								"More than one role resource matches this receipt",
+							);
+						match = candidate.id;
+					}
+					if (
+						page.totalCount !== undefined
+							? page.totalCount <= offset + items.length
+							: items.length < limit
+					) {
+						complete = true;
+						break;
+					}
+					if (items.length < limit) break;
+				}
+			} catch {
+				throw new Error("S3 role-based storage create could not be verified");
+			}
+			if (!complete || !match)
+				throw new Error(
+					"S3 role-based storage create is awaiting provider confirmation",
+				);
+			await stampAuditAdopt(path)(match, phase);
+			return match;
+		}
+		const unresolved = journal?.current();
+		if (unresolved) return recover(unresolved, "pre");
+
 		const regionKey = p.region.toUpperCase().replaceAll("-", "_");
 		// Leave provider discovery enabled for AWS regions outside the SDK enum.
 		const cloudRegion = Object.hasOwn(AwsCloudRegion, regionKey)
@@ -93,37 +159,47 @@ export function createIoOps(
 			externalIdMode: ExternalIdMode.GLOBAL,
 			cloudRegion,
 		};
-		const model = { ...request, roleArn: p.roleArn };
-		const resource = await audited(
-			"POST",
-			`/encoding/${direction}/s3-role-based`,
-			request,
-			async () => {
-				try {
-					return direction === "inputs"
-						? await api.encoding.inputs.s3RoleBased.create(
-								new S3RoleBasedInput(model),
-							)
-						: await api.encoding.outputs.s3RoleBased.create(
-								new S3RoleBasedOutput(model),
-							);
-				} catch (error) {
-					const message = "S3 role-based storage creation failed";
-					if (isBitmovinError(error))
-						throw Object.assign(new Error(message), {
-							httpStatusCode: error.httpStatusCode,
-							errorCode: error.errorCode,
-							requestId: error.requestId,
-							shortMessage: message,
-						});
-					throw new Error(message);
-				}
-			},
-			(result) => ({ id: result.id }),
-		);
-		// Persist the ID of the completed create. AWS checks the provider-managed
-		// GLOBAL External ID against the role's trust policy when Bitmovin uses it.
-		return id(resource);
+		const receiptId = await journal?.reserve();
+		const model = {
+			...request,
+			roleArn: p.roleArn,
+			...(receiptId ? { description: marker(receiptId) } : {}),
+		};
+		try {
+			const resource = await audited(
+				"POST",
+				path,
+				request,
+				async () => {
+					try {
+						return direction === "inputs"
+							? await api.encoding.inputs.s3RoleBased.create(
+									new S3RoleBasedInput(model),
+								)
+							: await api.encoding.outputs.s3RoleBased.create(
+									new S3RoleBasedOutput(model),
+								);
+					} catch (error) {
+						const message = "S3 role-based storage creation failed";
+						if (isBitmovinError(error))
+							throw Object.assign(new Error(message), {
+								httpStatusCode: error.httpStatusCode,
+								errorCode: error.errorCode,
+								requestId: error.requestId,
+								shortMessage: message,
+							});
+						throw new Error(message);
+					}
+				},
+				(result) => ({ id: result.id }),
+			);
+			// AWS checks the provider-managed GLOBAL External ID at usage time.
+			return id(resource);
+		} catch (error) {
+			if (receiptId && journal?.current() === receiptId)
+				return recover(receiptId, "post-failure");
+			throw error;
+		}
 	}
 
 	return {

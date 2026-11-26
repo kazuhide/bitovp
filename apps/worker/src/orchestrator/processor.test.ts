@@ -10,6 +10,7 @@ import {
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ResolvedCredential } from "./executor";
 import { fakeSdk as baseFakeSdk } from "./fake-sdk";
 import { applyJitFallback } from "./jit-fallback";
 import { makeWorkerSdk } from "./make-sdk";
@@ -869,6 +870,220 @@ describe("orchestrator processor", () => {
 			});
 			expect(transport).toHaveBeenCalledTimes(2);
 			expect(startEncoding).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it.each([
+		["inputs", "late-visible"],
+		["outputs", "late-visible"],
+		["outputs", "exact-refusal"],
+		["outputs", "done-write-failed"],
+	] as const)("recovers %s role storage without duplicating %s creates", async (direction, outcome) => {
+		const plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		if (direction === "inputs")
+			plan.inputs = plan.inputs.map((input) =>
+				input.kind === "S3" ? { ...input, kind: "S3_ROLE_BASED" } : input,
+			);
+		else
+			plan.outputs = plan.outputs.map((output) =>
+				output.kind === "S3" ? { ...output, kind: "S3_ROLE_BASED" } : output,
+			);
+		const kind =
+			direction === "inputs"
+				? "CREATE_INPUT_S3_ROLE_BASED"
+				: "CREATE_OUTPUT_S3_ROLE_BASED";
+		const roleArn = "arn:aws:iam::111122223333:role/fixture-encoding";
+		const externalId = "fixture-provider-external";
+		const steps = initStepLog(compilePlan(plan));
+		const credentialId = steps.find((entry) => entry.kind === kind)?.payload
+			.credentialId;
+		const needsRecovery = outcome !== "exact-refusal";
+		const h = setup({ plan, stepLog: steps });
+		const savedAccount = {
+			apiKey: "fixture-key",
+			tenantOrgId: "fixture-tenant",
+			resourceScopeVersion: "00000000-0000-4000-8000-0000000000fe",
+		};
+		vi.mocked(h.deps.revealBitmovinAccount).mockResolvedValue(savedAccount);
+		vi.mocked(h.deps.resolveCredential).mockImplementation(
+			async (id): Promise<ResolvedCredential> =>
+				id === credentialId
+					? {
+							provider: "AWS_S3_ROLE_BASED",
+							config: { roleArn, region: "us-east-1" },
+							secret: {},
+						}
+					: {
+							provider: "AWS_S3",
+							config: {},
+							secret: { accessKeyId: "a", secretAccessKey: "s" },
+						},
+		);
+		const audit = vi.fn(
+			async (_entry: { data: Record<string, unknown> }) => {},
+		);
+		const makeSdk = makeWorkerSdk({
+			...h.prisma,
+			auditLog: { create: audit },
+		} as unknown as AppPrismaClient);
+		h.deps.makeSdk = (args) => {
+			const real = makeSdk(args);
+			return {
+				...h.sdk,
+				createS3RoleBasedInput: real.createS3RoleBasedInput,
+				createS3RoleBasedOutput: real.createS3RoleBasedOutput,
+			};
+		};
+		const firstId = "00000000-0000-4000-8000-0000000000aa";
+		const otherId = "00000000-0000-4000-8000-0000000000ab";
+		const prefix = `/v1/encoding/${direction}/s3-role-based`;
+		const requests: Record<string, unknown>[] = [];
+		const journalAtSend: Array<StepLogEntry["roleStorageCreate"]> = [];
+		let providerResource: Record<string, unknown> | undefined;
+		let crashSnapshot: Record<string, unknown> | undefined;
+		let isVisible = false;
+		const wire = vi.fn(async (rawUrl: string, init: RequestInit) => {
+			const url = new URL(rawUrl);
+			expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(
+				"fixture-tenant",
+			);
+			if (init.method === "POST" && url.pathname === prefix) {
+				const body = JSON.parse(String(init.body));
+				requests.push(body);
+				journalAtSend.push(
+					(h.row.stepLog as StepLogEntry[]).find((entry) => entry.kind === kind)
+						?.roleStorageCreate,
+				);
+				if (requests.length === 1 && outcome === "exact-refusal")
+					return Response.json(
+						{
+							status: "ERROR",
+							data: { code: 1002, message: "Authentication failed" },
+						},
+						{ status: 403 },
+					);
+				if (requests.length === 1) {
+					providerResource = { ...body, id: firstId, externalId };
+					crashSnapshot = structuredClone(h.row);
+					if (outcome === "late-visible")
+						throw new TypeError("connection lost after committed role storage");
+					return Response.json({ data: { result: providerResource } });
+				}
+				return Response.json({ data: { result: { id: otherId, externalId } } });
+			}
+			if (init.method === "GET" && url.pathname === prefix) {
+				const items =
+					isVisible && providerResource
+						? [
+								{
+									...providerResource,
+									id: otherId,
+									description: "another attempt",
+								},
+								providerResource,
+							]
+						: [];
+				return Response.json({
+					data: { result: { items, totalCount: items.length } },
+				});
+			}
+			if (init.method === "GET" && url.pathname === `${prefix}/${firstId}`)
+				return Response.json({ data: { result: providerResource } });
+			throw new Error("Unexpected provider call in role create fixture");
+		});
+		if (outcome === "done-write-failed") {
+			const persist = h.updateMany.getMockImplementation();
+			if (!persist) throw new Error("Missing fixture persistence");
+			let fail = true;
+			h.updateMany.mockImplementation(async (args) => {
+				const entries = args.data.stepLog as StepLogEntry[] | undefined;
+				if (
+					fail &&
+					entries?.some(
+						(entry) => entry.kind === kind && entry.status === "DONE",
+					)
+				) {
+					fail = false;
+					throw new Error("Synthetic lost role DONE write");
+				}
+				return persist(args);
+			});
+		}
+		vi.stubGlobal("fetch", wire);
+		try {
+			await expect(h.processor({ encodingJobId: JOB_ID })).rejects.toThrow();
+			expect(requests).toHaveLength(1);
+			expect(journalAtSend).toEqual([
+				expect.objectContaining({ id: expect.any(String) }),
+			]);
+			expect(requests[0]?.description).toContain(journalAtSend[0]?.id);
+			if (direction === "outputs")
+				expect(requests[0]).not.toHaveProperty("customData");
+			expect(h.row.status).toBe("ERROR");
+			const failed = (h.row.stepLog as StepLogEntry[]).find(
+				(entry) => entry.kind === kind,
+			);
+			if (needsRecovery)
+				expect(failed?.roleStorageCreate?.id).toEqual(expect.any(String));
+			else expect(failed?.roleStorageCreate).toBeUndefined();
+			h.row.stepLog = reseedFailedSteps(h.row.stepLog as StepLogEntry[]);
+			h.row.status = "QUEUED";
+			isVisible = true;
+			if (direction === "inputs" && crashSnapshot) {
+				Object.assign(h.row, crashSnapshot, {
+					status: "RUNNING",
+					attemptClaimedAt: new Date(0),
+				});
+			}
+			if (direction === "outputs" && outcome === "late-visible") {
+				const priorCalls = wire.mock.calls.length;
+				vi.mocked(h.deps.revealBitmovinAccount).mockResolvedValueOnce({
+					...savedAccount,
+					resourceScopeVersion: "00000000-0000-4000-8000-0000000000ff",
+				});
+				await expect(
+					createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
+				).rejects.toThrow("The original Bitmovin account is required");
+				expect(wire).toHaveBeenCalledTimes(priorCalls);
+				h.row.stepLog = reseedFailedSteps(h.row.stepLog as StepLogEntry[]);
+				h.row.status = "QUEUED";
+			}
+			await expect(
+				createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
+			).resolves.toMatchObject({
+				status: "FINISHED",
+			});
+			expect(requests).toHaveLength(needsRecovery ? 1 : 2);
+			if (needsRecovery) {
+				expect(audit.mock.calls.map(([entry]) => entry.data)).toContainEqual(
+					expect.objectContaining({
+						method: "GET",
+						path: prefix.replace(/^\/v1/, ""),
+						bitmovinAccountId: ACCOUNT_ID,
+						response: { id: firstId },
+					}),
+				);
+			} else {
+				expect(journalAtSend[1]?.id).toEqual(expect.any(String));
+				expect(journalAtSend[1]?.id).not.toBe(journalAtSend[0]?.id);
+			}
+			expect(
+				(h.row.stepLog as StepLogEntry[]).find((entry) => entry.kind === kind),
+			).toMatchObject({
+				status: "DONE",
+				resourceId: needsRecovery ? firstId : otherId,
+			});
+			const stored = JSON.stringify([
+				h.row.stepLog,
+				h.emitted,
+				audit.mock.calls,
+			]);
+			expect(stored.includes(roleArn) || stored.includes(externalId)).toBe(
+				false,
+			);
 		} finally {
 			vi.unstubAllGlobals();
 		}

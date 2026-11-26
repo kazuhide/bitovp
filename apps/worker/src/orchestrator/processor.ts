@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
 	type CompiledOperation,
 	checkHdr10PlusPlan,
@@ -598,6 +599,54 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 						jobId: encodingJobId,
 						currentStep: () => stampStep,
 						adoptWindow: () => stampAdopt,
+						roleStorageCreateJournal: () => {
+							const entry = activeEntry;
+							if (
+								entry?.kind !== "CREATE_INPUT_S3_ROLE_BASED" &&
+								entry?.kind !== "CREATE_OUTPUT_S3_ROLE_BASED"
+							)
+								return;
+							const pending = entry.roleStorageCreate;
+							if (
+								pending &&
+								(pending.accountId !== accountId ||
+									pending.scopeVersion !== resourceAccount?.version)
+							)
+								throw new Error(
+									"The original Bitmovin account is required to resolve the role storage create",
+								);
+							const record = async (
+								next: StepLogEntry["roleStorageCreate"],
+							) => {
+								const previous = entry.roleStorageCreate;
+								entry.roleStorageCreate = next;
+								try {
+									await persist(encodingJobId, entries);
+								} catch (error) {
+									entry.roleStorageCreate = previous;
+									throw error;
+								}
+							};
+							return {
+								current: () => entry.roleStorageCreate?.id,
+								reserve: async () => {
+									if (entry.roleStorageCreate)
+										throw new Error(
+											"The previous S3 role storage create is unresolved",
+										);
+									if (await checkCancel())
+										throw new CancelRequested(entry.step, true);
+									const id = randomUUID();
+									await record({
+										id,
+										accountId,
+										scopeVersion: resourceAccount?.version,
+									});
+									return id;
+								},
+								release: () => record(undefined),
+							};
+						},
 						...(verification
 							? {
 									verification,

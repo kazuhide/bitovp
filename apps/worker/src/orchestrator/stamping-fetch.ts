@@ -71,6 +71,14 @@ export type CreateStamp = {
 				record(state: "PREPARING" | "DISPATCHING"): Promise<void>;
 		  }
 		| undefined;
+	/** The active VOD IAM storage CREATE owns this opaque dispatch receipt. */
+	roleStorageCreateJournal?: () =>
+		| {
+				current(): string | undefined;
+				reserve(): Promise<string>;
+				release(): Promise<void>;
+		  }
+		| undefined;
 	/**
 	 * Durable verification identity. Both fields are derived and committed by
 	 * the server before any provider create; they ride the provider resource so

@@ -489,6 +489,14 @@ export const stepLogEntrySchema = z.strictObject({
 	 * Recover it by exact marker until a positive result is available. */
 	adoptExistingOnly: z.literal(true).optional(),
 	childCreateDispatch: z.enum(["PREPARING", "DISPATCHING"]).optional(),
+	/** This VOD role-storage CREATE may already exist at the original provider. */
+	roleStorageCreate: z
+		.strictObject({
+			id: z.uuid(),
+			accountId: z.uuid(),
+			scopeVersion: z.uuid().optional(),
+		})
+		.optional(),
 	/** Redacted request/response snapshots (C7). */
 	request: z.unknown().optional(),
 	response: z.unknown().optional(),

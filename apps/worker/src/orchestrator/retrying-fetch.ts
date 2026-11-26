@@ -58,6 +58,7 @@ export type RetryingFetchOptions = {
 	/** A job-owned mutation must be reconciled after an uncertain transport response. */
 	retryMutations?: boolean | (() => boolean);
 	childCreateJournal?: CreateStamp["childCreateJournal"];
+	roleStorageCreateJournal?: CreateStamp["roleStorageCreateJournal"];
 	/** Base backoff; attempt n waits `delayMs * 2^(n-1)`. */
 	delayMs?: number;
 	/** Injected for tests — the default is a real timer. */
@@ -70,6 +71,8 @@ export type RetryingFetchOptions = {
 
 const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_DELAY_MS = 250;
+const ROLE_STORAGE_CREATE_PATH =
+	/^\/v1\/encoding\/(?:inputs|outputs)\/s3-role-based\/?$/;
 
 export function createRetryingFetch(
 	options: RetryingFetchOptions = {},
@@ -88,22 +91,30 @@ export function createRetryingFetch(
 			request?.method?.toUpperCase() === "POST"
 				? options.childCreateJournal?.()
 				: undefined;
-		if (child) {
+		const roleStorageCreate =
+			request?.method?.toUpperCase() === "POST" &&
+			ROLE_STORAGE_CREATE_PATH.test(pathOf(url));
+		const role = roleStorageCreate
+			? options.roleStorageCreateJournal?.()
+			: undefined;
+		const markNotAdmitted = child
+			? () => child.record("PREPARING")
+			: role?.release;
+		if (child || roleStorageCreate) {
 			// Send exactly once. Following a redirect could produce a refusal or DNS
 			// error for a later request after the original server received its POST.
 			let response: Response;
 			try {
 				response = await doFetch(url, { ...request, redirect: "manual" });
 			} catch (error) {
-				if (failedOriginalDnsLookup(error, url))
-					await child.record("PREPARING");
+				if (failedOriginalDnsLookup(error, url)) await markNotAdmitted?.();
 				throw error;
 			}
 			// Fetch resolves after headers. A broken body must not erase the original
 			// POST's refusal. A failed GET never reaches this journal.
 			if (!response.redirected && [401, 403, 429].includes(response.status)) {
 				try {
-					await child.record("PREPARING");
+					await markNotAdmitted?.();
 				} catch (error) {
 					// The SDK cannot consume the response after a lost journal write.
 					// Cancel its stream and preserve the original ownership failure.
@@ -222,6 +233,7 @@ export function isRetryable(url: string, init: unknown): boolean {
 	// `/start` (VOD), `/live/start` (live) — and with a query string or trailing slash, because a
 	// path check that a URL shape can slip past is not a guard.
 	const path = pathOf(url);
+	if (method === "POST" && ROLE_STORAGE_CREATE_PATH.test(path)) return false;
 	// This PATCH mutates an active encoder through a durable effect claim.
 	// A response lost after assignment must reach that claim as AMBIGUOUS,
 	// never be sent again inside the transport layer (or logged with its key).

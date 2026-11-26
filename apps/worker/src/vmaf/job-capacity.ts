@@ -1,5 +1,14 @@
 import { DelayedError, type Job } from "bullmq";
 
+export function createVmafRunnerHandler(
+	process: (data: unknown) => Promise<unknown>,
+) {
+	return async (job: Job) => {
+		await process(job.data);
+		return { acknowledged: true, queue: "vmafRunner" } as const;
+	};
+}
+
 /** Parent jobs wait in BullMQ rather than occupying all physical worker slots.
  * Comparison-level admission remains shared across every admitted parent. */
 export function queueExcessVmafJobs<T>(options: {

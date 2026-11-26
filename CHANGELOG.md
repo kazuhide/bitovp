@@ -9,6 +9,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ### Added
 
 - Send a pseudo-live source once through the feeder API, with duplicate playback prevention and a recorded end-of-file result.
+- Optionally run the QC queue on a dedicated worker with the same tenant checks and shared host reservations as the main worker.
 - Export a selected VOD audio track to a mono or stereo PCM WAV file, or copy a verified AAC or PCM track into a supported MP4, MOV or WAV file from the file-output wizard.
 - Extract DVB bitmap subtitles from a Live transport stream by absolute track position. Publish segmented WebVTT in HLS or DASH, or WebVTT in fMP4 for DASH. Save language, display name and packaging in Live templates and drafts.
 - Extract CEA-608, CEA-708 and DVB subtitles from VOD input media into WebVTT files or HLS subtitle tracks. Templates retain the selected channel, service or track position.
@@ -34,6 +35,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Require matching HDR10+ metadata when replacing a withheld picture and retain both source roles when the original job is deleted.
 - Protect private VOD source locations and keep output format summaries available in Compare.
 - Allow a worker with shared resource admission to run compatible local QC measurements concurrently within the host CPU and memory budget. Apply the reserved decoder limits to CAMBI scoring and frame-timing probes.
+- Start standard QC automatically when Redis becomes available and confirm queue ownership again before resuming work if its registration is lost.
 
 ## [1.3.5] - 2026-11-25
 

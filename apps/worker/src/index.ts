@@ -23,8 +23,6 @@ import {
 	redactSecrets,
 	SLATE_NORMALIZE_PROMOTE_JOB,
 	submitEncodingJob,
-	vmafJobSchema,
-	vmafModelNeedsFile,
 } from "@bitovp/core";
 import {
 	type LocalCaptionTranslationSelection,
@@ -36,15 +34,9 @@ import {
 	appendResetCleanupEncoding,
 	createBitmovinAccountStore,
 	createCredentialStore,
-	createPrismaClient,
-	createTenantPrismaClient,
-	createVmafComputeCredentialStore,
-	DEFAULT_ORGANIZATION_ID,
-	getIdentityPrisma,
 	listVmafCloudProfiles,
 	recordUnrestrictedEgress,
 	resolveInspectedAudioSource,
-	TENANT_ORGANIZATION,
 } from "@bitovp/db";
 import type { BrowserCredential } from "@bitovp/storage";
 import {
@@ -190,16 +182,18 @@ import {
 	scheduleSystemSweep,
 	systemSweeps,
 } from "./system-sweeps";
-import { createTenantConsumer, isTenantSystemSweep } from "./tenant/consumer";
-import { createTenantDispatcher } from "./tenant/dispatch";
+import { isTenantSystemSweep } from "./tenant/consumer";
 import { tenantQueue } from "./tenant/queue";
 import {
-	contextualTenantPrisma,
 	forEachTenantService,
 	requireOrganizationId,
 	tenantService,
 } from "./tenant/scope";
 import { tenantWakeSleep } from "./tenant/wake";
+import {
+	createWorkerStorageCredentialResolver,
+	createWorkerTenantContext,
+} from "./tenant/worker-context";
 import { createUsageBackfillProcessor } from "./usage/statistics-backfill";
 import {
 	createUsageStatisticsProvider,
@@ -207,21 +201,20 @@ import {
 	USAGE_SWEEP_FIRST_DELAY_MS,
 	USAGE_SWEEP_INTERVAL_MS,
 } from "./usage/statistics-sweep";
-import { createAvailableAutomaticVmafRuntime } from "./vmaf/automatic-runtime";
-import { createVmafCloudController } from "./vmaf/cloud/controller";
-import { createCloudRuntimeAuth } from "./vmaf/cloud/runtime-auth";
 import {
-	cloudJobConcurrency,
-	createLocalExecutionGate,
-} from "./vmaf/execution-dispatch";
-import { queueExcessVmafJobs } from "./vmaf/job-capacity";
-import { createLiveVmafProcessor } from "./vmaf/live-processor";
-import { createLocalVmafResources } from "./vmaf/local-resources";
-import { createVmafModelResolver } from "./vmaf/model-path";
-import { createVmafProcessor } from "./vmaf/processor";
-import { createStrandedVmafReconciler } from "./vmaf/reconcile-stranded";
-import { readLocalResources } from "./vmaf/resources";
+	closeVmafBullWorker,
+	createVmafOwnershipConnection,
+	createVmafQueueRegistry,
+	guardVmafQueueOwnership,
+	readVmafQueueDatabase,
+	startSplitVmafPrimaryWitness,
+	startStandardVmafConsumer,
+	waitForVmafBrokerClose,
+} from "./vmaf/queue-ownership";
+import { startOwnedVmafReconciliation } from "./vmaf/reconcile-stranded";
 import { createVmafTrigger } from "./vmaf/trigger";
+import { primaryWorkerQueues } from "./vmaf/worker-role";
+import { createVmafWorkerServices } from "./vmaf/worker-services";
 import { createVodInputPreviewSweep } from "./vod-input-preview/cleanup";
 import { createVodInputPreviewProcessor } from "./vod-input-preview/processor";
 import { createVodInputPreviewReservation } from "./vod-input-preview/resources";
@@ -244,36 +237,14 @@ const LIVE_CHANNEL_CONCURRENCY = liveChannelConcurrency(
 	process.env.LIVE_CHANNEL_CONCURRENCY,
 );
 
-const basePrisma = createPrismaClient(env.DATABASE_URL);
-const tenantClients = new Map<
-	string,
-	ReturnType<typeof createTenantPrismaClient>
->();
-const prisma = contextualTenantPrisma((organizationId) => {
-	let client = tenantClients.get(organizationId);
-	if (!client) {
-		client = createTenantPrismaClient(basePrisma, organizationId);
-		tenantClients.set(organizationId, client);
-	}
-	return client;
-}, TENANT_ORGANIZATION);
-const identityPrisma = getIdentityPrisma();
-const forEachOrganization = createTenantDispatcher(identityPrisma);
-const isOrganizationActive = async (organizationId = requireOrganizationId()) =>
-	(
-		await identityPrisma.organization.findUnique({
-			where: { id: organizationId },
-			select: { active: true },
-		})
-	)?.active === true;
-const consumeTenantJob = createTenantConsumer({
+const {
+	basePrisma,
 	prisma,
+	identityPrisma,
 	forEachOrganization,
 	isOrganizationActive,
-	...(process.env.TENANT_MIGRATE_LEGACY_QUEUES === "1"
-		? { legacyOrganizationId: DEFAULT_ORGANIZATION_ID }
-		: {}),
-});
+	consumeTenantJob,
+} = createWorkerTenantContext(env.DATABASE_URL);
 
 let stopping = false;
 function runTenantTick(run: () => unknown): void {
@@ -946,19 +917,7 @@ const processorDeps: LiveChannelDeps = {
 		if (!access) throw new Error("Bitmovin account no longer exists");
 		return access;
 	},
-	async resolveCredential(credentialId) {
-		const credential = await credentials.get(credentialId);
-		if (!credential) {
-			throw new Error("Storage credential no longer exists");
-		}
-		return {
-			provider: credential.provider,
-			config: (credential.config ?? {}) as Record<string, unknown>,
-			secret: JSON.parse(
-				await credentials.revealSecret(credentialId),
-			) as Record<string, string>,
-		};
-	},
+	resolveCredential: createWorkerStorageCredentialResolver(credentials),
 	// The exported factory, not an inline lambda: make-sdk.ts is the SAME
 	// function object make-sdk.test.ts drives to the wire, so the dropped-
 	// argument defect that shipped here once (review of PR #163, Mutation A)
@@ -995,11 +954,7 @@ const orchestrate = tenantService(() =>
 					(process.env.BITOVP_CAPTURE_INPUT_SECRET?.length ?? 0) < 32
 				)
 					throw new Error("INPUT_CAPTURE_CONFIGURATION_INVALID");
-				await resolveInspectedAudioSource(
-					prisma,
-					requireOrganizationId(),
-					plan,
-				);
+				await resolveInspectedAudioSource(prisma, requireOrganizationId(), plan);
 				return;
 			}
 			await verifyInputTimelinePreparation({
@@ -1031,7 +986,7 @@ const orchestrate = tenantService(() =>
 		// Wrapped, not passed by reference: the capability is declared further
 		// down (it needs the resolved model dir), and this closure resolves the
 		// binding when a JOB arrives — long after module init.
-		vmafModelAvailable: (model: string) => isVmafModelAvailable(model),
+		vmafModelAvailable: (model: string) => vmafRuntime.isModelAvailable(model),
 	}),
 );
 const liveChannel = tenantService(() =>
@@ -1092,60 +1047,6 @@ const liveHeartbeatSweepInner = tenantService(() =>
 		resolveOrphanedAlerts,
 		summarizeEndedRuns,
 	}),
-);
-// One-shot on startup : retire VMAF rows whose claimant is gone.
-// A row claimed PENDING → RUNNING and then lost its worker can never move
-// again — the claim only matches PENDING, the delete route refuses a
-// non-terminal row, and with QC/VMAF off the surface 404s. The owner hit one
-// that had been RUNNING for 58 days and it blocked the data reset, pointing
-// them at a Bitmovin dashboard for a job that never touched Bitmovin.
-const reconcileStrandedVmaf = tenantService(() =>
-	createStrandedVmafReconciler({
-		prisma,
-		queue: vmafQueue,
-		orchestratorQueue: orchestratorProducerQueue,
-	}),
-);
-// review-3 I3: on a PERIODIC tick, not only at boot. The archetypal case is
-// "worker was killed, operator restarts it" — and at boot the killed run's
-// job is still in BullMQ's `active` list, because the stalled sweep that
-// reclaims it has not run yet (30s default). So the one-shot skips it, the
-// stall then redelivers, the processor's claim matches zero rows and the job
-// COMPLETES, and the row is still RUNNING. Only a SECOND restart would have
-// caught it — "fixed next time you restart twice" is not fixed, least of all
-// for the deployment that sat 58 days.
-const STRANDED_VMAF_SWEEP_MS = 60_000;
-setTenantInterval(() => {
-	reconcileStrandedVmaf()
-		.then((retired) => {
-			if (retired > 0) {
-				console.warn(
-					`[vmaf] retired ${retired} stranded RUNNING report(s) — their worker went away`,
-				);
-			}
-		})
-		.catch((err) =>
-			console.error(
-				"[vmaf] stranded-report reconcile failed (reports still work):",
-				err instanceof Error ? err.message : err,
-			),
-		);
-}, STRANDED_VMAF_SWEEP_MS).unref();
-runTenantTick(() =>
-	reconcileStrandedVmaf()
-		.then((retired) => {
-			if (retired > 0) {
-				console.warn(
-					`[vmaf] retired ${retired} stranded RUNNING report(s) — their worker went away`,
-				);
-			}
-		})
-		.catch((err) =>
-			console.error(
-				"[vmaf] stranded-report reconcile failed (reports still work):",
-				err instanceof Error ? err.message : err,
-			),
-		),
 );
 /**
  * Audit F63-RUN-009, the boot half. The failure-time stop above runs
@@ -1216,7 +1117,7 @@ const strandedInspectionSweep = () => {
 			),
 		);
 };
-setTenantInterval(strandedInspectionSweep, STRANDED_VMAF_SWEEP_MS).unref();
+setTenantInterval(strandedInspectionSweep, 60_000).unref();
 runTenantTick(() => strandedInspectionSweep());
 // Review-336 I1: a channel whose provisioning lease went stale with no
 // takeover is wedged in PROVISIONING — no sweep, action or retry reached it.
@@ -1416,130 +1317,27 @@ runTenantTick(() => feederTakeoverSweep());
 // defaults under the OS tmpdir.
 const vmafWorkDir = env.VMAF_WORKDIR ?? join(tmpdir(), "bitovp-vmaf");
 const vmafRunner = createNodeProcessRunner();
-const automaticVmafSelectionState: { failure?: Error } = {};
-// Read-only pair validation precedes replacing the legacy local execution path.
-const automaticVmafRuntime =
-	process.platform === "linux" && env.VMAF_NATIVE_PATH
-		? await createAvailableAutomaticVmafRuntime({
-				runner: vmafRunner,
-				redis: wakePublisher,
-				nativePath: env.VMAF_NATIVE_PATH,
-				ffmpegPath: env.VMAF_FFMPEG_PATH ?? env.FFMPEG_PATH,
-				ffprobePath: env.FFPROBE_PATH,
-				workDirectory: join(vmafWorkDir, ".native-automatic"),
-				configured: {
-					threads: env.VMAF_THREADS,
-					concurrency: env.VMAF_CONCURRENCY,
-				},
-				...(process.env.VMAF_GPU_DEVICE?.trim()
-					? { device: env.VMAF_GPU_DEVICE }
-					: {}),
-				onDiagnostic: (message) => console.warn(`[worker:vmaf] ${message}`),
-				onInvalid: (failure) => {
-					automaticVmafSelectionState.failure = failure;
-				},
-			})
-		: undefined;
-// Local resource decisions are made after probing each pair, using the CPU
-// quota, memory headroom and decoded reference geometry. Explicit thread and
-// concurrency settings retain their respective exact value and upper bound.
-const localVmafResources = createLocalVmafResources({
-	threads: env.VMAF_THREADS,
-	concurrency: env.VMAF_CONCURRENCY,
-	execute: automaticVmafRuntime?.execute,
+const vmafRuntime = await createVmafWorkerServices({
+	mode: env.VMAF_QUEUE_OWNER === "dedicated" ? "producer" : "worker",
+	env,
+	prisma,
+	cipher,
+	processorDeps,
+	emitEvent,
+	orchestratorProducerQueue,
+	vmafRunner,
+	wakePublisher,
+	vmafWorkDir,
+	feederSpoolDir,
 });
-// Frame subsampling remains an explicit quality tradeoff; automatic resource
-// planning never changes the scored frame set.
-const vmafSubsample = env.VMAF_SUBSAMPLE;
-// Bundled VMAF model files (the Docker image populates VMAF_MODEL_DIR). The
-// "VMAF v1" models (vmaf_v1.0.16_3d0h and the other _NdNh / _hfr variants) are
-// NOT libvmaf built-ins — they only load from a model FILE — so the runner maps
-// a model name to its bundled JSON when one is present and uses `model=path=`;
-// otherwise it falls back to the built-in `model=version=` (the v0.6.1 family,
-// reachable on the host too). HDR can use a separate model directory without
-// changing the existing SDR installation.
-const vmafModelDir = env.VMAF_MODEL_DIR;
-const resolveModelPath = createVmafModelResolver({
-	sdrDir: vmafModelDir,
-	hdrDir: env.VMAF_HDR_MODEL_DIR,
-});
-/**
- * The capability the orchestrator refuses against (review-234 I1): a model is
- * scorable here if libvmaf has it built in, or if a bundled JSON exists.
- * Passed to the orchestrator so a plan naming an unusable model fails BEFORE
- * any Bitmovin resource is created rather than after the encode.
- */
-const isVmafModelAvailable = (model: string): boolean =>
-	!vmafModelNeedsFile(model) || resolveModelPath?.(model) !== undefined;
-
-if (vmafModelDir) {
-	console.log(`[worker:vmaf] model dir ${vmafModelDir} (model=path= enabled)`);
-}
-// Profiles are operator-owned; HTTP requests can only select their IDs.
-const vmafComputeCredentials = createVmafComputeCredentialStore(prisma, cipher);
-const vmafCloudAuth = createCloudRuntimeAuth(
-	vmafComputeCredentials.revealSecret,
-	() => requireOrganizationId() === DEFAULT_ORGANIZATION_ID,
-);
-const vmafCloud = tenantService(() =>
-	createVmafCloudController({
-		prisma,
-		resolveProfile: async (id) =>
-			(
-				await listVmafCloudProfiles(prisma, process.env.VMAF_COMPUTE_PROFILES)
-			).find((profile) => profile.id === id),
-		...vmafCloudAuth,
-		workDir: join(vmafWorkDir, requireOrganizationId(), "cloud"),
-	}),
-);
 const cloudReconcile = () =>
-	vmafCloud
-		.reconcile()
+	vmafRuntime
+		.reconcileCloud()
 		.catch(() =>
 			console.error("[vmaf:cloud] resource reconciliation needs attention"),
 		);
 setTenantInterval(cloudReconcile, 30_000).unref();
 void runTenantTick(() => cloudReconcile());
-const vmafProcessor = tenantService(() =>
-	createVmafProcessor({
-		cloudScore: vmafCloud.score,
-		resolveCloudProfile: vmafCloud.resolveProfile,
-		emitEvent,
-		orchestratorQueue: orchestratorProducerQueue,
-		prisma,
-		resolveCredential: processorDeps.resolveCredential,
-		runner: vmafRunner,
-		...(automaticVmafRuntime
-			? {
-					localRunner: automaticVmafRuntime.runner,
-					resolveLocalResources: automaticVmafRuntime.resolveLocalResources,
-					resolveBandingResources: automaticVmafRuntime.resolveBandingResources,
-					selectLocalNative: automaticVmafRuntime.selectLocalNative,
-				}
-			: {}),
-		nativeSelectionFailure: automaticVmafSelectionState.failure,
-		ffmpegPath: env.VMAF_FFMPEG_PATH ?? env.FFMPEG_PATH,
-		hdrFfmpegPath: env.VMAF_HDR_FFMPEG_PATH,
-		hdrFfprobePath: env.VMAF_HDR_FFPROBE_PATH,
-		ffprobePath: env.FFPROBE_PATH,
-		workDir: join(vmafWorkDir, requireOrganizationId()),
-		decodePolicy: {
-			backend: env.VMAF_DECODE_BACKEND,
-			device: env.VMAF_GPU_DEVICE,
-		},
-		scoringBackend: env.VMAF_SCORING_BACKEND,
-		reuseVerifiedNativeResults: env.VMAF_REUSE_VERIFIED_NATIVE_RESULTS === "1",
-		...(env.VMAF_NATIVE_PATH ? { nativePath: env.VMAF_NATIVE_PATH } : {}),
-		now: processorDeps.now,
-		localResources: localVmafResources,
-		...(env.VMAF_THREADS !== undefined ? { threads: env.VMAF_THREADS } : {}),
-		...(env.VMAF_CONCURRENCY !== undefined
-			? { concurrency: env.VMAF_CONCURRENCY }
-			: {}),
-		...(vmafSubsample !== undefined ? { subsample: vmafSubsample } : {}),
-		...(resolveModelPath ? { resolveModelPath } : {}),
-	}),
-);
 
 // Storage inspection (P5): bounded ffprobe over one customer object, so the
 // storage browser can say what a file actually is before it becomes an input.
@@ -1640,53 +1438,6 @@ const slateNormalizePromoter = tenantService(() =>
 	}),
 );
 
-// Live (pseudo-live) VMAF runner (P4-PR6b): captures recent OUTPUT segments
-// from the channel's storage, aligns the looping feeder source via the PR6a
-// engine, and scores the windowed capture with libvmaf. Shares the runner +
-// credential resolution; dispatched by VmafJob.mode below.
-const liveVmafProcessor = tenantService(() =>
-	createLiveVmafProcessor({
-		emitEvent,
-		prisma,
-		resolveCredential: processorDeps.resolveCredential,
-		runner: automaticVmafRuntime?.runner ?? vmafRunner,
-		...(automaticVmafRuntime
-			? { resolveLocalResources: automaticVmafRuntime.resolveLocalResources }
-			: {}),
-		ffmpegPath: env.FFMPEG_PATH,
-		ffprobePath: env.FFPROBE_PATH,
-		workDir: join(vmafWorkDir, requireOrganizationId()),
-		spoolDir: join(feederSpoolDir, requireOrganizationId()),
-		now: processorDeps.now,
-		localResources: localVmafResources,
-		...(env.VMAF_THREADS !== undefined ? { threads: env.VMAF_THREADS } : {}),
-		...(vmafSubsample !== undefined ? { subsample: vmafSubsample } : {}),
-		...(resolveModelPath ? { resolveModelPath } : {}),
-	}),
-);
-
-// One vmaf-runner queue, dispatched by mode: VOD → mirror scoring, LIVE →
-// pseudo-live capture+align. The job data stays { vmafJobId }; the row's mode
-// column decides the processor (a cheap pre-read, then the chosen processor
-// re-reads the full row under its own atomic claim).
-const localVmafExecution = automaticVmafRuntime
-	? <T>(run: () => Promise<T>): Promise<T> => run()
-	: createLocalExecutionGate();
-const dispatchVmaf = async (jobData: unknown): Promise<unknown> => {
-	const { vmafJobId } = vmafJobSchema.parse(jobData);
-	const job = await prisma.vmafJob.findUnique({
-		where: { id: vmafJobId },
-		select: { mode: true, params: true },
-	});
-	if (job?.mode === "LIVE") {
-		return localVmafExecution(() => liveVmafProcessor.process(jobData));
-	}
-	const params = job?.params as { execution?: { backend?: string } } | null;
-	return params?.execution?.backend === "CLOUD"
-		? vmafProcessor.process(jobData)
-		: localVmafExecution(() => vmafProcessor.process(jobData));
-};
-
 const notifyProcessor = tenantService(() =>
 	createNotifyProcessor({
 		prisma,
@@ -1754,7 +1505,7 @@ const handlers = createHandlers({
 	liveChannel,
 	liveHeartbeatSweep,
 	feeder: (jobData) => feederProcessor.process(jobData),
-	vmaf: dispatchVmaf,
+	vmaf: vmafRuntime.dispatchVmaf,
 	storageInspect: (jobData) => storageInspectProcessor(jobData),
 	vodInputPreview: (jobData) => vodInputPreviewProcessor(jobData),
 	notify: (jobData) => notifyProcessor({ data: jobData }),
@@ -2000,48 +1751,15 @@ const ORCHESTRATOR_CONCURRENCY = Number(
 const MAX_STALLED_COUNT =
 	env.WORKER_MAX_STALLED_COUNT ?? DEFAULT_LONG_JOB_MAX_STALLED_COUNT;
 
-const VMAF_CLOUD_JOB_CONCURRENCY = cloudJobConcurrency(
-	process.env.VMAF_JOB_CONCURRENCY,
-	true, // Named database profiles may be added without restarting this worker.
-);
-const VMAF_JOB_CONCURRENCY = process.env.VMAF_JOB_CONCURRENCY?.trim()
-	? VMAF_CLOUD_JOB_CONCURRENCY
-	: Math.min(
-			32,
-			VMAF_CLOUD_JOB_CONCURRENCY +
-				(automaticVmafRuntime
-					? Math.max(1, Math.floor(readLocalResources().cpuCapacity))
-					: 1),
-		);
-
-// Invoked only inside consumeTenantJob: ownership precedes this scoped read.
-const classifyVmafJob = async (
-	job: Job,
-): Promise<"local" | "cloud" | "control"> => {
-	const { vmafJobId } = vmafJobSchema.parse(job.data);
-	const row = await prisma.vmafJob.findUnique({
-		where: { id: vmafJobId },
-		select: { mode: true, params: true, status: true },
-	});
-	if (!row || !["PENDING", "RUNNING"].includes(row.status)) return "control";
-	if (row.mode === "LIVE") return "local";
-	const params = row.params as { execution?: { backend?: string } } | null;
-	return params?.execution?.backend === "CLOUD" ? "cloud" : "local";
-};
-const queuedVmafParents = queueExcessVmafJobs({
-	localCapacity: () =>
-		automaticVmafRuntime ? localVmafResources.jobCapacity() : 1,
-	cloudCapacity: VMAF_CLOUD_JOB_CONCURRENCY,
-	classify: classifyVmafJob,
-	process: handlers.vmafRunner,
-});
-
+const queuedVmafParents = vmafRuntime.admitVmaf(handlers.vmafRunner);
+const vmafOwnerRedis = createVmafOwnershipConnection(env.REDIS_URL);
+const vmafOwnership = createVmafQueueRegistry(vmafOwnerRedis);
+const vmafOwnerConnection = vmafOwnerRedis.connect().catch(() => {});
 const failedJobWrites = createWorkDrain();
-const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
-	const consume = consumeTenantJob(
-		key,
-		key === "vmafRunner" ? queuedVmafParents : handlers[key],
-	);
+function startQueueWorker(
+	key: QueueKey,
+	consume: (job: Job) => Promise<unknown>,
+) {
 	const worker = new Worker(
 		QUEUE_NAMES[key],
 		key === "liveChannel"
@@ -2061,7 +1779,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				: {}),
 			// review-183 I3: one slow webhook host must not serialize the bus.
 			...(key === "notify" ? { concurrency: 4 } : {}),
-			...(key === "vmafRunner" ? { concurrency: VMAF_JOB_CONCURRENCY } : {}),
+			...(key === "vmafRunner" ? { concurrency: vmafRuntime.concurrency } : {}),
 		},
 	);
 	if (key === "liveChannel" || key === "slateNormalize") {
@@ -2373,7 +2091,82 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 		console.error(`[worker:${key}] error:`, err);
 	});
 	return worker;
-});
+}
+// QC starts separately after Redis confirms its registration.
+const workers = primaryWorkerQueues(
+	Object.keys(handlers) as QueueKey[],
+	"dedicated",
+).map((key) => startQueueWorker(key, consumeTenantJob(key, handlers[key])));
+const standardVmaf =
+	env.VMAF_QUEUE_OWNER === "worker"
+		? startStandardVmafConsumer(
+				{
+					...vmafOwnership,
+					claim: () =>
+						vmafOwnerConnection.then(() => vmafOwnership.claim("worker")),
+				},
+				(owns) => {
+					const handle = guardVmafQueueOwnership(
+						owns,
+						consumeTenantJob("vmafRunner", queuedVmafParents),
+					);
+					const worker = startQueueWorker("vmafRunner", handle);
+					const stopSweep = startOwnedVmafReconciliation(
+						owns,
+						forEachOrganization,
+						{
+							prisma,
+							queue: vmafQueue,
+							orchestratorQueue: orchestratorProducerQueue,
+						},
+					);
+					return {
+						close: () =>
+							closeVmafBullWorker(worker, () =>
+								Promise.all([handle.drain(), stopSweep()]),
+							),
+					};
+				},
+			)
+		: undefined;
+
+let stopVmafPrimaryWitness: (() => Promise<void>) | undefined;
+if (env.VMAF_QUEUE_OWNER === "dedicated") {
+	const primaryQueues: string[] = [
+		QUEUE_NAMES.orchestrator,
+		QUEUE_NAMES.notify,
+	];
+	void Promise.all(
+		workers
+			.filter((worker) => primaryQueues.includes(worker.name))
+			.map(async (worker) => ({
+				worker,
+				client: await worker.waitUntilReady(),
+			})),
+	)
+		.then((producers) => {
+			if (!stopping)
+				stopVmafPrimaryWitness = startSplitVmafPrimaryWitness(
+					vmafOwnership,
+					() => {
+						if (
+							producers.length !== primaryQueues.length ||
+							producers.some(
+								({ worker, client }) =>
+									client.status !== "ready" ||
+									!worker.isRunning() ||
+									worker.isPaused(),
+							)
+						)
+							throw new Error("VMAF_QUEUE_PRIMARY_WORKERS_UNAVAILABLE");
+						return readVmafQueueDatabase(basePrisma);
+					},
+				);
+		})
+		.catch(() =>
+			console.warn("[worker:vmafRunner] split primary startup unavailable"),
+		);
+}
 
 function drainTenantLoop(loop: { stop(): void; drain(): Promise<void> }) {
 	return Promise.all(
@@ -2384,12 +2177,14 @@ function drainTenantLoop(loop: { stop(): void; drain(): Promise<void> }) {
 	).then(() => undefined);
 }
 
+let qcShutdownUnconfirmed = false;
 const shutdown = createShutdown({
 	// Signal every running feeder supervisor FIRST: their ffmpeg children
 	// would outlive this process otherwise. The active start jobs then
 	// resolve to STOPPED and worker.close waits for them.
 	stopFeeders: () => {
 		stopping = true;
+		standardVmaf?.stop();
 		vodInputPreviewShutdown.abort();
 		editingShutdownController.abort();
 		void editingGpuGate?.stop();
@@ -2410,6 +2205,10 @@ const shutdown = createShutdown({
 			name: "live STOP notification",
 			run: () => drainTenantLoop(stopNotificationLoop),
 			recovery: "pending STOP notifications resume after restart",
+		},
+		{
+			name: "QC split primary witness",
+			run: async () => stopVmafPrimaryWitness?.(),
 		},
 		{
 			name: "VOD input preview recovery",
@@ -2497,22 +2296,40 @@ const shutdown = createShutdown({
 	],
 	closables: [
 		...workers,
+		{
+			close: async () => {
+				try {
+					await standardVmaf?.close();
+				} catch (error) {
+					qcShutdownUnconfirmed = true;
+					console.error(
+						"[worker:vmafRunner] standard shutdown could not verify release:",
+						redactSecrets(
+							error instanceof Error ? error.message : String(error),
+						),
+					);
+				}
+			},
+		},
 		liveChannelQueue,
 		feederQueue,
-		vmafQueue,
-		orchestratorProducerQueue,
 		vodInputPreviewQueue,
 	],
 	disconnect: async () => {
 		// Worker.close has ended new deliveries. BullMQ does not await its failed listeners.
 		await failedJobWrites.drain();
 		try {
+			await Promise.allSettled([
+				waitForVmafBrokerClose(vmafQueue.close()),
+				waitForVmafBrokerClose(orchestratorProducerQueue.close()),
+			]);
 			await notifyQueue.close();
 		} finally {
+			vmafOwnerRedis.disconnect();
 			await basePrisma.$disconnect();
 		}
 	},
-	exit: (code) => process.exit(code),
+	exit: (code) => process.exit(qcShutdownUnconfirmed ? 1 : code),
 });
 
 process.on("SIGINT", () => void shutdown("SIGINT"));

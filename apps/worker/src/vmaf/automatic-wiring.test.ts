@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { compileFunction } from "node:vm";
-import { loadEnv, vmafJobSchema } from "@bitovp/core";
+import { loadEnv, QUEUE_NAMES, vmafJobSchema } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { DelayedError, type Job } from "bullmq";
 import ts from "typescript";
@@ -13,6 +13,11 @@ import {
 	createLocalExecutionGate,
 } from "./execution-dispatch";
 import { queueExcessVmafJobs } from "./job-capacity";
+import {
+	guardVmafQueueOwnership,
+	startStandardVmafConsumer,
+} from "./queue-ownership";
+import { primaryWorkerQueues } from "./worker-role";
 import { createVmafWorkerServices } from "./worker-services";
 
 // Execute the actual bootstrap declarations without importing index.ts, which
@@ -389,13 +394,21 @@ it("authenticates before classification and keeps local, cloud, and terminal par
 		localVmafResources: { jobCapacity: () => 1 },
 		VMAF_CLOUD_JOB_CONCURRENCY: 2,
 	});
-	const loaded = load(["queuedVmafParents", "consume"], {
+	const loaded = load(["queuedVmafParents", "standardVmaf"], {
 		vmafRuntime: { admitVmaf },
 		handlers: { vmafRunner: process },
 		consumeTenantJob,
-		key: "vmafRunner",
+		env: { VMAF_QUEUE_OWNER: "worker" },
+		vmafOwnership: {},
+		vmafOwnerConnection: Promise.resolve(),
+		guardVmafQueueOwnership,
+		startQueueWorker: (_key: string, consume: unknown) => consume,
+		startStandardVmafConsumer: (
+			_registry: unknown,
+			start: (owns: () => Promise<boolean>) => unknown,
+		) => start(async () => true),
 	});
-	const consume = loaded.consume as (value: Job) => Promise<unknown>;
+	const consume = loaded.standardVmaf as (value: Job) => Promise<unknown>;
 	await expect(consume(job(8))).rejects.toThrow("Tenant resource unavailable");
 	expect(prisma.vmafJob.findUnique).not.toHaveBeenCalled();
 	expect(process).not.toHaveBeenCalled();
@@ -420,6 +433,73 @@ it("authenticates before classification and keeps local, cloud, and terminal par
 		await Promise.all([local, ...clouds]);
 	}
 	await expect(consume(extraLocal)).resolves.toBe("processed");
+});
+
+it.each([
+	"worker",
+	"dedicated",
+] as const)("starts all non-QC handlers immediately and defers standard QC to ownership (%s)", async (mode) => {
+	const connection = barrier();
+	const handlers = Object.fromEntries(
+		Object.keys(QUEUE_NAMES).map((key) => [key, vi.fn()]),
+	);
+	const otherHandlers = Object.entries(handlers).filter(
+		([key]) => key !== "vmafRunner",
+	);
+	const startQueueWorker = vi.fn((_key: string, _handler: unknown) => ({
+		close: async () => {},
+	}));
+	const consumeTenantJob = vi.fn((_key: string, handler: unknown) => handler);
+	const vmafOwnership = {
+		claim: vi.fn(async () => true),
+		owns: vi.fn(async () => true),
+		release: vi.fn(async () => true),
+	};
+	const admitVmaf = vi.fn((handler: unknown) => handler);
+	const { standardVmaf } = load(
+		["queuedVmafParents", "workers", "standardVmaf"],
+		{
+			env: { VMAF_QUEUE_OWNER: mode },
+			handlers,
+			vmafRuntime: { admitVmaf },
+			vmafOwnership,
+			vmafOwnerConnection: connection.wait,
+			consumeTenantJob,
+			primaryWorkerQueues,
+			startQueueWorker,
+			startStandardVmafConsumer,
+			guardVmafQueueOwnership,
+		},
+	) as {
+		standardVmaf: ReturnType<typeof startStandardVmafConsumer> | undefined;
+	};
+	try {
+		expect(startQueueWorker.mock.calls).toEqual(otherHandlers);
+		expect(consumeTenantJob.mock.calls).toEqual(otherHandlers);
+		expect(vmafOwnership.claim).not.toHaveBeenCalled();
+		if (mode === "dedicated") {
+			expect(standardVmaf).toBeUndefined();
+			return;
+		}
+		expect(standardVmaf).toBeDefined();
+		connection.release();
+		await vi.waitFor(() =>
+			expect(startQueueWorker).toHaveBeenCalledTimes(otherHandlers.length + 1),
+		);
+		expect(vmafOwnership.claim).toHaveBeenCalledExactlyOnceWith("worker");
+		expect(admitVmaf).toHaveBeenCalledExactlyOnceWith(handlers.vmafRunner);
+		expect(consumeTenantJob).toHaveBeenLastCalledWith(
+			"vmafRunner",
+			handlers.vmafRunner,
+		);
+		expect(startQueueWorker).toHaveBeenLastCalledWith(
+			"vmafRunner",
+			expect.any(Function),
+		);
+	} finally {
+		connection.release();
+		await standardVmaf?.close();
+	}
 });
 
 it.each([

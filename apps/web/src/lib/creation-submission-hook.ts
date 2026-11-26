@@ -11,11 +11,11 @@ import {
 	type CreationSeed,
 	CreationSubmissionError,
 	createSubmissionClient,
-	creationErrorCode,
 } from "./creation-submission";
 import {
 	CREATE_SESSION_CHANGED,
 	CREATE_SESSION_HEADER,
+	creationErrorCode,
 } from "./creation-submission-contract";
 import { useT } from "./i18n/context";
 import { draftIdentity, type WizardDraftKind } from "./wizard-draft";

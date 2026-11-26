@@ -1,9 +1,10 @@
 import { z } from "zod";
-import { ApiError, apiFetch } from "./api";
+import { apiFetch } from "./api";
 import {
 	CREATE_REQUEST_DIGEST_HEADER,
 	CREATE_REQUEST_NOT_FOUND,
 	canonicalCreateRequestJson,
+	creationErrorCode,
 } from "./creation-submission-contract";
 
 type SubmissionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -60,12 +61,6 @@ async function sha256(value: string) {
 		new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
 		(byte) => byte.toString(16).padStart(2, "0"),
 	).join("");
-}
-
-export function creationErrorCode(error: unknown) {
-	if (!(error instanceof ApiError)) return undefined;
-	const details = z.object({ code: z.string() }).safeParse(error.details);
-	return details.success ? details.data.code : undefined;
 }
 
 /** Persist only request digests and random seed metadata, never plans or credentials.

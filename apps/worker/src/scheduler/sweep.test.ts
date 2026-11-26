@@ -3765,7 +3765,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 			status: "FIRED",
 			liveChannelRunId: run?.id,
 			dispatchedAt: null,
-			dispatchJobId: null,
+			dispatchJobId: `sched-${ROW_ID}-start-1`,
 		});
 		expect(store.channels[0]?.status).toBe("STOPPING");
 		expect(run?.status).toBe("STOPPING");

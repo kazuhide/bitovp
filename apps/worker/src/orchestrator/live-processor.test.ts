@@ -391,7 +391,14 @@ function setup(
 					ownerHost?: string | null;
 				}[],
 		),
-		findFirst: vi.fn(async () => null as { id: string } | null),
+		findFirst: vi.fn(
+			async () =>
+				null as {
+					id: string;
+					dispatchJobId?: string;
+					dispatchedAt?: Date;
+				} | null,
+		),
 		//  — scheduled feeder starts create sessions here.
 		count: vi.fn(async () => 0),
 		create: vi.fn(async (args: { data: Record<string, unknown> }) => {
@@ -703,13 +710,23 @@ function setup(
 		startupSample,
 		$queryRaw: vi.fn(
 			async (
-				_sql: TemplateStringsArray,
+				sql: TemplateStringsArray,
 				channelId: string,
 				encodingId: string,
-			) =>
-				row.id === channelId && row.bitmovinEncodingId === encodingId
+				jobId?: string,
+			) => {
+				if (sql[0]?.includes('FROM "LiveSchedule"')) {
+					const schedule = await liveSchedule.findFirst();
+					return schedule?.id === channelId &&
+						encodingId === row.id &&
+						schedule.dispatchJobId === jobId
+						? [schedule]
+						: [];
+				}
+				return row.id === channelId && row.bitmovinEncodingId === encodingId
 					? [{ id: row.id }]
-					: [],
+					: [];
+			},
 		),
 		$transaction: vi.fn(async <T>(fn: (tx: AppPrismaClient) => Promise<T>) => {
 			let release = () => {};
@@ -6336,6 +6353,12 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 			const matches = rows.filter((row) =>
 				Object.entries((where ?? {}) as Record<string, unknown>).every(
 					([key, value]) => {
+						if (key === "OR" && Array.isArray(value))
+							return value.some((arm) =>
+								Object.entries(arm).every(
+									([field, expected]) => row[field] === expected,
+								),
+							);
 						if (value && typeof value === "object" && "in" in value)
 							return (value.in as unknown[]).includes(row[key]);
 						return row[key] === value;
@@ -6357,11 +6380,14 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 				seq: 1,
 				status: "PROVISIONING",
 				liveChannelId: CHANNEL_ID,
+				cancelRequested: false,
 			});
 		h.liveSchedule.findFirst.mockResolvedValue({
 			id: SCHEDULE_ID,
 			liveChannelRunId: LIVE_TO_VOD_RUN_ID,
 			startAdmissionFenceVersion: 1,
+			dispatchJobId: `sched-${SCHEDULE_ID}-start-1`,
+			dispatchedAt: new Date("2026-06-12T00:00:00Z"),
 		} as never);
 		return h.rawProcess(
 			{
@@ -6390,6 +6416,7 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 			liveChannelRunId: LIVE_TO_VOD_RUN_ID,
 			id: SCHEDULE_ID,
 			startAdmissionFenceVersion: 1,
+			dispatchJobId: `sched-${SCHEDULE_ID}-start-1`,
 			action: "START",
 			status: "FIRED",
 			outcome: "PENDING",
@@ -6960,6 +6987,10 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 					id: SCHEDULE_ID,
 					liveChannelRunId: LIVE_TO_VOD_RUN_ID,
 					startAdmissionFenceVersion: 1,
+					OR: [
+						{ dispatchJobId: null },
+						{ dispatchJobId: `sched-${SCHEDULE_ID}-start-1` },
+					],
 					action: "START",
 					status: "FIRED",
 					outcome: {
@@ -6990,6 +7021,10 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 					id: SCHEDULE_ID,
 					liveChannelRunId: LIVE_TO_VOD_RUN_ID,
 					startAdmissionFenceVersion: 1,
+					OR: [
+						{ dispatchJobId: null },
+						{ dispatchJobId: `sched-${SCHEDULE_ID}-start-1` },
+					],
 					liveChannel: {
 						status: "ERROR",
 						liveEffectFenceVersion: 1,

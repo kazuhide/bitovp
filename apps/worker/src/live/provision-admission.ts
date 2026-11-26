@@ -1,10 +1,11 @@
 import { hasAisaLiveBinding, liveChannelJobSchema } from "@bitovp/core";
-import type { AppPrismaClient } from "@bitovp/db";
+import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
 import {
 	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
 	scheduledStartJobId,
 	scheduledStartScheduleId,
 } from "../scheduler/schedule-outcome";
+import { lockProvisionAiring } from "./provision-outcome";
 import { provisionJobGeneration } from "./reconcile-stranded-runs";
 
 export type ProvisionAdmission =
@@ -38,6 +39,13 @@ type ScheduledStartReceipt = {
 	dispatchedAt: Date | null;
 };
 
+export type ScheduledStartDelivery = {
+	id: string;
+	jobId: string;
+	payload: ProvisionDelivery;
+	queuedAt?: number;
+};
+
 const bindingSelect = {
 	origin: true,
 	plan: true,
@@ -60,7 +68,7 @@ const bindingSelect = {
 
 /** Recover the original producer's identity. An arbitrary older job cannot adopt the current airing. */
 export async function resolveProvisionAdmission(
-	prisma: AppPrismaClient,
+	prisma: Pick<AppTransactionClient, "liveChannel" | "liveSchedule">,
 	channelId: string,
 	delivery: ProvisionDelivery,
 	jobId?: string,
@@ -289,6 +297,87 @@ function pendingStart(start: ScheduledStartIdentity) {
 		outcome: "PENDING",
 		liveChannel: { liveEffectFenceVersion: start.startAdmissionFenceVersion },
 	} as const;
+}
+
+/** The queue delivery and its provision lease take effect together. */
+export async function claimScheduledStartLease(
+	prisma: AppPrismaClient,
+	start: ScheduledStartIdentity,
+	delivery: ScheduledStartDelivery,
+	lease: Prisma.LiveChannelUpdateManyArgs,
+	at: Date,
+): Promise<{
+	status: "STALE_RUN" | "BUSY" | "CLAIMED" | "RUNNING";
+	firstHandoff: boolean;
+}> {
+	const stale = { status: "STALE_RUN", firstHandoff: false } as const;
+	return prisma.$transaction(async (tx) => {
+		// The transfer and lease paths both lock the channel before the receipt.
+		const run = await lockProvisionAiring(tx, start.liveChannelId);
+		if (run?.id !== start.liveChannelRunId) return stale;
+		const channel = await tx.liveChannel.findUnique({
+			where: { id: start.liveChannelId },
+			select: { status: true, liveEffectFenceVersion: true },
+		});
+		if (
+			!channel ||
+			channel.liveEffectFenceVersion !== start.startAdmissionFenceVersion
+		)
+			return stale;
+		const [receipt] = await tx.$queryRaw<ScheduledStartReceipt[]>`
+			SELECT "dispatchJobId", "dispatchedAt" FROM "LiveSchedule"
+			WHERE id = ${start.id}::uuid
+				AND "liveChannelId" = ${start.liveChannelId}::uuid
+				AND action = 'START' AND status = 'FIRED' AND outcome = 'PENDING'
+				AND ("dispatchJobId" IS NULL OR "dispatchJobId" = ${delivery.jobId})
+			FOR UPDATE`;
+		if (!receipt) return stale;
+		const admitted = await resolveProvisionAdmission(
+			tx,
+			start.liveChannelId,
+			delivery.payload,
+			delivery.jobId,
+			delivery.queuedAt,
+			"dispatch",
+		);
+		if (
+			!admitted ||
+			!("runId" in admitted) ||
+			admitted.runId !== start.liveChannelRunId ||
+			admitted.generation !== start.startAdmissionFenceVersion
+		)
+			return stale;
+
+		const running =
+			channel.status === "RUNNING" &&
+			run.status === "RUNNING" &&
+			!run.cancelRequested;
+		if (!running) {
+			if (run.cancelRequested !== (lease.data.status === "STOPPING"))
+				return stale;
+			const { count } = await tx.liveChannel.updateMany(lease);
+			if (count !== 1) return { status: "BUSY", firstHandoff: false };
+		}
+		const firstHandoff = receipt.dispatchedAt === null;
+		if (firstHandoff || receipt.dispatchJobId === null) {
+			const { count } = await tx.liveSchedule.updateMany({
+				where: {
+					...pendingStart(start),
+					dispatchJobId: receipt.dispatchJobId,
+					dispatchedAt: receipt.dispatchedAt,
+				},
+				data: {
+					dispatchJobId: delivery.jobId,
+					...(firstHandoff && { dispatchedAt: at }),
+				},
+			});
+			if (count !== 1)
+				throw new Error(
+					"Scheduled START handoff changed while claiming its lease",
+				);
+		}
+		return { status: running ? "RUNNING" : "CLAIMED", firstHandoff };
+	});
 }
 
 export async function recordRetainedScheduledStart(

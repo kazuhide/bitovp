@@ -141,7 +141,11 @@ import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
 } from "../live/provider-lifecycle";
-import { resolveProvisionAdmission } from "../live/provision-admission";
+import {
+	claimScheduledStartLease,
+	resolveProvisionAdmission,
+	type ScheduledStartDelivery,
+} from "../live/provision-admission";
 import { PROVISION_LEASE_MS } from "../live/provision-lease";
 import {
 	commitProvisionEnd,
@@ -5417,6 +5421,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		cancelRunId?: string,
 		plannedRunId?: string,
 		plannedGeneration?: number,
+		scheduled?: ScheduledStartDelivery,
 	) {
 		const owner: ResetOwnerState = {
 			entityKey: `liveChannel:${liveChannelId}`,
@@ -5430,6 +5435,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				cancelRunId,
 				plannedRunId,
 				plannedGeneration,
+				scheduled,
 			);
 		} finally {
 			await finishResetOwner(
@@ -5449,6 +5455,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		cancelRunId?: string,
 		plannedRunId?: string,
 		plannedGeneration?: number,
+		scheduled?: ScheduledStartDelivery,
 	): Promise<
 		string | { status: "STOPPED"; canceledRunId: string; generation: number }
 	> {
@@ -5471,15 +5478,15 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			where: { liveChannelId },
 			orderBy: { seq: "desc" },
 		});
-		if (
+		const alreadyRunning =
 			plannedRunId &&
 			pendingRun?.id === plannedRunId &&
 			plannedGeneration === ownerGeneration &&
 			row.status === "RUNNING" &&
-			pendingRun.status === "RUNNING"
-		)
-			return "RUNNING";
+			pendingRun.status === "RUNNING";
+		if (alreadyRunning && !scheduled) return "RUNNING";
 		if (
+			!alreadyRunning &&
 			plannedRunId &&
 			(pendingRun?.id !== plannedRunId ||
 				(!pendingRun.cancelRequested &&
@@ -5496,6 +5503,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		const cancelling =
 			pendingRun?.cancelRequested === true && pendingRun.status !== "STOPPED";
 		if (
+			!alreadyRunning &&
 			!cancelling &&
 			row.status !== "CREATED" &&
 			row.status !== "PROVISIONING"
@@ -5538,7 +5546,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		// clock this file uses everywhere else.
 		const nowMs = new Date(deps.now()).getTime();
 		const leaseCutoff = new Date(nowMs - PROVISION_LEASE_MS);
-		const claimed = await deps.prisma.liveChannel.updateMany({
+		const lease: Prisma.LiveChannelUpdateManyArgs = {
 			where: {
 				id: liveChannelId,
 				liveEffectFenceVersion: ownerGeneration,
@@ -5591,8 +5599,31 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				provisionClaimedAt: new Date(nowMs),
 				status: cancelling ? "STOPPING" : "PROVISIONING",
 			},
-		});
-		if (claimed.count === 0) {
+		};
+		if (scheduled && plannedRunId) {
+			const claim = await claimScheduledStartLease(
+				deps.prisma,
+				{
+					id: scheduled.id,
+					liveChannelId,
+					liveChannelRunId: plannedRunId,
+					startAdmissionFenceVersion: ownerGeneration,
+				},
+				scheduled,
+				lease,
+				new Date(nowMs),
+			);
+			if (claim.status === "STALE_RUN") return "STALE_RUN";
+			if (claim.status === "BUSY") return "PROVISIONING";
+			if (claim.firstHandoff)
+				await deps.emitEvent?.({
+					kind: "SCHEDULE_FIRED",
+					scheduleId: scheduled.id,
+					liveChannelId,
+					path: `/live/${liveChannelId}`,
+				});
+			if (claim.status === "RUNNING") return "RUNNING";
+		} else if ((await deps.prisma.liveChannel.updateMany(lease)).count === 0) {
 			// Another worker holds a live lease on this channel.
 			return row.status;
 		}
@@ -7866,6 +7897,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 									liveChannelId,
 									liveChannelRunId: runId,
 									startAdmissionFenceVersion: generation ?? null,
+									...(queueJobId && { dispatchJobId: queueJobId }),
 								},
 							}
 						: null;
@@ -7876,6 +7908,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						cancelRunId,
 						runId,
 						generation,
+						scheduleId && queueJobId && !cancelRunId
+							? { id: scheduleId, jobId: queueJobId, payload: job, queuedAt }
+							: undefined,
 					);
 				} catch (err) {
 					if (target)

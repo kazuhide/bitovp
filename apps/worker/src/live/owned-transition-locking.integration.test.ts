@@ -64,6 +64,7 @@ import {
 	type RunLifecycleRow,
 } from "./provider-lifecycle";
 import {
+	prepareScheduledStartDispatch,
 	recordRetainedScheduledStart,
 	resolveProvisionAdmission,
 } from "./provision-admission";
@@ -1396,6 +1397,230 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				`sched-${row.id}-start-1`,
 			);
 			expect(saved.dispatchJobId).toBe(`sched-${row.id}-start-1`);
+		});
+
+		it("stamps an accepted first START with its consumer lease when the Redis add reply is lost", async () => {
+			const f = await isolatedDispatchFixture(randomUUID());
+			const plan = JSON.parse(
+				readFileSync(
+					new URL(
+						"../../../../packages/core/src/live/__fixtures__/live-rtmp-simple.plan.json",
+						import.meta.url,
+					),
+					"utf8",
+				),
+			);
+			plan.bitmovin.accountId = f.accountId;
+			await f.scope.bitmovinAccount.create({
+				data: {
+					id: f.accountId,
+					label: "scheduled START fixture",
+					encryptedApiKey: "fixture-only",
+				},
+			});
+			await f.scope.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "STOPPED", plan, bitmovinEncodingId: null },
+			});
+			await f.scope.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPED", bitmovinEncodingId: null },
+			});
+			const schedule = await f.scope.liveSchedule.create({
+				data: {
+					action: "START",
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					fireAt: now,
+				},
+			});
+			const id = `sched-${schedule.id}-start-1`;
+			const emitEvent = vi.fn(async () => {});
+			const queue: Array<{ job: LiveChannelJob; id: string }> = [];
+			const sweep = createScheduleSweep({
+				prisma: f.scope,
+				now: () => now,
+				emitEvent,
+				enqueue: async (job, key) => {
+					queue.push({ job, id: key });
+					throw new Error("Redis persisted the job, then lost the reply");
+				},
+			});
+			await sweep();
+			const delivery = queue[0];
+			if (!delivery?.job.plannedLiveChannelRunId)
+				throw new Error("missing scheduled delivery");
+			const reserved = await f.scope.liveSchedule.findUniqueOrThrow({
+				where: { id: schedule.id },
+			});
+			const log = JSON.parse(
+				JSON.stringify(
+					initStepLog(compileLiveChannel(plan)).map((entry) => ({
+						...entry,
+						status: "DONE",
+						resourceId:
+							entry.kind === "CREATE_ENCODING" ? f.encodingId : randomUUID(),
+					})),
+				),
+			);
+			await f.scope.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { stepLog: log, bitmovinEncodingId: f.encodingId },
+			});
+			await f.scope.liveChannelRun.update({
+				where: { id: delivery.job.plannedLiveChannelRunId },
+				data: { stepLog: log, bitmovinEncodingId: f.encodingId },
+			});
+			const entered = barrier(),
+				resume = barrier();
+			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
+			const running = createLiveChannelProcessor({
+				...f.deps,
+				emitEvent,
+				revealBitmovinAccount: async () => {
+					entered.release();
+					await resume.ready;
+					return f.deps.revealBitmovinAccount(f.accountId);
+				},
+			})(delivery.job, delivery.id, true, undefined, now.getTime());
+			try {
+				await reach(entered.ready, running);
+				expect(reserved).toMatchObject({
+					dispatchJobId: id,
+					dispatchedAt: null,
+				});
+				await expect(
+					f.scope.liveChannel.findUniqueOrThrow({
+						where: { id: f.channel.id },
+					}),
+				).resolves.toMatchObject({
+					provisionClaimedAt: now,
+				});
+				await expect(
+					f.scope.liveSchedule.findUniqueOrThrow({
+						where: { id: schedule.id },
+					}),
+				).resolves.toMatchObject({
+					dispatchJobId: id,
+					dispatchedAt: now,
+					outcome: "PENDING",
+				});
+				expect(emitEvent.mock.calls).toEqual([
+					[
+						expect.objectContaining({
+							kind: "SCHEDULE_FIRED",
+							scheduleId: schedule.id,
+						}),
+					],
+				]);
+			} finally {
+				resume.release();
+				await Promise.allSettled([running]);
+			}
+			await expect(running).resolves.toMatchObject({ status: "RUNNING" });
+			await expect(
+				f.scope.liveSchedule.findUniqueOrThrow({ where: { id: schedule.id } }),
+			).resolves.toMatchObject({
+				dispatchJobId: id,
+				dispatchedAt: now,
+				outcome: "DELIVERED",
+			});
+		});
+
+		it("refuses a legacy START paused after its read if a canonical receipt wins before its lease", async () => {
+			const f = await isolatedDispatchFixture(randomUUID());
+			await f.scope.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "PROVISIONING",
+					liveEffectFenceVersion: 4,
+					legacyAdmissionFenceVersion: 4,
+				},
+			});
+			await f.scope.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "PROVISIONING", legacyProvisionAdmissionAt: now },
+			});
+			const id = randomUUID();
+			const legacyId = `sched-${id}`;
+			const start = {
+				id,
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				startAdmissionFenceVersion: 4,
+			};
+			const schedule = await f.scope.liveSchedule.create({
+				data: {
+					...start,
+					action: "START",
+					status: "FIRED",
+					fireAt: now,
+					firedAt: now,
+					dispatchJobId: legacyId,
+					dispatchedAt: now,
+				},
+			});
+			const read = barrier(),
+				resume = barrier();
+			let paused = false;
+			const prisma = new Proxy(f.scope, {
+				get(client, key) {
+					if (key !== "liveChannel") return Reflect.get(client, key);
+					return new Proxy(client.liveChannel, {
+						get(delegate, prop) {
+							if (prop !== "findUnique") return Reflect.get(delegate, prop);
+							return async (
+								args: Parameters<typeof delegate.findUnique>[0],
+							) => {
+								const result = await delegate.findUnique(args);
+								if (!paused && args.where.id === f.channel.id) {
+									paused = true;
+									read.release();
+									await resume.ready;
+								}
+								return result;
+							};
+						},
+					});
+				},
+			});
+			const makeSdk = vi.fn(f.deps.makeSdk);
+			const old = createLiveChannelProcessor({ ...f.deps, prisma, makeSdk })(
+				{ action: "provision", liveChannelId: f.channel.id },
+				legacyId,
+				true,
+				undefined,
+				now.getTime() + 50,
+			);
+			try {
+				await reach(read.ready, old);
+				await expect(
+					prepareScheduledStartDispatch(
+						f.scope,
+						async () => undefined,
+						start,
+						schedule,
+					),
+				).resolves.toEqual({ id: `${legacyId}-start-4`, state: null });
+			} finally {
+				resume.release();
+				await Promise.allSettled([old]);
+			}
+			await expect(old).resolves.toMatchObject({ status: "STALE_RUN" });
+			expect(makeSdk).not.toHaveBeenCalled();
+			await expect(
+				f.scope.liveChannel.findUniqueOrThrow({ where: { id: f.channel.id } }),
+			).resolves.toMatchObject({
+				provisionClaimedAt: null,
+				status: "PROVISIONING",
+			});
+			await expect(
+				f.scope.liveSchedule.findUniqueOrThrow({ where: { id } }),
+			).resolves.toMatchObject({
+				dispatchJobId: `${legacyId}-start-4`,
+				dispatchedAt: null,
+				outcome: "PENDING",
+			});
 		});
 
 		it("reports an unbound pre-upgrade FIRED start against an ended broadcast as unknown without creating an encoder", async () => {

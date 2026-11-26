@@ -722,8 +722,8 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	async function markDispatched(
 		row: ScheduleRow,
 		jobId: string,
-	): Promise<void> {
-		await deps.prisma.liveSchedule.updateMany({
+	): Promise<boolean> {
+		const { count } = await deps.prisma.liveSchedule.updateMany({
 			where: {
 				id: row.id,
 				status: "FIRED",
@@ -738,6 +738,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			},
 			data: { dispatchedAt: deps.now(), dispatchJobId: jobId },
 		});
+		return count === 1;
 	}
 
 	/** Release a FIRED claim back to ARMED (enqueue failed / channel moved). */
@@ -1066,7 +1067,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					status: "FIRED",
 					firedAt: deps.now(),
 					dispatchedAt: null,
-					dispatchJobId: null,
+					dispatchJobId: scheduledStartJobId(row.id, expectedFenceVersion + 1),
 					liveChannelRunId: runId,
 					startAdmissionFenceVersion: expectedFenceVersion + 1,
 				},
@@ -1303,9 +1304,8 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					stats.errors += 1;
 					return;
 				}
-				await markDispatched(row, jobId);
 				stats.fired += 1;
-				await emitFired(row);
+				if (await markDispatched(row, jobId)) await emitFired(row);
 				return;
 			}
 			case "STOPPED": {
@@ -1431,9 +1431,8 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					stats.errors += 1;
 					return;
 				}
-				await markDispatched(row, jobId);
 				stats.fired += 1;
-				await emitFired(row);
+				if (await markDispatched(row, jobId)) await emitFired(row);
 				return;
 			}
 			default:

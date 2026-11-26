@@ -145,6 +145,16 @@ export function createVmafQueueRegistry(
 				throw new Error("VMAF_QUEUE_DURABLE_REGISTRATION_UNAVAILABLE");
 			return true;
 		} catch (error) {
+			// Redis versions without WAITAOF can still run the existing worker
+			// role. Those servers cannot start a dedicated consumer.
+			if (
+				role === "worker" &&
+				error instanceof Error &&
+				/^ERR unknown command 'WAITAOF'(?:,|$)/i.test(error.message) &&
+				(await run("owns", role, database).catch(() => 0)) === 1
+			) {
+				return true;
+			}
 			// This consumer has never taken a job. A failed cleanup leaves its
 			// registration reserved for inspection instead of allowing takeover.
 			await run("release", role).catch(() => {});

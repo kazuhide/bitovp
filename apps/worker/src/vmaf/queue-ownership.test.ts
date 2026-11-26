@@ -81,3 +81,23 @@ it("derives topology identity from the live writable database, including its res
 		"VMAF_QUEUE_DATABASE_IDENTITY_UNAVAILABLE",
 	);
 });
+
+it("keeps ordinary queue consumption available with AOF on pre-7.2 Redis", async () => {
+	const redis = {
+		eval: vi.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(1),
+		call: vi
+			.fn()
+			.mockRejectedValue(
+				new Error(
+					"ERR unknown command 'WAITAOF', with args beginning with: '1'",
+				),
+			),
+	};
+	await expect(createVmafQueueRegistry(redis).claim("worker")).resolves.toBe(
+		true,
+	);
+	expect(redis.eval.mock.calls.map((call) => call[5])).toEqual([
+		"claim",
+		"owns",
+	]);
+});

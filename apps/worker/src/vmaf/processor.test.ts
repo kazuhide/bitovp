@@ -5557,6 +5557,9 @@ describe("banding measurement integration", () => {
 		let owned = 0;
 		const plans: unknown[] = [];
 		const localResources = createLocalVmafResources({
+			// This fixture inspects one reservation and its private files at a
+			// time. Its fake executor does not arbitrate concurrent leases.
+			concurrency: 1,
 			readResources: () => ({
 				cpuCapacity: 8,
 				reserveBytes: 0,

@@ -313,8 +313,9 @@ estimate. Missing or inconsistent statistics retain the conservative free-memory
 check, so memory pressure or changing samples can reduce parallelism or refuse a
 comparison. Extra memory headroom remains reserved in either mode.
 
-Memory estimates are conservative starting points, not a guarantee for every
-codec or model. Unmeasured formats run alone; an estimate that cannot fit ends
+Memory estimates use observed working sets and padding for input geometry and
+frame count. A calculation without shared admission keeps the existing
+exclusive reservation for uncalibrated models. An estimate that cannot fit ends
 with an actionable error. A comparison waits for active work to release memory
 and remains cancellable. External memory pressure with no active comparison
 produces a diagnostic after 30 seconds. If memory cannot be detected, automatic

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as engine from "./engine";
 import { main } from "./job";
 
 const ports = vi.hoisted(() => ({
@@ -46,7 +47,13 @@ describe("verify job on a saved S3 role-based VOD", () => {
 		{ case: "reads from the bound bucket", matchRole: true, matchBucket: true },
 		{ case: "rejects another role", matchRole: false, matchBucket: true },
 		{ case: "rejects another bucket", matchRole: true, matchBucket: false },
-	])("$case", async ({ matchRole, matchBucket }) => {
+		{
+			case: "marks a role mirror incomplete even with a healthy primary",
+			matchRole: true,
+			matchBucket: true,
+			mirror: true,
+		},
+	])("$case", async ({ matchRole, matchBucket, mirror }) => {
 		const plan = JSON.parse(
 			readFileSync(
 				join(
@@ -75,11 +82,25 @@ describe("verify job on a saved S3 role-based VOD", () => {
 			},
 		]);
 		const observer = {
-			id: "reader",
+			id: "00000000-0000-4000-8000-000000000003",
 			label: "verify-reader",
 			provider: "AWS_S3",
 			config: { region: "ap-northeast-1" },
 		};
+		if (mirror) {
+			plan.outputs.push({ ...plan.outputs[0], key: "archive" });
+			plan.outputs[0].kind = "S3";
+			plan.outputs[0].credentialId = observer.id;
+			plan.outputs[0].bucket = "primary-bucket";
+			plan.deliveryMirrors = [{ outputKey: "archive" }];
+			vi.spyOn(engine, "verifyArtefacts").mockImplementation(
+				async (expected) => {
+					const report = new engine.ReportBuilder();
+					report.pass("manifest:hls", "manifest", "primary delivery checked");
+					return report.build(expected.planName);
+				},
+			);
+		}
 		const role = {
 			id: roleId,
 			label: "verify-role",
@@ -113,10 +134,18 @@ describe("verify job on a saved S3 role-based VOD", () => {
 		vi.stubEnv("VERIFY_S3_INPUT_BUCKET", inputBucket);
 		vi.stubEnv("VERIFY_S3_OUTPUT_BUCKET", outputBucket);
 		vi.stubEnv("VERIFY_SOURCE_OBJECT", "unrelated-corpus-source");
-		vi.spyOn(console, "log").mockImplementation(() => {});
-		vi.spyOn(console, "error").mockImplementation(() => {});
+		const log = vi.spyOn(console, "log").mockImplementation(() => {});
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
-		if (matchRole && matchBucket) {
+		if (mirror) {
+			expect(await main([jobId])).toBe(1);
+			expect(log).toHaveBeenCalledWith(
+				expect.stringContaining("PASS 1  WARN 0  FAIL 0  SKIP 1"),
+			);
+			expect(error).toHaveBeenCalledWith(
+				expect.stringContaining('S3 role mirror "archive"'),
+			);
+		} else if (matchRole && matchBucket) {
 			await main([jobId]);
 		} else {
 			await expect(main([jobId])).rejects.toThrow(
@@ -140,7 +169,7 @@ describe("verify job on a saved S3 role-based VOD", () => {
 			config: observer.config,
 			secret,
 		});
-		if (matchRole && matchBucket) {
+		if (matchRole && matchBucket && !mirror) {
 			expect(listObjects).toHaveBeenCalledWith(
 				expect.objectContaining({ bucket: outputBucket }),
 			);

@@ -1097,6 +1097,71 @@ describe('collectRunFingerprint — the image\'s commit, not "unknown" (re-audit
  * `--resume-from` would have handed out its prior PASS.
  */
 describe("planSourceIdentity — every ingest, or nothing", () => {
+	it("honors a role-backed receipt using the observer's identity for the rewritten source", async () => {
+		const fixture = plans.find(
+			({ name }) => name === "fixed-bitrate-hls-on-aws-role",
+		);
+		if (!fixture) throw new Error("Missing role fixture");
+		const plan = rewriteForRun(fixture.plan, OPTIONS);
+		const identityOf = vi.fn(
+			async (credentialId: string, bucket: string, key: string) =>
+				credentialId === ROLE_BINDING.observerCredentialId &&
+				bucket === ROLE_BINDING.inputBucket &&
+				key === OPTIONS.sourceObject
+					? 'etag="verified-source"'
+					: "unavailable",
+		);
+		const sourceIdentity = await planSourceIdentity(
+			plan,
+			identityOf,
+			ROLE_BINDING,
+		);
+		const fingerprint = {
+			commit: "c1",
+			checkoutLatestMigration: "m1",
+			dbLatestMigration: "m1",
+		};
+		const receipt = {
+			planSha256: planIdentitySha256(fixture.plan, OPTIONS, fixture.name),
+			sourceObject: OPTIONS.sourceObject,
+			sourceIdentity: plan.ingest
+				.map(() => `${OPTIONS.sourceObject}=etag="verified-source"`)
+				.join(" | "),
+			bitmovinAccountId: ACCOUNT,
+		};
+		expect(
+			resumeEligibility(
+				{ fingerprint, outcome: { verdict: "PASS", ...receipt }, runId: "r0" },
+				{ fingerprint, ...receipt, sourceIdentity },
+			),
+		).toEqual({ honor: true, runId: "r0" });
+		expect(identityOf).toHaveBeenCalledTimes(plan.ingest.length);
+		expect(identityOf).toHaveBeenCalledWith(
+			ROLE_BINDING.observerCredentialId,
+			ROLE_BINDING.inputBucket,
+			OPTIONS.sourceObject,
+		);
+	});
+
+	it("never probes an S3 role source outside its observer binding", async () => {
+		const fixture = plans.find(
+			({ name }) => name === "fixed-bitrate-hls-on-aws-role",
+		);
+		if (!fixture) throw new Error("Missing role fixture");
+		const plan = rewriteForRun(fixture.plan, OPTIONS);
+		const identityOf = vi.fn(async () => 'etag="not-authorized"');
+		for (const binding of [
+			undefined,
+			{ ...ROLE_BINDING, roleCredentialId: "other-role" },
+			{ ...ROLE_BINDING, inputBucket: "other-source" },
+		]) {
+			expect(await planSourceIdentity(plan, identityOf, binding)).toBe(
+				"unavailable",
+			);
+		}
+		expect(identityOf).not.toHaveBeenCalled();
+	});
+
 	const TWO = plans.find((p) => p.name === "concatenation-two-sources");
 	if (!TWO) {
 		throw new Error(

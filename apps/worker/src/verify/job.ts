@@ -799,6 +799,19 @@ export function addQcMeasurementChecks(
 	}
 }
 
+export function s3RoleMirrorIncompleteReason(
+	report: Pick<VerificationReport, "checks">,
+): string | undefined {
+	const mirrors = report.checks.filter(
+		(check) =>
+			check.verdict === "SKIP" &&
+			check.id.startsWith("hygiene:s3-role-mirror:"),
+	);
+	return mirrors.length > 0
+		? mirrors.map((mirror) => mirror.detail).join("; ")
+		: undefined;
+}
+
 /**
  * The process exit code for a finished report, and why it is non-zero.
  *
@@ -823,6 +836,10 @@ export function exitCodeFor(report: VerificationReport): {
 		};
 	}
 	if (report.failed === 0) {
+		const mirrorReason = s3RoleMirrorIncompleteReason(report);
+		if (mirrorReason) {
+			return { code: 1, invalid: mirrorReason };
+		}
 		const unverified = perTitleUnverifiedChecks(report);
 		if (unverified.length > 0) {
 			return {
@@ -977,6 +994,13 @@ export async function verifyJob(
 	}
 	const plan: EncodingPlan = encodingPlanSchema.parse(job.plan);
 	const expected = compileExpectedArtefacts(plan);
+	const roleMirrors = new Set(
+		expected.deliveryMirrorOutputKeys?.filter((key) =>
+			plan.outputs.some(
+				(output) => output.key === key && output.kind === "S3_ROLE_BASED",
+			),
+		),
+	);
 	let s3RoleBinding = options.s3RoleBinding;
 	if (
 		!s3RoleBinding &&
@@ -1033,6 +1057,9 @@ export async function verifyJob(
 		>();
 		const unbrowsable = new Map<string, string>();
 		for (const outputKey of expected.outputKeys) {
+			// Fixed-ladder expectations cover the primary routes. An open handle
+			// for a mirror does not establish that any mirrored artefacts exist.
+			if (roleMirrors.has(outputKey)) continue;
 			const where = browsable(
 				plan.outputs.find((o) => o.key === outputKey),
 				`output "${outputKey}"`,
@@ -1137,6 +1164,14 @@ export async function verifyJob(
 		}
 
 		const report = await verifyArtefacts(expected, deps);
+		for (const outputKey of roleMirrors) {
+			appendCheck(report, {
+				id: `hygiene:s3-role-mirror:${outputKey}`,
+				area: "hygiene",
+				verdict: "SKIP",
+				detail: `S3 role mirror "${outputKey}" was not independently verified`,
+			});
+		}
 		addHygieneChecks(report, {
 			truncations,
 			unbrowsable: [...unbrowsable.values()],

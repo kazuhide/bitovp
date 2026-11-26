@@ -81,7 +81,7 @@ import {
 	validateRunId,
 } from "./harness-rails";
 import type { VerifyJobResult } from "./job";
-import { verifyJob } from "./job";
+import { browsable, s3RoleMirrorIncompleteReason, verifyJob } from "./job";
 import { verifyLiveArchives } from "./live-archive-runtime";
 import {
 	finalizeLiveCleanupSeal,
@@ -567,6 +567,7 @@ export async function planSourceIdentity(
 		bucket: string,
 		key: string,
 	) => Promise<string>,
+	s3RoleBinding?: S3RoleVerificationBinding,
 ): Promise<string> {
 	if (plan.ingest.length === 0) {
 		return "unavailable";
@@ -582,8 +583,16 @@ export async function planSourceIdentity(
 		) {
 			return "unavailable";
 		}
+		let credentialId = input.credentialId;
+		if (input.kind === "S3_ROLE_BASED") {
+			const source = browsable(input, "the reference input", s3RoleBinding);
+			if (!source.ok || source.bucket !== s3RoleBinding?.inputBucket) {
+				return "unavailable";
+			}
+			credentialId = source.credentialId;
+		}
 		const key = ingest.inputPath.replace(/^\/+/, "");
-		const identity = await identityOf(input.credentialId, input.bucket, key);
+		const identity = await identityOf(credentialId, input.bucket, key);
 		if (identity === "unavailable") {
 			return "unavailable";
 		}
@@ -1349,6 +1358,10 @@ export function vodOutcomeForReport(
 				.map((c) => `${c.id}: ${c.detail}`)
 				.join(" | "),
 		};
+	}
+	const mirrorReason = s3RoleMirrorIncompleteReason(report);
+	if (mirrorReason) {
+		return { verdict: "INVALID", reason: mirrorReason };
 	}
 	const unverified = perTitleUnverifiedChecks(report);
 	if (unverified.length > 0) {
@@ -4682,14 +4695,36 @@ async function runVerificationRecorded(
 			// GenericS3 / GCS sources are HEADed through their own credential
 			// and bucket, and a two-source plan cannot hide a swapped second
 			// object (review of this PR).
-			sourceIdentity: await planSourceIdentity(plan, sourceIdentityFor),
+			sourceIdentity: await planSourceIdentity(
+				plan,
+				sourceIdentityFor,
+				s3RoleBinding,
+			),
 			bitmovinAccountId: account?.id ?? null,
 		};
+		const priorOutcome = priorReport?.outcomes?.find(
+			(o) => o.scenario === s.name,
+		);
+		if (
+			plan.inputs.some((input) => input.kind === "S3_ROLE_BASED") &&
+			(identity.sourceIdentity === "unavailable" ||
+				(priorOutcome?.verdict === "PASS" &&
+					(!priorOutcome.sourceIdentity ||
+						priorOutcome.sourceIdentity === "unavailable")))
+		) {
+			return {
+				...base,
+				...identity,
+				verdict: "INVALID" as const,
+				reason:
+					"S3 role source identity is needed to authorize a verification attempt",
+			};
+		}
 		if (priorReport) {
 			const eligibility = resumeEligibility(
 				{
 					fingerprint: priorReport.fingerprint,
-					outcome: priorReport.outcomes?.find((o) => o.scenario === s.name),
+					outcome: priorOutcome,
 					runId: priorReport.runId,
 				},
 				{ fingerprint, ...identity },

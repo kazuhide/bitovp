@@ -1,6 +1,7 @@
 import BitmovinApi from "@bitmovin/api-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { encodingFilterProtocols } from "@/lib/encoding-filter-catalogue";
+import { auditedOperationCases } from "../../../../../scripts/api-coverage-test-cases";
 import { encodingFilterReader } from "./encoding-filter-catalogue";
 
 const typedProtocols = [
@@ -33,13 +34,23 @@ describe("encoding filter catalogue", () => {
 		);
 	});
 
-	it.each([
-		{ protocol: undefined, path: filtersPath },
-		...typedProtocols.map((protocol) => ({
-			protocol,
-			path: `${filtersPath}/${protocol}`,
-		})),
-	])("reads the official paged collection and detail at $path", async ({
+	it.each(
+		auditedOperationCases(
+			import.meta.url,
+			"native-filter-pairs",
+			[
+				{ protocol: undefined, path: filtersPath },
+				...typedProtocols.map((protocol) => ({
+					protocol,
+					path: `${filtersPath}/${protocol}`,
+				})),
+			],
+			({ path }) => [
+				`GET ${path.slice(3)}`,
+				`GET ${path.slice(3)}/{filter_id}`,
+			],
+		),
+	)("reads the official paged collection and detail at $path", async ({
 		protocol,
 		path,
 	}) => {

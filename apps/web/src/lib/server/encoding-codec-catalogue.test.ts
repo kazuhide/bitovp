@@ -1,6 +1,7 @@
 import BitmovinApi from "@bitmovin/api-sdk";
 import { expect, it, vi } from "vitest";
 import { encodingCodecProtocols } from "@/lib/encoding-codec-catalogue";
+import { auditedOperationCases } from "../../../../../scripts/api-coverage-test-cases";
 import { encodingCodecReader } from "./encoding-codec-catalogue";
 
 // SDK 1.289.0 wire spellings. Keep expected paths independent of the readers.
@@ -50,7 +51,15 @@ const LIMIT = 7;
 const account = { apiKey: "fixture-api-key", tenantOrgId: "fixture-tenant" };
 
 it.each(
-	cases,
+	auditedOperationCases(
+		import.meta.url,
+		"native-codec-pairs",
+		cases,
+		({ family, protocol }) => [
+			`GET /encoding/configurations/${family}/${protocol}`,
+			`GET /encoding/configurations/${family}/${protocol}/{configuration_id}`,
+		],
+	),
 )("sends exact paginated list and detail GETs for $kind/$protocol", async ({
 	kind,
 	family,

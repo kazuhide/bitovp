@@ -3,6 +3,622 @@
 	"sdkVersion": "1.289.0",
 	"operations": [
 		{
+			"sdkMethod": "encoding.configurations.audio.aac.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/aac/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect AAC codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.aac.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.aac.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/aac",
+			"scope": "settings",
+			"scenario": "List AAC codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.aac.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.ac3.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/ac3/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect AC-3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.ac3.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.ac3.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/ac3",
+			"scope": "settings",
+			"scenario": "List AC-3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.ac3.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-atmos/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Dolby Atmos codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyAtmos.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-atmos",
+			"scope": "settings",
+			"scenario": "List Dolby Atmos codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyAtmos.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigital.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-digital/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Dolby Digital codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyDigital.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigital.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-digital",
+			"scope": "settings",
+			"scenario": "List Dolby Digital codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyDigital.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-digital-plus/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Dolby Digital Plus codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyDigitalPlus.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-digital-plus",
+			"scope": "settings",
+			"scenario": "List Dolby Digital Plus codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyDigitalPlus.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dts/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect DTS codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dts.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dts",
+			"scope": "settings",
+			"scenario": "List DTS codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dts.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect DTS passthrough codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dtsPassthrough.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dts-passthrough",
+			"scope": "settings",
+			"scenario": "List DTS passthrough codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dtsPassthrough.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dtsx/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect DTS:X codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dtsx.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dtsx",
+			"scope": "settings",
+			"scenario": "List DTS:X codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dtsx.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.eac3.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/eac3/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect E-AC-3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.eac3.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.eac3.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/eac3",
+			"scope": "settings",
+			"scenario": "List E-AC-3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.eac3.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV1.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/he-aac-v1/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect HE-AAC v1 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.heAacV1.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV1.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/he-aac-v1",
+			"scope": "settings",
+			"scenario": "List HE-AAC v1 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.heAacV1.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV2.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/he-aac-v2/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect HE-AAC v2 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.heAacV2.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV2.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/he-aac-v2",
+			"scope": "settings",
+			"scenario": "List HE-AAC v2 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.heAacV2.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/mp2/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect MP2 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.mp2.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/mp2",
+			"scope": "settings",
+			"scenario": "List MP2 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.mp2.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp3.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/mp3/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect MP3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.mp3.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp3.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/mp3",
+			"scope": "settings",
+			"scenario": "List MP3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.mp3.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.opus.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/opus/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Opus codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.opus.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.opus.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/opus",
+			"scope": "settings",
+			"scenario": "List Opus codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.opus.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.passthrough.delete",
 			"httpVerb": "DELETE",
 			"path": "/encoding/configurations/audio/passthrough/{configuration_id}",
@@ -43,6 +659,28 @@
 				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
 				"anchor": "\"reaches the official typed transport for $kind and projects public fields",
 				"caseGroup": "recorded-resource-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.passthrough.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/passthrough",
+			"scope": "settings",
+			"scenario": "List Audio passthrough codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.passthrough.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
 			},
 			"provider": "unverified"
 		},
@@ -91,6 +729,336 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.pcm.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/pcm",
+			"scope": "settings",
+			"scenario": "List PCM codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.pcm.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/vorbis/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Vorbis codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.vorbis.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/vorbis",
+			"scope": "settings",
+			"scenario": "List Vorbis codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.vorbis.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect DVB subtitles codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.dvbSubtitle.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle",
+			"scope": "settings",
+			"scenario": "List DVB subtitles codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.dvbSubtitle.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.imsc.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/imsc/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect IMSC codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.imsc.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.imsc.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/imsc",
+			"scope": "settings",
+			"scenario": "List IMSC codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.imsc.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.webvtt.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/webvtt/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect WebVTT codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.webvtt.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.webvtt.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/webvtt",
+			"scope": "settings",
+			"scenario": "List WebVTT codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.webvtt.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/av1/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect AV1 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.av1.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/av1",
+			"scope": "settings",
+			"scenario": "List AV1 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.av1.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h262/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect H.262 (MPEG-2) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h262.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h262",
+			"scope": "settings",
+			"scenario": "List H.262 (MPEG-2) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h262.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h264.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h264/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect H.264 (AVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h264.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h264.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h264",
+			"scope": "settings",
+			"scenario": "List H.264 (AVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h264.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.video.h265.delete",
 			"httpVerb": "DELETE",
 			"path": "/encoding/configurations/video/h265/{configuration_id}",
@@ -113,6 +1081,50 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.video.h265.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h265/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect H.265 (HEVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h265.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h265",
+			"scope": "settings",
+			"scenario": "List H.265 (HEVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h265.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.video.h265v2.delete",
 			"httpVerb": "DELETE",
 			"path": "/encoding/configurations/video/h265v2/{configuration_id}",
@@ -131,6 +1143,182 @@
 				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
 				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
 				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265v2.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h265v2/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect H.265 v2 (HEVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h265v2.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265v2.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h265v2",
+			"scope": "settings",
+			"scenario": "List H.265 v2 (HEVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h265v2.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/mjpeg/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Motion JPEG codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.mjpeg.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/mjpeg",
+			"scope": "settings",
+			"scenario": "List Motion JPEG codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.mjpeg.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp8.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/vp8/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect VP8 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.vp8.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp8.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/vp8",
+			"scope": "settings",
+			"scenario": "List VP8 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.vp8.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp9.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/vp9/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect VP9 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.vp9.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp9.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/vp9",
+			"scope": "settings",
+			"scenario": "List VP9 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.vp9.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
 			},
 			"provider": "unverified"
 		},
@@ -508,6 +1696,798 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.filters.audioMix.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/audio-mix/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Audio mix filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.audioMix.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.audioMix.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/audio-mix",
+			"scope": "settings",
+			"scenario": "List Audio mix filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.audioMix.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.audioVolume.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/audio-volume/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Audio volume filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.audioVolume.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.audioVolume.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/audio-volume",
+			"scope": "settings",
+			"scenario": "List Audio volume filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.audioVolume.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/azure-speech-to-captions/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Azure Speech to Captions filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.azureSpeechToCaptions.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/azure-speech-to-captions",
+			"scope": "settings",
+			"scenario": "List Azure Speech to Captions filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.azureSpeechToCaptions.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.conform.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/conform/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Conform filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.conform.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.conform.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/conform",
+			"scope": "settings",
+			"scenario": "List Conform filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.conform.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.crop.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/crop/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Crop filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.crop.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.crop.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/crop",
+			"scope": "settings",
+			"scenario": "List Crop filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.crop.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.deinterlace.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/deinterlace/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Deinterlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.deinterlace.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.deinterlace.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/deinterlace",
+			"scope": "settings",
+			"scenario": "List Deinterlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.deinterlace.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.denoiseHqdn3d.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/denoise-hqdn3d/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect HQDN3D denoise filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.denoiseHqdn3d.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.denoiseHqdn3d.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/denoise-hqdn3d",
+			"scope": "settings",
+			"scenario": "List HQDN3D denoise filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.denoiseHqdn3d.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.dolbyLoudness.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/dolby-loudness/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Dolby Loudness filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.dolbyLoudness.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.dolbyLoudness.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/dolby-loudness",
+			"scope": "settings",
+			"scenario": "List Dolby Loudness filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.dolbyLoudness.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.ebuR128SinglePass.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/ebu-r128-single-pass/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect EBU R128 single-pass filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.ebuR128SinglePass.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.ebuR128SinglePass.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/ebu-r128-single-pass",
+			"scope": "settings",
+			"scenario": "List EBU R128 single-pass filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.ebuR128SinglePass.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedDeinterlace.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/enhanced-deinterlace/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Enhanced deinterlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.enhancedDeinterlace.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedDeinterlace.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/enhanced-deinterlace",
+			"scope": "settings",
+			"scenario": "List Enhanced deinterlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.enhancedDeinterlace.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedWatermark.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/enhanced-watermark/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Enhanced watermark filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.enhancedWatermark.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedWatermark.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/enhanced-watermark",
+			"scope": "settings",
+			"scenario": "List Enhanced watermark filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.enhancedWatermark.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect filter metadata across types in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.interlace.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/interlace/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Interlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.interlace.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.interlace.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/interlace",
+			"scope": "settings",
+			"scenario": "List Interlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.interlace.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters",
+			"scope": "settings",
+			"scenario": "List filter metadata across types in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.rotate.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/rotate/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Rotate filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.rotate.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.rotate.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/rotate",
+			"scope": "settings",
+			"scenario": "List Rotate filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.rotate.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.scale.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/scale/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Scale filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.scale.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.scale.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/scale",
+			"scope": "settings",
+			"scenario": "List Scale filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.scale.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.text.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/text/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Text filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.text.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.text.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/text",
+			"scope": "settings",
+			"scenario": "List Text filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.text.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.unsharp.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/unsharp/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Unsharp filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.unsharp.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.unsharp.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/unsharp",
+			"scope": "settings",
+			"scenario": "List Unsharp filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.unsharp.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.watermark.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/watermark/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Watermark filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.watermark.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.watermark.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/watermark",
+			"scope": "settings",
+			"scenario": "List Watermark filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.watermark.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.inputs.akamaiNetstorage.get",
 			"httpVerb": "GET",
 			"path": "/encoding/inputs/akamai-netstorage/{input_id}",
@@ -516,7 +2496,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -538,7 +2518,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -560,7 +2540,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -582,7 +2562,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -604,7 +2584,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -626,7 +2606,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -648,7 +2628,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -670,7 +2650,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -692,7 +2672,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -714,7 +2694,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -736,7 +2716,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -758,7 +2738,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -780,7 +2760,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -802,7 +2782,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -824,7 +2804,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -846,7 +2826,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -868,7 +2848,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -890,7 +2870,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -912,7 +2892,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -934,7 +2914,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -956,7 +2936,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -978,7 +2958,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1000,7 +2980,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1022,7 +3002,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1044,7 +3024,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1066,7 +3046,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1088,7 +3068,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1110,7 +3090,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1132,7 +3112,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1154,7 +3134,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1220,7 +3200,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1242,7 +3222,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1264,7 +3244,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1286,7 +3266,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1308,7 +3288,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1330,7 +3310,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1352,7 +3332,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1374,7 +3354,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1438,7 +3418,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1460,7 +3440,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1482,7 +3462,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1504,7 +3484,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1526,7 +3506,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1548,7 +3528,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1570,7 +3550,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1592,7 +3572,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1614,7 +3594,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1636,7 +3616,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1658,7 +3638,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1680,7 +3660,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1702,7 +3682,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1724,7 +3704,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1746,7 +3726,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1768,7 +3748,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1790,7 +3770,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1812,7 +3792,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1834,7 +3814,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1856,7 +3836,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1878,7 +3858,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1900,7 +3880,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1922,7 +3902,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -1944,7 +3924,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -2010,7 +3990,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -2032,7 +4012,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -2054,7 +4034,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.get(api,"
+				"anchor": "reader.get(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
@@ -2076,7 +4056,7 @@
 			"entrypoint": {
 				"httpVerb": "GET",
 				"path": "/api/encoding-native",
-				"anchor": "io.list(api,"
+				"anchor": "reader.list(api,"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",

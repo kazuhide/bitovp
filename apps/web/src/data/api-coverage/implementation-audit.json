@@ -2087,9 +2087,7 @@
 			"sdkMethod": "encoding.configurations.video.h264.create",
 			"target": {
 				"location": "body",
-				"propertyPath": [
-					"autoLevelSetup"
-				]
+				"propertyPath": ["autoLevelSetup"]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -2145,9 +2143,7 @@
 			"sdkMethod": "encoding.configurations.video.av1.create",
 			"target": {
 				"location": "body",
-				"propertyPath": [
-					"maxLevel"
-				]
+				"propertyPath": ["maxLevel"]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -2188,18 +2184,14 @@
 					"url": "https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoav1",
 					"reviewedAt": "2026-11-16"
 				},
-				"conditions": [
-					"Has no effect when autoLevelSetup is DISABLED."
-				]
+				"conditions": ["Has no effect when autoLevelSetup is DISABLED."]
 			}
 		},
 		{
 			"sdkMethod": "encoding.configurations.video.av1.create",
 			"target": {
 				"location": "body",
-				"propertyPath": [
-					"autoLevelSetup"
-				]
+				"propertyPath": ["autoLevelSetup"]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -2249,9 +2241,7 @@
 			"sdkMethod": "encoding.configurations.video.av1.create",
 			"target": {
 				"location": "body",
-				"propertyPath": [
-					"masterDisplay"
-				]
+				"propertyPath": ["masterDisplay"]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -2299,9 +2289,7 @@
 			"sdkMethod": "encoding.configurations.video.av1.create",
 			"target": {
 				"location": "body",
-				"propertyPath": [
-					"maxContentLightLevel"
-				]
+				"propertyPath": ["maxContentLightLevel"]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -2349,9 +2337,7 @@
 			"sdkMethod": "encoding.configurations.video.av1.create",
 			"target": {
 				"location": "body",
-				"propertyPath": [
-					"maxPictureAverageLightLevel"
-				]
+				"propertyPath": ["maxPictureAverageLightLevel"]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -2399,9 +2385,7 @@
 			"sdkMethod": "encoding.outputs.moq.create",
 			"target": {
 				"location": "body",
-				"propertyPath": [
-					"relayUrl"
-				]
+				"propertyPath": ["relayUrl"]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -2452,18 +2436,14 @@
 					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
 					"reviewedAt": "2026-11-25"
 				},
-				"conditions": [
-					"Required for a Live MoQ output."
-				]
+				"conditions": ["Required for a Live MoQ output."]
 			}
 		},
 		{
 			"sdkMethod": "encoding.outputs.moq.create",
 			"target": {
 				"location": "body",
-				"propertyPath": [
-					"authToken"
-				]
+				"propertyPath": ["authToken"]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -2514,18 +2494,14 @@
 					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
 					"reviewedAt": "2026-11-25"
 				},
-				"conditions": [
-					"Optional relay authorization token."
-				]
+				"conditions": ["Optional relay authorization token."]
 			}
 		},
 		{
 			"sdkMethod": "encoding.outputs.moq.create",
 			"target": {
 				"location": "body",
-				"propertyPath": [
-					"authTokenType"
-				]
+				"propertyPath": ["authTokenType"]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -2585,9 +2561,7 @@
 			"sdkMethod": "encoding.outputs.moq.create",
 			"target": {
 				"location": "body",
-				"propertyPath": [
-					"trackNamespace"
-				]
+				"propertyPath": ["trackNamespace"]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -2644,18 +2618,14 @@
 					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
 					"reviewedAt": "2026-11-25"
 				},
-				"conditions": [
-					"Required tuple of one to 32 strings."
-				]
+				"conditions": ["Required tuple of one to 32 strings."]
 			}
 		},
 		{
 			"sdkMethod": "encoding.outputs.moq.create",
 			"target": {
 				"location": "body",
-				"propertyPath": [
-					"draftVersion"
-				]
+				"propertyPath": ["draftVersion"]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -2700,9 +2670,7 @@
 					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
 					"reviewedAt": "2026-11-25"
 				},
-				"conditions": [
-					"Required. The API accepts DRAFT_16 and DRAFT_18."
-				]
+				"conditions": ["Required. The API accepts DRAFT_16 and DRAFT_18."]
 			}
 		}
 	]

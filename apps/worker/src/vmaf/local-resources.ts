@@ -124,6 +124,14 @@ export function createLocalVmafResources(
 				: Math.max(1, Math.floor(current.budgetBytes / (320 * 1024 ** 2)));
 		return Math.max(1, Math.min(32, cpu, memory));
 	}
+	function sharedPreparationCapacity() {
+		// Parents may have one mirror or use different scoring devices. Keep
+		// a small preparation pool independent of that comparison's capacity;
+		// the shared executor still admits every actual CPU/RAM/GPU request.
+		if (!options.execute || !snapshot?.budgetBytes) return 1;
+		const cores = Math.max(1, Math.floor(snapshot.cpuCapacity));
+		return Math.min(3, cores, potential());
+	}
 	function refresh() {
 		if (snapshot && busy > 0) return;
 		const current = read();
@@ -144,7 +152,10 @@ export function createLocalVmafResources(
 						accountUnmaterializedReservations: true,
 					})
 				: undefined;
-		preparationCapacity = Math.min(preparationCapacity, potential());
+		preparationCapacity = Math.max(
+			sharedPreparationCapacity(),
+			Math.min(preparationCapacity, potential()),
+		);
 	}
 	function remove(waiter: PreparationWaiter) {
 		const index = queue.indexOf(waiter);
@@ -189,7 +200,10 @@ export function createLocalVmafResources(
 		});
 	}
 	return {
-		jobCapacity: () => preparationCapacity,
+		jobCapacity: () => {
+			refresh();
+			return preparationCapacity;
+		},
 		begin(signal) {
 			refresh();
 			let sessionSnapshot = snapshot as LocalResources;
@@ -356,7 +370,7 @@ export function createLocalVmafResources(
 						)
 							throw new ResourceUnavailableError("estimate");
 						preparationCapacity = Math.max(
-							1,
+							sharedPreparationCapacity(),
 							Math.min(plan.concurrency, potential()),
 						);
 						drain();

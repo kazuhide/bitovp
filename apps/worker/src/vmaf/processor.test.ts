@@ -1009,6 +1009,7 @@ describe("HDR QC execution policy", () => {
 			if (banding) {
 				expect(cambi).toHaveBeenCalledOnce();
 				expect(cambi.mock.calls[0]?.[4]).toBe(1);
+				expect(cambi.mock.calls[0]?.[7]).toBe(2);
 				expect(t.results[0]?.pooled).toMatchObject({
 					banding: { max: 12, frameCount: 1 },
 				});
@@ -5526,6 +5527,24 @@ describe("banding measurement integration", () => {
 			expect(
 				argv.flatMap((value, i) => (value === "-threads" ? [argv[i + 1]] : [])),
 			).toEqual([String(decoderThreads), String(decoderThreads)]);
+			expect(argv[argv.indexOf("-filter_complex") + 1]).toContain(
+				"n_threads=20",
+			);
+		}
+		const detector = vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(([, argv]) =>
+				argv[argv.indexOf("-filter_complex") + 1]?.includes("model=:"),
+			);
+		const timing = vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(([, argv]) => argv.includes("-show_frames"));
+		expect(detector).toHaveLength(2);
+		expect(timing).toHaveLength(2);
+		for (const [, argv] of [...detector, ...timing]) {
+			expect(argv[argv.indexOf("-threads") + 1]).toBe(String(decoderThreads));
+		}
+		for (const [, argv] of detector) {
 			expect(argv[argv.indexOf("-filter_complex") + 1]).toContain(
 				"n_threads=20",
 			);

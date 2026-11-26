@@ -36,6 +36,7 @@ import {
 } from "@bitovp/core/wizard";
 import { z } from "zod";
 import type { SessionDto } from "./auth/dto";
+import type { ProtectedVodCopyReplacements } from "./protected-vod-copy";
 import {
 	defaultFileNames,
 	draftKeepsText,
@@ -1536,48 +1537,66 @@ export function legacyVodMetadataOnly(
 export function restoreVodWizardDraft(
 	base: WizardState,
 	draft: WizardDraft,
-	replacements?: ReadonlyMap<string, WizardInputFile>,
+	replacements?: ProtectedVodCopyReplacements,
 ): WizardState {
 	let value = missingLegacyFilters(base, draft)
 		? null
 		: recoverRenditionSettings(base, "vod", draft);
-	if (Array.isArray(value?.inputFiles) && replacements?.size) {
-		const sameInput = [
+	if (Array.isArray(value?.inputFiles) && replacements) {
+		const inputFields = [
 			"inputKey",
 			"kind",
 			"credentialId",
 			"bucket",
 			"region",
 		] as const;
+		const sameInput = (
+			file: WizardInputFile | undefined,
+			saved: DraftValue,
+		): file is WizardInputFile =>
+			!!file && inputFields.every((field) => file[field] === saved[field]);
+		const protectedHttpsInputs = new Set(
+			[...replacements.inputFiles.values()]
+				.filter((file) => file.kind === "HTTPS")
+				.map((file) => file.inputKey),
+		);
+		const baseFiles = new Map(base.inputFiles.map((file) => [file.key, file]));
 		const repairedFiles = new Set<string>();
+		const unchangedFiles = new Set<string>();
 		const inputFiles = value.inputFiles.map((saved: unknown) => {
-			if (
-				!draftRecord(saved) ||
-				typeof saved.key !== "string" ||
-				saved.path !== ""
-			)
-				return saved;
-			const replacement = replacements.get(saved.key);
-			if (
-				!replacement ||
-				!sameInput.every((field) => replacement[field] === saved[field])
-			)
-				return saved;
+			if (!draftRecord(saved) || typeof saved.key !== "string") return saved;
+			const original = baseFiles.get(saved.key);
+			let file = saved;
+			if (sameInput(original, saved)) {
+				if (saved.path === original.path) unchangedFiles.add(saved.key);
+				// An input label belongs to the shared HTTPS input resource.
+				if (
+					saved.name === "" &&
+					original.name &&
+					protectedHttpsInputs.has(original.inputKey)
+				)
+					file = { ...saved, name: original.name };
+			}
+			const replacement = replacements.inputFiles.get(saved.key);
+			if (saved.path !== "" || !sameInput(replacement, saved)) return file;
 			repairedFiles.add(saved.key);
-			return { ...saved, path: replacement.path };
+			return { ...file, path: replacement.path };
 		});
 		const sources = value.sources;
 		if (draftRecord(sources) && Array.isArray(sources.hdr10PlusStreams)) {
 			const hdr10PlusStreams = sources.hdr10PlusStreams.map(
 				(saved: unknown) => {
-					if (
-						!draftRecord(saved) ||
-						typeof saved.videoInputFile !== "string" ||
-						!repairedFiles.has(saved.videoInputFile)
-					)
+					if (!draftRecord(saved) || typeof saved.videoInputFile !== "string")
 						return saved;
-					// Reopening sourced a new picture. The cached sidecar only describes
-					// the old picture removed by the draft's privacy filter.
+					const pictureReplaced = repairedFiles.has(saved.videoInputFile);
+					const sidecarWithheld =
+						typeof saved.key === "string" &&
+						replacements.hdr10PlusMetadataKeys.has(saved.key) &&
+						saved.metadataInputPath === "" &&
+						unchangedFiles.has(saved.videoInputFile);
+					if (!pictureReplaced && !sidecarWithheld) return saved;
+					// A fresh picture needs a matching sidecar. With the same picture,
+					// only a withheld blank sidecar is filled.
 					const replacement = base.sources?.hdr10PlusStreams?.find(
 						(row) =>
 							row.key === saved.key &&

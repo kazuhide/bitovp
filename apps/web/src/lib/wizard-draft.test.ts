@@ -547,11 +547,10 @@ it("keeps the replacement entered on reopen when the draft omitted its prior URL
 		}),
 	};
 	expect(JSON.stringify(saved.value)).not.toContain("OLD_FIXTURE");
-	const restored = restoreVodWizardDraft(
-		base,
-		saved,
-		new Map([[input.key, input]]),
-	);
+	const restored = restoreVodWizardDraft(base, saved, {
+		inputFiles: new Map([[input.key, input]]),
+		hdr10PlusMetadataKeys: new Set(),
+	});
 	expect(restored.name).toBe("Keep the editorial change");
 	expect(restored.inputFiles.map((row) => row.path)).toEqual([input.path, ""]);
 });
@@ -606,7 +605,10 @@ it("repairs a blank subtitle only when its original storage identity remains unc
 	const restored = restoreVodWizardDraft(
 		base,
 		{ step: 2, value: saved },
-		new Map([[second.key, replacement]]),
+		{
+			inputFiles: new Map([[second.key, replacement]]),
+			hdr10PlusMetadataKeys: new Set(),
+		},
 	);
 	const restoredSecondFile = restored.videos[1]?.extras?.burnInSrt?.inputFile;
 	expect(
@@ -615,7 +617,12 @@ it("repairs a blank subtitle only when its original storage identity remains unc
 	const mismatched = restoreVodWizardDraft(
 		base,
 		{ step: 2, value: saved },
-		new Map([[second.key, { ...replacement, bucket: "different.example" }]]),
+		{
+			inputFiles: new Map([
+				[second.key, { ...replacement, bucket: "different.example" }],
+			]),
+			hdr10PlusMetadataKeys: new Set(),
+		},
 	);
 	expect(
 		mismatched.inputFiles.find((file) => file.key === second.key)?.path,

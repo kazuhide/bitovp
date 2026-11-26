@@ -82,6 +82,147 @@ beforeEach(() => {
 });
 
 it.each([
+	["the redacted HTTPS label", "HTTPS", false],
+	["an edited HTTPS label", "HTTPS", true],
+	["the redacted HDR10+ sidecar", "HDR10_PLUS", false],
+	["an edited HDR10+ sidecar", "HDR10_PLUS", true],
+] as const)("restores %s in a pre-upgrade protected copy", async (_, kind, edited) => {
+	const original = structuredClone(sourceState);
+	const [file] = original.inputFiles;
+	if (!file) throw new Error("Missing fixture input");
+	const previousPath =
+		kind === "HTTPS"
+			? "picture.mp4?ticket=OLD_PRIVATE_FIXTURE"
+			: "sidecar.json?ticket=OLD_PRIVATE_FIXTURE";
+	const suppliedPath =
+		kind === "HTTPS" ? "fresh/picture.mp4" : "fresh/sidecar.json";
+	if (kind === "HTTPS") {
+		original.inputFiles = [
+			{
+				...file,
+				kind: "HTTPS",
+				credentialId: "",
+				bucket: "media.example",
+				name: previousPath,
+				path: previousPath,
+			},
+		];
+	} else {
+		original.sources = {
+			hdr10PlusStreams: [
+				{
+					key: "hdr",
+					videoInputFile: file.key,
+					metadataInputPath: previousPath,
+					selectionMode: "AUTO",
+				},
+			],
+		};
+		original.videos = original.videos.map((video) => ({
+			...video,
+			codec: "H265",
+			h265: { dynamicRangeFormat: "HDR10", profile: "MAIN10" },
+			extras: { ...video.extras, source: "hdr" },
+		}));
+	}
+	const raw = buildPlan(original);
+	const authored = structuredClone(original);
+	authored.name = "Continue legacy edits";
+	const editedName = "Editorial source";
+	const editedMetadata = "edited/sidecar.json";
+	if (edited && kind === "HTTPS" && authored.inputFiles[0]) {
+		authored.inputFiles[0].name = editedName;
+	}
+	const savedHdr = authored.sources?.hdr10PlusStreams?.[0];
+	if (edited && savedHdr) savedHdr.metadataInputPath = editedMetadata;
+
+	const key = draftKey(
+		["org", "user"],
+		"vod",
+		`job:${ID}:${draftFingerprint(raw)}`,
+	);
+	writeWizardDraft(key, "vod", authored, 0);
+	const stored = localStorage.getItem(key);
+	if (!stored) throw new Error("Expected a saved draft");
+	expect(stored).not.toContain("OLD_PRIVATE_FIXTURE");
+	expect(JSON.parse(stored).value).toMatchObject(
+		kind === "HTTPS"
+			? { inputFiles: [{ name: edited ? editedName : "", path: "" }] }
+			: {
+					inputFiles: [{ path: file.path }],
+					sources: {
+						hdr10PlusStreams: [
+							{ metadataInputPath: edited ? editedMetadata : "" },
+						],
+					},
+				},
+	);
+
+	const projection = publicVodSourceProjection({ plan: raw }, raw);
+	const copyPlan = markWithheldPlanSources(raw, projection.plan);
+	const sources = withheldPlanSources(copyPlan);
+	expect(sources?.labels).toHaveLength(1);
+	const label = sources?.labels[0];
+	if (!label) throw new Error("Missing protected source");
+	expect(JSON.stringify(copyPlan)).not.toContain("OLD_PRIVATE_FIXTURE");
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
+		url === `/api/encoding-jobs/${ID}`
+			? { plan: copyPlan }
+			: init?.method === "POST"
+				? { id: ID }
+				: [],
+	);
+	renderWithQuery(<CopyVodJob source={ID} />);
+	fireEvent.change(await screen.findByLabelText(label), {
+		target: { value: suppliedPath },
+	});
+	fireEvent.click(screen.getByRole("button", { name: /use replacement/i }));
+	fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+	expect(screen.getByRole("textbox", { name: /job name/i })).toHaveValue(
+		"Continue legacy edits",
+	);
+	fireEvent.click(screen.getByRole("button", { name: /^8\. Review$/ }));
+	const start = screen.getByRole("button", { name: /start encoding$/i });
+	expect(
+		start,
+		screen
+			.queryAllByRole("alert")
+			.map((alert) => alert.textContent)
+			.join("\n"),
+	).toBeEnabled();
+	fireEvent.click(start);
+	await waitFor(() =>
+		expect(
+			apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(true),
+	);
+	const posted = apiFetch.mock.calls.find(
+		([, init]) => init?.method === "POST",
+	);
+	if (!posted) throw new Error("Expected restored copy submission");
+	expect(posted[1].body).not.toContain("OLD_PRIVATE_FIXTURE");
+	const submitted = encodingPlanSchema.parse(JSON.parse(posted[1].body).plan);
+	if (kind === "HTTPS") {
+		expect(submitted.inputs).toMatchObject([
+			{ kind, name: edited ? editedName : "HTTPS Input" },
+		]);
+		expect(submitted.ingest).toContainEqual(
+			expect.objectContaining({
+				inputKey: file.inputKey,
+				inputPath: suppliedPath,
+			}),
+		);
+	} else {
+		expect(submitted.hdr10PlusStreams).toMatchObject([
+			{
+				videoInputPath: file.path,
+				metadataInputPath: edited ? editedMetadata : suppliedPath,
+			},
+		]);
+	}
+});
+
+it.each([
 	"swap bitrates",
 	"remove the sibling",
 	"reassign an existing subtitle",

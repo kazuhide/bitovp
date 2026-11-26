@@ -7,6 +7,11 @@ import {
 	type WizardState,
 } from "@bitovp/core/wizard";
 
+export type ProtectedVodCopyReplacements = {
+	inputFiles: ReadonlyMap<string, WizardInputFile>;
+	hdr10PlusMetadataKeys: ReadonlySet<string>;
+};
+
 /** Keep the original file slots even when two entered replacements now point
  * to the same object. The normal importer determines the original keys. */
 export function protectedVodCopyLayout(
@@ -40,7 +45,7 @@ export function protectedVodCopyLayout(
 	}
 	const original = tryImportPresetIntoWizard(synthetic);
 	if (!original.ok) return null;
-	const replacements = new Map<string, WizardInputFile>();
+	const replacementFiles = new Map<string, WizardInputFile>();
 	const inputFiles: WizardInputFile[] = [];
 	for (const file of original.state.inputFiles) {
 		const actual = byPlaceholder.get(file.path);
@@ -48,13 +53,14 @@ export function protectedVodCopyLayout(
 			inputFiles.push(file);
 			continue;
 		}
-		if (actual.inputKey !== file.inputKey || replacements.has(file.key))
+		if (actual.inputKey !== file.inputKey || replacementFiles.has(file.key))
 			return null;
 		const input = { ...file, path: actual.path };
-		replacements.set(file.key, input);
+		replacementFiles.set(file.key, input);
 		inputFiles.push(input);
 	}
 	const state = { ...original.state, inputFiles };
+	const hdr10PlusMetadataKeys = new Set<string>();
 	if (state.sources?.hdr10PlusStreams) {
 		const filesByKey = new Map(inputFiles.map((file) => [file.key, file]));
 		const hdr10PlusStreams = [];
@@ -62,9 +68,11 @@ export function protectedVodCopyLayout(
 			const actual = byPlaceholder.get(hdr.metadataInputPath);
 			if (
 				actual &&
-				filesByKey.get(hdr.videoInputFile)?.inputKey !== actual.inputKey
+				(filesByKey.get(hdr.videoInputFile)?.inputKey !== actual.inputKey ||
+					hdr10PlusMetadataKeys.has(hdr.key))
 			)
 				return null;
+			if (actual) hdr10PlusMetadataKeys.add(hdr.key);
 			hdr10PlusStreams.push(
 				actual ? { ...hdr, metadataInputPath: actual.path } : hdr,
 			);
@@ -78,5 +86,9 @@ export function protectedVodCopyLayout(
 	} catch {
 		return null;
 	}
+	const replacements: ProtectedVodCopyReplacements = {
+		inputFiles: replacementFiles,
+		hdr10PlusMetadataKeys,
+	};
 	return { state, replacements };
 }

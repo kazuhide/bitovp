@@ -38,7 +38,10 @@ import {
 	renameOutputBase,
 	splitOutputFolder,
 } from "@/lib/output-path";
-import { protectedVodCopyLayout } from "@/lib/protected-vod-copy";
+import {
+	type ProtectedVodCopyReplacements,
+	protectedVodCopyLayout,
+} from "@/lib/protected-vod-copy";
 import type { VodFlow } from "@/lib/vod-flow";
 import {
 	draftFingerprint,
@@ -57,7 +60,6 @@ import {
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
 	hasInvalidHevcV2Ladder,
-	type WizardInputFile,
 	type WizardState,
 	wizardUsesCodecEncodingMode,
 } from "./build-plan";
@@ -295,9 +297,9 @@ export function VodWizard({
 				}).length > 0),
 	);
 	const draftBase = useRef(fresh);
-	const draftReplacements = useRef<
-		ReadonlyMap<string, WizardInputFile> | undefined
-	>(undefined);
+	const draftReplacements = useRef<ProtectedVodCopyReplacements | undefined>(
+		undefined,
+	);
 	// The file flow opens on its short view; every step stays one click away.
 	const [expanded, setExpanded] = useState(false);
 	const simple = fileFlow && !expanded;
@@ -645,11 +647,11 @@ export function VodWizard({
 		? countPendingPlaceholders(imported.raw)
 		: 0;
 	const draftSource = presetKey === undefined ? fresh : draftBase.current;
-	const replacementFiles =
+	const replacements =
 		presetKey === undefined ? undefined : draftReplacements.current;
 	const draft = useWizardDraft({
 		kind: "vod",
-		legacyCopiedJobId: replacementFiles ? copiedJob?.id : undefined,
+		legacyCopiedJobId: replacements ? copiedJob?.id : undefined,
 		context:
 			imported || jsonLoadedForEditing
 				? null
@@ -664,11 +666,7 @@ export function VodWizard({
 		value: state,
 		step,
 		onRestore: (saved) => {
-			const restored = restoreVodWizardDraft(
-				draftSource,
-				saved,
-				replacementFiles,
-			);
+			const restored = restoreVodWizardDraft(draftSource, saved, replacements);
 			// Source facts and preview tasks are deliberately absent from the draft.
 			// Mount their preparation before resuming a later wizard step.
 			openState(restored, restored.inputTimeline ? 1 : saved.step);

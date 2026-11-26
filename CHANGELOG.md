@@ -34,6 +34,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Keep the VOD and Live Quick Launch settings and operator that initiated a request when the browser resumes it after going offline.
 - Require matching HDR10+ metadata when replacing a withheld picture and retain both source roles when the original job is deleted.
 - Protect private VOD source locations and keep output format summaries available in Compare.
+- Recover an uncertain Live stop after verifying the affected encoders and feeder shutdown. A confirmed stop records the broadcast outcome and a pending notification. Delivery can continue after channel deletion. Background recovery checks provider status.
 - Allow a worker with shared resource admission to run compatible local QC measurements concurrently within the host CPU and memory budget. Apply the reserved decoder limits to CAMBI scoring and frame-timing probes.
 - Start standard QC automatically when Redis becomes available and confirm queue ownership again before resuming work if its registration is lost.
 
@@ -50,7 +51,6 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - Validate the MoQ relay authorization token type against the Encoding API range when saving or using a credential.
 - Open compatible FMP4 and CMAF MoQ channel copies in the Live wizard with their relay and encoding settings populated.
-- Recover an uncertain Live stop after verifying the affected encoders and feeder shutdown. A confirmed stop records the broadcast outcome and a pending notification. Delivery can continue after channel deletion. Background recovery checks provider status.
 - Remove completed and failed Live heartbeat and slate promotion ticks from Redis, including older ticks left by previous workers. Standard and customer Compose installations can set a Redis memory budget.
 
 ## [1.3.4] - 2026-11-22

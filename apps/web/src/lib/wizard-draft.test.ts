@@ -633,12 +633,12 @@ it.each([
 			path: `subtitles/${key}.srt?ticket=PRIVATE_FIXTURE`,
 		})),
 	];
-	original.videos = keys.map((key, index) => ({
-		height: mode === "same resolution" ? 1080 : [1080, 720, 540][index]!,
+	original.videos = [1080, 720, 540].map((height, index) => ({
+		height: mode === "same resolution" ? 1080 : height,
 		bitrate: index === 2 ? 1_000_000 : 2_000_000,
 		codec: index === 1 ? "H265" : "H264",
 		extras: {
-			...(mode === "explicit" && { key }),
+			...(mode === "explicit" && { key: keys[index] }),
 			burnInSrt: { inputFile: `captions-${index}`, characterEncoding: "UTF_8" },
 		},
 	}));

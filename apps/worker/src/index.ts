@@ -191,14 +191,16 @@ import {
 	USAGE_SWEEP_INTERVAL_MS,
 } from "./usage/statistics-sweep";
 import {
+	closeVmafBullWorker,
 	createVmafOwnershipConnection,
 	createVmafQueueRegistry,
 	guardVmafQueueOwnership,
 	readVmafQueueDatabase,
 	startSplitVmafPrimaryWitness,
 	startStandardVmafConsumer,
+	waitForVmafBrokerClose,
 } from "./vmaf/queue-ownership";
-import { createStrandedVmafReconciler } from "./vmaf/reconcile-stranded";
+import { startOwnedVmafReconciliation } from "./vmaf/reconcile-stranded";
 import { createVmafTrigger } from "./vmaf/trigger";
 import { primaryWorkerQueues } from "./vmaf/worker-role";
 import { createVmafWorkerServices } from "./vmaf/worker-services";
@@ -1030,60 +1032,6 @@ const liveHeartbeatSweepInner = tenantService(() =>
 		summarizeEndedRuns,
 	}),
 );
-// One-shot on startup : retire VMAF rows whose claimant is gone.
-// A row claimed PENDING → RUNNING and then lost its worker can never move
-// again — the claim only matches PENDING, the delete route refuses a
-// non-terminal row, and with QC/VMAF off the surface 404s. The owner hit one
-// that had been RUNNING for 58 days and it blocked the data reset, pointing
-// them at a Bitmovin dashboard for a job that never touched Bitmovin.
-const reconcileStrandedVmaf = tenantService(() =>
-	createStrandedVmafReconciler({
-		prisma,
-		queue: vmafQueue,
-		orchestratorQueue: orchestratorProducerQueue,
-	}),
-);
-// review-3 I3: on a PERIODIC tick, not only at boot. The archetypal case is
-// "worker was killed, operator restarts it" — and at boot the killed run's
-// job is still in BullMQ's `active` list, because the stalled sweep that
-// reclaims it has not run yet (30s default). So the one-shot skips it, the
-// stall then redelivers, the processor's claim matches zero rows and the job
-// COMPLETES, and the row is still RUNNING. Only a SECOND restart would have
-// caught it — "fixed next time you restart twice" is not fixed, least of all
-// for the deployment that sat 58 days.
-const STRANDED_VMAF_SWEEP_MS = 60_000;
-setTenantInterval(() => {
-	reconcileStrandedVmaf()
-		.then((retired) => {
-			if (retired > 0) {
-				console.warn(
-					`[vmaf] retired ${retired} stranded RUNNING report(s) — their worker went away`,
-				);
-			}
-		})
-		.catch((err) =>
-			console.error(
-				"[vmaf] stranded-report reconcile failed (reports still work):",
-				err instanceof Error ? err.message : err,
-			),
-		);
-}, STRANDED_VMAF_SWEEP_MS).unref();
-runTenantTick(() =>
-	reconcileStrandedVmaf()
-		.then((retired) => {
-			if (retired > 0) {
-				console.warn(
-					`[vmaf] retired ${retired} stranded RUNNING report(s) — their worker went away`,
-				);
-			}
-		})
-		.catch((err) =>
-			console.error(
-				"[vmaf] stranded-report reconcile failed (reports still work):",
-				err instanceof Error ? err.message : err,
-			),
-		),
-);
 /**
  * Audit F63-RUN-009, the boot half. The failure-time stop above runs
  * in-process, so a worker that is itself dying never makes it — and every job
@@ -1137,7 +1085,7 @@ const strandedInspectionSweep = () => {
 			),
 		);
 };
-setTenantInterval(strandedInspectionSweep, STRANDED_VMAF_SWEEP_MS).unref();
+setTenantInterval(strandedInspectionSweep, 60_000).unref();
 runTenantTick(() => strandedInspectionSweep());
 // Review-336 I1: a channel whose provisioning lease went stale with no
 // takeover is wedged in PROVISIONING — no sweep, action or retry reached it.
@@ -2103,14 +2051,28 @@ const standardVmaf =
 					claim: () =>
 						vmafOwnerConnection.then(() => vmafOwnership.claim("worker")),
 				},
-				(owns) =>
-					startQueueWorker(
-						"vmafRunner",
-						guardVmafQueueOwnership(
-							owns,
-							consumeTenantJob("vmafRunner", queuedVmafParents),
-						),
-					),
+				(owns) => {
+					const handle = guardVmafQueueOwnership(
+						owns,
+						consumeTenantJob("vmafRunner", queuedVmafParents),
+					);
+					const worker = startQueueWorker("vmafRunner", handle);
+					const stopSweep = startOwnedVmafReconciliation(
+						owns,
+						forEachOrganization,
+						{
+							prisma,
+							queue: vmafQueue,
+							orchestratorQueue: orchestratorProducerQueue,
+						},
+					);
+					return {
+						close: () =>
+							closeVmafBullWorker(worker, () =>
+								Promise.all([handle.drain(), stopSweep()]),
+							),
+					};
+				},
 			)
 		: undefined;
 
@@ -2161,6 +2123,7 @@ function drainTenantLoop(loop: { stop(): void; drain(): Promise<void> }) {
 	).then(() => undefined);
 }
 
+let qcShutdownUnconfirmed = false;
 const shutdown = createShutdown({
 	// Signal every running feeder supervisor FIRST: their ffmpeg children
 	// would outlive this process otherwise. The active start jobs then
@@ -2269,18 +2232,34 @@ const shutdown = createShutdown({
 	],
 	closables: [
 		...workers,
-		...(standardVmaf ? [standardVmaf] : []),
+		{
+			close: async () => {
+				try {
+					await standardVmaf?.close();
+				} catch (error) {
+					qcShutdownUnconfirmed = true;
+					console.error(
+						"[worker:vmafRunner] standard shutdown could not verify release:",
+						redactSecrets(
+							error instanceof Error ? error.message : String(error),
+						),
+					);
+				}
+			},
+		},
 		liveChannelQueue,
 		feederQueue,
-		vmafQueue,
-		orchestratorProducerQueue,
 		vodInputPreviewQueue,
 	],
 	disconnect: async () => {
+		await Promise.allSettled([
+			waitForVmafBrokerClose(vmafQueue.close()),
+			waitForVmafBrokerClose(orchestratorProducerQueue.close()),
+		]);
 		vmafOwnerRedis.disconnect();
 		await basePrisma.$disconnect();
 	},
-	exit: (code) => process.exit(code),
+	exit: (code) => process.exit(qcShutdownUnconfirmed ? 1 : code),
 });
 
 process.on("SIGINT", () => void shutdown("SIGINT"));

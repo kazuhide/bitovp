@@ -394,7 +394,10 @@ it("authenticates before classification and keeps local, cloud, and terminal par
 		localVmafResources: { jobCapacity: () => 1 },
 		VMAF_CLOUD_JOB_CONCURRENCY: 2,
 	});
-	const loaded = load(["queuedVmafParents", "standardVmaf"], {
+	const startQueueWorker = vi.fn(
+		(_key: string, _consume: (value: Job) => Promise<unknown>) => ({}),
+	);
+	load(["queuedVmafParents", "standardVmaf"], {
 		vmafRuntime: { admitVmaf },
 		handlers: { vmafRunner: process },
 		consumeTenantJob,
@@ -402,13 +405,19 @@ it("authenticates before classification and keeps local, cloud, and terminal par
 		vmafOwnership: {},
 		vmafOwnerConnection: Promise.resolve(),
 		guardVmafQueueOwnership,
-		startQueueWorker: (_key: string, consume: unknown) => consume,
+		startQueueWorker,
+		startOwnedVmafReconciliation: () => async () => {},
+		forEachOrganization: vi.fn(),
+		prisma,
+		vmafQueue: {},
+		orchestratorProducerQueue: {},
 		startStandardVmafConsumer: (
 			_registry: unknown,
 			start: (owns: () => Promise<boolean>) => unknown,
 		) => start(async () => true),
 	});
-	const consume = loaded.standardVmaf as (value: Job) => Promise<unknown>;
+	const consume = startQueueWorker.mock.calls[0]?.[1];
+	if (!consume) throw new Error("No QC worker started");
 	await expect(consume(job(8))).rejects.toThrow("Tenant resource unavailable");
 	expect(prisma.vmafJob.findUnique).not.toHaveBeenCalled();
 	expect(process).not.toHaveBeenCalled();
@@ -456,6 +465,13 @@ it.each([
 		release: vi.fn(async () => true),
 	};
 	const admitVmaf = vi.fn((handler: unknown) => handler);
+	const stopSweep = vi.fn(async () => {});
+	const startOwnedVmafReconciliation = vi.fn(() => stopSweep);
+	const closeVmafBullWorker = vi.fn(
+		async (_worker: unknown, drain: () => Promise<unknown>) => {
+			await drain();
+		},
+	);
 	const { standardVmaf } = load(
 		["queuedVmafParents", "workers", "standardVmaf"],
 		{
@@ -469,6 +485,12 @@ it.each([
 			startQueueWorker,
 			startStandardVmafConsumer,
 			guardVmafQueueOwnership,
+			startOwnedVmafReconciliation,
+			closeVmafBullWorker,
+			forEachOrganization: vi.fn(),
+			prisma: {},
+			vmafQueue: {},
+			orchestratorProducerQueue: {},
 		},
 	) as {
 		standardVmaf: ReturnType<typeof startStandardVmafConsumer> | undefined;
@@ -477,6 +499,7 @@ it.each([
 		expect(startQueueWorker.mock.calls).toEqual(otherHandlers);
 		expect(consumeTenantJob.mock.calls).toEqual(otherHandlers);
 		expect(vmafOwnership.claim).not.toHaveBeenCalled();
+		expect(startOwnedVmafReconciliation).not.toHaveBeenCalled();
 		if (mode === "dedicated") {
 			expect(standardVmaf).toBeUndefined();
 			return;
@@ -496,10 +519,12 @@ it.each([
 			"vmafRunner",
 			expect.any(Function),
 		);
+		expect(startOwnedVmafReconciliation).toHaveBeenCalledOnce();
 	} finally {
 		connection.release();
 		await standardVmaf?.close();
 	}
+	expect(stopSweep).toHaveBeenCalledOnce();
 });
 
 it.each([

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import type { AppPrismaClient } from "@bitovp/db";
-import { DelayedError, type Job } from "bullmq";
+import { DelayedError, type Job, type Worker } from "bullmq";
 import { Redis } from "ioredis";
 import type { ResourceLeaseRedis } from "./resource-leases";
 
@@ -10,21 +10,45 @@ const ROOT = "bitovp:vmaf-queue:{owner-v1}";
 const PRIMARY_REFRESH_MS = 5_000;
 const PRIMARY_WITNESS_MS = 15_000;
 const PERSIST_TIMEOUT_MS = 2_000;
+const RELEASE_RETRY_MS = 5_000;
+const WORKER_CLOSE_MS = 7_000;
 
 // Role records are not leases. A disconnected Worker can still have active
 // FFmpeg or cloud work, so only a gracefully drained holder releases its token.
 // The producer witness attests a matching control plane and may expire safely.
 const OWNER_SCRIPT = `
 local action, role, token, detail, witness_ms, database = unpack(ARGV)
-local standard, dedicated, witness = unpack(KEYS)
+local standard, dedicated, witness, retired = unpack(KEYS)
 local holders = role == 'dedicated' and dedicated or standard
+local function has_aof()
+  return string.find(redis.call('INFO', 'persistence'), 'aof_enabled:1', 1, true)
+end
 if action == 'release' then
+  local aof = has_aof()
+  if role == 'dedicated' and not aof then error('VMAF_QUEUE_DURABLE_REDIS_REQUIRED') end
+  -- A new write provides an AOF offset even if a previous HDEL reply was
+  -- lost. The marker also rejects delayed startup requests for this token.
+  redis.call('SET', retired, '1', 'PX', 60000)
+  return redis.call('HDEL', holders, token) + (aof and 2 or 0)
+end
+if action == 'confirm_release' then
+  return redis.call('EXISTS', retired) == 1 and redis.call('HEXISTS', holders, token) == 0 and 1 or 0
+end
+if action == 'abandon' then
   return redis.call('HDEL', holders, token)
 end
 if action == 'withdraw' then
   return redis.call('ZREM', witness, token)
 end
 if action == 'publish' or role == 'dedicated' then
+  local server = redis.call('INFO', 'server')
+  local replication = redis.call('INFO', 'replication')
+  if not string.find(server, 'redis_mode:standalone', 1, true)
+      or not string.find(replication, 'role:master', 1, true)
+      or string.match(replication, 'connected_slaves:(%d+)') ~= '0'
+      or string.match(replication, 'master_replid2:([0-9a-f]+)') ~= string.rep('0', 40) then
+    error('VMAF_QUEUE_STANDALONE_REDIS_REQUIRED')
+  end
   local clock = redis.call('TIME')
   local now = tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000)
   redis.call('ZREMRANGEBYSCORE', witness, '-inf', now)
@@ -44,7 +68,8 @@ elseif redis.call('HLEN', dedicated) > 0 then
   return 0
 end
 if action == 'claim' then
-  local aof = string.find(redis.call('INFO', 'persistence'), 'aof_enabled:1', 1, true)
+  if redis.call('EXISTS', retired) == 1 then return 0 end
+  local aof = has_aof()
   if role == 'dedicated' and (not aof or not string.find(redis.call('INFO', 'memory'), 'maxmemory_policy:noeviction', 1, true)) then
     error('VMAF_QUEUE_DURABLE_REDIS_REQUIRED')
   end
@@ -88,7 +113,9 @@ export async function readVmafQueueDatabase(
 		  ns.nspname AS schema, ns.oid::text AS "schemaOid",
 		EXTRACT(EPOCH FROM pg_postmaster_start_time())::text AS epoch
 		FROM pg_database db JOIN pg_namespace ns ON ns.nspname = current_schema()
-		WHERE db.datname = current_database() AND NOT pg_is_in_recovery()`;
+		WHERE db.datname = current_database() AND NOT pg_is_in_recovery()
+		  AND current_setting('transaction_read_only') = 'off'
+		  AND current_setting('default_transaction_read_only') = 'off'`;
 	const database = rows[0];
 	if (
 		rows.length !== 1 ||
@@ -112,7 +139,14 @@ export async function readVmafQueueDatabase(
 		.digest("hex");
 }
 
-type RegistryAction = "claim" | "owns" | "release" | "publish" | "withdraw";
+type RegistryAction =
+	| "claim"
+	| "owns"
+	| "release"
+	| "confirm_release"
+	| "abandon"
+	| "publish"
+	| "withdraw";
 
 export function createVmafQueueRegistry(
 	redis: ResourceLeaseRedis & Pick<Redis, "call">,
@@ -127,16 +161,17 @@ export function createVmafQueueRegistry(
 		if (
 			(action === "publish" ||
 				action === "withdraw" ||
-				(role === "dedicated" && action !== "release")) &&
+				(role === "dedicated" && (action === "claim" || action === "owns"))) &&
 			(!database || !/^[a-f0-9]{64}$/.test(database))
 		)
 			throw new Error("VMAF_QUEUE_DATABASE_IDENTITY_UNAVAILABLE");
 		const result = await redis.eval(
 			OWNER_SCRIPT,
-			3,
+			4,
 			`${ROOT}:standard`,
 			`${ROOT}:dedicated`,
 			`${ROOT}:primary:${database ?? "-"}`,
+			`${ROOT}:retired:${token}`,
 			action,
 			role,
 			token,
@@ -144,37 +179,46 @@ export function createVmafQueueRegistry(
 			String(PRIMARY_WITNESS_MS),
 			database ?? "-",
 		);
-		if (result !== 0 && result !== 1 && !(action === "claim" && result === 2))
+		if (
+			result !== 0 &&
+			result !== 1 &&
+			!(action === "claim" && result === 2) &&
+			!(action === "release" && (result === 2 || result === 3))
+		)
 			throw new Error("VMAF_QUEUE_OWNERSHIP_RESPONSE_INVALID");
 		return result;
+	}
+	async function persist(role: Role, errorCode: string) {
+		let synced: unknown;
+		try {
+			synced = await redis.call("WAITAOF", 1, 0, PERSIST_TIMEOUT_MS);
+		} catch (error) {
+			// The existing standard role can operate with an older server or ACL.
+			if (
+				role === "worker" &&
+				error instanceof Error &&
+				/^(?:ERR unknown command 'WAITAOF'(?:,|$)|NOPERM(?: |$))/i.test(
+					error.message,
+				)
+			)
+				return;
+			throw error;
+		}
+		if (!Array.isArray(synced) || synced[0] !== 1) throw new Error(errorCode);
 	}
 	async function claim(role: Role, database?: string) {
 		const result = await run("claim", role, database);
 		if (result !== 2) return result === 1;
 		try {
 			// Confirm the register write reached disk before any jobs can start.
-			const synced = await redis.call("WAITAOF", 1, 0, PERSIST_TIMEOUT_MS);
-			if (
-				!Array.isArray(synced) ||
-				synced[0] !== 1 ||
-				(await run("owns", role, database)) !== 1
-			)
+			await persist(role, "VMAF_QUEUE_DURABLE_REGISTRATION_UNAVAILABLE");
+			if ((await run("owns", role, database)) !== 1)
 				throw new Error("VMAF_QUEUE_DURABLE_REGISTRATION_UNAVAILABLE");
 			return true;
 		} catch (error) {
-			// Redis versions without WAITAOF can still run the existing worker
-			// role. Those servers cannot start a dedicated consumer.
-			if (
-				role === "worker" &&
-				error instanceof Error &&
-				/^ERR unknown command 'WAITAOF'(?:,|$)/i.test(error.message) &&
-				(await run("owns", role, database).catch(() => 0)) === 1
-			) {
-				return true;
-			}
 			// This consumer has never taken a job. A failed cleanup leaves its
 			// registration reserved for inspection instead of allowing takeover.
-			await run("release", role).catch(() => {});
+			await run("abandon", role).catch(() => {});
 			throw error;
 		}
 	}
@@ -182,7 +226,17 @@ export function createVmafQueueRegistry(
 		claim,
 		owns: async (role: Role, database?: string) =>
 			(await run("owns", role, database)) === 1,
-		release: async (role: Role) => (await run("release", role)) === 1,
+		async release(role: Role) {
+			const result = await run("release", role);
+			if (result >= 2) {
+				await persist(role, "VMAF_QUEUE_DURABLE_RELEASE_UNAVAILABLE");
+				// A new connection could acknowledge a different AOF offset. The
+				// actual retirement marker must still be present after waiting.
+				if ((await run("confirm_release", role)) !== 1)
+					throw new Error("VMAF_QUEUE_DURABLE_RELEASE_UNAVAILABLE");
+			}
+			return result === 1 || result === 3;
+		},
 		publish: (database: string) => run("publish", "worker", database),
 		withdraw: (database: string) => run("withdraw", "worker", database),
 	};
@@ -283,6 +337,41 @@ export function startStandardVmafConsumer(
 	};
 }
 
+export function createDedicatedVmafRegistration(
+	registry: Pick<
+		ReturnType<typeof createVmafQueueRegistry>,
+		"claim" | "release"
+	>,
+	drain: () => Promise<unknown>,
+) {
+	const shutdown = new AbortController();
+	let pending: Promise<boolean> | undefined;
+	let reservationMayExist = false;
+	let closing: Promise<void> | undefined;
+	return {
+		signal: shutdown.signal,
+		async claim(database: string) {
+			shutdown.signal.throwIfAborted();
+			// The script can create the reservation without a reply reaching us.
+			reservationMayExist = true;
+			pending = registry.claim("dedicated", database);
+			reservationMayExist = await pending;
+			shutdown.signal.throwIfAborted();
+			return reservationMayExist;
+		},
+		close() {
+			shutdown.abort();
+			closing ??= (async () => {
+				await pending?.catch(() => {});
+				await closeVmafQueueConsumer(drain, async () => {
+					if (reservationMayExist) await registry.release("dedicated");
+				});
+			})();
+			return closing;
+		},
+	};
+}
+
 /** One pulse at a time, and no write can follow a successful withdrawal. */
 export function startSplitVmafPrimaryWitness(
 	registry: Pick<
@@ -327,14 +416,61 @@ export function guardVmafQueueOwnership<T>(
 	owns: () => Promise<boolean>,
 	consume: (job: Job) => Promise<T>,
 ) {
-	return async (job: Job) => {
-		const allowed = await owns().catch(() => false);
-		if (!allowed) {
+	let stopping = false;
+	const active = new Set<Promise<T>>();
+	const handle = async (job: Job) => {
+		const allowed = !stopping && (await owns().catch(() => false));
+		if (!allowed || stopping) {
 			await job.moveToDelayed(Date.now() + PRIMARY_REFRESH_MS, job.token);
 			throw new DelayedError();
 		}
-		return consume(job);
+		const pending = Promise.resolve().then(() => consume(job));
+		active.add(pending);
+		try {
+			return await pending;
+		} finally {
+			active.delete(pending);
+		}
 	};
+	return Object.assign(handle, {
+		async drain() {
+			stopping = true;
+			await Promise.allSettled(active);
+		},
+	});
+}
+
+export async function waitForVmafBrokerClose(operation: Promise<unknown>) {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		await Promise.race([
+			operation,
+			new Promise<never>((_resolve, reject) => {
+				timer = setTimeout(
+					() => reject(new Error("VMAF_QUEUE_BROKER_CLOSE_UNCONFIRMED")),
+					WORKER_CLOSE_MS,
+				);
+			}),
+		]);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+/** A Redis reconnect can hang BullMQ's close. Quiesce and prove application
+ * work has done draining before closing transport or retaining the token. */
+export async function closeVmafBullWorker(
+	worker: Pick<Worker, "pause" | "close">,
+	drain: () => Promise<unknown>,
+	neverStarted = false,
+) {
+	const drained = drain();
+	try {
+		if (!neverStarted) await waitForVmafBrokerClose(worker.pause(true));
+	} finally {
+		await drained;
+	}
+	await waitForVmafBrokerClose(worker.close(neverStarted));
 }
 
 export async function closeVmafQueueConsumer(
@@ -342,5 +478,18 @@ export async function closeVmafQueueConsumer(
 	release: () => Promise<unknown>,
 ) {
 	await drain();
-	await release();
+	const deadline = performance.now() + RELEASE_RETRY_MS;
+	for (;;) {
+		try {
+			await release();
+			return;
+		} catch (cause) {
+			const remaining = deadline - performance.now();
+			if (remaining <= 0)
+				throw new Error("VMAF_QUEUE_OWNERSHIP_RELEASE_UNCONFIRMED", { cause });
+			await new Promise<void>((resolve) =>
+				setTimeout(resolve, Math.min(250, remaining)),
+			);
+		}
+	}
 }

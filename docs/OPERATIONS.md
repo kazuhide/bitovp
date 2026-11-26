@@ -355,15 +355,20 @@ pnpm --filter @bitovp/worker start:vmaf
 
 Run one dedicated process per queue. It requires Linux, a matching native
 scorer and supervisor, readable host resource limits, and a Redis connection
-that can list existing clients. Use the bundled Redis version or Redis 7.2 or
-later, with persistent AOF storage and `maxmemory-policy noeviction`. The Redis
-credentials must allow `INFO` and `WAITAOF`. The primary announces
-its writable PostgreSQL database while its orchestration and notification
-workers are ready. Dedicated startup and job acceptance require the same Redis
-database and a current announcement for the same PostgreSQL writer, database,
-and schema. Restart the dedicated worker after a PostgreSQL restart or failover
-to verify the new writer. The primary enqueues measurements, delivers events,
-and reconciles QC and cloud resources.
+that can list existing clients. Dedicated mode requires one standalone Redis
+server with persistent AOF storage, `maxmemory-policy noeviction`, and Redis
+7.2 or later. Selecting `dedicated` means the Redis endpoint stays on that
+server throughout the ownership period. Use standard mode with replicated
+Redis, Sentinel, Cluster, or a managed endpoint that can promote or replace its
+writer. Dedicated mode checks the server role and replication information.
+The Redis credentials must allow `INFO` and `WAITAOF`.
+
+The primary announces its writable PostgreSQL session's database and schema
+while its orchestration and notification workers are ready. The dedicated
+worker requires the same writer, database, schema, and Redis database.
+Restart the dedicated worker after a PostgreSQL restart or failover to verify
+the new writer. The primary enqueues measurements and delivers events. The QC
+consumer reconciles stranded reports against its own queue.
 
 The queue registry permits multiple standard consumers or one dedicated
 consumer. A standard worker started during dedicated operation continues its
@@ -372,6 +377,9 @@ until active QC work drains on shutdown. When ownership or the primary
 announcement is unavailable, QC jobs wait for verification.
 The standard worker starts or resumes QC automatically once Redis confirms
 its registration and any dedicated consumer has drained.
+After active QC work drains, workers retry releasing their registration during
+a transient Redis disconnect. If broker shutdown or registry removal cannot be
+confirmed, the worker exits with an error and may leave its registration held.
 
 To inspect a registration after an interrupted shutdown, use `redis-cli`
 against the deployment's Redis database and run the following commands.
@@ -384,8 +392,9 @@ HGETALL bitovp:vmaf-queue:{owner-v1}:dedicated
 The values identify the registering host, process ID and timestamp. Before
 removing a stale token, confirm that the worker and its native and cloud jobs
 have stopped or have been reconciled. Delete only that token with
-`HDEL <registry-key> <token>`. If the Redis database must be restored or
-reinitialized, drain all QC consumers before bringing the queue back online.
+`HDEL <registry-key> <token>`. Before any Redis restore, reinitialization,
+replication change, or endpoint move, stop and drain all QC consumers. Bring
+the queue back online after verifying the intended topology.
 
 For Live QC, share the feeder spool when possible so the QC worker can read the
 original normalized file. Otherwise it rebuilds the reference using the

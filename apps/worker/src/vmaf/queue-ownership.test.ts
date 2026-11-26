@@ -1,7 +1,9 @@
 import { DelayedError, type Job } from "bullmq";
 import { afterEach, expect, it, vi } from "vitest";
 import {
+	closeVmafBullWorker,
 	closeVmafQueueConsumer,
+	createDedicatedVmafRegistration,
 	createVmafQueueRegistry,
 	guardVmafQueueOwnership,
 	readVmafQueueDatabase,
@@ -136,6 +138,104 @@ it("retains registration until graceful drain and retains it after a failed clos
 	expect(release).toHaveBeenCalledOnce();
 });
 
+it("drains active handlers before closing Redis and retains ownership if broker close hangs", async () => {
+	vi.useFakeTimers();
+	let finish = () => {};
+	const work = new Promise<void>((resolve) => {
+		finish = resolve;
+	});
+	const consume = vi.fn(async () => work);
+	const handle = guardVmafQueueOwnership(async () => true, consume);
+	const job = {
+		token: "lock",
+		moveToDelayed: vi.fn(async () => {}),
+	} as unknown as Job;
+	const worker = {
+		pause: vi.fn(async () => {}),
+		close: vi.fn(() => new Promise<void>(() => {})),
+	};
+	const active = handle(job);
+	await vi.advanceTimersByTimeAsync(0);
+	const release = vi.fn(async () => {});
+	const closing = closeVmafQueueConsumer(
+		() => closeVmafBullWorker(worker, handle.drain),
+		release,
+	);
+	const notice = expect(closing).rejects.toThrow(
+		"VMAF_QUEUE_BROKER_CLOSE_UNCONFIRMED",
+	);
+	await expect(handle(job)).rejects.toBeInstanceOf(DelayedError);
+	await vi.advanceTimersByTimeAsync(7_000);
+	expect(consume).toHaveBeenCalledOnce();
+	expect(worker.pause).toHaveBeenCalledExactlyOnceWith(true);
+	expect(worker.close).not.toHaveBeenCalled();
+	finish();
+	await active;
+	await vi.advanceTimersByTimeAsync(7_000);
+	await notice;
+	expect(release).not.toHaveBeenCalled();
+});
+
+it("stops startup and releases a possibly written dedicated claim even when its reply was lost", async () => {
+	let loseReply = (_error: Error) => {};
+	const registry = {
+		claim: vi.fn(
+			() =>
+				new Promise<boolean>((_resolve, reject) => {
+					loseReply = reject;
+				}),
+		),
+		release: vi.fn(async () => true),
+	};
+	const drain = vi.fn(async () => {});
+	const registration = createDedicatedVmafRegistration(registry, drain);
+	const claim = expect(registration.claim("b".repeat(64))).rejects.toThrow(
+		"reply lost",
+	);
+	const closing = registration.close();
+	expect(registration.signal.aborted).toBe(true);
+	expect(registry.release).not.toHaveBeenCalled();
+	loseReply(new Error("reply lost"));
+	await claim;
+	await closing;
+	expect(drain).toHaveBeenCalledOnce();
+	expect(registry.release).toHaveBeenCalledExactlyOnceWith("dedicated");
+	expect(registration.close()).toBe(closing);
+});
+
+it("retries the exact release during Redis reconnect after the handler drains", async () => {
+	vi.useFakeTimers();
+	const release = vi
+		.fn(async () => {})
+		.mockRejectedValueOnce(new Error("Redis reconnecting"));
+	const closing = closeVmafQueueConsumer(async () => {}, release);
+	const receipt = expect(closing).resolves.toBeUndefined();
+	await vi.advanceTimersByTimeAsync(5_000);
+	await receipt;
+	expect(release).toHaveBeenCalledTimes(2);
+});
+
+it("confirms a dedicated removal reached AOF even when retry finds no registered key", async () => {
+	const redis = {
+		eval: vi.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(1),
+		call: vi.fn().mockResolvedValue([1, 0]),
+	};
+	await expect(
+		createVmafQueueRegistry(redis).release("dedicated"),
+	).resolves.toBe(false);
+	expect(redis.call).toHaveBeenCalledExactlyOnceWith("WAITAOF", 1, 0, 2_000);
+});
+
+it("refuses a release receipt if reconnect loses the retirement marker", async () => {
+	const redis = {
+		eval: vi.fn().mockResolvedValueOnce(3).mockResolvedValueOnce(0),
+		call: vi.fn().mockResolvedValue([1, 0]),
+	};
+	await expect(
+		createVmafQueueRegistry(redis).release("dedicated"),
+	).rejects.toThrow("VMAF_QUEUE_DURABLE_RELEASE_UNAVAILABLE");
+});
+
 it("releases a reservation before any consumption if Redis has not persisted its registration", async () => {
 	const redis = {
 		eval: vi.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(1),
@@ -147,9 +247,9 @@ it("releases a reservation before any consumption if Redis has not persisted its
 		"VMAF_QUEUE_DURABLE_REGISTRATION_UNAVAILABLE",
 	);
 	expect(redis.call).toHaveBeenCalledWith("WAITAOF", 1, 0, 2_000);
-	expect(redis.eval.mock.calls.map((call) => call[5])).toEqual([
+	expect(redis.eval.mock.calls.map((call) => call[6])).toEqual([
 		"claim",
-		"release",
+		"abandon",
 	]);
 });
 
@@ -182,21 +282,18 @@ it("binds topology to the live writable database, its schema and its restart epo
 	}
 });
 
-it("keeps ordinary queue consumption available with AOF on pre-7.2 Redis", async () => {
+it.each([
+	"ERR unknown command 'WAITAOF', with args beginning with: '1'",
+	"NOPERM User default has no permissions to run the 'waitaof' command",
+])("keeps ordinary queue consumption available when the persistence command is unavailable (%s)", async (message) => {
 	const redis = {
 		eval: vi.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(1),
-		call: vi
-			.fn()
-			.mockRejectedValue(
-				new Error(
-					"ERR unknown command 'WAITAOF', with args beginning with: '1'",
-				),
-			),
+		call: vi.fn().mockRejectedValue(new Error(message)),
 	};
 	await expect(createVmafQueueRegistry(redis).claim("worker")).resolves.toBe(
 		true,
 	);
-	expect(redis.eval.mock.calls.map((call) => call[5])).toEqual([
+	expect(redis.eval.mock.calls.map((call) => call[6])).toEqual([
 		"claim",
 		"owns",
 	]);

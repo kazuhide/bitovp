@@ -58,6 +58,23 @@ it("rechecks the role and topology at the handoff to BullMQ", async () => {
 	expect(worker.run).not.toHaveBeenCalled();
 });
 
+it("closes after a stop during readiness without ever running the worker", async () => {
+	const worker = consumerFixture();
+	const stop = new AbortController();
+	worker.ready.mockImplementationOnce(async () => {
+		stop.abort();
+		return { name: "this-worker", database: 0 };
+	});
+	await expect(
+		startDedicatedVmafConsumer(worker, stop.signal),
+	).rejects.toMatchObject({
+		name: "AbortError",
+	});
+	expect(worker.close).toHaveBeenCalledOnce();
+	expect(worker.listWorkers).not.toHaveBeenCalled();
+	expect(worker.run).not.toHaveBeenCalled();
+});
+
 it.each([
 	{ workers: [{ rawname: "other-worker", db: "0" }] },
 	{

@@ -25,12 +25,15 @@ import {
 } from "./tenant/worker-context";
 import { createVmafRunnerHandler } from "./vmaf/job-capacity";
 import {
-	closeVmafQueueConsumer,
+	closeVmafBullWorker,
+	createDedicatedVmafRegistration,
 	createVmafOwnershipConnection,
 	createVmafQueueRegistry,
 	guardVmafQueueOwnership,
 	readVmafQueueDatabase,
+	waitForVmafBrokerClose,
 } from "./vmaf/queue-ownership";
+import { startOwnedVmafReconciliation } from "./vmaf/reconcile-stranded";
 import {
 	dedicatedVmafOwner,
 	startDedicatedVmafConsumer,
@@ -41,20 +44,21 @@ const envFile = resolve(import.meta.dirname, "../../../.env");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 const env = loadEnv();
 const key = dedicatedVmafOwner(env.VMAF_QUEUE_OWNER);
-const { basePrisma, prisma, consumeTenantJob } = createWorkerTenantContext(
-	env.DATABASE_URL,
-);
+const { basePrisma, prisma, forEachOrganization, consumeTenantJob } =
+	createWorkerTenantContext(env.DATABASE_URL);
 const cipher = cipherFromEnv();
 const credentials = createCredentialStore(prisma, cipher);
 const redis = new Redis(env.REDIS_URL, { lazyConnect: true });
 const ownerRedis = createVmafOwnershipConnection(env.REDIS_URL);
 const ownership = createVmafQueueRegistry(ownerRedis);
 const ownsQueue = async () =>
+	!registration.signal.aborted &&
 	ownership.owns("dedicated", await readVmafQueueDatabase(basePrisma));
 const connection = { url: env.REDIS_URL };
 // Only the QC queue is consumed here. Completion events and QC gate
 // continuations remain tenant-scoped producers for the primary worker.
 const queue = new Queue(QUEUE_NAMES[key], { connection });
+const scopedVmafQueue = tenantQueue(queue);
 const notifyQueue = tenantQueue(new Queue(QUEUE_NAMES.notify, { connection }));
 const orchestratorProducerQueue = tenantQueue(
 	new Queue(QUEUE_NAMES.orchestrator, { connection }),
@@ -66,22 +70,27 @@ const emitEvent = tenantService(() =>
 	}),
 );
 let worker: Worker | undefined;
-let registered = false;
+let started = false;
+let drainWork: (() => Promise<void>) | undefined;
+let stopSweep: (() => Promise<void>) | undefined;
+const registration = createDedicatedVmafRegistration(ownership, async () => {
+	if (worker)
+		await closeVmafBullWorker(
+			worker,
+			() => Promise.all([drainWork?.(), stopSweep?.()]),
+			!started,
+		);
+});
 let closing: Promise<void> | undefined;
 function close() {
 	closing ??= (async () => {
 		try {
-			await closeVmafQueueConsumer(
-				async () => worker?.close(),
-				async () => {
-					if (registered) await ownership.release("dedicated");
-				},
-			);
+			await registration.close();
 		} finally {
 			await Promise.allSettled([
-				queue.close(),
-				notifyQueue.close(),
-				orchestratorProducerQueue.close(),
+				waitForVmafBrokerClose(queue.close()),
+				waitForVmafBrokerClose(notifyQueue.close()),
+				waitForVmafBrokerClose(orchestratorProducerQueue.close()),
 			]);
 			redis.disconnect();
 			ownerRedis.disconnect();
@@ -93,12 +102,18 @@ function close() {
 function shutdown(code: number) {
 	void close().then(
 		() => process.exit(code),
-		() => {
-			console.error("[worker:vmafRunner] dedicated shutdown failed");
+		(error: unknown) => {
+			console.error(
+				"[worker:vmafRunner] dedicated shutdown could not verify release:",
+				redactSecrets(error instanceof Error ? error.message : String(error)),
+			);
 			process.exit(1);
 		},
 	);
 }
+
+process.on("SIGINT", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0));
 
 try {
 	const runtime = await createVmafWorkerServices({
@@ -117,33 +132,31 @@ try {
 		vmafWorkDir: env.VMAF_WORKDIR ?? join(tmpdir(), "bitovp-vmaf"),
 		feederSpoolDir: env.FEEDER_SPOOL_DIR ?? join(tmpdir(), "bitovp-feeder"),
 	});
+	registration.signal.throwIfAborted();
 	await ownerRedis.connect();
 	const database = await readVmafQueueDatabase(basePrisma);
-	registered = await ownership.claim("dedicated", database);
-	if (!registered)
+	if (!(await registration.claim(database)))
 		throw new Error(
 			"VMAF_QUEUE_OWNERSHIP_UNAVAILABLE: verify the split primary and drain other QC consumers",
 		);
-	const consumer = new Worker(
-		QUEUE_NAMES[key],
-		guardVmafQueueOwnership(
-			ownsQueue,
-			consumeTenantJob(
-				key,
-				runtime.admitVmaf(createVmafRunnerHandler(runtime.dispatchVmaf)),
-			),
+	const guarded = guardVmafQueueOwnership(
+		ownsQueue,
+		consumeTenantJob(
+			key,
+			runtime.admitVmaf(createVmafRunnerHandler(runtime.dispatchVmaf)),
 		),
-		{
-			connection,
-			autorun: false,
-			name: `bitovp-dedicated-${randomUUID()}`,
-			concurrency: runtime.concurrency,
-			...stallOptionsFor(
-				key,
-				env.WORKER_MAX_STALLED_COUNT ?? DEFAULT_LONG_JOB_MAX_STALLED_COUNT,
-			),
-		},
 	);
+	drainWork = guarded.drain;
+	const consumer = new Worker(QUEUE_NAMES[key], guarded, {
+		connection,
+		autorun: false,
+		name: `bitovp-dedicated-${randomUUID()}`,
+		concurrency: runtime.concurrency,
+		...stallOptionsFor(
+			key,
+			env.WORKER_MAX_STALLED_COUNT ?? DEFAULT_LONG_JOB_MAX_STALLED_COUNT,
+		),
+	});
 	worker = consumer;
 	consumer.on("error", (error) =>
 		console.error("[worker:vmafRunner]", redactSecrets(error.message)),
@@ -154,38 +167,51 @@ try {
 			redactSecrets(error.message),
 		),
 	);
-	await startDedicatedVmafConsumer({
-		ready: async () => {
-			const client = await consumer.waitUntilReady();
-			const name: unknown = client.options.connectionName;
-			const database: unknown = client.options.db ?? 0;
-			if (
-				typeof name !== "string" ||
-				typeof database !== "number" ||
-				!Number.isSafeInteger(database) ||
-				database < 0
-			)
-				throw new Error("VMAF_QUEUE_CONSUMER_IDENTITY_UNAVAILABLE");
-			return { name, database };
-		},
-		listWorkers: () => queue.getWorkers(),
-		ownsQueue,
-		run: () => {
-			void consumer.run().catch((error: unknown) => {
-				console.error(
-					"[worker:vmafRunner]",
-					redactSecrets(error instanceof Error ? error.message : String(error)),
+	await startDedicatedVmafConsumer(
+		{
+			ready: async () => {
+				const client = await consumer.waitUntilReady();
+				const name: unknown = client.options.connectionName;
+				const database: unknown = client.options.db ?? 0;
+				if (
+					typeof name !== "string" ||
+					typeof database !== "number" ||
+					!Number.isSafeInteger(database) ||
+					database < 0
+				)
+					throw new Error("VMAF_QUEUE_CONSUMER_IDENTITY_UNAVAILABLE");
+				return { name, database };
+			},
+			listWorkers: () => queue.getWorkers(),
+			ownsQueue,
+			run: () => {
+				started = true;
+				void consumer.run().catch((error: unknown) => {
+					console.error(
+						"[worker:vmafRunner]",
+						redactSecrets(
+							error instanceof Error ? error.message : String(error),
+						),
+					);
+					shutdown(1);
+				});
+				stopSweep = startOwnedVmafReconciliation(
+					ownsQueue,
+					forEachOrganization,
+					{
+						prisma,
+						queue: scopedVmafQueue,
+						orchestratorQueue: orchestratorProducerQueue,
+					},
 				);
-				shutdown(1);
-			});
+			},
+			close,
 		},
-		close,
-	});
+		registration.signal,
+	);
 	console.log(
 		`[worker:vmafRunner] dedicated consumer started (concurrency ${runtime.concurrency})`,
 	);
-	process.on("SIGINT", () => shutdown(0));
-	process.on("SIGTERM", () => shutdown(0));
 } catch (error) {
 	await close();
 	throw error;

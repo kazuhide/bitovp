@@ -27,9 +27,14 @@ type DedicatedConsumer = {
 
 /** BullMQ connects a uniquely named blocking client with autorun disabled.
  * Checking the list after registration lets concurrent starts see one another. */
-export async function startDedicatedVmafConsumer(worker: DedicatedConsumer) {
+export async function startDedicatedVmafConsumer(
+	worker: DedicatedConsumer,
+	signal?: AbortSignal,
+) {
 	try {
+		signal?.throwIfAborted();
 		const { name, database } = await worker.ready();
+		signal?.throwIfAborted();
 		const workers = (await worker.listWorkers()).filter(
 			(client) => client.db === undefined || client.db === String(database),
 		);
@@ -37,6 +42,7 @@ export async function startDedicatedVmafConsumer(worker: DedicatedConsumer) {
 			throw new Error("VMAF_QUEUE_HAS_ANOTHER_CONSUMER");
 		if (!(await worker.ownsQueue()))
 			throw new Error("VMAF_QUEUE_OWNERSHIP_UNAVAILABLE");
+		signal?.throwIfAborted();
 		worker.run();
 	} catch (error) {
 		await worker.close();

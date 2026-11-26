@@ -1534,7 +1534,8 @@ export function legacyVodMetadataOnly(
 
 function copyBurnInFiles(base: WizardState, videos: unknown) {
 	const files = new Map<string, string | null>();
-	for (const video of records(videos)) {
+	if (!Array.isArray(videos)) return files;
+	for (const video of videos.filter(draftRecord)) {
 		const extras = draftRecord(video.extras) ? video.extras : null;
 		const burnIn = extras?.burnInSrt;
 		if (!draftRecord(burnIn) || typeof burnIn.inputFile !== "string") continue;

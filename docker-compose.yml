@@ -1,7 +1,7 @@
 # Local deployment. Keep application and migration credentials separate.
 services:
   postgres:
-    image: postgres:17.11-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    image: postgres:17.11-alpine@sha256:e5d2edd28b1f8d40a0a6c0c9cdc545b19b56a0d5d88f94bc11a97d970d4700d0
     mem_limit: ${POSTGRES_MEMORY_LIMIT:-512m}
     memswap_limit: ${POSTGRES_MEMORY_LIMIT:-512m}
     env_file:
@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:8.10.3-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
+    image: redis:8.10.3-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
     mem_limit: ${REDIS_MEMORY_LIMIT:-256m}
     memswap_limit: ${REDIS_MEMORY_LIMIT:-256m}
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "${REDIS_MAXMEMORY:-0}", "--maxmemory-policy", "noeviction"]
@@ -133,7 +133,7 @@ services:
   ingress:
     mem_limit: ${INGRESS_MEMORY_LIMIT:-128m}
     memswap_limit: ${INGRESS_MEMORY_LIMIT:-128m}
-    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    image: cloudflare/cloudflared:2026.11.1@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d
     profiles: ["quick-tunnel"]
     command:
       - tunnel
@@ -154,7 +154,7 @@ services:
   ingress-named:
     mem_limit: ${INGRESS_MEMORY_LIMIT:-128m}
     memswap_limit: ${INGRESS_MEMORY_LIMIT:-128m}
-    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    image: cloudflare/cloudflared:2026.11.1@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d
     profiles: ["named-tunnel"]
     command:
       - tunnel

@@ -1,6 +1,7 @@
 # MoQ Live Encoder 実通信検証 — 実装計画
 
-作成日: 2026-11-17。対象: BitOVP の検証ブランチ。
+2026-11-17 の初回試験計画。対象は当時の BitOVP 検証ブランチ。
+現行の設定は [Live ガイド](user-guide/LIVE.md#experimental-moq-delivery)を参照。
 
 ## 目的
 
@@ -8,10 +9,10 @@
 BitOVP 自身の Live 作成・Worker・停止経路を使って検証する。
 Python の ALPN 試験を実 Encoder の接続試験の代わりにはしない。
 
-ユーザーは有料 Live 起動と映像送信を許可済み。必要機能は先に BitOVP に実装する。
-ブランチでの検証に留め、main へのマージ・リリースは今回の対象に含めない。
+当時の試験は個別に承認された有料 Live で実施した。この計画の範囲は
+検証ブランチでの初回試験まで。
 
-## 実装契約
+## 初回試験向けの実装契約
 
 - 資格情報 provider `MOQ` を追加。暗号化する secret は `relayUrl`、任意の
   `authToken` と `authTokenType`。token type は token がある場合のみ許可する。
@@ -76,6 +77,7 @@ SDK は省略されたメッセージ配列も空配列に変換するため、�
 
 ## 実行記録
 
-実装・回帰試験・build・独立レビューは実施済み。
-[実 Encoder 試験](MOQ-LIVE-ENCODER-TEST-RESULTS.md)はアプリ経由で開始要求まで進んだが、
-使用した organization の MoQ 機能制限で拒否された。Relay 接続と再生の検証は未完了。
+初回の開始要求は使用した organization の MoQ 機能制限で拒否され、
+Relay 接続と再生に至らなかった。後続試験は
+[実通信試験結果](MOQ-LIVE-ENCODER-TEST-RESULTS.md)に記録した。
+Cloudflare の設定 draft 16 では Player Web X で受信映像を確認した。

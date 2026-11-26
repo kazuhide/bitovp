@@ -16,14 +16,14 @@ The new VOD wizard defaults to Encoder `2.294.0` (Beta). Saved account defaults,
 drafts, and imported plans retain their selected version; use `STABLE` if you
 need the current stable encoder instead.
 
-1. **Basics:** name, Bitmovin account, region, encoder version, and encoding mode.
+1. **Basics:** name, Bitmovin account, region, and encoder version.
 2. **Sources:** choose stored media and identify the video, audio, and subtitle tracks.
 3. **Ladder:** configure each output rendition's codec, dimensions, bitrate, and
-   advanced codec settings. A ladder is the collection of these renditions.
+   filters. A ladder is the collection of these renditions.
 4. **Outputs:** choose credentials, bucket/container, and a dedicated output path.
 5. **Packaging:** select containers and the streams each container holds.
-6. **Encoding:** configure Per-Title, filters, quality measurement, and other
-   optional encoding features.
+6. **Encoding:** configure the job-wide encoding mode, Per-Title, quality
+   measurement, and other optional encoding features.
 7. **Manifests:** configure HLS/DASH and when manifests are generated.
 8. **Review:** inspect the plan preview, warnings, generated resources, and paths,
    then start encoding.
@@ -63,15 +63,24 @@ Importing or copying settings does not create a job. Settings that the form
 cannot represent remain available through the JSON editor instead of being
 silently discarded. Resolve validation errors before submission.
 
-Independent timeline edits remain available in CPU preview. Cloud submission
-refuses paired audio/video concatenations with different source files, trims,
-positions or padding (`PLAN_CONCATENATION_AV_UNQUALIFIED`). Match both programmes,
-or first provide a physical source file containing the combined edit. Ordinary
-independent AV inputs without concatenation and single-track outputs are unaffected.
+In **Sources → Edit on timeline**, arrange or replace clips on V1 and A1. The
+CPU preview supports independent video and audio edits. For pairs that differ
+in source, trims, positions or padding, use **Prepare encoding input** to create
+a single MP4 before submitting the encoding. This preparation supports 8-bit
+BT.709 SDR and read/write access to S3-compatible or GCS HMAC storage. It
+re-encodes up to one hour and 4 GiB. For other formats, use an aligned sequence
+or supply a combined source file.
+[Timeline controls and preparation limits (Japanese)](../vod-input-timeline.md)
 
 Drafts are saved in this browser for seven days, separately by user, organization,
 and creation source. VOD drafts keep filter settings, including image object paths and audio channel gains.
 Secrets, URLs, DRM settings, text-overlay content and imported JSON are excluded. Review omitted settings and output destinations after restoring.
+
+When copying a job with a protected source, supply a replacement path before
+opening its draft. Replacing an HDR10+ picture also requires the matching JSON
+sidecar. **Launch** from Templates submits with the selected settings and signed-in
+operator. If the response is lost, use the offered retry with the same settings
+to check or resume that creation.
 
 ## Audio-only files
 

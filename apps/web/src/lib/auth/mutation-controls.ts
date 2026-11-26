@@ -37,22 +37,6 @@ export const MUTATION_CONTROLS = {
 		source: "app/live/aisa-channel-analysis.tsx",
 		bindings: 1,
 	},
-	"live.aisa.new": {
-		minRole: "OPERATOR",
-		source: "app/live/aisa-live-shared.tsx",
-		bindings: 1,
-		destinations: ["/live/new"],
-	},
-	"live.aisa.create": {
-		minRole: "OPERATOR",
-		source: "app/live/aisa-live-create.tsx",
-		bindings: 1,
-	},
-	"live.aisa.actions": {
-		minRole: "OPERATOR",
-		source: "app/live/aisa-live-actions.tsx",
-		bindings: 1,
-	},
 	"live.aisa.ingest": {
 		minRole: "OPERATOR",
 		source: "app/live/aisa-live-ingest.tsx",
@@ -72,11 +56,6 @@ export const MUTATION_CONTROLS = {
 	"library.source.capture": {
 		minRole: "OPERATOR",
 		source: "app/library/job-analysis-panel.tsx",
-		bindings: 1,
-	},
-	"library.content.register": {
-		minRole: "OPERATOR",
-		source: "app/library/content-registration.tsx",
 		bindings: 1,
 	},
 	"library.content.remove": {
@@ -498,14 +477,6 @@ export const MUTATION_SOURCE_CENSUS = {
 		writeCalls: 1,
 		controls: ["live.aisa.translate"],
 	},
-	"app/live/aisa-live-create.tsx": {
-		writeCalls: 1,
-		controls: ["live.aisa.create"],
-	},
-	"app/live/aisa-live-actions.tsx": {
-		writeCalls: 1,
-		controls: ["live.aisa.actions"],
-	},
 	"app/dashboard-backfill.tsx": {
 		writeCalls: 1,
 		controls: ["dashboard.statistics-backfill"],
@@ -513,10 +484,6 @@ export const MUTATION_SOURCE_CENSUS = {
 	"app/library/job-analysis-panel.tsx": {
 		writeCalls: 1,
 		controls: ["library.source.capture"],
-	},
-	"app/library/content-registration.tsx": {
-		writeCalls: 1,
-		controls: ["library.content.register"],
 	},
 	"app/library/source-panel.tsx": {
 		writeCalls: 1,
@@ -897,15 +864,6 @@ export const MUTATION_WRITE_FAMILIES = {
 			controls: ["live.aisa.translate"],
 		},
 	],
-	"app/live/aisa-live-create.tsx": [
-		{ write: "POST /api/live/analyses", controls: ["live.aisa.create"] },
-	],
-	"app/live/aisa-live-actions.tsx": [
-		{
-			write: "POST /api/live/analyses/x/actions",
-			controls: ["live.aisa.actions"],
-		},
-	],
 	"app/dashboard-backfill.tsx": [
 		{
 			write: "POST /api/dashboard/usage/backfill",
@@ -917,9 +875,6 @@ export const MUTATION_WRITE_FAMILIES = {
 			write: "POST /api/encoding-jobs/x/analysis",
 			controls: ["library.source.capture"],
 		},
-	],
-	"app/library/content-registration.tsx": [
-		{ write: "POST /api/library", controls: ["library.content.register"] },
 	],
 	"app/library/source-panel.tsx": [
 		{

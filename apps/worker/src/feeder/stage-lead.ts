@@ -42,16 +42,6 @@ export const STAGE_LEAD_BANDWIDTH_BYTES_PER_SEC = 10_000_000;
 export const STAGE_LEAD_MAX_MS = 10 * 60_000;
 
 /**
- * The audit's paid run #5, as the module's own sanity check (audit
- * 2026-08-29 §4 HIGH-3 measured these on the live API).
- */
-export const PAID_RUN_5 = {
-	sourceBytes: 725_000_000,
-	firedToPushingMs: 29_193,
-	firedToConnectedMs: 53_488,
-} as const;
-
-/**
  * Size-based lead: base + size / bandwidth, capped. A null or unreadable
  * size (a source sealed by a driver with no `headObject`, or a row armed
  * before the seal existed) gets the base alone — the honest floor, since

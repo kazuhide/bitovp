@@ -2,6 +2,8 @@
 
 The following workflows describe machine access alongside the GUI. The API is
 not versioned; review changes before upgrading automation.
+Replace the example host and angle-bracketed IDs with your own values before
+running a command.
 
 ## Dashboard usage
 
@@ -133,6 +135,7 @@ tests):
   idleMinutes:1..10080, mode?:PER_ENCODING|AUTO|LEGACY_ACCOUNT}` / DELETE resets defaults.
   Mode aliases normalize to PER_ENCODING; idleMinutes is compatibility-only.
   New runs freeze interval; 0 retires hooks. Unsupported versions Poll.
+  The registered callback requires [public ingress](OPERATIONS.md#public-ingress).
 - Channel detail `heartbeatReception`: verified exact-run `latest`/`previous`
   samples deduplicated by provider time, receipt/sample clocks and frozen cadence.
   Safe `registration`: mode/requested/resolved version/status. `timeline`: newest50
@@ -497,7 +500,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "content-type: application/jso
 #                              validator the wizard runs, C1–C37 rails included)
 
 # poll
-curl -H "Authorization: Bearer $TOKEN" https://ovp.example.com/api/encoding-jobs/<jobId>
+curl -H "Authorization: Bearer $TOKEN" "https://ovp.example.com/api/encoding-jobs/<jobId>"
 # → { "status": "QUEUED|RUNNING|FINISHED|ERROR|CANCELED", "doneSteps": …, "stepLog": […] }
 ```
 
@@ -538,33 +541,22 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "content-type: application/jso
 # Queued start/stop. Start accepts CREATED/ERROR/STOPPED → PROVISIONING;
 # not needed after a normal create, but recovers an ERROR enqueue failure.
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
-  --data '{"action":"start"}' https://ovp.example.com/api/live-channels/<id>/actions
+  --data '{"action":"start"}' "https://ovp.example.com/api/live-channels/<id>/actions"
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
-  --data '{"action":"stop"}'      https://ovp.example.com/api/live-channels/<id>/actions
+  --data '{"action":"stop"}' "https://ovp.example.com/api/live-channels/<id>/actions"
 
 # status (includes streamKey/encoderIp once RUNNING)
-curl -H "Authorization: Bearer $TOKEN" https://ovp.example.com/api/live-channels/<id>
+curl -H "Authorization: Bearer $TOKEN" "https://ovp.example.com/api/live-channels/<id>"
 ```
 
 Stop also stops attached feeders. `DELETE /api/live-channels/<id>` removes a stopped channel.
 
 `POST /api/feeder-sessions` accepts optional `playbackMode: "LOOP" | "ONCE"`
-(omitted = `LOOP`). `ONCE` sends the selected copy-compatible H.264/AAC streams
-once, including their full tails. A source with an edit list the live muxer
-cannot preserve is refused before dispatch. Use ONCE for an immediate input.
-For `ONCE`, send an `Idempotency-Key` and reuse it with the same request body
-on every retry. First acceptance returns `201`. Replays return `200`, the
-original session ID and `replayed: true`. Changed content returns `409`.
-Deleting the session spends the key permanently and subsequent replays return
-`410`. If queueing returns `503 FEEDER_ENQUEUE_UNCONFIRMED`, retry with the
-same key. A session still waiting to start uses its original queue job ID.
-
-The normal feeder list/detail includes `playbackMode`, `playbackDispatchedAt`
-and `playbackReceipt`. A natural EOF receipt requires exit 0, final progress,
-and matching input and muxed packet totals for each selected video and audio
-stream. Use the normal channel STOP action to finish the paid live channel
-and verify provider finalization separately.
-See [single-pass contract and rollout](feeder-single-pass.md).
+(omitted = `LOOP`). `ONCE` is an immediate, single-pass input and requires an
+`Idempotency-Key`. The list and detail APIs expose `playbackMode`,
+`playbackDispatchedAt` and `playbackReceipt`. See the
+[single-pass contract](feeder-single-pass.md) for the request, retry responses,
+source validation, EOF evidence and encoder shutdown.
 
 The status body's `playbackLinks[]` carries one entry per manifest with `url`
 (or `null` plus a coded `reason`) and `via`. For an Akamai MSL output the URL
@@ -588,7 +580,7 @@ link is the viewer's edge, not proof that the encoder is publishing.
 #    INSPECTION_FAILED) and a `note`. Nothing is created at Bitmovin.
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
   --data '{"bitmovinAccountId":"<accountId>","source":{"credentialId":"<credId>","bucket":"in","key":"slates/brb.mp4"}}' \
-  https://ovp.example.com/api/live-channels/<id>/insertable-content/preflight
+  "https://ovp.example.com/api/live-channels/<id>/insertable-content/preflight"
 # 2. register — `content.source` (the server mints the Bitmovin input from the
 #    vaulted credential) OR the raw `content.inputs:[{inputId,inputPath}]`,
 #    exactly one of the two. A leading "/" on the path is stripped and echoed
@@ -606,7 +598,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "content-type: application/jso
 #    SLATE_INCOMPATIBLE.
 curl -X POST -H "Authorization: Bearer $TOKEN" -H "content-type: application/json" \
   --data '{"bitmovinAccountId":"<accountId>","content":{"name":"brb","source":{"credentialId":"<credId>","bucket":"in","key":"slates/brb.mp4"}}}' \
-  https://ovp.example.com/api/live-channels/<id>/insertable-content
+  "https://ovp.example.com/api/live-channels/<id>/insertable-content"
 ```
 
 ## Workflow 3 — VMAF results and exports
@@ -617,7 +609,7 @@ curl -H "Authorization: Bearer $TOKEN" \
   "https://ovp.example.com/api/vmaf-jobs?encodingJobId=<jobId>"
 
 # per-job results + pooled metrics
-curl -H "Authorization: Bearer $TOKEN" https://ovp.example.com/api/vmaf-jobs/<vmafJobId>
+curl -H "Authorization: Bearer $TOKEN" "https://ovp.example.com/api/vmaf-jobs/<vmafJobId>"
 
 # export (CSV/JSON)
 curl -H "Authorization: Bearer $TOKEN" \
@@ -643,12 +635,12 @@ closed. Missing provenance/FPS and unretained Live captures have no preview.
 
 ```bash
 # sample presets (name + opCount; plan bodies fetched per preset)
-curl -H "Authorization: Bearer $TOKEN" https://ovp.example.com/api/sample-presets/<name>
+curl -H "Authorization: Bearer $TOKEN" "https://ovp.example.com/api/sample-presets/<name>"
 # → an EncodingPlan with placeholder tokens — substitute and submit via Workflow 1
 
 # your saved presets
 curl -H "Authorization: Bearer $TOKEN" https://ovp.example.com/api/presets
-curl -H "Authorization: Bearer $TOKEN" https://ovp.example.com/api/presets/<id>   # body included
+curl -H "Authorization: Bearer $TOKEN" "https://ovp.example.com/api/presets/<id>"   # body included
 ```
 
 ## App name and icon
@@ -719,7 +711,7 @@ ADMIN `/api/settings/vmaf-profiles`, `/api/settings/vmaf-credentials`: [CRUD](us
 - Live diagnostics: `GET /api/live-channels/[id]/runs/[runId]/diagnostics` (OPERATOR): `kind=hd-start`, `kind=task` (status and bounded message metadata), and `kind=summary` (the original run/account's requested `data.encoderVersion`/`data.cloudRegion` and concrete `data.selectedEncoderVersion`/`data.selectedCloudRegion`, omitted when unavailable). `kind=ladder` reports encoded streams for the exact run, with provider codec, height, and bitrate where recorded. `data: null` means the statistics are unavailable. An empty array means the provider explicitly reported no encoded streams. Playback remains a separate observation. Task message counts are unknown (`totalMessageCount: null`) for missing or empty SDK-mapped lists; positive counts are preserved. Protocol mentions do not establish negotiated ALPN; free-form messages are withheld by default. Explicit ADMIN-only `kind=task&download=task` returns an attachment with at most 100 messages and 16,384 characters of text per message; provider text may contain sensitive input details and is never saved in audits. `GET /api/live-channels/[id]/runs/[runId]/final-heartbeat` (ADMIN). [Parameters and persistence](user-guide/LIVE.md#heartbeat-and-status-history).
 - Experimental MoQ Live: create an encrypted `MOQ` credential with `secret:{relayUrl,authToken?,authTokenType?,playbackUrl?}` and an empty config. `playbackUrl` is a separate HTTPS subscribe URL. Live plan outputs use `{key,kind:"MOQ",credentialId,trackNamespace:[...],draftVersion:"DRAFT_16"|"DRAFT_18",name?}`. Use the normal `POST /api/live-channels` path; creation immediately provisions a billable Live. [Restrictions and import](user-guide/LIVE.md#experimental-moq-delivery).
 - MoQ preview readiness: OPERATOR `GET /api/live-channels/moq-readiness` takes either `credentialId`, `draftVersion` and `namespaceComponents` from a draft output or `channelId` for a saved channel. The local configuration check returns `status` (`ready`, `publisher-only`, `needs-configuration`, or `binding-unverified`) and a list of issue codes. The binding for a previously attempted output on a resumed run is checked during playback. Responses are private/no-store and exclude URL, token and license values. Relay reachability and actual playback are evaluated during the broadcast.
-- MoQ preview: OPERATOR `GET /api/live-channels/[id]/runs/[runId]/moq-playback` returns the original run's verified single-namespace subscriber descriptor and public Player key, private/no-store. It rejects credentials changed after output creation and never derives a browser URL from publisher credentials. OPERATOR `GET /api/player-assets/moq` serves only an operator-configured local MoQ Player build after size/hash validation. [Player setup](user-guide/LIVE.md#experimental-moq-delivery).
+- MoQ preview: OPERATOR `GET /api/live-channels/[id]/runs/[runId]/moq-playback` returns the original run's verified single-namespace subscriber descriptor and public Player key, private/no-store. It rejects credentials changed after output creation and never derives a browser URL from publisher credentials. Owner view-as cannot read subscriber capabilities, received-video archives, or raw task downloads. OPERATOR `GET /api/player-assets/moq` serves only an operator-configured local MoQ Player build after size/hash validation. [Player setup](user-guide/LIVE.md#experimental-moq-delivery).
 - MoQ history (OPERATOR): `GET .../runs/[runId]/moq-observations` returns saved browser sessions and safe persisted heartbeat metrics. `PUT .../moq-observations/[sessionId]` accepts bounded timestamped observations for the owned active run (up to five sessions; post-stop flush is limited to existing sessions). IDs use canonical lowercase UUIDs. `PUT .../[sessionId]/archive` accepts at most 16MiB of WebM for a registered session; validated video lasts at most 90 seconds and is remuxed for seeking. The optional `X-BitOVP-Moq-Capture-Started-At` header carries the browser capture timestamp in UTC with milliseconds. A supplied timestamp is saved as the archive's `captureStartedAt`. `GET` on that archive supports byte ranges. `GET .../runs/[runId]/moq-analytics?impressionId=<uuid>` reads back exact-run Analytics custom latency data, requiring the saved impression and unchanged license digest. Responses are private/no-store; observation data contains no publisher/subscriber URL, token or license key.
 
 Plans accept [CMAF muxings](user-guide/VOD.md#advanced-video-audio-and-subtitles).

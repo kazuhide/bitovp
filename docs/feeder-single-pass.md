@@ -2,7 +2,9 @@
 
 `POST /api/feeder-sessions` の `playbackMode` を `ONCE` にすると、指定素材を先頭から末尾まで一度だけ送る。省略時は従来の `LOOP`。通常の認証、tenant、source seal、provider run、owner lease、publisher claim の制御を使用する。
 
-`ONCE` には `Idempotency-Key` ヘッダーが必要。応答を受け取れなかったら同じキーと本文で再試行する。初回は `201`、再試行は同じセッション ID と `replayed: true` を含む `200` を返す。本文が変わった場合は `409`、セッションを削除済みの場合は `410` を返す。キュー投入の応答を確認できず `503` が返った場合も、同じキーで再試行する。セッションが開始待ちなら、元のキュー ID で投入を試みる。
+画面から作るフィーダーは `LOOP` で動作する。単発再生は API から即時送出する場合に利用できる。
+
+`ONCE` には `Idempotency-Key` ヘッダーが必要。応答を受け取れなかったら同じキーと本文で再試行する。初回は `201`、再試行は同じセッション ID と `replayed: true` を含む `200` を返す。本文が変わった場合は `409`、セッションを削除済みの場合は `410` を返す。キュー投入の応答を確認できず `503 FEEDER_ENQUEUE_UNCONFIRMED` が返った場合も、同じキーで再試行する。セッションが開始待ちなら、元のキュー ID で投入を試みる。
 
 ```json
 {
@@ -41,4 +43,9 @@ Feeder の EOF と課金 Live の終了は別の状態である。AISA 検証 co
 
 追加マイグレーションでは既存行を `LOOP` とする。ONCE を受け付ける前に Web と Worker を同じ対応版へ更新する。旧版へ戻す場合は、全 ONCE session の停止と process/claim の回収を先に確認する。
 
-契約・API・supervisor・processor の Vitest、実 FFmpeg の `src/feeder/single-pass.media.ts`、実 PostgreSQL の `src/feeder-single-pass.integration.test.ts` で検証する。PostgreSQL の検証は `rtk proxy pnpm test:postgres`、実メディアは `rtk proxy pnpm --filter @bitovp/worker exec tsx --test src/feeder/single-pass.media.ts`。
+契約・API・supervisor・processor の Vitest に加え、[FFmpeg の実メディア試験](../apps/worker/src/feeder/single-pass.media.ts)と[PostgreSQL の試験](../packages/db/src/feeder-single-pass.integration.test.ts)がある。
+
+```sh
+rtk proxy pnpm test:postgres
+rtk proxy pnpm --filter @bitovp/worker exec tsx --test src/feeder/single-pass.media.ts
+```

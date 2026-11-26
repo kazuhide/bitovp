@@ -150,7 +150,7 @@ export const jaCopy: LandingCopy = {
 		coverage: "対応機能と制限（英語）",
 		requirements: "インストールに必要なもの",
 		requirementsBody:
-			"Docker と Docker Compose 2.30.0 以降が必要です。データベースの初期設定には Node.js 24 以降と pnpm 11 も使います。認証、データベース設定、起動の手順はインストールガイドをご覧ください。ログイン情報はインストール時に設定します。",
+			"Docker と Docker Compose 2.30.0 以降が必要です。データベースの初期設定には Node.js 24 以降と package.json で指定されたバージョンの pnpm を使います。認証、データベース設定、起動の手順はインストールガイドをご覧ください。ログイン情報はインストール時に設定します。",
 	},
 	footer: {
 		license: "bitovp は MIT ライセンスのオープンソースソフトウェアです。",

@@ -187,4 +187,3 @@ export function appendMoqObservationEvent(
 export type MoqObservationUpdate = z.infer<typeof moqObservationUpdateSchema>;
 export type MoqArchiveMetadata = z.infer<typeof moqArchiveMetadataSchema>;
 export type MoqObservationSession = z.infer<typeof moqObservationSessionSchema>;
-export type MoqObservationHistory = z.infer<typeof moqObservationHistorySchema>;

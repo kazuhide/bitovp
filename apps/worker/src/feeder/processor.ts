@@ -3578,5 +3578,3 @@ export function createFeederProcessor(deps: FeederDeps) {
 		},
 	};
 }
-
-export type FeederProcessor = ReturnType<typeof createFeederProcessor>;

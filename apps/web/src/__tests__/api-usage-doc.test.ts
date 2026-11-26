@@ -12,6 +12,16 @@ const REPO = join(__dirname, "..", "..", "..", "..");
 const DOC = readFileSync(join(REPO, "docs", "API-USAGE.md"), "utf8");
 
 describe("API usage documentation contract", () => {
+	it("keeps shell examples syntactically valid", () => {
+		const scripts = [
+			...DOC.matchAll(/^```(?:bash|sh)[ \t]*\r?\n([\s\S]*?)^```/gm),
+		];
+		expect(scripts.length).toBeGreaterThan(0);
+		for (const [, script] of scripts) {
+			execFileSync("bash", ["-n"], { input: script, stdio: "pipe" });
+		}
+	});
+
 	it("every documented /api path has a route.ts on disk", () => {
 		const paths = new Set(
 			[...DOC.matchAll(/\/api\/[a-z0-9\-/<>]+[a-z0-9\]>]/gi)].map((m) => m[0]),

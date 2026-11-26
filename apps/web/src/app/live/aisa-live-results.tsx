@@ -1,9 +1,10 @@
 "use client";
 
 import { type ReactNode, useEffect, useState } from "react";
-import type {
-	AisaResultSnapshot,
-	AisaResultsResponse,
+import {
+	AISA_TERMINAL,
+	type AisaResultSnapshot,
+	type AisaResultsResponse,
 } from "@/lib/aisa-live/contracts";
 import {
 	type AisaSnapshotState,
@@ -11,7 +12,6 @@ import {
 } from "@/lib/aisa-live/snapshots";
 import type { AisaTranslationsResponse } from "@/lib/aisa-live/translations";
 import { useT } from "@/lib/i18n/context";
-import { AISA_TERMINAL } from "./aisa-live-shared";
 import { AisaMomentTimeline } from "./aisa-live-timeline";
 
 const seconds = (value: number) => Number(value.toFixed(2));

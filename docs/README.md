@@ -12,6 +12,7 @@ and the first encoding. Use the [user guide](./USER-GUIDE.md) for other tasks.
 | [API usage](./API-USAGE.md) | Authentication and machine-client workflows |
 | [Local NVIDIA encoding experiments](./user-guide/ENCODING-EXPERIMENTS.md) | Repeat NVENC trials, measure CUDA VMAF, and select a setting with Lean |
 | [Supported features and limits](./BITMOVIN-API-COVERAGE.md) | Capabilities and technical restrictions that affect configuration |
+| [HDR quality measurement](./HDR-QC.md) | Eligible HDR outputs, VMAF and banding protocols, and report provenance |
 | [Operations](./OPERATIONS.md) | Deployment, backup, upgrades, and cleanup |
 | [FFmpeg build record](./FFMPEG-BUILD.md) | Sources, commands, logs, and checks of the FFmpeg that the worker image compiles |
 | [Database upgrades](./DATABASE-UPGRADES.md) | Checks and maintenance steps for affected existing databases |

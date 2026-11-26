@@ -2,7 +2,6 @@ import {
 	type AudioAttributes,
 	canonicalPixelFormat,
 	compareMediaAttributes,
-	describeMediaDifferences,
 	formatFrameRate,
 	heartbeatIngestMedia,
 	LIVE_AUDIO_CODECS,
@@ -889,13 +888,6 @@ export function compareSourceCompatibility(
 		compatible: !differences.some((d) => d.blocking),
 		differences,
 	};
-}
-
-/** One line per attribute: `frame rate 30000/1001 → 24/1`. */
-export function describeSourceDifferences(
-	differences: SourceDifference[],
-): string {
-	return describeMediaDifferences(differences);
 }
 
 /**

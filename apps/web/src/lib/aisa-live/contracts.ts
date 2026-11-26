@@ -11,6 +11,13 @@ export const AISA_ANALYSIS_STATUSES = [
 	"TRANSFER_ERROR",
 ] as const;
 
+export const AISA_TERMINAL = new Set([
+	"FINISHED",
+	"CANCELED",
+	"ERROR",
+	"TRANSFER_ERROR",
+]);
+
 const streamKey = z.string().regex(/^[a-zA-Z]{3,20}$/);
 const version = z.preprocess(
 	(value) =>

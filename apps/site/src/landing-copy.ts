@@ -218,7 +218,7 @@ export const enCopy: LandingCopy = {
 		coverage: "Supported features and limits",
 		requirements: "Installation requirements",
 		requirementsBody:
-			"Use Docker with Docker Compose 2.30.0 or newer. Initial database setup also requires Node.js 24 or newer and pnpm 11. The installation guide covers authentication, database setup, and startup. There are no default sign-in credentials.",
+			"Use Docker with Docker Compose 2.30.0 or newer. Initial database setup also requires Node.js 24 or newer and the pnpm version pinned in package.json. The installation guide covers authentication, database setup, and startup. There are no default sign-in credentials.",
 	},
 	footer: {
 		license: "bitovp is open source under the MIT license.",

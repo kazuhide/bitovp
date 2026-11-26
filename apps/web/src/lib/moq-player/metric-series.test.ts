@@ -88,6 +88,62 @@ describe("MoQ viewer metric series", () => {
 		]);
 	});
 
+	it.each([
+		1997, 2002, 2500,
+	])("connects a saved interval of %i ms without inventing a missing point", (intervalMs) => {
+		const points = moqViewerMetricSeries(
+			[
+				sample(1000, { fps: 17, latencyMs: 1642, bufferSeconds: 1.62 }),
+				sample(1000 + intervalMs, {
+					fps: 0,
+					latencyMs: 0,
+					bufferSeconds: 0,
+				}),
+			],
+			startedAt,
+		);
+		expect(points).toEqual([
+			{
+				...emptyPoint,
+				timestamp: origin + 1000,
+				latencyMs: 1642,
+				legacyFrameRate: 17,
+				legacyBufferSeconds: 1.62,
+			},
+			{
+				...emptyPoint,
+				timestamp: origin + 1000 + intervalMs,
+				latencyMs: 0,
+				legacyFrameRate: 0,
+				legacyBufferSeconds: 0,
+			},
+		]);
+	});
+
+	it("preserves individual missing measurements inside a continuous saved interval", () => {
+		const points = moqViewerMetricSeries(
+			[
+				sample(1000, { latencyMs: 1642, fps: 17, bufferSeconds: 1.62 }),
+				sample(2999, { fps: 16, bufferSeconds: 1.5 }),
+				sample(4000, { latencyMs: 1648, bufferSeconds: 1.4 }),
+				sample(6000, { latencyMs: 1650, fps: 16 }),
+			],
+			startedAt,
+		);
+		expect(
+			points.map(({ latencyMs, legacyFrameRate, legacyBufferSeconds }) => [
+				latencyMs,
+				legacyFrameRate,
+				legacyBufferSeconds,
+			]),
+		).toEqual([
+			[1642, 17, 1.62],
+			[null, 16, 1.5],
+			[1648, null, 1.4],
+			[1650, 16, null],
+		]);
+	});
+
 	it("requires a valid clock origin", () => {
 		expect(
 			moqViewerMetricSeries([sample(1000, { latencyMs: 625 })], ""),

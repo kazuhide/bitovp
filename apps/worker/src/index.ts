@@ -190,6 +190,14 @@ import {
 	USAGE_SWEEP_FIRST_DELAY_MS,
 	USAGE_SWEEP_INTERVAL_MS,
 } from "./usage/statistics-sweep";
+import {
+	closeVmafQueueConsumer,
+	createVmafOwnershipConnection,
+	createVmafQueueRegistry,
+	guardVmafQueueOwnership,
+	readVmafQueueDatabase,
+	startSplitVmafPrimaryWitness,
+} from "./vmaf/queue-ownership";
 import { createStrandedVmafReconciler } from "./vmaf/reconcile-stranded";
 import { createVmafTrigger } from "./vmaf/trigger";
 import { primaryWorkerQueues } from "./vmaf/worker-role";
@@ -1734,9 +1742,19 @@ const MAX_STALLED_COUNT =
 	env.WORKER_MAX_STALLED_COUNT ?? DEFAULT_LONG_JOB_MAX_STALLED_COUNT;
 
 const queuedVmafParents = vmafRuntime.admitVmaf(handlers.vmafRunner);
+const vmafOwnerRedis = createVmafOwnershipConnection(env.REDIS_URL);
+const vmafOwnership = createVmafQueueRegistry(vmafOwnerRedis);
+const vmafOwnerConnection = vmafOwnerRedis.connect().catch(() => {});
+const ownsStandardVmaf =
+	env.VMAF_QUEUE_OWNER === "worker" &&
+	(await vmafOwnerConnection
+		.then(() => vmafOwnership.claim("worker"))
+		.catch(() => false));
+if (env.VMAF_QUEUE_OWNER === "worker" && !ownsStandardVmaf)
+	console.warn("[worker:vmafRunner] standard QC ownership unavailable");
 const workerKeys = primaryWorkerQueues(
 	Object.keys(handlers) as QueueKey[],
-	env.VMAF_QUEUE_OWNER,
+	ownsStandardVmaf ? "worker" : "dedicated",
 );
 const workers = workerKeys.map((key) => {
 	const consume = consumeTenantJob(
@@ -1747,7 +1765,9 @@ const workers = workerKeys.map((key) => {
 		QUEUE_NAMES[key],
 		key === "liveChannel"
 			? reserveLiveStopCapacity(LIVE_CHANNEL_CONCURRENCY, consume)
-			: consume,
+			: key === "vmafRunner"
+				? guardVmafQueueOwnership(() => vmafOwnership.owns("worker"), consume)
+				: consume,
 		{
 			connection: { url: env.REDIS_URL },
 			// : BullMQ's default retires a resumable job on its SECOND
@@ -2085,6 +2105,44 @@ const workers = workerKeys.map((key) => {
 	return worker;
 });
 
+let stopVmafPrimaryWitness: (() => Promise<void>) | undefined;
+if (env.VMAF_QUEUE_OWNER === "dedicated") {
+	const primaryQueues: string[] = [
+		QUEUE_NAMES.orchestrator,
+		QUEUE_NAMES.notify,
+	];
+	void Promise.all(
+		workers
+			.filter((worker) => primaryQueues.includes(worker.name))
+			.map(async (worker) => ({
+				worker,
+				client: await worker.waitUntilReady(),
+			})),
+	)
+		.then((producers) => {
+			if (!stopping)
+				stopVmafPrimaryWitness = startSplitVmafPrimaryWitness(
+					vmafOwnership,
+					() => {
+						if (
+							producers.length !== primaryQueues.length ||
+							producers.some(
+								({ worker, client }) =>
+									client.status !== "ready" ||
+									!worker.isRunning() ||
+									worker.isPaused(),
+							)
+						)
+							throw new Error("VMAF_QUEUE_PRIMARY_WORKERS_UNAVAILABLE");
+						return readVmafQueueDatabase(basePrisma);
+					},
+				);
+		})
+		.catch(() =>
+			console.warn("[worker:vmafRunner] split primary startup unavailable"),
+		);
+}
+
 function drainTenantLoop(loop: { stop(): void; drain(): Promise<void> }) {
 	return Promise.all(
 		forEachTenantService(loop, (instance) => {
@@ -2111,6 +2169,10 @@ const shutdown = createShutdown({
 	// `queue.add` finishes BEFORE the queue closes — the ordinary stop must
 	// not manufacture the lost handoff the outbox exists to recover from.
 	drains: [
+		{
+			name: "QC split primary witness",
+			run: async () => stopVmafPrimaryWitness?.(),
+		},
 		{
 			name: "VOD input preview recovery",
 			run: () => drainTenantLoop(vodInputPreviewSweepLoop),
@@ -2196,14 +2258,27 @@ const shutdown = createShutdown({
 		},
 	],
 	closables: [
-		...workers,
+		...workers.map((worker) =>
+			worker.name === QUEUE_NAMES.vmafRunner
+				? {
+						close: () =>
+							closeVmafQueueConsumer(
+								() => worker.close(),
+								() => vmafOwnership.release("worker"),
+							),
+					}
+				: worker,
+		),
 		liveChannelQueue,
 		feederQueue,
 		vmafQueue,
 		orchestratorProducerQueue,
 		vodInputPreviewQueue,
 	],
-	disconnect: () => basePrisma.$disconnect(),
+	disconnect: async () => {
+		vmafOwnerRedis.disconnect();
+		await basePrisma.$disconnect();
+	},
 	exit: (code) => process.exit(code),
 });
 

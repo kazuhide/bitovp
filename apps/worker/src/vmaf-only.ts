@@ -25,6 +25,13 @@ import {
 } from "./tenant/worker-context";
 import { createVmafRunnerHandler } from "./vmaf/job-capacity";
 import {
+	closeVmafQueueConsumer,
+	createVmafOwnershipConnection,
+	createVmafQueueRegistry,
+	guardVmafQueueOwnership,
+	readVmafQueueDatabase,
+} from "./vmaf/queue-ownership";
+import {
 	dedicatedVmafOwner,
 	startDedicatedVmafConsumer,
 } from "./vmaf/worker-role";
@@ -40,6 +47,10 @@ const { basePrisma, prisma, consumeTenantJob } = createWorkerTenantContext(
 const cipher = cipherFromEnv();
 const credentials = createCredentialStore(prisma, cipher);
 const redis = new Redis(env.REDIS_URL, { lazyConnect: true });
+const ownerRedis = createVmafOwnershipConnection(env.REDIS_URL);
+const ownership = createVmafQueueRegistry(ownerRedis);
+const ownsQueue = async () =>
+	ownership.owns("dedicated", await readVmafQueueDatabase(basePrisma));
 const connection = { url: env.REDIS_URL };
 // Only the QC queue is consumed here. Completion events and QC gate
 // continuations remain tenant-scoped producers for the primary worker.
@@ -55,11 +66,17 @@ const emitEvent = tenantService(() =>
 	}),
 );
 let worker: Worker | undefined;
+let registered = false;
 let closing: Promise<void> | undefined;
 function close() {
 	closing ??= (async () => {
 		try {
-			await worker?.close();
+			await closeVmafQueueConsumer(
+				async () => worker?.close(),
+				async () => {
+					if (registered) await ownership.release("dedicated");
+				},
+			);
 		} finally {
 			await Promise.allSettled([
 				queue.close(),
@@ -67,6 +84,7 @@ function close() {
 				orchestratorProducerQueue.close(),
 			]);
 			redis.disconnect();
+			ownerRedis.disconnect();
 			await basePrisma.$disconnect();
 		}
 	})();
@@ -99,11 +117,21 @@ try {
 		vmafWorkDir: env.VMAF_WORKDIR ?? join(tmpdir(), "bitovp-vmaf"),
 		feederSpoolDir: env.FEEDER_SPOOL_DIR ?? join(tmpdir(), "bitovp-feeder"),
 	});
+	await ownerRedis.connect();
+	const database = await readVmafQueueDatabase(basePrisma);
+	registered = await ownership.claim("dedicated", database);
+	if (!registered)
+		throw new Error(
+			"VMAF_QUEUE_OWNERSHIP_UNAVAILABLE: verify the split primary and drain other QC consumers",
+		);
 	const consumer = new Worker(
 		QUEUE_NAMES[key],
-		consumeTenantJob(
-			key,
-			runtime.admitVmaf(createVmafRunnerHandler(runtime.dispatchVmaf)),
+		guardVmafQueueOwnership(
+			ownsQueue,
+			consumeTenantJob(
+				key,
+				runtime.admitVmaf(createVmafRunnerHandler(runtime.dispatchVmaf)),
+			),
 		),
 		{
 			connection,
@@ -141,6 +169,7 @@ try {
 			return { name, database };
 		},
 		listWorkers: () => queue.getWorkers(),
+		ownsQueue,
 		run: () => {
 			void consumer.run().catch((error: unknown) => {
 				console.error(

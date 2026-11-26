@@ -33,6 +33,7 @@ function consumerFixture() {
 				{ rawname: "this-worker", db: "0" },
 			],
 		),
+		ownsQueue: vi.fn(async () => true),
 		run: vi.fn(async () => {
 			events.push("run");
 		}),
@@ -45,6 +46,16 @@ it("registers the dedicated consumer only after its queue has no other consumer"
 	await expect(startDedicatedVmafConsumer(worker)).resolves.toBeUndefined();
 	expect(worker.events).toEqual(["ready", "run"]);
 	expect(worker.listWorkers).toHaveBeenCalledOnce();
+});
+
+it("rechecks the role and topology at the handoff to BullMQ", async () => {
+	const worker = consumerFixture();
+	worker.ownsQueue.mockResolvedValueOnce(false);
+	await expect(startDedicatedVmafConsumer(worker)).rejects.toThrow(
+		"VMAF_QUEUE_OWNERSHIP_UNAVAILABLE",
+	);
+	expect(worker.events).toEqual(["ready", "close"]);
+	expect(worker.run).not.toHaveBeenCalled();
 });
 
 it.each([

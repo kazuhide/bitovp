@@ -20,6 +20,7 @@ type ConnectedWorker = { rawname?: string; db?: string };
 type DedicatedConsumer = {
 	ready(): Promise<{ name: string; database: number }>;
 	listWorkers(): Promise<ConnectedWorker[]>;
+	ownsQueue(): Promise<boolean>;
 	run(): void;
 	close(): Promise<void>;
 };
@@ -34,6 +35,8 @@ export async function startDedicatedVmafConsumer(worker: DedicatedConsumer) {
 		);
 		if (!name || workers.length !== 1 || workers[0]?.rawname !== name)
 			throw new Error("VMAF_QUEUE_HAS_ANOTHER_CONSUMER");
+		if (!(await worker.ownsQueue()))
+			throw new Error("VMAF_QUEUE_OWNERSHIP_UNAVAILABLE");
 		worker.run();
 	} catch (error) {
 		await worker.close();

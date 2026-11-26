@@ -346,19 +346,46 @@ The primary worker consumes the QC queue by default. To move consumption to a
 dedicated process, stop existing QC consumers after their active jobs complete.
 Set `VMAF_QUEUE_OWNER=dedicated` in the shared environment for both processes.
 Use the same BitOVP revision, PostgreSQL and Redis database, and model
-configuration. Restart the primary worker and then run this command on the QC
-host.
+configuration. Keep older worker binaries stopped after the handoff. Restart
+the primary worker and then run this command on the QC host.
 
 ```sh
 pnpm --filter @bitovp/worker start:vmaf
 ```
 
 Run one dedicated process per queue. It requires Linux, a matching native
-scorer and supervisor, readable host resource limits and a Redis connection that
-can list existing clients. The process starts consuming after it verifies its
-queue registration and the absence of other connected consumers. Keep older
-worker processes stopped after switching. The primary worker enqueues
-measurements, delivers events, and reconciles QC and cloud resources.
+scorer and supervisor, readable host resource limits, and a Redis connection
+that can list existing clients. Use the bundled Redis version or Redis 7.2 or
+later, with persistent AOF storage and `maxmemory-policy noeviction`. The Redis
+credentials must allow `INFO` and `WAITAOF`. The primary announces
+its writable PostgreSQL database while its orchestration and notification
+workers are ready. Dedicated startup and job acceptance require the same Redis
+database and a current announcement for the same PostgreSQL writer and
+database. Restart the dedicated worker after a PostgreSQL restart or failover
+to verify the new writer. The primary enqueues measurements, delivers events,
+and reconciles QC and cloud resources.
+
+The queue registry permits multiple standard consumers or one dedicated
+consumer. A standard worker started during dedicated operation continues its
+other queues. A consumer keeps its registration through Redis disconnects and
+until active QC work drains on shutdown. When ownership or the primary
+announcement is unavailable, QC jobs wait for verification.
+If a standard worker could not acquire QC ownership at startup, restart it
+after Redis recovers and any dedicated consumer has drained.
+
+To inspect a registration after an interrupted shutdown, use `redis-cli`
+against the deployment's Redis database and run the following commands.
+
+```text
+HGETALL bitovp:vmaf-queue:{owner-v1}:standard
+HGETALL bitovp:vmaf-queue:{owner-v1}:dedicated
+```
+
+The values identify the registering host, process ID and timestamp. Before
+removing a stale token, confirm that the worker and its native and cloud jobs
+have stopped or have been reconciled. Delete only that token with
+`HDEL <registry-key> <token>`. If the Redis database must be restored or
+reinitialized, drain all QC consumers before bringing the queue back online.
 
 For Live QC, share the feeder spool when possible so the QC worker can read the
 original normalized file. Otherwise it rebuilds the reference using the

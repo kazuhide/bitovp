@@ -2911,8 +2911,8 @@ export async function markLiveEffectAmbiguous(
 }
 
 export async function markLiveEffectFailed(
-	prisma: AppPrismaClient,
-	claim: LiveEffectClaimHandle,
+	prisma: Pick<AppTransactionClient, "liveEffectClaim">,
+	claim: Pick<LiveEffectClaimHandle, "id" | "token">,
 	reason: string,
 ): Promise<boolean> {
 	const { count } = await prisma.liveEffectClaim.updateMany({
@@ -2920,6 +2920,62 @@ export async function markLiveEffectFailed(
 		data: { state: "FAILED", failure: reason },
 	});
 	return count === 1;
+}
+
+/** Fail an initial LOOP handoff whose worker never reached a stop or spawn. */
+export async function failUnstartedLoopFeederHandoff(
+	prisma: AppPrismaClient,
+	fence: {
+		id: string;
+		ownerId: string;
+		ownerGeneration: number;
+		liveChannelId: string;
+		liveChannelRunId: string;
+		leaseNotBefore: Date;
+	},
+	reason: string,
+): Promise<boolean> {
+	// A takeover cannot prove what the previous owner did before it died.
+	if (fence.ownerGeneration !== 1) return false;
+	return prisma.$transaction(async (tx) => {
+		// Use the same lock order as Live STOP and single-pass dispatch.
+		const [channel] = await tx.$queryRaw<
+			{ bitmovinEncodingId: string | null; liveEffectFenceVersion: number }[]
+		>`
+			SELECT "bitmovinEncodingId", "liveEffectFenceVersion" FROM "LiveChannel"
+			WHERE id = ${fence.liveChannelId}::uuid FOR UPDATE`;
+		if (!channel?.bitmovinEncodingId) return false;
+		const [handoff] = await tx.$queryRaw<{ id: string; token: string }[]>`
+			SELECT c.id, c.token FROM "LiveEffectClaim" c
+			JOIN LATERAL (
+				SELECT r.id, r."bitmovinEncodingId" FROM "LiveChannelRun" r
+				WHERE r."liveChannelId" = c."liveChannelId" ORDER BY r.seq DESC LIMIT 1
+			) current_run ON current_run.id = c."liveChannelRunId"
+			WHERE c."liveChannelId" = ${fence.liveChannelId}::uuid
+				AND c."liveChannelRunId" = ${fence.liveChannelRunId}::uuid
+				AND c."providerEncodingId" = ${channel.bitmovinEncodingId}
+				AND COALESCE(current_run."bitmovinEncodingId", c."providerEncodingId") = c."providerEncodingId"
+				AND c.generation = ${channel.liveEffectFenceVersion}
+				AND c."targetId" = ${fence.id}
+				AND c.action IN ('FEEDER_START', 'FEEDER_COMMIT')
+				AND c.state = 'DISPATCHING'
+			FOR UPDATE OF c`;
+		if (!handoff) return false;
+		const [owner] = await tx.$queryRaw<{ id: string }[]>`
+			SELECT id FROM "FeederSession"
+			WHERE id = ${fence.id}::uuid
+				AND "liveChannelId" = ${fence.liveChannelId}::uuid
+				AND "liveChannelRunId" = ${fence.liveChannelRunId}::uuid
+				AND "ownerId" = ${fence.ownerId}
+				AND "ownerGeneration" = ${fence.ownerGeneration}
+				AND "ownerLeaseAt" >= ${fence.leaseNotBefore}
+				AND status = 'DOWNLOADING' AND "playbackMode" = 'LOOP'
+				AND pid IS NULL AND "startedAt" IS NULL AND "committedAt" IS NULL
+				AND "playbackDispatchedAt" IS NULL
+				AND ("publisherClaimedAt" IS NULL OR "publisherReleasedAt" IS NOT NULL)
+			FOR UPDATE`;
+		return owner ? markLiveEffectFailed(tx, handoff, reason) : false;
+	});
 }
 
 /**

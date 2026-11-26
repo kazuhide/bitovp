@@ -986,6 +986,64 @@ function setup(
 	const prismaFixture = {
 		$queryRaw: vi.fn(
 			async (query: TemplateStringsArray, ...values: unknown[]) => {
+				if (
+					query[0]?.includes(
+						'SELECT "bitmovinEncodingId", "liveEffectFenceVersion"',
+					)
+				)
+					return channel.id === values[0] ? [channel] : [];
+				if (query[0]?.includes("SELECT c.id, c.token")) {
+					const [
+						liveChannelId,
+						liveChannelRunId,
+						encodingId,
+						generation,
+						targetId,
+					] = values;
+					return effectClaims.filter(
+						(claim) =>
+							effectMatches(claim, {
+								liveChannelId,
+								targetId,
+								state: "DISPATCHING",
+							}) &&
+							claim.liveChannelRunId === liveChannelRunId &&
+							claim.providerEncodingId === encodingId &&
+							claim.generation === generation &&
+							(claim.action === "FEEDER_START" ||
+								claim.action === "FEEDER_COMMIT") &&
+							run.id === liveChannelRunId &&
+							(run.bitmovinEncodingId ?? encodingId) === encodingId,
+					);
+				}
+				if (query[0]?.includes('FROM "FeederSession"')) {
+					const [
+						id,
+						liveChannelId,
+						liveChannelRunId,
+						ownerId,
+						ownerGeneration,
+						leaseNotBefore,
+					] = values;
+					return sessions.filter(
+						(row) =>
+							row.id === id &&
+							row.liveChannelId === liveChannelId &&
+							row.liveChannelRunId === liveChannelRunId &&
+							row.ownerId === ownerId &&
+							row.ownerGeneration === ownerGeneration &&
+							row.ownerLeaseAt instanceof Date &&
+							row.ownerLeaseAt >= (leaseNotBefore as Date) &&
+							row.status === "DOWNLOADING" &&
+							row.playbackMode === "LOOP" &&
+							row.pid === null &&
+							row.startedAt === null &&
+							row.committedAt === null &&
+							row.playbackDispatchedAt === null &&
+							(row.publisherClaimedAt === null ||
+								row.publisherReleasedAt !== null),
+					);
+				}
 				if (query[0]?.includes("JOIN LATERAL")) {
 					const [id, encodingId, runId, generation] = values;
 					if (
@@ -1254,6 +1312,69 @@ const startJob = { feederSessionId: SESSION_ID, action: "start" } as const;
 const stopJob = { feederSessionId: SESSION_ID, action: "stop" } as const;
 
 describe("feeder processor — start", () => {
+	function bindLoopHandoff(s: ReturnType<typeof setup>, action: string) {
+		const claim = {
+			id: "bound-loop",
+			token: "bound-loop-token",
+			action,
+			state: "DISPATCHING",
+			liveChannelId: s.channel.id,
+			liveChannelRunId: s.run.id,
+			providerEncodingId: s.run.bitmovinEncodingId,
+			generation: 1,
+			targetId: SESSION_ID,
+			expiresAt: new Date(Date.parse(NOW) + 60_000),
+		};
+		s.channel.liveEffectFenceVersion = claim.generation;
+		s.effectClaims.push(claim);
+		return claim;
+	}
+
+	it.each([
+		"FEEDER_START",
+		"FEEDER_COMMIT",
+	])("settles the bound LOOP %s when preflight fails before acquiring it", async (action) => {
+		const s = setup({
+			resolveCredential: async () => {
+				throw new Error("source credentials unavailable");
+			},
+		});
+		const claim = bindLoopHandoff(s, action);
+		await expect(s.processor.process(startJob)).rejects.toThrow(
+			"source credentials unavailable",
+		);
+		expect(s.session.status).toBe("ERROR");
+		expect(claim).toMatchObject({
+			state: "FAILED",
+			failure: "source credentials unavailable",
+		});
+		expect(s.spawned).toHaveLength(0);
+	});
+
+	it("releases a staged commit if its provider proof goes stale before stopping the predecessor", async () => {
+		const s = setup({ session: { commitAt: new Date(NOW) } });
+		const update = s.feederSession.updateMany.getMockImplementation();
+		if (!update) throw new Error("Missing staged session fixture");
+		s.feederSession.updateMany.mockImplementation(async (args) => {
+			const result = await update(args);
+			if (args.data.readyAt && result.count === 1) {
+				bindLoopHandoff(s, "FEEDER_COMMIT");
+				s.session.commitRequestedAt = new Date(NOW);
+				s.run.providerStatusObservedAt = new Date("2020-01-01T00:00:00Z");
+			}
+			return result;
+		});
+		await expect(s.processor.process(startJob)).rejects.toThrow(
+			/Feeder switch commit refused/,
+		);
+		expect(s.session).toMatchObject({ status: "ERROR", committedAt: null });
+		expect(s.effectClaims).toEqual([
+			expect.objectContaining({ action: "FEEDER_COMMIT", state: "FAILED" }),
+		]);
+		expect(s.killPid).not.toHaveBeenCalled();
+		expect(s.spawned).toHaveLength(0);
+	});
+
 	it("refuses the first spawn when the exact run is no longer fresh RUNNING", async () => {
 		let s: ReturnType<typeof setup>;
 		s = setup({
@@ -6059,6 +6180,7 @@ describe("single-pass feeder processor", () => {
 	});
 
 	it.each([
+		["after the publisher slot", "scheduled"],
 		["at the spawn claim check", "failed"],
 		["before final checks", "claimed"],
 		["before final checks", "failed"],
@@ -6083,7 +6205,18 @@ describe("single-pass feeder processor", () => {
 					generation: s.channel.liveEffectFenceVersion,
 				});
 		}
-		if (boundary === "at the spawn claim check") {
+		if (boundary === "after the publisher slot") {
+			const update = s.feederSession.updateMany.getMockImplementation();
+			if (!update) throw new Error("Missing publisher fixture");
+			s.feederSession.updateMany.mockImplementation(async (args) => {
+				const result = await update(args);
+				if (args.data.publisherClaimedAt && result.count === 1) {
+					expect(s.effectClaims).toHaveLength(0);
+					applyStop();
+				}
+				return result;
+			});
+		} else if (boundary === "at the spawn claim check") {
 			const read = s.liveEffectClaim.findUnique.getMockImplementation();
 			if (!read) throw new Error("Missing ledger fixture");
 			s.liveEffectClaim.findUnique.mockImplementation(async (args) => {

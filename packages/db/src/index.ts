@@ -106,6 +106,7 @@ export {
 	claimLiveStopSend,
 	collectLiveStopTargets,
 	competingScheduledStop,
+	failUnstartedLoopFeederHandoff,
 	LIVE_EFFECT_OPEN_STATES,
 	liveChannelAccountId,
 	liveEffectSendUncertainty,

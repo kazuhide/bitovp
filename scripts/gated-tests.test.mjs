@@ -186,7 +186,7 @@ test("every listed file exists once, and every FFmpeg, Redis or script test file
 test("a plain run may skip the tests that another job runs", () => {
 	for (const [workspace, skipped] of [
 		["@bitovp/core", 25],
-		["@bitovp/db", 84],
+		["@bitovp/db", 88],
 		["@bitovp/worker", EXPECTED_PLAIN_WORKER_SKIPS],
 		// Includes six favorite-registry, two still-image, two archive/restore and
 		// one WebM recovery case, plus three LOCAL QC cancellation cases and the

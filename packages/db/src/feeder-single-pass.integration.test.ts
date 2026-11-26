@@ -6,7 +6,11 @@ import {
 	claimFeederSinglePassDispatch,
 	type FeederSinglePassDispatchResult,
 } from "./feeder-single-pass";
-import { beginLiveEffect } from "./live-effect-claim";
+import {
+	beginLiveEffect,
+	failUnstartedLoopFeederHandoff,
+	type LiveEffectAction,
+} from "./live-effect-claim";
 import { createTenantPrismaClient } from "./tenant-client";
 
 const adminUrl = process.env.BITOVP_TENANT_TEST_ADMIN_URL;
@@ -21,7 +25,7 @@ function barrier() {
 }
 
 describe.runIf(Boolean(adminUrl && appUrl))(
-	"PostgreSQL single-pass dispatch fence",
+	"PostgreSQL feeder effect fences",
 	() => {
 		let admin: AppPrismaClient;
 		let credentialId: string;
@@ -84,14 +88,18 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		}
 		async function fixture(
 			overrides: {
+				effectAction?: LiveEffectAction;
 				publisherClaimedAt?: Date | null;
 				publisherReleasedAt?: Date | null;
 				ownerId?: string;
 				ownerGeneration?: number;
+				ownerLeaseAt?: Date;
 				playbackMode?: string;
 				status?: FeederStatus;
+				committedAt?: Date;
 			} = {},
 		) {
+			const { effectAction = "FEEDER_SPAWN", ...sessionOverrides } = overrides;
 			const { tenant } = client();
 			const encodingId = randomUUID();
 			const channel = await tenant.liveChannel.create({
@@ -125,7 +133,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					ownerId: "first-owner",
 					ownerGeneration: 1,
 					publisherClaimedAt: new Date(),
-					...overrides,
+					...sessionOverrides,
 				},
 			});
 			const now = new Date();
@@ -135,7 +143,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				liveChannelRunId: run.id,
 				providerEncodingId: encodingId,
 				expectedFenceVersion: 0,
-				action: "FEEDER_SPAWN",
+				action: effectAction,
 				targetId: row.id,
 				ownerId: "first-owner",
 				now,
@@ -175,6 +183,166 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				"Both single-pass writers did not overlap at the row lock",
 			);
 		}
+
+		it.each([
+			"FEEDER_START",
+			"FEEDER_COMMIT",
+		] as const)("fails the bound unstarted LOOP %s and admits a later Live effect", async (effectAction) => {
+			const now = new Date();
+			const f = await fixture({
+				effectAction,
+				playbackMode: "LOOP",
+				publisherClaimedAt: null,
+				ownerLeaseAt: now,
+			});
+			const { liveChannelId, liveChannelRunId, providerEncodingId } = f.effect;
+			await expect(
+				failUnstartedLoopFeederHandoff(
+					f.tenant,
+					{
+						...f.fence,
+						liveChannelId,
+						liveChannelRunId,
+						leaseNotBefore: new Date(now.getTime() - 1_000),
+					},
+					"preflight failed",
+				),
+			).resolves.toBe(true);
+			await expect(
+				f.tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { id: f.effect.id },
+				}),
+			).resolves.toMatchObject({
+				state: "FAILED",
+				failure: "preflight failed",
+			});
+			await expect(
+				beginLiveEffect(f.tenant, {
+					liveChannelId,
+					liveChannelRunId,
+					providerEncodingId,
+					idempotencyKey: `later-feeder:${f.row.id}`,
+					expectedFenceVersion: f.effect.generation,
+					action: "FEEDER_START",
+					ownerId: "live-worker",
+					now,
+					expiresAt: new Date(now.getTime() + 60_000),
+				}),
+			).resolves.toMatchObject({ kind: "EXECUTE" });
+		});
+
+		it("rechecks the exact LOOP owner after waiting behind a lease takeover", async () => {
+			const oldLease = new Date();
+			const f = await fixture({
+				effectAction: "FEEDER_COMMIT",
+				playbackMode: "LOOP",
+				publisherClaimedAt: null,
+				ownerLeaseAt: oldLease,
+			});
+			const replacer = client();
+			const settler = client();
+			const replacerPid = await backend(replacer.runtime);
+			const settlerPid = await backend(settler.runtime);
+			const held = barrier();
+			const release = barrier();
+			const takeoverCutoff = new Date(oldLease.getTime() + 1);
+			const takeover = replacer.tenant.$transaction(
+				async (tx) => {
+					const won = await tx.feederSession.updateMany({
+						where: {
+							id: f.row.id,
+							ownerId: f.fence.ownerId,
+							ownerGeneration: f.fence.ownerGeneration,
+							ownerLeaseAt: { lt: takeoverCutoff },
+							status: "DOWNLOADING",
+						},
+						data: {
+							ownerId: "replacement",
+							ownerGeneration: { increment: 1 },
+							ownerLeaseAt: takeoverCutoff,
+						},
+					});
+					expect(won.count).toBe(1);
+					held.release();
+					await release.ready;
+				},
+				{ timeout: 15_000 },
+			);
+			let settlement: Promise<boolean> | undefined;
+			let blocked = false;
+			try {
+				await Promise.race([
+					held.ready,
+					takeover.then(() => {
+						throw new Error("Takeover did not hold the Feeder row");
+					}),
+				]);
+				let settled = false;
+				settlement = failUnstartedLoopFeederHandoff(
+					settler.tenant,
+					{
+						...f.fence,
+						liveChannelId: f.effect.liveChannelId,
+						liveChannelRunId: f.effect.liveChannelRunId,
+						leaseNotBefore: oldLease,
+					},
+					"previous owner's failure",
+				).finally(() => {
+					settled = true;
+				});
+				const deadline = Date.now() + 3_000;
+				while (!settled && !blocked && Date.now() < deadline) {
+					const [wait] = await admin.$queryRaw<{ blocked: boolean }[]>`
+						SELECT ${replacerPid}::integer = ANY(pg_blocking_pids(${settlerPid}::integer)) AS blocked`;
+					blocked = wait?.blocked === true;
+					if (!blocked) await new Promise((resolve) => setTimeout(resolve, 5));
+				}
+			} finally {
+				release.release();
+				await Promise.allSettled([takeover, settlement]);
+			}
+			await takeover;
+			expect(blocked).toBe(true);
+			expect(await settlement).toBe(false);
+			await expect(
+				f.tenant.liveEffectClaim.findUniqueOrThrow({
+					where: { id: f.effect.id },
+				}),
+			).resolves.toMatchObject({ state: "DISPATCHING", failure: null });
+		});
+
+		it("leaves ONCE, own spawn claims and potentially crossed LOOP commits alone", async () => {
+			const now = new Date();
+			for (const overrides of [
+				{ effectAction: "FEEDER_START", playbackMode: "ONCE" },
+				{ effectAction: "FEEDER_SPAWN" },
+				{ effectAction: "FEEDER_COMMIT", committedAt: now },
+			] as const) {
+				const f = await fixture({
+					playbackMode: "LOOP",
+					publisherClaimedAt: null,
+					ownerLeaseAt: now,
+					...overrides,
+				});
+				await expect(
+					failUnstartedLoopFeederHandoff(
+						f.tenant,
+						{
+							...f.fence,
+							liveChannelId: f.effect.liveChannelId,
+							liveChannelRunId: f.effect.liveChannelRunId,
+							leaseNotBefore: now,
+						},
+						"preflight failed",
+					),
+				).resolves.toBe(false);
+				await expect(
+					f.tenant.liveEffectClaim.findUniqueOrThrow({
+						where: { id: f.effect.id },
+					}),
+				).resolves.toMatchObject({ state: "DISPATCHING", failure: null });
+			}
+		});
 
 		it("allows exactly one of two genuinely concurrent connections to dispatch the same source", async () => {
 			const f = await fixture();

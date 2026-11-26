@@ -16,7 +16,10 @@ export type FeederSinglePassDispatchResult =
 
 export async function hasSupersedingFeederStop(
 	prisma: Pick<AppPrismaClient, "$queryRaw">,
-	claim: LiveEffectClaimHandle,
+	fence: Pick<
+		LiveEffectClaimHandle,
+		"liveChannelId" | "liveChannelRunId" | "providerEncodingId" | "generation"
+	>,
 ): Promise<boolean> {
 	const [stop] = await prisma.$queryRaw<{ id: string }[]>`
 		SELECT c.id FROM "LiveChannel" c
@@ -24,11 +27,11 @@ export async function hasSupersedingFeederStop(
 			SELECT r.id, r.status, r."bitmovinEncodingId" FROM "LiveChannelRun" r
 			WHERE r."liveChannelId" = c.id ORDER BY r.seq DESC LIMIT 1
 		) current_run ON true
-		WHERE c.id = ${claim.liveChannelId}::uuid
-			AND c."bitmovinEncodingId" = ${claim.providerEncodingId}
-			AND current_run.id = ${claim.liveChannelRunId}::uuid
+		WHERE c.id = ${fence.liveChannelId}::uuid
+			AND c."bitmovinEncodingId" = ${fence.providerEncodingId}
+			AND current_run.id = ${fence.liveChannelRunId}::uuid
 			AND current_run."bitmovinEncodingId" = c."bitmovinEncodingId"
-			AND c."liveEffectFenceVersion" > ${claim.generation}
+			AND c."liveEffectFenceVersion" > ${fence.generation}
 			AND (
 				-- A scheduled STOP advances the channel before its queue claim.
 				(c.status = 'STOPPING' AND current_run.status IN ('RUNNING', 'STOPPING'))

@@ -31,6 +31,7 @@ import {
 	assertLiveEffectCurrent,
 	beginLiveEffect,
 	claimFeederSinglePassDispatch,
+	failUnstartedLoopFeederHandoff,
 	hasSupersedingFeederStop,
 	type LiveEffectClaimHandle,
 	loadLiveEffectTargetClaim,
@@ -1646,7 +1647,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 		 * ingest effect to the session's exact run and that run's exact encoding.
 		 * Only a fresh provider RUNNING observation passes.
 		 */
-		async function assertProviderEffectBoundary(effect: string): Promise<void> {
+		async function assertProviderEffectBoundary(effect: string) {
 			controller.throwIfStopped();
 			const checkedAt = new Date(deps.now());
 			const held = await deps.prisma.feederSession.findUnique({
@@ -1689,7 +1690,11 @@ export function createFeederProcessor(deps: FeederDeps) {
 				}),
 				deps.prisma.liveChannel.findUnique({
 					where: { id: row.liveChannelId },
-					select: { status: true, bitmovinEncodingId: true },
+					select: {
+						status: true,
+						bitmovinEncodingId: true,
+						liveEffectFenceVersion: true,
+					},
 				}),
 			]);
 			const identityRefusal = providerEffectIdentityRefusal({
@@ -1708,13 +1713,22 @@ export function createFeederProcessor(deps: FeederDeps) {
 				deriveProviderLifecycle(currentRun, checkedAt.getTime()),
 			);
 			const refusal = identityRefusal ?? channelRefusal ?? lifecycleRefusal;
-			if (refusal) {
-				throw new Error(`${effect} refused: ${refusal}`);
+			if (refusal || !channel || !currentRun?.bitmovinEncodingId) {
+				throw new Error(
+					`${effect} refused: ${refusal ?? "the live run has no exact provider identity"}`,
+				);
 			}
+			return {
+				liveChannelId: row.liveChannelId,
+				liveChannelRunId: currentRun.id,
+				providerEncodingId: currentRun.bitmovinEncodingId,
+				generation: channel.liveEffectFenceVersion,
+			};
 		}
 
 		let activeEffectClaim: LiveEffectClaimHandle | null = null;
 		let crossedEffectBoundary = false;
+		let acquiredSpawnClaim = false;
 		const effectNow = (): Date => {
 			const parsed = new Date(deps.now());
 			return Number.isFinite(parsed.getTime()) ? parsed : new Date();
@@ -1804,15 +1818,9 @@ export function createFeederProcessor(deps: FeederDeps) {
 			label: string,
 		): Promise<void> {
 			const claim = await acquireSpawnClaim(spawnOrdinal);
+			acquiredSpawnClaim = true;
 			if (!(await assertLiveEffectCurrent(deps.prisma, claim, effectNow()))) {
 				controller.throwIfStopped();
-				if (
-					row.playbackMode === "ONCE" &&
-					(await hasSupersedingFeederStop(deps.prisma, claim).catch(
-						() => false,
-					))
-				)
-					throw new FeederStopError();
 				throw new Error(
 					`${label} refused: the exact run/generation fence is no longer current`,
 				);
@@ -1834,9 +1842,29 @@ export function createFeederProcessor(deps: FeederDeps) {
 					crossedEffectBoundary)
 			)
 				return;
-			// A preflight failure can arrive after another owner acquired its
-			// own claim. Cleanup can only settle a handle held by this invocation.
-			if (!claim) return;
+			if (!claim) {
+				// An initial LOOP can fail before taking the Live worker's handoff.
+				// Only its still-current owner can prove the handoff was unsent.
+				if (
+					!acquiredSpawnClaim &&
+					row.status === "CREATED" &&
+					(row.playbackMode ?? "LOOP") === "LOOP" &&
+					row.liveChannelRunId !== null
+				)
+					await failUnstartedLoopFeederHandoff(
+						deps.prisma,
+						{
+							...fence,
+							liveChannelId: row.liveChannelId,
+							liveChannelRunId: row.liveChannelRunId,
+							leaseNotBefore: new Date(
+								effectNow().getTime() - FEEDER_LEASE_TAKEOVER_MS,
+							),
+						},
+						redactSecrets(reason),
+					);
+				return;
+			}
 			if (crossedEffectBoundary) {
 				await markLiveEffectAmbiguous(
 					deps.prisma,
@@ -2149,6 +2177,11 @@ export function createFeederProcessor(deps: FeederDeps) {
 
 				let seamBase: Date | null = null;
 				let attemptEvidenceNotBefore: Date | null = null;
+				// Keep the exact broadcast observed before taking the publisher
+				// slot. A scheduled STOP can win before there is a spawn claim.
+				const singlePassAdmission = singlePass
+					? await assertProviderEffectBoundary("Feeder publisher claim")
+					: null;
 				const commitAt = row.commitAt ?? null;
 				if (commitAt !== null) {
 					const readyAt = new Date(deps.now());
@@ -2267,6 +2300,19 @@ export function createFeederProcessor(deps: FeederDeps) {
 					orderBy: { createdAt: "desc" },
 					select: { id: true },
 				});
+				async function rethrowSpawnFailure(error: unknown): Promise<never> {
+					if (singlePassAdmission) {
+						controller.throwIfStopped();
+						if (
+							await hasSupersedingFeederStop(
+								deps.prisma,
+								activeEffectClaim ?? singlePassAdmission,
+							).catch(() => false)
+						)
+							throw new FeederStopError();
+					}
+					throw error;
+				}
 				const supervisor = createFeederSupervisor({
 					runner: deps.runner,
 					ffmpegPath: deps.ffmpegPath,
@@ -2286,11 +2332,14 @@ export function createFeederProcessor(deps: FeederDeps) {
 						? { bindEvidenceNotBefore: attemptEvidenceNotBefore.toISOString() }
 						: {}),
 					beforeSpawn: async (spawnOrdinal) => {
-						await assertProviderEffectBoundary("Feeder process spawn");
-						// Re-prove both the DB-enforced publisher slot and the exact
-						// run-bound effect immediately before every initial spawn/respawn.
-						await assertPublisherEffectBoundary();
-						await requireSpawnClaim(spawnOrdinal, "Feeder process spawn");
+						try {
+							await assertProviderEffectBoundary("Feeder process spawn");
+							// Re-prove the publisher slot and the exact run-bound effect.
+							await assertPublisherEffectBoundary();
+							await requireSpawnClaim(spawnOrdinal, "Feeder process spawn");
+						} catch (error) {
+							await rethrowSpawnFailure(error);
+						}
 						if (playbackMode !== "ONCE") crossedEffectBoundary = true;
 					},
 					immediatelyBeforeProcessSpawn: async () => {
@@ -2303,15 +2352,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 							await assertProviderEffectBoundary("Single-pass process spawn");
 							await assertPublisherEffectBoundary();
 						} catch (error) {
-							controller.throwIfStopped();
-							if (
-								await hasSupersedingFeederStop(
-									deps.prisma,
-									activeEffectClaim,
-								).catch(() => false)
-							)
-								throw new FeederStopError();
-							throw error;
+							await rethrowSpawnFailure(error);
 						}
 						const dispatched = await claimFeederSinglePassDispatch(
 							deps.prisma,

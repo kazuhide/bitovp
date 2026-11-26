@@ -1044,8 +1044,25 @@ describe("HDR QC execution policy", () => {
 
 describe("createVmafProcessor", () => {
 	it("persists actual NVDEC and CPU scoring facts under a separate experimental generation", async () => {
+		const host = {
+			cpuCapacity: 8,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		};
+		const localResources = createLocalVmafResources({
+			readResources: () => host,
+			execute: (plan, signal, work) => {
+				expect(plan.exclusive).toBe(true);
+				return work(signal, async () => {});
+			},
+		});
 		const t = setup({
 			decodePolicy: { backend: "auto", device: 0 },
+			localResources,
+			resolveLocalResources: async ({ pair }) => {
+				expect(pair).toMatchObject({ decodeBackend: "auto" });
+				return planLocalResources(host, pair, {}, 1);
+			},
 			probeJson: JSON.stringify({
 				streams: [
 					{
@@ -1055,6 +1072,7 @@ describe("createVmafProcessor", () => {
 						width: 1920,
 						height: 1080,
 						r_frame_rate: "30/1",
+						duration: "1",
 					},
 				],
 			}),

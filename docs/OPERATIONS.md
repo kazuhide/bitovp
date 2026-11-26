@@ -315,8 +315,9 @@ comparison. Extra memory headroom remains reserved in either mode.
 
 Memory estimates use observed working sets and padding for input geometry and
 frame count. A calculation without shared admission keeps the existing
-exclusive reservation for uncalibrated models. An estimate that cannot fit ends
-with an actionable error. A comparison waits for active work to release memory
+exclusive reservation for uncalibrated models. CPU scoring that can use CUDA
+decoding keeps an exclusive reservation on a shared host. An estimate that
+cannot fit ends with an actionable error. A comparison waits for active work to release memory
 and remains cancellable. External memory pressure with no active comparison
 produces a diagnostic after 30 seconds. If memory cannot be detected, automatic
 selection stops; explicitly setting both values permits the legacy manual path

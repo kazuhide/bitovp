@@ -322,6 +322,35 @@ it("does not calibrate a CPU job or depend its global capacity on one mirror", a
 	expect(h.calibrate).not.toHaveBeenCalled();
 });
 it.each([
+	"auto",
+	"cuda",
+] as const)("reserves the whole host for CPU scoring with unleased %s decoding", async (decodeBackend) => {
+	const h = harness();
+	const request = {
+		...h.request,
+		pair: {
+			...h.request.pair,
+			distorted: { ...h.request.pair.distorted, codec: "hevc" },
+			model: "vmaf_v0.6.1",
+			scoringBackend: undefined,
+			decodeBackend,
+		},
+		options: {
+			...h.request.options,
+			model: "vmaf_v0.6.1",
+			scoring: undefined,
+		},
+	};
+	await expect(
+		createNativeAutoResourcePlanner(h.deps)(request),
+	).resolves.toMatchObject({
+		exclusive: true,
+		concurrency: 1,
+	});
+	expect(h.inspect).not.toHaveBeenCalled();
+	expect(h.calibrate).not.toHaveBeenCalled();
+});
+it.each([
 	"vmaf_v1.0.16_3d0h",
 	"hdr_vmaf_v1.1.8_3d0h_2160",
 	"vmaf_v0.6.1neg",

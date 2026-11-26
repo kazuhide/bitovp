@@ -151,7 +151,7 @@ The coverage data has separate purposes:
 |---|---|
 | `current.json` | Installed SDK Encoding operations, source-resolved calls, and direct top-level body-property assignments. |
 | `contracts.json` + hash-bound shards | Versioned SDK request-type inventory: path/query/body parameters, nested model references, enums, and SDK documentation annotations. An SDK declaration does not establish API writeability or conditional requirements. |
-| `implementation-audit.json` | Bounded, manually reviewed GUI or JSON access and implementation findings, with source, contract-test, and provider-verification evidence kept separate. Items without a reviewed finding remain unconfirmed. |
+| `implementation-audit.json` | Reviewed operation workflows and request-field findings. Each entry records the scope and evidence for its own claim. |
 | `summary.json` | Historical GUI/JSON parameter survey. Its date, SDK version, scope, and method differ from the current inventories. |
 
 Unknown SDK implementation syntax stops the request audit for review.
@@ -162,6 +162,29 @@ Account, notification, and other product APIs are outside this inventory. This i
 percentage of GUI fields, successful provider calls, or verified playback
 scenarios. An unconfirmed operation can still be used through a wrapper that
 the analysis cannot resolve.
+
+The workflow evidence ledger shows an app reachability, SDK transport, and
+provider status for every canonical operation. A reviewed operation identifies
+the exact SDK method, HTTP method, and provider path. Its proof names a BitOVP
+entrypoint and the scenario it reaches, the resolved SDK call, and the test
+that observes the HTTP request through the installed SDK using a mock transport.
+Operations without a matching proof are unreviewed, including operations with
+resolved source calls. The provider status stays unverified until independently
+collected execution receipts can be audited.
+
+Filter the ledger by SDK family, source status, app review state, and workflow
+scope. The CSV download includes every matching operation, its workflow and
+source references. It covers the full filtered result across pages. The same
+read-only endpoint serves the export with `format=csv` and the optional
+`family`, `source`, `reachability`, `scope`, and `q` query parameters.
+
+To add evidence, run the real SDK with an isolated transport fixture that checks
+the method, target, and request inputs. Trace the supported scenario from an
+actual app route to that call. Register the exact operation and relevant code
+and test anchors in the audit. `pnpm test:api-coverage` checks the proof against
+the SDK inventories, rejects duplicates and stale anchors, and validates the
+canonical operation denominator. Change or remove proofs when their scenarios
+change. SDK upgrades require reviewing their proofs against the updated SDK.
 
 The current SDK body-model inventory lists top-level properties for each
 operation that sends a body. Search by property, model, operation, or source
@@ -179,8 +202,7 @@ not mean "not implemented."
 
 The separately dated historical parameter survey uses a different scope and
 method. Its GUI/JSON reachability figures have not been refreshed and must not
-be compared with the current body-model inventory. The CSV export uses the same
-operation census as this screen, including separate methods sharing one path.
+be compared with the current body-model inventory.
 
 The manually reviewed audit corrects older unsupported-field claims for H.264
 `autoLevelSetup` and AV1 `maxLevel`. Their form/schema/compiled-request paths

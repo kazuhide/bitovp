@@ -4625,6 +4625,28 @@ export const en = {
 		unknownRetry: "No recommendation",
 	},
 	apiCoverage: {
+		operationLedger: {
+			title: "Workflow evidence",
+			notice:
+				"Each confirmation applies to the workflow described in its evidence. Transport tests use the installed SDK and a mock provider response.",
+			appConfirmed: "App route confirmed",
+			unreviewed: "Review pending",
+			contractConfirmed: "Mock transport passed",
+			contractUnverified: "Transport test pending",
+			providerVerified: "Provider runs verified",
+			providerUnverified: "Provider run pending",
+			reachability: "App reachability",
+			allReachability: "All app review states",
+			scope: "Workflow scope",
+			allScopes: "All workflow scopes",
+			download: "Download matching CSV",
+			scopes: {
+				vod: "VOD",
+				live: "Live",
+				settings: "Settings",
+				shared: "Shared",
+			},
+		},
 		requestFields: {
 			title: "SDK request-body properties",
 			scopeNotice:

@@ -1,5 +1,6 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { buildOperationLedger } from "@/lib/api-coverage/operation-ledger";
 import { messagesFor } from "@/lib/i18n";
 import { renderWithQuery } from "@/test/render";
 import { ApiCoverageClient } from "./coverage-client";
@@ -115,9 +116,85 @@ describe("coverage page heading", () => {
 });
 
 describe("ApiCoverageClient current source census", () => {
+	it("shows scoped app and mock-transport proof while keeping source-only and provider evidence separate", async () => {
+		const data = payload();
+		const endpoint = data.current.endpoints[0];
+		if (!endpoint) throw new Error("Missing endpoint fixture");
+		apiFetch.mockResolvedValue({
+			...data,
+			operationLedger: buildOperationLedger(
+				data.current,
+				{
+					schemaVersion: 2,
+					sdkVersion: data.sdk.installed,
+					operations: [
+						{
+							sdkMethod: endpoint.sdkMethod,
+							httpVerb: endpoint.httpVerb,
+							path: endpoint.path,
+							scope: "live",
+							scenario: "Create an RTMP input for a new Live run.",
+							entrypoint: {
+								httpVerb: "POST",
+								path: "/api/live-channels",
+								anchor: "export async function POST",
+							},
+							transport: {
+								file: "packages/worker/src/rtmp.ts",
+								anchor: "api.encoding.inputs.rtmp.create(",
+							},
+							contractTest: {
+								file: "packages/worker/src/rtmp.test.ts",
+								anchor: "expect(path).toBe('/v1/encoding/inputs/rtmp')",
+							},
+							provider: "unverified",
+						},
+					],
+				},
+				data.sdk.installed,
+			),
+		});
+		renderWithQuery(<ApiCoverageClient />);
+		const confirmed = await screen.findByRole("row", {
+			name: /encoding\.inputs\.rtmp\.create/,
+		});
+		expect(confirmed).toHaveTextContent("App route confirmed");
+		expect(confirmed).toHaveTextContent("Mock transport passed");
+		expect(confirmed).toHaveTextContent("Provider run pending");
+		expect(
+			within(confirmed).getByText("Create an RTMP input for a new Live run."),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("row", { name: /encoding\.inputs\.rtmp\.list/ }),
+		).toHaveTextContent("Review pending");
+		fireEvent.change(screen.getByRole("combobox", { name: "Workflow scope" }), {
+			target: { value: "live" },
+		});
+		fireEvent.change(
+			screen.getByRole("combobox", { name: "App reachability" }),
+			{ target: { value: "app-confirmed" } },
+		);
+		expect(
+			screen.queryByRole("row", { name: /encoding\.inputs\.rtmp\.list/ }),
+		).not.toBeInTheDocument();
+		const href = screen
+			.getByRole("link", { name: "Download matching CSV" })
+			.getAttribute("href");
+		const url = new URL(href ?? "", "http://test");
+		expect(url.pathname).toBe("/api/settings/api-coverage");
+		expect(Object.fromEntries(url.searchParams)).toMatchObject({
+			format: "csv",
+			scope: "live",
+			reachability: "app-confirmed",
+		});
+	});
+
 	it("separates fresh verb-specific source evidence from collapsed historical parameters", async () => {
 		renderWithQuery(<ApiCoverageClient />);
 		await screen.findByText("packages/worker/src/rtmp.ts:42");
+		expect(
+			screen.getByRole("row", { name: /encoding\.inputs\.rtmp\.create/ }),
+		).toHaveTextContent("Review pending");
 		expect(apiFetch).toHaveBeenCalledWith("/api/settings/api-coverage");
 		expect(screen.getAllByText("/encoding/inputs/rtmp")).toHaveLength(2);
 		expect(screen.getByText("encoding.inputs.rtmp.list")).toBeInTheDocument();

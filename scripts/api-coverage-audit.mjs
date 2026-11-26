@@ -1,16 +1,20 @@
 /** Bounded manual GUI/payload audits. Source evidence is never provider proof. */
 import { readFileSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildOperationLedger, readOperationProofs, sameOperation } from "../apps/web/src/lib/api-coverage/operation-ledger.ts";
 import { readContracts } from "./api-coverage-contract-files.mjs";
 
 const ACCESS = new Set(["gui-confirmed", "json-only-confirmed", "not-implemented-confirmed", "unconfirmed"]);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(resolve(root, "apps/web/package.json"));
+const ts = require("typescript");
 
 function uniqueOperations(rows) {
-	const names = rows.map((row) => row.sdkMethod);
-	if (new Set(names).size !== names.length) throw new Error("Duplicate coverage operation");
-	return names.sort();
+	const operations = new Map(rows.map((row) => [row.sdkMethod, row]));
+	if (operations.size !== rows.length) throw new Error("Duplicate coverage operation");
+	return operations;
 }
 
 function targetExists(type, path, schemas, seen = new Set()) {
@@ -38,6 +42,43 @@ function checkEvidence(rows, kind, readSource) {
 	}
 }
 
+function hasCodeAnchor(source, node, anchor) {
+	return source.text.startsWith(anchor, node.getStart(source)) ||
+		Boolean(ts.forEachChild(node, (child) => hasCodeAnchor(source, child, anchor) || undefined));
+}
+
+function verifyEntrypoint({ path, httpVerb, anchor }, readSource) {
+	const file = `apps/web/src/app${path}/route.ts`;
+	const source = ts.createSourceFile(file, readSource(file), ts.ScriptTarget.Latest, true);
+	const hasHandler = source.statements.some((statement) => {
+		if (!ts.canHaveModifiers(statement) || !ts.getModifiers(statement)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) return false;
+		if (ts.isFunctionDeclaration(statement)) {
+			return statement.name?.text === httpVerb && Boolean(statement.body) && hasCodeAnchor(source, statement, anchor);
+		}
+		return ts.isVariableStatement(statement) && statement.declarationList.declarations.some((declaration) =>
+			ts.isIdentifier(declaration.name) && declaration.name.text === httpVerb && declaration.initializer &&
+			hasCodeAnchor(source, statement, anchor),
+		);
+	});
+	if (!hasHandler) throw new Error(`Operation proof lacks an exported route with its evidence anchor: ${file}`);
+}
+
+function verifyTransport(proof, readSource) {
+	const { file, anchor } = proof.transport;
+	const source = ts.createSourceFile(file, readSource(file), ts.ScriptTarget.Latest, true);
+	const method = proof.sdkMethod.split(".").slice(-2).join(".");
+	let matches = 0;
+	function visit(node) {
+		if (ts.isCallExpression(node) && node.getText(source).startsWith(anchor)) {
+			const target = node.expression.getText(source);
+			if (target === method || target.endsWith(`.${method}`)) matches++;
+		}
+		ts.forEachChild(node, visit);
+	}
+	visit(source);
+	if (matches !== 1) throw new Error(`Operation proof must anchor one SDK call: ${proof.sdkMethod}`);
+}
+
 /** All unspecified operations and properties remain unconfirmed. No GUI percentage is inferred. */
 export function operationCoverage(endpoint, audit) {
 	return {
@@ -48,12 +89,26 @@ export function operationCoverage(endpoint, audit) {
 }
 
 export function validateImplementationAudit({ census, contracts, audit, readSource }) {
-	if (audit.schemaVersion !== 1 || audit.sdkVersion !== census.provenance.sdkVersion || audit.sdkVersion !== contracts.provenance.sdkVersion) throw new Error("SDK versions must agree across all coverage evidence");
-	if (JSON.stringify(uniqueOperations(census.endpoints)) !== JSON.stringify(uniqueOperations(contracts.operations))) throw new Error("Request-contract operation denominator differs from source census");
+	if (audit.sdkVersion !== census.provenance.sdkVersion || audit.sdkVersion !== contracts.provenance.sdkVersion) throw new Error("SDK versions must agree across all coverage evidence");
+	const endpoints = uniqueOperations(census.endpoints);
+	const contractOperations = uniqueOperations(contracts.operations);
+	if (endpoints.size !== contractOperations.size || [...endpoints.values()].some((endpoint) => {
+		const contract = contractOperations.get(endpoint.sdkMethod);
+		return !contract || !sameOperation(endpoint, contract);
+	})) throw new Error("Request-contract operation denominator differs from source census");
+	const proofs = readOperationProofs(census, audit);
+	for (const proof of proofs.values()) {
+		verifyEntrypoint(proof.entrypoint, readSource);
+		checkEvidence([proof.transport], "transport", readSource);
+		verifyTransport(proof, readSource);
+		checkEvidence([proof.contractTest], "contractTests", readSource);
+		const test = ts.createSourceFile(proof.contractTest.file, readSource(proof.contractTest.file), ts.ScriptTarget.Latest, true);
+		if (!hasCodeAnchor(test, test, proof.contractTest.anchor)) throw new Error(`Operation proof lacks an active contract-test anchor: ${proof.contractTest.file}`);
+	}
 	const summary = { auditedTargets: 0, guiConfirmedTargets: 0, jsonOnlyTargets: 0, missingTargets: 0, unconfirmedTargets: 0, providerVerifiedTargets: 0 };
 	const keys = new Set();
 	for (const entry of audit.entries) {
-		const operation = contracts.operations.find((row) => row.sdkMethod === entry.sdkMethod);
+		const operation = contractOperations.get(entry.sdkMethod);
 		if (!operation) throw new Error(`Unknown audit operation: ${entry.sdkMethod}`);
 		const target = entry.target;
 		if (!target || !["path", "query", "body"].includes(target.location) || !Array.isArray(target.propertyPath) || target.propertyPath.some((part) => typeof part !== "string" || !part)) throw new Error("Invalid audit target");
@@ -84,7 +139,7 @@ export function validateImplementationAudit({ census, contracts, audit, readSour
 		const count = { "gui-confirmed": "guiConfirmedTargets", "json-only-confirmed": "jsonOnlyTargets", "not-implemented-confirmed": "missingTargets", unconfirmed: "unconfirmedTargets" }[entry.access];
 		summary[count]++;
 	}
-	return summary;
+	return { ...summary, operationSummary: buildOperationLedger(census, audit, audit.sdkVersion).summary };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {

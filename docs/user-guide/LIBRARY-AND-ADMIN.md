@@ -285,8 +285,10 @@ settings. A withheld error body protects receiver secrets; it does not mean
 registration succeeded. Manual provider hooks lack the application's signature
 and are not a substitute for managed registrations.
 
-The API coverage screen lists SDK operations and source references. Source-confirmed
-means a call exists in code, not that its GUI path or provider execution passed.
+The API coverage screen lists SDK operations and source references. Workflow
+evidence shows the reviewed app route, the SDK transport test, and the status of
+provider validation. Expand a workflow to see the scenario it covers. Filter by
+API family, workflow scope, or review state and download all matching rows as CSV.
 The current body-model inventory lists top-level SDK properties by operation,
 with direct property-key evidence where available. Search it to inspect a
 particular field. Shared response properties can appear; nested fields,

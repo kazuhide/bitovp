@@ -4563,6 +4563,23 @@ export const ja = {
 		unknownRetry: "再試行の目安なし",
 	},
 	apiCoverage: {
+		operationLedger: {
+			title: "操作経路の検証",
+			notice:
+				"検証範囲は各操作の詳細に記載しています。通信テストはインストール済みの SDK を使い、Bitmovin の応答をモックしています。",
+			appConfirmed: "アプリの操作経路あり",
+			unreviewed: "レビュー待ち",
+			contractConfirmed: "モック通信テスト済み",
+			contractUnverified: "通信テスト待ち",
+			providerVerified: "Bitmovin 実行検証済み",
+			providerUnverified: "Bitmovin 実行検証待ち",
+			reachability: "アプリの操作経路",
+			allReachability: "すべてのレビュー状況",
+			scope: "操作範囲",
+			allScopes: "すべての操作範囲",
+			download: "表示条件で CSV をダウンロード",
+			scopes: { vod: "VOD", live: "ライブ", settings: "設定", shared: "共通" },
+		},
 		requestFields: {
 			title: "SDK のリクエスト属性",
 			scopeNotice:

@@ -1,6 +1,176 @@
 {
-	"schemaVersion": 1,
+	"schemaVersion": 2,
 	"sdkVersion": "1.289.0",
+	"operations": [
+		{
+			"sdkMethod": "encoding.encodings.inputStreams.hdr10Plus.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus",
+			"scope": "vod",
+			"scenario": "Create an HDR10+ input stream for a VOD job using video and its metadata sidecar in the same input storage.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/media.ts",
+				"anchor": "api.encoding.encodings.inputStreams.hdr10Plus.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.hdr10plus.test.ts",
+				"anchor": "\"/v1/encoding/encodings/encoding-id/input-streams/hdr10-plus\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.live.hd.start",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/live/hd/start",
+			"scope": "live",
+			"scenario": "Start an eligible Live HD channel and apply its manifest reupload intervals.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/live-channels/[id]/actions",
+				"anchor": "case \"start\":"
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/live.ts",
+				"anchor": "live.hd.start(encodingId, request)"
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/start-sdk-contract.test.ts",
+				"anchor": "expect(Boolean(match[2])).toBe(encodingOption === \"HD\");"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.live.start",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/live/start",
+			"scope": "live",
+			"scenario": "Start a Custom Live channel with compiled manifest timing, automatic stop, and reupload controls.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/live-channels/[id]/actions",
+				"anchor": "case \"start\":"
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/live.ts",
+				"anchor": "live.start(encodingId, request)"
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/start-sdk-contract.test.ts",
+				"anchor": "expect(url.pathname).toBe(startPath);"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.live.updateAutoshutdownConfig.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/live/update-autoshutdown-config",
+			"scope": "live",
+			"scenario": "Replace the automatic-stop configuration for an active Live encoding owned by the selected channel.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/live-channels/[id]/auto-shutdown",
+				"anchor": "action: \"update-auto-shutdown\","
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/live.ts",
+				"anchor": "api.encoding.encodings.live.updateAutoshutdownConfig.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.auto-shutdown.test.ts",
+				"anchor": "\"/v1/encoding/encodings/encoding-owned/live/update-autoshutdown-config\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.start",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/start",
+			"scope": "vod",
+			"scenario": "Submit a VOD job with compiled START settings, including Per-Title or VOD manifest generation options.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/encoding.ts",
+				"anchor": "api.encoding.encodings.start("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/start-sdk-contract.test.ts",
+				"anchor": "expect(url.pathname).toBe(startPath);"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.errorDefinitions.list",
+			"httpVerb": "GET",
+			"path": "/encoding/error-definitions",
+			"scope": "settings",
+			"scenario": "Read the paginated error-definition catalogue for a saved Bitmovin account in the selected organization.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-error-definitions",
+				"anchor": "export async function GET"
+			},
+			"transport": {
+				"file": "apps/web/src/app/api/encoding-error-definitions/route.ts",
+				"anchor": "api.encoding.errorDefinitions.list({ limit: PAGE_SIZE, offset })"
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-error-definitions/route.sdk.test.ts",
+				"anchor": "expect(new URL(url).pathname).toBe(\"/v1/encoding/error-definitions\");"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.live.encodings.actions.patch",
+			"httpVerb": "PATCH",
+			"path": "/encoding/live/encodings/{encoding_id}/actions/update-rtmp-ingest-points",
+			"scope": "live",
+			"scenario": "Replace the selected dynamic redundant RTMP ingest points of the current running Live channel.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/live-channels/[id]/actions",
+				"anchor": "case \"update-rtmp-ingest\":"
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/live.ts",
+				"anchor": "api.encoding.live.encodings.actions.patch("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.rtmp-ingest-wire.test.ts",
+				"anchor": "\"/v1/encoding/live/encodings/encoding-owned/actions/update-rtmp-ingest-points\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.periods.create",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods",
+			"scope": "live",
+			"scenario": "Create the first Period at time zero when starting a Live channel with a DASH manifest.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/live-channels/[id]/actions",
+				"anchor": "case \"start\":"
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.dash.periods.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.period.test.ts",
+				"anchor": "\"/v1/encoding/manifests/dash/manifest-id/periods\""
+			},
+			"provider": "unverified"
+		}
+	],
 	"entries": [
 		{
 			"sdkMethod": "encoding.configurations.video.h264.create",

@@ -178,6 +178,12 @@ describe("POST /api/feeder-sessions", () => {
 	])("requires a valid key before admitting a single-pass request (%s)", async (key) => {
 		const res = await POST(postRequest(onceBody, key));
 		expect(res.status).toBe(400);
+		expect(await res.json()).toMatchObject({
+			error:
+				key === undefined
+					? "Idempotency-Key is required for ONCE playback"
+					: "Idempotency-Key must contain 1 to 200 ASCII letters, digits, periods, underscores, colons or hyphens",
+		});
 		expect(sessionCount).not.toHaveBeenCalled();
 		expect(sessionCreate).not.toHaveBeenCalled();
 		expect(queueAdd).not.toHaveBeenCalled();

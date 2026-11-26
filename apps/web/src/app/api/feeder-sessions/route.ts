@@ -513,7 +513,11 @@ export async function POST(req: Request) {
 		if (!(error instanceof InvalidCreateRequestError)) throw error;
 		// LOOP historically ignores this header. A valid key can still match
 		// an earlier ONCE receipt if the caller changed the playback mode.
-		if (singlePass) return jsonError(400, error.message);
+		if (singlePass)
+			return jsonError(
+				400,
+				"Idempotency-Key must contain 1 to 200 ASCII letters, digits, periods, underscores, colons or hyphens",
+			);
 	}
 	if (singlePass && !identity)
 		return jsonError(400, "Idempotency-Key is required for ONCE playback");

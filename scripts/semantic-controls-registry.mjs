@@ -170,13 +170,14 @@ const controls = [
 		workspace: "@bitovp/worker",
 		directory: "apps/worker",
 		files: {
-			"src/feeder/process-runner-abort.test.ts": 19,
+			"src/feeder/process-runner-abort.test.ts": 20,
 		},
 		source: "apps/worker/src/feeder/process-runner.ts",
 		anchor: "aborted = true;",
 		replacement:
 			"aborted = true;\nresolve({ code: null, stdout, stderr: err.message });",
 		cases: [
+			"streaming process exit keeps a spawned publisher owned after both termination signals are denied",
 			"one-shot abort grace ownership holds an opted-in child when its first SIGTERM attempt emits a normal error",
 			"one-shot abort grace ownership sends one hard kill at the deadline but retains ownership until close",
 			"one-shot abort grace ownership clears the deadline on exit even while stdio keeps close pending",

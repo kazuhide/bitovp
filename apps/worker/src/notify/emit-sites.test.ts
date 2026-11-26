@@ -324,7 +324,7 @@ const EXPECTATIONS: Expectation[] = [
 ];
 
 const EMIT_CALL =
-	/emitEvent\?\.\(|emitChannel\(|await recordConfirmedStopDelivery\(|await tx\.liveStopNotification\.create\(|await deliver\(\{/g;
+	/emitEvent\?\.\(|emitChannel\(|await recordConfirmedLiveStopNotification\(|await tx\.liveStopNotification\.create\(|await deliver\(\{/g;
 
 describe("every terminal transition emits a product event (ledger #88)", () => {
 	for (const expectation of EXPECTATIONS) {

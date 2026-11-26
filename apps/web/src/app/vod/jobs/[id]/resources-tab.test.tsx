@@ -74,7 +74,7 @@ describe("ResourcesTab — raw snapshots in place", () => {
 	it.each([
 		"CREATE_INPUT_S3_ROLE_BASED",
 		"CREATE_OUTPUT_S3_ROLE_BASED",
-	])("explains the omitted credential for %s", (kind) => {
+	] as const)("explains the omitted credential for %s", (kind) => {
 		const entry: StepLogEntry = {
 			step: "media",
 			kind,

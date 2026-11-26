@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FeederStatus } from "../generated/client";
 import { type AppPrismaClient, createPrismaClient } from "./client";
 import { claimFeederSinglePassDispatch } from "./feeder-single-pass";
+import { beginLiveEffect } from "./live-effect-claim";
 import { createTenantPrismaClient } from "./tenant-client";
 
 const adminUrl = process.env.BITOVP_TENANT_TEST_ADMIN_URL;
@@ -89,12 +90,28 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			} = {},
 		) {
 			const { tenant } = client();
+			const encodingId = randomUUID();
 			const channel = await tenant.liveChannel.create({
-				data: { name: "Single-pass fixture", status: "RUNNING", plan: {} },
+				data: {
+					name: "Single-pass fixture",
+					status: "RUNNING",
+					plan: {},
+					bitmovinEncodingId: encodingId,
+				},
+			});
+			const run = await tenant.liveChannelRun.create({
+				data: {
+					liveChannelId: channel.id,
+					seq: 1,
+					status: "RUNNING",
+					bitmovinEncodingId: encodingId,
+					outputPrefix: "",
+				},
 			});
 			const row = await tenant.feederSession.create({
 				data: {
 					liveChannelId: channel.id,
+					liveChannelRunId: run.id,
 					sourceCredentialId: credentialId,
 					sourceBucket: "fixture",
 					sourceKey: "full.mp4",
@@ -108,10 +125,31 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					...overrides,
 				},
 			});
+			const now = new Date();
+			const effect = await beginLiveEffect(tenant, {
+				idempotencyKey: `feeder-spawn:${row.id}:1:0`,
+				liveChannelId: channel.id,
+				liveChannelRunId: run.id,
+				providerEncodingId: encodingId,
+				expectedFenceVersion: 0,
+				action: "FEEDER_SPAWN",
+				targetId: row.id,
+				ownerId: "first-owner",
+				now,
+				expiresAt: new Date(now.getTime() + 60_000),
+			});
+			if (effect.kind !== "EXECUTE")
+				throw new Error("Feeder effect not admitted");
 			return {
 				row,
 				tenant,
-				fence: { id: row.id, ownerId: "first-owner", ownerGeneration: 1 },
+				effect: effect.claim,
+				fence: {
+					id: row.id,
+					ownerId: "first-owner",
+					ownerGeneration: 1,
+					publisherGeneration: row.publisherGeneration,
+				},
 			};
 		}
 		async function backend(runtime: AppPrismaClient) {
@@ -165,8 +203,13 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					}),
 				]);
 				attempts = [
-					claimFeederSinglePassDispatch(first.tenant, f.fence, at[0]),
-					claimFeederSinglePassDispatch(second.tenant, f.fence, at[1]),
+					claimFeederSinglePassDispatch(first.tenant, f.fence, at[0], f.effect),
+					claimFeederSinglePassDispatch(
+						second.tenant,
+						f.fence,
+						at[1],
+						f.effect,
+					),
 				];
 				await waitForBothBlocked(firstPid, secondPid);
 			} finally {
@@ -182,12 +225,88 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			expect(row.playbackDispatchedAt).toEqual(at[result.indexOf(true)]);
 		});
 
+		it("waits for an owning Live STOP and refuses the feeder's expired dispatch authority", async () => {
+			const f = await fixture();
+			const stopper = client();
+			const dispatcher = client();
+			const stopperPid = await backend(stopper.runtime);
+			const dispatcherPid = await backend(dispatcher.runtime);
+			const held = barrier();
+			const release = barrier();
+			const now = new Date();
+			const stop = beginLiveEffect(
+				stopper.tenant,
+				{
+					idempotencyKey: `manual:stop:${f.effect.liveChannelId}`,
+					liveChannelId: f.effect.liveChannelId,
+					liveChannelRunId: f.effect.liveChannelRunId,
+					providerEncodingId: f.effect.providerEncodingId,
+					expectedFenceVersion: f.effect.generation,
+					action: "STOP",
+					supersedeOpen: true,
+					ownerId: "stopper",
+					now,
+					expiresAt: new Date(now.getTime() + 60_000),
+				},
+				{
+					afterClaimed: async () => {
+						held.release();
+						await release.ready;
+					},
+				},
+			);
+			let attempt: Promise<boolean> | undefined;
+			let blocked = false;
+			try {
+				await Promise.race([
+					held.ready,
+					stop.then(() => {
+						throw new Error("STOP did not hold the channel");
+					}),
+				]);
+				let settled = false;
+				attempt = claimFeederSinglePassDispatch(
+					dispatcher.tenant,
+					f.fence,
+					now,
+					f.effect,
+				).finally(() => {
+					settled = true;
+				});
+				const deadline = Date.now() + 3_000;
+				while (!settled && !blocked && Date.now() < deadline) {
+					const [wait] = await admin.$queryRaw<{ blocked: boolean }[]>`
+						SELECT ${stopperPid}::integer = ANY(pg_blocking_pids(${dispatcherPid}::integer)) AS blocked`;
+					blocked = wait?.blocked === true;
+					if (!blocked) await new Promise((resolve) => setTimeout(resolve, 5));
+				}
+			} finally {
+				release.release();
+				await Promise.allSettled([stop, attempt]);
+			}
+			expect(await stop).toMatchObject({ kind: "EXECUTE" });
+			expect(await attempt).toBe(false);
+			expect(blocked).toBe(true);
+			expect(
+				await f.tenant.feederSession.findUniqueOrThrow({
+					where: { id: f.row.id },
+				}),
+			).toMatchObject({
+				playbackDispatchedAt: null,
+			});
+		});
+
 		it("retains a committed dispatch marker across disconnect and a new owner without replay", async () => {
 			const f = await fixture();
 			const first = client();
 			const at = new Date("2026-11-09T12:00:01.123Z");
 			expect(
-				await claimFeederSinglePassDispatch(first.tenant, f.fence, at),
+				await claimFeederSinglePassDispatch(
+					first.tenant,
+					f.fence,
+					at,
+					f.effect,
+				),
 			).toBe(true);
 			await first.runtime.$disconnect();
 			const replacement = client();
@@ -206,11 +325,13 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				await claimFeederSinglePassDispatch(
 					replacement.tenant,
 					{
+						...f.fence,
 						id: f.row.id,
 						ownerId: "replacement-owner",
 						ownerGeneration: 2,
 					},
 					new Date(),
+					f.effect,
 				),
 			).toBe(false);
 			expect(
@@ -234,7 +355,12 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			for (const variant of variants) {
 				const f = await fixture(variant);
 				expect(
-					await claimFeederSinglePassDispatch(f.tenant, f.fence, new Date()),
+					await claimFeederSinglePassDispatch(
+						f.tenant,
+						f.fence,
+						new Date(),
+						f.effect,
+					),
 				).toBe(false);
 				expect(
 					(
@@ -250,6 +376,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					f.tenant,
 					{ ...f.fence, id: randomUUID() },
 					new Date(),
+					f.effect,
 				),
 			).toBe(false);
 			const foreign = client(randomUUID());
@@ -258,6 +385,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					foreign.tenant,
 					f.fence,
 					new Date(),
+					f.effect,
 				),
 			).toBe(false);
 		});

@@ -581,7 +581,7 @@ describe("createFeederSupervisor — single-pass", () => {
 		s.spawned[0]?.exit(null, "SIGTERM");
 		const result = await outcome;
 		expect(s.spawned).toHaveLength(0);
-		expect(result).toBeInstanceOf(Error);
+		expect(result).toMatchObject({ name: "FeederStopError" });
 	});
 });
 

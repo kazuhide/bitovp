@@ -982,6 +982,52 @@ function setup(
 				: await arg(prisma as unknown as AppPrismaClient),
 	);
 	const prisma = {
+		$queryRaw: vi.fn(
+			async (query: TemplateStringsArray, ...values: unknown[]) => {
+				if (query[0]?.includes('FROM "LiveChannel"')) {
+					const [id, encodingId, generation] = values;
+					return channel.id === id &&
+						channel.bitmovinEncodingId === encodingId &&
+						channel.liveEffectFenceVersion === generation &&
+						channel.status === "RUNNING"
+						? [{ id }]
+						: [];
+				}
+				if (query[0]?.includes('FROM "LiveEffectClaim"')) {
+					const [
+						id,
+						token,
+						idempotencyKey,
+						liveChannelId,
+						liveChannelRunId,
+						providerEncodingId,
+						targetId,
+						action,
+						generation,
+						at,
+					] = values;
+					return effectClaims.filter(
+						(claim) =>
+							effectMatches(claim, {
+								id,
+								token,
+								idempotencyKey,
+								liveChannelId,
+								targetId,
+								state: "DISPATCHING",
+							}) &&
+							claim.liveChannelRunId === liveChannelRunId &&
+							claim.providerEncodingId === providerEncodingId &&
+							claim.action === action &&
+							claim.generation === generation &&
+							(claim.expiresAt as Date) > (at as Date) &&
+							run.id === liveChannelRunId &&
+							run.bitmovinEncodingId === providerEncodingId,
+					);
+				}
+				throw new Error("Unknown raw-query fixture");
+			},
+		),
 		feederSession,
 		feederPushAttempt,
 		liveChannel,
@@ -5960,8 +6006,105 @@ describe("single-pass feeder processor", () => {
 		);
 		expect(s.spawned).toHaveLength(0);
 		expect(s.session.playbackDispatchedAt).toBeInstanceOf(Date);
+		expect(s.effectClaims).toHaveLength(1);
+		expect(s.effectClaims[0]).toMatchObject({ state: "FAILED" });
+		expect(s.session.publisherReleasedAt).toBeInstanceOf(Date);
 		await s.processor.process(startJob);
 		expect(s.spawned).toHaveLength(0);
+	});
+
+	it.each([
+		false,
+		true,
+	])("stops cleanly during the dispatch write even when its reply is lost (%s)", async (loseReply) => {
+		const s = setup({ session: { playbackMode: "ONCE" } });
+		const update = s.feederSession.updateMany.getMockImplementation();
+		if (!update) throw new Error("Missing update fixture");
+		let entered!: () => void;
+		let release!: () => void;
+		const marker = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const wait = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		s.feederSession.updateMany.mockImplementation(async (arg) => {
+			const result = await update(arg);
+			if (arg.data.playbackDispatchedAt !== undefined) {
+				entered();
+				await wait;
+				if (loseReply) throw new Error("dispatch acknowledgement lost");
+			}
+			return result;
+		});
+		const run = s.processor.process(startJob).then(
+			(value) => ({ value }),
+			(error: unknown) => ({ error }),
+		);
+		try {
+			await Promise.race([
+				marker,
+				run.then(() => {
+					throw new Error("start finished before dispatch");
+				}),
+			]);
+			await expect(s.processor.process(stopJob)).resolves.toMatchObject({
+				status: "STOPPING",
+			});
+		} finally {
+			release();
+		}
+		await expect(run).resolves.toMatchObject({ value: { status: "STOPPED" } });
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session).toMatchObject({
+			status: "STOPPED",
+			playbackDispatchedAt: expect.any(Date),
+			pid: null,
+			publisherReleasedAt: expect.any(Date),
+			processGoneAt: null,
+		});
+		expect(s.effectClaims[0]).toMatchObject({ state: "FAILED" });
+		expect(s.emitEvent).not.toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "FEEDER_ERROR" }),
+		);
+	});
+
+	it("publishes the stoppable session PID before its single-pass attempt evidence", async () => {
+		const s = setup({ session: { playbackMode: "ONCE" } });
+		const original = s.feederPushAttempt.updateMany.getMockImplementation();
+		if (!original) throw new Error("Missing attempt update fixture");
+		const captured: { pid: unknown; status: unknown }[] = [];
+		s.feederPushAttempt.updateMany.mockImplementation(async (args) => {
+			if (args.data.processSpawnedAt !== undefined)
+				captured.push({ pid: s.session.pid, status: s.session.status });
+			return original(args);
+		});
+		const run = s.processor.process(startJob);
+		await vi.waitFor(() => expect(captured).toHaveLength(1));
+		await s.processor.process(stopJob);
+		s.spawned[0]?.exit(null, "SIGTERM");
+		await expect(run).resolves.toMatchObject({ status: "STOPPED" });
+		expect(captured).toEqual([{ pid: 5000, status: "PUSHING" }]);
+	});
+
+	it("signals a single-pass process without publishing evidence when the session PID fence loses", async () => {
+		const s = setup({ session: { playbackMode: "ONCE" } });
+		const update = s.feederSession.updateMany.getMockImplementation();
+		if (!update) throw new Error("Missing update fixture");
+		s.feederSession.updateMany.mockImplementation(async (arg) =>
+			arg.data.status === "PUSHING" ? { count: 0 } : update(arg),
+		);
+		const run = s.processor.process(startJob);
+		await vi.waitFor(() => expect(s.spawned[0]?.killed).toContain("SIGTERM"));
+		s.spawned[0]?.exit(null, "SIGTERM");
+		await expect(run).resolves.toMatchObject({ status: "STOPPED" });
+		expect(s.session.playbackDispatchedAt).toBeInstanceOf(Date);
+		expect(s.pushAttempts[0]).toMatchObject({
+			pid: null,
+			processSpawnedAt: null,
+			providerAcceptedAt: null,
+		});
+		expect(s.effectClaims[0]).toMatchObject({ state: "AMBIGUOUS" });
 	});
 
 	it("does not resume a previously dispatched single pass after its process was proven gone", async () => {

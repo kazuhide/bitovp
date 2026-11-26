@@ -81,6 +81,7 @@ import {
 } from "./ownership";
 import {
 	createFeederSupervisor,
+	FeederStopError,
 	type FeederSupervisor,
 	type IngestBindStatus,
 	KILL_GRACE_MS,
@@ -488,14 +489,6 @@ function persistedBoundaries(value: unknown): LoopBoundary[] {
 			typeof (entry as LoopBoundary).wallClock === "string" &&
 			typeof (entry as LoopBoundary).streamTimeSec === "number",
 	);
-}
-
-/** Stop arrived between stages (before/while no ffmpeg was running). */
-class FeederStopError extends Error {
-	constructor() {
-		super("Feeder stop requested");
-		this.name = "FeederStopError";
-	}
 }
 
 /**
@@ -1805,7 +1798,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			return begun.claim;
 		}
 
-		async function crossSpawnBoundary(
+		async function requireSpawnClaim(
 			spawnOrdinal: number,
 			label: string,
 		): Promise<void> {
@@ -1820,9 +1813,6 @@ export function createFeederProcessor(deps: FeederDeps) {
 					`${label} refused: the exact run/generation fence is no longer current`,
 				);
 			}
-			// This is set immediately before predecessor-stop dispatch or spawn.
-			// From here a thrown response is uncertain and cannot be retried blind.
-			crossedEffectBoundary = true;
 		}
 
 		async function settleOpenEffectFailure(reason: string): Promise<void> {
@@ -2159,7 +2149,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 					// before touching them unless this exact session generation is still
 					// attached to its exact fresh-RUNNING provider run.
 					await assertProviderEffectBoundary("Feeder switch commit");
-					await crossSpawnBoundary(0, "Feeder switch commit");
+					await requireSpawnClaim(0, "Feeder switch commit");
+					crossedEffectBoundary = true;
 					const gone = await awaitPredecessorsGone(row, controller);
 					seamBase = gone.predecessorGoneAt ?? commitRequestedAt;
 					// A stop or a lost lease that landed during the predecessor
@@ -2273,17 +2264,27 @@ export function createFeederProcessor(deps: FeederDeps) {
 						// Re-prove both the DB-enforced publisher slot and the exact
 						// run-bound effect immediately before every initial spawn/respawn.
 						await assertPublisherEffectBoundary();
-						await crossSpawnBoundary(spawnOrdinal, "Feeder process spawn");
+						await requireSpawnClaim(spawnOrdinal, "Feeder process spawn");
+						if (playbackMode !== "ONCE") crossedEffectBoundary = true;
 					},
 					immediatelyBeforeProcessSpawn: async () => {
 						if (playbackMode !== "ONCE") return;
 						await assertProviderEffectBoundary("Single-pass process spawn");
 						await assertPublisherEffectBoundary();
+						if (!activeEffectClaim || claimedPublisherGeneration === null)
+							throw new Error(
+								"Single-pass spawn has no exact effect and publisher claim",
+							);
 						const dispatched = await claimFeederSinglePassDispatch(
 							deps.prisma,
-							fence,
+							{ ...fence, publisherGeneration: claimedPublisherGeneration },
 							new Date(deps.now()),
-						);
+							activeEffectClaim,
+						).catch((error) => {
+							controller.throwIfStopped();
+							throw error;
+						});
+						controller.throwIfStopped();
 						// This marker is never cleared, including a lost acknowledgement.
 						// A crash after this CAS can abandon the pass, but cannot replay it.
 						if (!dispatched) {
@@ -2291,6 +2292,9 @@ export function createFeederProcessor(deps: FeederDeps) {
 								"single-pass dispatch refused: this source may already have been sent or its owner fence was lost",
 							);
 						}
+					},
+					onProcessSpawnInvoked: () => {
+						crossedEffectBoundary = true;
 					},
 					onSpawnError: async (error) => {
 						if (!activeEffectClaim) return;
@@ -2441,6 +2445,13 @@ export function createFeederProcessor(deps: FeederDeps) {
 							const attached = await deps.prisma.feederPushAttempt.updateMany({
 								where: {
 									id: attemptId,
+									...(playbackMode === "ONCE" && {
+										feederSessionId,
+										liveChannelRunId: row.liveChannelRunId,
+										ownerGeneration: generation,
+										publisherGeneration:
+											claimedPublisherGeneration ?? undefined,
+									}),
 									pid: null,
 									processSpawnedAt: null,
 									evidenceNotBefore: null,
@@ -2505,6 +2516,11 @@ export function createFeederProcessor(deps: FeederDeps) {
 						setPushing: async (pid) => {
 							publisherSpawnOccurred = true;
 							lastSpawnedPid = pid ?? null;
+							if (
+								playbackMode === "ONCE" &&
+								claimedPublisherGeneration === null
+							)
+								return false;
 							// Guarded transition (lost-stop race): a registry-miss
 							// stop can land STOPPED between the DOWNLOADING claim
 							// and this first PUSHING flip — an unguarded update
@@ -2522,6 +2538,12 @@ export function createFeederProcessor(deps: FeederDeps) {
 								where: {
 									...fence,
 									status: { in: ["DOWNLOADING", "PUSHING"] },
+									...(playbackMode === "ONCE" && {
+										liveChannelRunId: row.liveChannelRunId,
+										publisherGeneration:
+											claimedPublisherGeneration ?? undefined,
+										playbackDispatchedAt: { not: null },
+									}),
 									// LC-02: no pid is ever recorded on a row that holds
 									// no publisher claim. A spawn that somehow reached
 									// here unclaimed counts zero rows and is torn down

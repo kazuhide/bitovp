@@ -16,6 +16,14 @@
  * - stop on request: SIGTERM, then SIGKILL after a grace period.
  */
 
+/** Stop arrived between stages, before there was a process to signal. */
+export class FeederStopError extends Error {
+	constructor() {
+		super("Feeder stop requested");
+		this.name = "FeederStopError";
+	}
+}
+
 export type LoopBoundary = {
 	loopIndex: number;
 	/** ISO timestamp of the observation (wall clock). */
@@ -319,6 +327,8 @@ export type SupervisorDeps = {
 	 * this hook resolving and runner.spawn. A hook refusal is not a spawn.
 	 */
 	immediatelyBeforeProcessSpawn?: (spawnOrdinal: number) => Promise<void>;
+	/** Synchronously records that the process call is about to be invoked. */
+	onProcessSpawnInvoked?: () => void;
 	/**
 	 * Called only after the process exists and the pid write returned. A false
 	 * result means the owner/session CAS lost and must not acknowledge an effect.
@@ -567,8 +577,9 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 		);
 		await deps.immediatelyBeforeProcessSpawn?.(attemptNo - 1);
 		if (deps.playbackMode === "ONCE" && stopRequested) {
-			throw new Error("Feeder stop requested before process spawn");
+			throw new FeederStopError();
 		}
+		deps.onProcessSpawnInvoked?.();
 		try {
 			current = deps.runner.spawn(deps.ffmpegPath, deps.argv, {
 				onStdoutLine: parseProgress,
@@ -642,26 +653,38 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 			persistenceError ??= message;
 			capture(`[feeder] ${message} — no provider observation can be accepted`);
 		};
-		try {
-			await deps.store.attachAttemptProcess(attemptId, {
-				pid: process.pid,
-				processSpawnedAt,
-				evidenceNotBefore,
-			});
-			evidencePersisted = true;
-		} catch (err) {
-			failPersistence(
-				`feeder attempt ${attemptId} could not persist its actual spawn boundary: ${err instanceof Error ? err.message : String(err)}`,
-			);
-		}
 		let sessionPersisted = false;
-		try {
-			const persisted = await deps.store.setPushing(current?.pid);
-			sessionPersisted = persisted !== false;
-		} catch (err) {
-			failPersistence(
-				`feeder attempt ${attemptId} could not persist its FeederSession pid/status fence: ${err instanceof Error ? err.message : String(err)}`,
-			);
+		const persistAttemptProcess = async () => {
+			try {
+				await deps.store.attachAttemptProcess(attemptId, {
+					pid: process.pid,
+					processSpawnedAt,
+					evidenceNotBefore,
+				});
+				evidencePersisted = true;
+			} catch (err) {
+				failPersistence(
+					`feeder attempt ${attemptId} could not persist its actual spawn boundary: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+		};
+		const persistSessionProcess = async (pid: number | undefined) => {
+			try {
+				const persisted = await deps.store.setPushing(pid);
+				sessionPersisted = persisted !== false;
+			} catch (err) {
+				failPersistence(
+					`feeder attempt ${attemptId} could not persist its FeederSession pid/status fence: ${err instanceof Error ? err.message : String(err)}`,
+				);
+			}
+		};
+		if (deps.playbackMode === "ONCE") {
+			// A recoverable PID must exist before publishing attempt evidence.
+			await persistSessionProcess(process.pid);
+			if (sessionPersisted) await persistAttemptProcess();
+		} else {
+			await persistAttemptProcess();
+			await persistSessionProcess(current?.pid);
 		}
 		if (!sessionPersisted && !persistenceError) {
 			// A clean false is a fenced CAS refusal (for example, stop already won),

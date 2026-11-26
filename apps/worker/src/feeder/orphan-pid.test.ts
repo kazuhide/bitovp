@@ -71,6 +71,17 @@ describe("createKillLadder", () => {
 		await expect(ladder(() => {})(4242)).resolves.toBe(false);
 	});
 
+	it("keeps the process unproven when probing or signalling encounters EPERM", async () => {
+		const killPid = vi.fn(() => {
+			throw Object.assign(new Error("Permission denied"), { code: "EPERM" });
+		});
+		await expect(ladder(killPid)(4242)).resolves.toBe(false);
+		expect(killPid.mock.calls).toEqual([
+			[4242, 0],
+			[4242, "SIGTERM"],
+		]);
+	});
+
 	it("reports NOT gone when no signalling ability is wired", async () => {
 		await expect(ladder(undefined)(4242)).resolves.toBe(false);
 	});

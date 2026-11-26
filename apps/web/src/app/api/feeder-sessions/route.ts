@@ -434,12 +434,34 @@ async function prepareFeederSession(
 	};
 }
 
-/** Retry this start by its original UUID after an unconfirmed broker response.
- * The worker's start claim and ONCE dispatch fence also apply to redeliveries. */
-async function enqueueSinglePass(row: FeederSession) {
+async function retryFailedSinglePassStart(queue: Queue, jobId: string) {
+	const job = await queue.getJob(jobId);
+	if (!job || (await job.getState()) !== "failed") return false;
+	try {
+		await job.retry("failed", {
+			resetAttemptsMade: true,
+			resetAttemptsStarted: true,
+		});
+		return true;
+	} catch (error) {
+		if (error instanceof AuthContextError) throw error;
+		// BullMQ only reprocesses a failed job. A concurrent retry can win
+		// first, while deletion of the retained job leaves the ID free to add.
+		const state = await job.getState();
+		if (state === "failed") throw error;
+		return state !== "unknown";
+	}
+}
+
+/** Redeliver only the original UUID. The worker's start claim and ONCE
+ * dispatch fence also apply if the row changes while we contact Redis. */
+async function enqueueSinglePass(row: FeederSession, recoverFailed = false) {
 	if (row.status !== "CREATED" || row.playbackDispatchedAt) return;
 	try {
-		await enqueueFeederJob(getFeederQueue(), {
+		const queue = getFeederQueue();
+		if (recoverFailed && (await retryFailedSinglePassStart(queue, row.id)))
+			return;
+		await enqueueFeederJob(queue, {
 			feederSessionId: row.id,
 			action: "start",
 		});
@@ -469,7 +491,7 @@ async function replaySinglePass(
 		select: LIST_SELECT,
 	});
 	if (!row) return createRequestGoneResponse();
-	const enqueueFailure = await enqueueSinglePass(row);
+	const enqueueFailure = await enqueueSinglePass(row, true);
 	return (
 		enqueueFailure ??
 		NextResponse.json(

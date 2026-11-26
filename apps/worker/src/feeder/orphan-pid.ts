@@ -7,6 +7,24 @@
 /** The node `process.kill` contract: 0 probes existence (throws ESRCH). */
 export type KillPid = (pid: number, signal: "SIGTERM" | "SIGKILL" | 0) => void;
 
+function isMissingPidError(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		error.code === "ESRCH"
+	);
+}
+
+export function isProcessAbsent(pid: number, killPid: KillPid): boolean {
+	try {
+		killPid(pid, 0);
+		return false;
+	} catch (error) {
+		return isMissingPidError(error);
+	}
+}
+
 /**
  * Reads a live pid's command line (`ps -o command=` / `/proc/<pid>/cmdline`).
  * Returns null when the pid is gone or the command cannot be obtained.
@@ -60,40 +78,32 @@ export function createKillLadder(deps: {
 			return false;
 		}
 		const graceMs = deps.killGraceMs;
-		const alive = (): boolean => {
-			try {
-				killPid(pid, 0); // signal 0 = existence probe (throws ESRCH)
-				return true;
-			} catch {
-				return false;
-			}
-		};
 		// ESRCH straight away: the process provably never existed under this
 		// pid (or already exited) — nothing to escalate, and it IS gone.
-		if (!alive()) {
+		if (isProcessAbsent(pid, killPid)) {
 			return true;
 		}
 		try {
 			killPid(pid, "SIGTERM");
-		} catch {
-			return true; // Died between probe and signal — done.
+		} catch (error) {
+			return isMissingPidError(error);
 		}
 		const polls = Math.max(1, Math.ceil(graceMs / KILL_VERIFY_POLL_MS));
 		const stepMs = Math.min(graceMs, KILL_VERIFY_POLL_MS);
 		for (let i = 0; i < polls; i += 1) {
 			await deps.sleep(stepMs);
-			if (!alive()) {
+			if (isProcessAbsent(pid, killPid)) {
 				return true;
 			}
 		}
 		try {
 			killPid(pid, "SIGKILL");
-		} catch {
-			return true;
+		} catch (error) {
+			return isMissingPidError(error);
 		}
 		for (let i = 0; i < polls; i += 1) {
 			await deps.sleep(stepMs);
-			if (!alive()) {
+			if (isProcessAbsent(pid, killPid)) {
 				return true;
 			}
 		}

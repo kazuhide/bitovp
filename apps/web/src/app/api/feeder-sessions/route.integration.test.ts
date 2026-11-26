@@ -19,11 +19,12 @@ import { POST } from "./route";
 const mocks = vi.hoisted(() => ({
 	context: vi.fn(),
 	enqueue: vi.fn(),
+	lookupJob: vi.fn(),
 	seal: vi.fn(),
 }));
 vi.mock("@/lib/server/context", () => ({ getServerContext: mocks.context }));
 vi.mock("@/lib/server/queue", () => ({
-	getFeederQueue: () => ({ add: mocks.enqueue }),
+	getFeederQueue: () => ({ add: mocks.enqueue, getJob: mocks.lookupJob }),
 }));
 vi.mock("@/lib/server/storage", () => ({ sealSourceIdentity: mocks.seal }));
 
@@ -51,6 +52,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 		beforeEach(() => {
 			vi.clearAllMocks();
 			vi.stubEnv("MASTER_KEY", Buffer.alloc(32, 7).toString("base64"));
+			mocks.lookupJob.mockResolvedValue(null);
 			mocks.seal.mockResolvedValue({
 				ok: true,
 				identity: { etag: '"fixture"', size: 4096 },
@@ -179,6 +181,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				}),
 			).toBe(1);
 			expect(mocks.enqueue).toHaveBeenCalled();
+			expect(mocks.lookupJob).toHaveBeenCalledExactlyOnceWith(a.id);
 			for (const [, payload, options] of mocks.enqueue.mock.calls) {
 				expect(payload).toMatchObject({
 					feederSessionId: a.id,

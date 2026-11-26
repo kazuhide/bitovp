@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FeederStatus } from "../generated/client";
 import { type AppPrismaClient, createPrismaClient } from "./client";
-import { claimFeederSinglePassDispatch } from "./feeder-single-pass";
+import {
+	claimFeederSinglePassDispatch,
+	type FeederSinglePassDispatchResult,
+} from "./feeder-single-pass";
 import { beginLiveEffect } from "./live-effect-claim";
 import { createTenantPrismaClient } from "./tenant-client";
 
@@ -190,7 +193,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				},
 				{ timeout: 15_000 },
 			);
-			let attempts: Promise<boolean>[] = [];
+			let attempts: Promise<FeederSinglePassDispatchResult>[] = [];
 			const at = [
 				new Date("2026-11-09T12:00:00.001Z"),
 				new Date("2026-11-09T12:00:00.002Z"),
@@ -218,14 +221,16 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			}
 			await owner;
 			const result = await Promise.all(attempts);
-			expect(result.filter(Boolean)).toHaveLength(1);
+			expect(result).toEqual(expect.arrayContaining(["DISPATCHED", "REFUSED"]));
 			const row = await f.tenant.feederSession.findUniqueOrThrow({
 				where: { id: f.row.id },
 			});
-			expect(row.playbackDispatchedAt).toEqual(at[result.indexOf(true)]);
+			expect(row.playbackDispatchedAt).toEqual(
+				at[result.indexOf("DISPATCHED")],
+			);
 		});
 
-		it("waits for an owning Live STOP and refuses the feeder's expired dispatch authority", async () => {
+		it("waits for an owning Live STOP and identifies pre-spawn cancellation", async () => {
 			const f = await fixture();
 			const stopper = client();
 			const dispatcher = client();
@@ -255,7 +260,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					},
 				},
 			);
-			let attempt: Promise<boolean> | undefined;
+			let attempt: Promise<FeederSinglePassDispatchResult> | undefined;
 			let blocked = false;
 			try {
 				await Promise.race([
@@ -285,7 +290,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 				await Promise.allSettled([stop, attempt]);
 			}
 			expect(await stop).toMatchObject({ kind: "EXECUTE" });
-			expect(await attempt).toBe(false);
+			expect(await attempt).toBe("STOPPED");
 			expect(blocked).toBe(true);
 			expect(
 				await f.tenant.feederSession.findUniqueOrThrow({
@@ -307,7 +312,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					at,
 					f.effect,
 				),
-			).toBe(true);
+			).toBe("DISPATCHED");
 			await first.runtime.$disconnect();
 			const replacement = client();
 			expect(
@@ -333,7 +338,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					new Date(),
 					f.effect,
 				),
-			).toBe(false);
+			).toBe("REFUSED");
 			expect(
 				(
 					await replacement.tenant.feederSession.findUniqueOrThrow({
@@ -361,7 +366,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 						new Date(),
 						f.effect,
 					),
-				).toBe(false);
+				).toBe("REFUSED");
 				expect(
 					(
 						await f.tenant.feederSession.findUniqueOrThrow({
@@ -378,7 +383,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					new Date(),
 					f.effect,
 				),
-			).toBe(false);
+			).toBe("REFUSED");
 			const foreign = client(randomUUID());
 			expect(
 				await claimFeederSinglePassDispatch(
@@ -387,7 +392,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					new Date(),
 					f.effect,
 				),
-			).toBe(false);
+			).toBe("REFUSED");
 		});
 
 		it("enforces the migrated LOOP default and rejects unknown playback modes in PostgreSQL", async () => {

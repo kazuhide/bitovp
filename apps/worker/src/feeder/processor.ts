@@ -31,6 +31,7 @@ import {
 	assertLiveEffectCurrent,
 	beginLiveEffect,
 	claimFeederSinglePassDispatch,
+	hasSupersedingFeederStop,
 	type LiveEffectClaimHandle,
 	loadLiveEffectTargetClaim,
 	markLiveEffectAcked,
@@ -70,6 +71,7 @@ import {
 } from "./fetch-source";
 import {
 	createKillLadder,
+	isProcessAbsent,
 	type KillPid,
 	looksLikeFeederFfmpeg,
 	type ReadProcessCommand,
@@ -612,19 +614,6 @@ export function createFeederProcessor(deps: FeederDeps) {
 		| { kind: "unverified"; note: string }
 		| { kind: "not-ours"; note: string };
 
-	/** Existence probe (signal 0 throws ESRCH when the pid is gone). */
-	function pidIsAlive(pid: number): boolean {
-		if (!deps.killPid) {
-			return true;
-		}
-		try {
-			deps.killPid(pid, 0);
-			return true;
-		} catch {
-			return false;
-		}
-	}
-
 	async function reclaimRecordedProcess(
 		feederSessionId: string,
 		pid: number,
@@ -671,7 +660,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			// Absence is itself proof, and it is the common case after a host
 			// reboot — so probe BEFORE refusing, or every session whose owner
 			// died with its machine would be unresumable.
-			if (!pidIsAlive(pid)) {
+			if (isProcessAbsent(pid, deps.killPid)) {
 				return {
 					kind: "gone",
 					note: `ffmpeg pid ${pid} was already gone when this worker took the session over`,
@@ -679,7 +668,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			}
 			return {
 				kind: "unverified",
-				note: `pid ${pid} is alive but its command line could not be read — it was NOT signalled; stop the session to act on it`,
+				note: `pid ${pid} could still be active and its command line could not be read; stop the session to act on it`,
 			};
 		}
 		const verified = await terminateOrphanPid(pid);
@@ -1408,6 +1397,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 	): Promise<string> {
 		const feederSessionId = row.id;
 		const fence = ownerFence(feederSessionId, generation);
+		const spawnEffectKey = `feeder-spawn:${feederSessionId}:${fence.ownerGeneration}:`;
 		/**
 		 * The pid THIS run last spawned (rev367 I-4's residual fix): when the
 		 * run ends because the lease was lost, the supervisor has already
@@ -1778,7 +1768,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 				);
 			}
 			const begun = await beginLiveEffect(deps.prisma, {
-				idempotencyKey: `feeder-spawn:${feederSessionId}:${fence.ownerGeneration}:${spawnOrdinal}`,
+				idempotencyKey: `${spawnEffectKey}${spawnOrdinal}`,
 				liveChannelId: row.liveChannelId,
 				liveChannelRunId: currentRun.id,
 				providerEncodingId,
@@ -1816,8 +1806,21 @@ export function createFeederProcessor(deps: FeederDeps) {
 			}
 		}
 
-		async function settleOpenEffectFailure(reason: string): Promise<void> {
+		async function settleOpenEffectFailure(
+			reason: string,
+			revoked: boolean,
+		): Promise<void> {
 			let claim = activeEffectClaim;
+			// After lease loss, settle only this run's exact claim with local
+			// proof that its single-pass process was never invoked.
+			if (
+				revoked &&
+				(row.playbackMode !== "ONCE" ||
+					claim?.action !== "FEEDER_SPAWN" ||
+					claim.idempotencyKey !== `${spawnEffectKey}0` ||
+					crossedEffectBoundary)
+			)
+				return;
 			if (!claim) {
 				const handed = await loadLiveEffectTargetClaim(deps.prisma, {
 					liveChannelId: row.liveChannelId,
@@ -2275,12 +2278,24 @@ export function createFeederProcessor(deps: FeederDeps) {
 					},
 					immediatelyBeforeProcessSpawn: async () => {
 						if (playbackMode !== "ONCE") return;
-						await assertProviderEffectBoundary("Single-pass process spawn");
-						await assertPublisherEffectBoundary();
 						if (!activeEffectClaim || claimedPublisherGeneration === null)
 							throw new Error(
 								"Single-pass spawn has no exact effect and publisher claim",
 							);
+						try {
+							await assertProviderEffectBoundary("Single-pass process spawn");
+							await assertPublisherEffectBoundary();
+						} catch (error) {
+							controller.throwIfStopped();
+							if (
+								await hasSupersedingFeederStop(
+									deps.prisma,
+									activeEffectClaim,
+								).catch(() => false)
+							)
+								throw new FeederStopError();
+							throw error;
+						}
 						const dispatched = await claimFeederSinglePassDispatch(
 							deps.prisma,
 							{ ...fence, publisherGeneration: claimedPublisherGeneration },
@@ -2293,7 +2308,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 						controller.throwIfStopped();
 						// This marker is never cleared, including a lost acknowledgement.
 						// A crash after this CAS can abandon the pass, but cannot replay it.
-						if (!dispatched) {
+						if (dispatched === "STOPPED") throw new FeederStopError();
+						if (dispatched !== "DISPATCHED") {
 							throw new Error(
 								"single-pass dispatch refused: this source may already have been sent or its owner fence was lost",
 							);
@@ -2769,20 +2785,17 @@ export function createFeederProcessor(deps: FeederDeps) {
 			// its final effect-boundary check failed before it ever spawned.
 			await releaseClaimAfterNoSpawn();
 			const message = err instanceof Error ? err.message : "feeder failed";
-			//  FIRST, because a takeover tears the push down THROUGH
-			// the stop path — `requestTakeover` calls `requestStop`, so what
-			// arrives here is usually a `FeederStopError`. Reading that as an
-			// operator stop would land STOPPED on a row another worker is
-			// actively pushing on.
-			if (controller.leaseLost) {
-				return TAKEN_OVER;
-			}
-			await settleOpenEffectFailure(message).catch((settleErr) => {
-				console.error(
-					`[feeder] session ${feederSessionId}: could not settle durable effect failure`,
-					settleErr instanceof Error ? settleErr.message : settleErr,
-				);
-			});
+			await settleOpenEffectFailure(message, controller.leaseLost).catch(
+				(settleErr) => {
+					console.error(
+						`[feeder] session ${feederSessionId}: could not settle durable effect failure`,
+						settleErr instanceof Error ? settleErr.message : settleErr,
+					);
+				},
+			);
+			// A revoked owner may settle its own never-spawned effect but cannot
+			// write terminal status to the session after the fence moved.
+			if (controller.leaseLost) return TAKEN_OVER;
 			if (err instanceof FeederStopError) {
 				// Stop during a pre-push stage is a clean stop, not a failure.
 				await markTerminal(

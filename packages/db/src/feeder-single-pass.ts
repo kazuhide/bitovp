@@ -9,6 +9,27 @@ export type FeederSinglePassDispatchFence = {
 	publisherGeneration: number;
 };
 
+export type FeederSinglePassDispatchResult =
+	| "DISPATCHED"
+	| "REFUSED"
+	| "STOPPED";
+
+export async function hasSupersedingFeederStop(
+	prisma: Pick<AppPrismaClient, "$queryRaw">,
+	claim: LiveEffectClaimHandle,
+): Promise<boolean> {
+	const [stop] = await prisma.$queryRaw<{ id: string }[]>`
+		SELECT stop.id FROM "LiveEffectClaim" stop
+		JOIN "LiveChannel" c ON c.id = stop."liveChannelId"
+		WHERE stop."liveChannelId" = ${claim.liveChannelId}::uuid
+			AND stop."liveChannelRunId" = ${claim.liveChannelRunId}::uuid
+			AND stop."providerEncodingId" = ${claim.providerEncodingId}
+			AND stop.action = 'STOP' AND stop.generation > ${claim.generation}
+			AND stop.generation = c."liveEffectFenceVersion"
+			AND stop.state IN ('DISPATCHING', 'ACKED', 'AMBIGUOUS', 'RESOLVED')`;
+	return Boolean(stop);
+}
+
 /**
  * Commit the single pass's no-replay marker immediately before its process
  * spawn. Hold the channel lock before the effect and feeder locks, as live
@@ -19,9 +40,9 @@ export async function claimFeederSinglePassDispatch(
 	fence: FeederSinglePassDispatchFence,
 	dispatchedAt: Date,
 	claim: LiveEffectClaimHandle,
-): Promise<boolean> {
+): Promise<FeederSinglePassDispatchResult> {
 	if (!["FEEDER_START", "FEEDER_COMMIT", "FEEDER_SPAWN"].includes(claim.action))
-		return false;
+		return "REFUSED";
 	return prisma.$transaction(async (tx) => {
 		const [channel] = await tx.$queryRaw<{ id: string }[]>`
 			SELECT id FROM "LiveChannel"
@@ -30,7 +51,13 @@ export async function claimFeederSinglePassDispatch(
 				AND "bitmovinEncodingId" = ${claim.providerEncodingId}
 				AND "liveEffectFenceVersion" = ${claim.generation}
 			FOR UPDATE`;
-		if (!channel) return false;
+		if (!channel) {
+			// This separate statement can see the STOP transaction that won the
+			// channel lock after the preceding SELECT took its snapshot.
+			return (await hasSupersedingFeederStop(tx, claim))
+				? "STOPPED"
+				: "REFUSED";
+		}
 		const [held] = await tx.$queryRaw<{ id: string }[]>`
 			SELECT c.id FROM "LiveEffectClaim" c
 			WHERE c.id = ${claim.id}::uuid AND c.token = ${claim.token}::uuid
@@ -51,7 +78,7 @@ export async function claimFeederSinglePassDispatch(
 					AND r.status = 'RUNNING' AND r."bitmovinEncodingId" = c."providerEncodingId"
 				)
 			FOR UPDATE OF c`;
-		if (!held) return false;
+		if (!held) return "REFUSED";
 		const { count } = await tx.feederSession.updateMany({
 			where: {
 				...fence,
@@ -64,6 +91,6 @@ export async function claimFeederSinglePassDispatch(
 			},
 			data: { playbackDispatchedAt: dispatchedAt },
 		});
-		return count === 1;
+		return count === 1 ? "DISPATCHED" : "REFUSED";
 	});
 }

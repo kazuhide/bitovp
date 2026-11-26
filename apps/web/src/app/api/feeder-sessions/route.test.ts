@@ -105,7 +105,7 @@ beforeEach(() => {
 	// the global cap — the order the route makes them in.
 	sessionCount.mockResolvedValue(0);
 	// The DRAINED default for the seal read: no job under the looked-up id.
-	queueGetJob.mockResolvedValue(null);
+	queueGetJob.mockReset().mockResolvedValue(null);
 	receiptLookup.mockResolvedValue(null);
 	receiptCreate.mockResolvedValue({});
 	sessionFindUnique.mockResolvedValue(null);
@@ -300,7 +300,64 @@ describe("POST /api/feeder-sessions", () => {
 			});
 			expect(options.jobId).toBe(receipt.resourceId);
 		}
+		expect(queueGetJob).toHaveBeenCalledExactlyOnceWith(receipt.resourceId);
+	});
+
+	it("retries a retained failed start in place for an undispatched single-pass receipt", async () => {
+		receiptLookup.mockResolvedValueOnce(acceptedOnceReceipt());
+		sessionFindUnique.mockResolvedValueOnce({
+			id: SESSION_ID,
+			status: "CREATED",
+			playbackMode: "ONCE",
+			playbackDispatchedAt: null,
+		});
+		const retry = vi.fn(async () => {});
+		queueGetJob.mockResolvedValueOnce({
+			getState: async () => "failed",
+			retry,
+		});
+		const res = await POST(postRequest(onceBody, ONCE_KEY));
+		expect(res.status).toBe(200);
+		expect(queueGetJob).toHaveBeenCalledExactlyOnceWith(SESSION_ID);
+		expect(retry).toHaveBeenCalledExactlyOnceWith("failed", {
+			resetAttemptsMade: true,
+			resetAttemptsStarted: true,
+		});
+		expect(queueAdd).not.toHaveBeenCalled();
+		expect(sessionCreate).not.toHaveBeenCalled();
+	});
+
+	it("does not inspect or retry a retained job once its single-pass dispatch is spent", async () => {
+		receiptLookup.mockResolvedValueOnce(acceptedOnceReceipt());
+		sessionFindUnique.mockResolvedValueOnce({
+			id: SESSION_ID,
+			status: "CREATED",
+			playbackMode: "ONCE",
+			playbackDispatchedAt: new Date("2026-11-26T01:02:03.000Z"),
+		});
+		expect((await POST(postRequest(onceBody, ONCE_KEY))).status).toBe(200);
 		expect(queueGetJob).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it("accepts a parallel recovery that already moved the same failed start to active", async () => {
+		receiptLookup.mockResolvedValueOnce(acceptedOnceReceipt());
+		sessionFindUnique.mockResolvedValueOnce({
+			id: SESSION_ID,
+			status: "CREATED",
+			playbackMode: "ONCE",
+			playbackDispatchedAt: null,
+		});
+		const getState = vi
+			.fn()
+			.mockResolvedValueOnce("failed")
+			.mockResolvedValueOnce("active");
+		const retry = vi.fn().mockRejectedValue(new Error("Job is not failed"));
+		queueGetJob.mockResolvedValueOnce({ getState, retry });
+		expect((await POST(postRequest(onceBody, ONCE_KEY))).status).toBe(200);
+		expect(retry).toHaveBeenCalledOnce();
+		expect(getState).toHaveBeenCalledTimes(2);
+		expect(queueAdd).not.toHaveBeenCalled();
 	});
 
 	it("preserves an authorization refusal when trying to recover a CREATED replay", async () => {

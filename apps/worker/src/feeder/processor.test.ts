@@ -983,9 +983,24 @@ function setup(
 				? await Promise.all(arg)
 				: await arg(prisma as unknown as AppPrismaClient),
 	);
-	const prisma = {
+	const prismaFixture = {
 		$queryRaw: vi.fn(
 			async (query: TemplateStringsArray, ...values: unknown[]) => {
+				if (query[0]?.includes('FROM "LiveEffectClaim" stop')) {
+					const [id, runId, encodingId, generation] = values;
+					return effectClaims.filter(
+						(claim) =>
+							claim.liveChannelId === id &&
+							claim.liveChannelRunId === runId &&
+							claim.providerEncodingId === encodingId &&
+							claim.action === "STOP" &&
+							(claim.generation as number) > (generation as number) &&
+							claim.generation === channel.liveEffectFenceVersion &&
+							["DISPATCHING", "ACKED", "AMBIGUOUS", "RESOLVED"].includes(
+								claim.state as string,
+							),
+					);
+				}
 				if (query[0]?.includes('FROM "LiveChannel"')) {
 					const [id, encodingId, generation] = values;
 					return channel.id === id &&
@@ -1037,7 +1052,8 @@ function setup(
 		liveChannelRun,
 		liveEffectClaim,
 		$transaction,
-	} as unknown as AppPrismaClient;
+	};
+	const prisma = prismaFixture as unknown as AppPrismaClient;
 
 	const spawned: FakeProc[] = [];
 	const runner: ProcessRunner = {
@@ -1202,6 +1218,7 @@ function setup(
 		effectClaims,
 		pushAttempts,
 		feederPushAttempt,
+		queryRaw: prismaFixture.$queryRaw,
 	};
 }
 
@@ -3615,7 +3632,7 @@ describe("feeder processor — ownership lease (row #242)", () => {
 			maxRestarts: 0,
 			killPid: (pid, signal) => {
 				if (!alive.has(pid)) {
-					throw new Error("ESRCH");
+					throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
 				}
 				if (signal === "SIGKILL") {
 					alive.delete(pid);
@@ -3700,7 +3717,7 @@ describe("feeder processor — ownership lease (row #242)", () => {
 			leaseRenewalIntervalMs: 60_000,
 			killPid: (pid, signal) => {
 				if (!alive.has(pid)) {
-					throw new Error("ESRCH");
+					throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
 				}
 				if (signal === "SIGKILL") {
 					alive.delete(pid);
@@ -4571,7 +4588,7 @@ describe("feeder processor — the two-phase switch (row #240)", () => {
 			leaseRenewalIntervalMs: 1,
 			killPid: (pid, signal) => {
 				if (!alive.has(pid)) {
-					throw new Error("ESRCH");
+					throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
 				}
 				if (signal === "SIGKILL") {
 					alive.delete(pid);
@@ -6025,6 +6042,109 @@ describe("single-pass feeder processor", () => {
 		expect(s.session.status).toBe("ERROR");
 	});
 
+	it.each([
+		"before final checks",
+		"at the dispatch lock",
+	])("uses the exact Live STOP when it wins %s", async (boundary) => {
+		const s = setup({ session: { playbackMode: "ONCE" } });
+		function applyStop() {
+			s.channel.status = "STOPPING";
+			s.channel.liveEffectFenceVersion =
+				(s.channel.liveEffectFenceVersion as number) + 1;
+			s.effectClaims.push({
+				id: "winning-stop",
+				action: "STOP",
+				state: "DISPATCHING",
+				liveChannelId: s.channel.id,
+				liveChannelRunId: s.run.id,
+				providerEncodingId: s.run.bitmovinEncodingId,
+				generation: s.channel.liveEffectFenceVersion,
+			});
+		}
+		if (boundary === "at the dispatch lock") {
+			const query = s.queryRaw.getMockImplementation();
+			if (!query) throw new Error("Missing database fixture");
+			s.queryRaw.mockImplementation(async (sql, ...values) => {
+				if (sql[0]?.includes('FROM "LiveChannel"')) applyStop();
+				return query(sql, ...values);
+			});
+		} else {
+			const create = s.feederPushAttempt.create.getMockImplementation();
+			if (!create) throw new Error("Missing attempt fixture");
+			s.feederPushAttempt.create.mockImplementationOnce(async (args) => {
+				const attempt = await create(args);
+				applyStop();
+				return attempt;
+			});
+		}
+		await expect(s.processor.process(startJob)).resolves.toMatchObject({
+			status: "STOPPED",
+		});
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session).toMatchObject({
+			status: "STOPPED",
+			playbackDispatchedAt: null,
+			publisherReleasedAt: expect.any(Date),
+		});
+		expect(s.emitEvent).not.toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "FEEDER_ERROR" }),
+		);
+	});
+
+	it("settles its exact pre-spawn effect after a feeder STOP revokes its lease from another worker", async () => {
+		const s = setup({
+			session: { playbackMode: "ONCE" },
+			leaseRenewalIntervalMs: 5,
+		});
+		const stopWorker = s.makeProcessor({ ownerId: OWNER_B });
+		const update = s.feederSession.updateMany.getMockImplementation();
+		if (!update) throw new Error("Missing update fixture");
+		let dispatch = () => {};
+		let resume = () => {};
+		const dispatchReached = new Promise<void>((resolve) => {
+			dispatch = resolve;
+		});
+		const resumeDispatch = new Promise<void>((resolve) => {
+			resume = resolve;
+		});
+		s.feederSession.updateMany.mockImplementation(async (args) => {
+			if (args.data.playbackDispatchedAt !== undefined) {
+				dispatch();
+				await resumeDispatch;
+			}
+			return update(args);
+		});
+		const running = s.processor.process(startJob);
+		try {
+			await Promise.race([
+				dispatchReached,
+				running.then(() => {
+					throw new Error("Start finished before dispatch");
+				}),
+			]);
+			const signal = vi.mocked(s.runner.run).mock.calls[0]?.[2]?.signal;
+			expect(signal).toBeInstanceOf(AbortSignal);
+			await expect(stopWorker.process(stopJob)).resolves.toMatchObject({
+				status: "STOPPED",
+			});
+			await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+		} finally {
+			resume();
+		}
+		await expect(running).resolves.toMatchObject({ status: "TAKEN_OVER" });
+		expect(s.session).toMatchObject({
+			status: "STOPPED",
+			playbackDispatchedAt: null,
+			publisherReleasedAt: expect.any(Date),
+		});
+		expect(s.effectClaims).toHaveLength(1);
+		expect(s.effectClaims[0]).toMatchObject({
+			action: "FEEDER_SPAWN",
+			state: "FAILED",
+		});
+		expect(s.spawned).toHaveLength(0);
+	});
+
 	it("keeps an acknowledged-or-unknown dispatch marker and never republishes after a write error", async () => {
 		const s = setup({ session: { playbackMode: "ONCE" } });
 		const update = s.feederSession.updateMany.getMockImplementation();
@@ -6231,7 +6351,11 @@ describe("single-pass feeder processor", () => {
 		expect(killPid).not.toHaveBeenCalled();
 	});
 
-	it("does not signal an unreadable live pid during automatic single-pass cleanup", async () => {
+	it.each([
+		null,
+		"EPERM",
+		"EIO",
+	])("keeps an unreadable pid and its claim when absence is unproven (%s)", async (errorCode) => {
 		const s = setup({
 			session: {
 				playbackMode: "ONCE",
@@ -6245,7 +6369,10 @@ describe("single-pass feeder processor", () => {
 				publisherClaimedAt: new Date(NOW),
 			},
 		});
-		const killPid = vi.fn();
+		const killPid = vi.fn(() => {
+			if (errorCode)
+				throw Object.assign(new Error(errorCode), { code: errorCode });
+		});
 		const workerB = s.makeProcessor({
 			ownerId: OWNER_B,
 			hostname: HOST,

@@ -21,6 +21,26 @@ beforeEach(() => {
 			];
 		}
 		const params = new URL(url, "https://test").searchParams;
+		if (params.get("kind") === "video-codecs") {
+			const item = {
+				id: resourceId,
+				name: "Main encoder",
+				width: 1920,
+				height: 1080,
+				bitrateBps: 1800000,
+				frameRate: 29.97,
+			};
+			return params.has("id")
+				? { item }
+				: { offset: 0, totalCount: 1, items: [item] };
+		}
+		if (params.get("kind") === "filters") {
+			return {
+				offset: 0,
+				totalCount: 1,
+				items: [{ id: resourceId, name: "Scale filter" }],
+			};
+		}
 		if (params.has("id")) return { item: template };
 		if (params.get("bitmovinAccountId") === secondaryId) {
 			return { offset: 0, totalCount: 0, items: [] };
@@ -120,6 +140,30 @@ describe("NativeEncodingClient", () => {
 		await screen.findByText(resourceId);
 		expect(apiFetch).toHaveBeenCalledWith(
 			`/api/encoding-native?kind=outputs&bitmovinAccountId=${primaryId}&protocol=cdn&id=${resourceId}`,
+			expect.anything(),
+		);
+	});
+
+	it("opens readable codec fields and requests unfiltered resources when switching to Filters", async () => {
+		renderWithQuery(<NativeEncodingClient />);
+		await screen.findByText("Studio template");
+		const resource = screen.getByRole("combobox", { name: "Resource" });
+		fireEvent.change(resource, { target: { value: "video-codecs" } });
+		expect(screen.getByRole("combobox", { name: "Type" })).toHaveValue("h264");
+		fireEvent.click(
+			await screen.findByRole("button", { name: /Main encoder/ }),
+		);
+		expect(await screen.findByText("1920 × 1080")).toBeInTheDocument();
+		expect(screen.getByText("1.8 Mbps")).toBeInTheDocument();
+		expect(screen.getByText("29.97 fps")).toBeInTheDocument();
+		fireEvent.change(resource, { target: { value: "filters" } });
+		expect(screen.getByRole("combobox", { name: "Type" })).toHaveValue("");
+		expect(
+			await screen.findByRole("button", { name: /Scale filter/ }),
+		).toHaveAttribute("aria-expanded", "false");
+		expect(screen.queryByText("29.97 fps")).toBeNull();
+		expect(apiFetch).toHaveBeenCalledWith(
+			`/api/encoding-native?kind=filters&bitmovinAccountId=${primaryId}&offset=0`,
 			expect.anything(),
 		);
 	});

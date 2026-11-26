@@ -223,7 +223,7 @@ Delivery presets describe output requirements, not provider credentials. See
 | `/settings/live` | Live defaults, heartbeat interval, alerts, and related resources |
 | `/settings/vmaf` | Quality-worker profiles and cloud credentials |
 | `/settings/watch-folders` | Automatically submit files found under an input prefix |
-| `/settings/encoding-native` | Browse Bitmovin Encoding inputs, outputs, templates, and watch folders in a saved account (ADMIN) |
+| `/settings/encoding-native` | Browse inputs, outputs, templates, watch folders, codecs, and filters in a saved Bitmovin Encoding account (ADMIN) |
 | `/settings/webhooks` | Public receiver, automatic registrations, and receipt status |
 | `/settings/notifications` | Outbound notifications, event filters, and delivery history |
 | `/settings/tokens` | API tokens; secret shown only once at creation |
@@ -257,9 +257,10 @@ proof that a provider operation completed.
 ## Watch folders
 
 `/settings/encoding-native` lets an administrator inspect Bitmovin-managed
-watch folders, Encoding templates, inputs, and outputs in a selected account.
-Select a storage type or protocol for inputs and outputs. Open a list row to
-see its resource ID and available metadata.
+watch folders, Encoding templates, inputs, outputs, codec settings, and filters
+in a selected account. Select the resource type for storage and codec settings.
+Open a list row for its ID and available details such as video resolution,
+bitrate or audio sample rate.
 
 Create a rule in `/settings/watch-folders` that links an input prefix to a
 complete `FULL_PLAN` VOD preset with one input placeholder. Keep output outside

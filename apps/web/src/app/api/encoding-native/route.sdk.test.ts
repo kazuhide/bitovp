@@ -371,6 +371,84 @@ describe("native Encoding resources through the installed SDK", () => {
 		);
 	});
 
+	it.each([
+		{
+			kind: "video-codecs",
+			protocol: "h264",
+			path: "configurations/video/h264",
+			fields: {
+				bitrateBps: 1800000,
+				width: 1920,
+				height: 1080,
+				frameRate: 29.97,
+			},
+		},
+		{
+			kind: "audio-codecs",
+			protocol: "aac",
+			path: "configurations/audio/aac",
+			fields: { bitrateBps: 1800000, sampleRateHz: 48000 },
+		},
+		{
+			kind: "subtitle-codecs",
+			protocol: "dvb-subtitle",
+			path: "configurations/subtitles/dvb-subtitle",
+			fields: {},
+		},
+		{ kind: "filters", protocol: "scale", path: "filters/scale", fields: {} },
+		{ kind: "filters", protocol: undefined, path: "filters", fields: {} },
+	])("scopes $kind/$protocol and projects curated fields", async ({
+		kind,
+		protocol,
+		path,
+		fields,
+	}) => {
+		const suffix = protocol ? `&protocol=${protocol}` : "";
+		const item = {
+			id: RESOURCE,
+			name: "Broadcast",
+			bitrate: 1800000,
+			rate: kind === "audio-codecs" ? 48000 : 29.97,
+			width: 1920,
+			height: 1080,
+			subscriptionKey: secret,
+			customData: { outputPath: secret },
+			description: secret,
+		};
+		let transport = mockTransport({ totalCount: 1, items: [item] });
+		const list = await GET(request(kind, suffix));
+		expect(list.status).toBe(200);
+		expect(await list.json()).toEqual({
+			kind,
+			...(protocol && { protocol }),
+			offset: 0,
+			totalCount: 1,
+			items: [{ id: RESOURCE, name: "Broadcast", ...fields }],
+		});
+		assertGet(transport, `/v1/encoding/${path}`, { offset: "0", limit: "25" });
+		transport = mockTransport(item);
+		const detail = await GET(request(kind, `${suffix}&id=${RESOURCE}`));
+		expect(detail.status).toBe(200);
+		expect(await detail.json()).toEqual({
+			kind,
+			...(protocol && { protocol }),
+			item: { id: RESOURCE, name: "Broadcast", ...fields },
+		});
+		assertGet(transport, `/v1/encoding/${path}/${RESOURCE}`);
+	});
+
+	it.each([
+		["video-codecs", ""],
+		["video-codecs", "&protocol=aac"],
+		["subtitle-codecs", "&protocol=h264"],
+		["filters", "&protocol=constructor"],
+	])("rejects a mismatched configuration type (%s %s)", async (kind, suffix) => {
+		const transport = mockTransport({});
+		expect((await GET(request(kind, suffix))).status).toBe(400);
+		expect(getAccount).not.toHaveBeenCalled();
+		expect(transport).not.toHaveBeenCalled();
+	});
+
 	it("preserves a genuinely empty page past the end of a shrinking collection", async () => {
 		mockTransport({ offset: 55, totalCount: 12, items: [] });
 		const response = await GET(request("templates", "&offset=55"));

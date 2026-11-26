@@ -9,6 +9,8 @@ import { z } from "zod";
 import { encodingCatalogueKinds } from "@/lib/encoding-catalogue";
 import { bitmovinClientFromBinding } from "@/lib/server/bitmovin";
 import { getServerContext } from "@/lib/server/context";
+import { encodingCodecReader } from "@/lib/server/encoding-codec-catalogue";
+import { encodingFilterReader } from "@/lib/server/encoding-filter-catalogue";
 import { encodingIoReader } from "@/lib/server/encoding-io-catalogue";
 import { jsonError, routeError, validationError } from "@/lib/server/http";
 
@@ -55,6 +57,8 @@ const storageRegions: Readonly<Record<string, z.ZodType<string> | undefined>> =
 	};
 const watchInput = z.object({ inputId: uuid });
 const watchOutputs = z.array(z.object({ outputId: uuid }));
+const positiveInteger = z.int().positive();
+const positiveRate = z.number().positive();
 
 function project(item: Resource, { kind, protocol }: Target, detail = false) {
 	const id = item.id;
@@ -68,7 +72,7 @@ function project(item: Resource, { kind, protocol }: Target, detail = false) {
 	if (kind === "templates") {
 		return { ...metadata, type: templateType.safeParse(item.type).data };
 	}
-	if (kind !== "watch-folders") {
+	if (kind === "inputs" || kind === "outputs") {
 		return {
 			...metadata,
 			cloudRegion: protocol
@@ -76,6 +80,24 @@ function project(item: Resource, { kind, protocol }: Target, detail = false) {
 				: undefined,
 		};
 	}
+	if (kind === "video-codecs" || kind === "audio-codecs") {
+		const bitrateBps = positiveInteger.safeParse(item.bitrate).data;
+		if (kind === "audio-codecs") {
+			return {
+				...metadata,
+				bitrateBps,
+				sampleRateHz: positiveInteger.safeParse(item.rate).data,
+			};
+		}
+		return {
+			...metadata,
+			bitrateBps,
+			width: positiveInteger.safeParse(item.width).data,
+			height: positiveInteger.safeParse(item.height).data,
+			frameRate: positiveRate.safeParse(item.rate).data,
+		};
+	}
+	if (kind !== "watch-folders") return metadata;
 	return {
 		...metadata,
 		status: watchStatus.safeParse(item.status).data,
@@ -105,14 +127,19 @@ export async function GET(req: Request) {
 	const query = querySchema.safeParse(values);
 	if (!query.success) return validationError(query.error);
 	const { kind, bitmovinAccountId, id, type, protocol } = query.data;
-	const io = encodingIoReader(kind, protocol);
+	const native = kind === "templates" || kind === "watch-folders";
+	const reader =
+		kind === "filters"
+			? encodingFilterReader(protocol)
+			: (encodingIoReader(kind, protocol) ??
+				encodingCodecReader(kind, protocol));
 	if (
 		(id &&
 			(type ||
 				query.data.offset !== undefined ||
 				query.data.limit !== undefined)) ||
 		(type && kind !== "templates") ||
-		(kind === "inputs" || kind === "outputs" ? !io : protocol !== undefined)
+		(native ? protocol !== undefined : !reader)
 	) {
 		return jsonError(
 			400,
@@ -141,9 +168,9 @@ export async function GET(req: Request) {
 			},
 		);
 		try {
-			if (io) {
-				if (id) await io.get(api, id);
-				else await io.list(api, { offset, limit });
+			if (reader) {
+				if (id) await reader.get(api, id);
+				else await reader.list(api, { offset, limit });
 			} else if (kind === "templates") {
 				if (id) await api.encoding.templates.get(id);
 				else

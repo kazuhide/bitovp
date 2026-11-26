@@ -1,8 +1,15 @@
+import { encodingCodecProtocols } from "./encoding-codec-catalogue";
+import { encodingFilterProtocols } from "./encoding-filter-catalogue";
+
 export const encodingCatalogueKinds = [
 	"templates",
 	"watch-folders",
 	"inputs",
 	"outputs",
+	"video-codecs",
+	"audio-codecs",
+	"subtitle-codecs",
+	"filters",
 ] as const;
 export type EncodingCatalogueKind = (typeof encodingCatalogueKinds)[number];
 
@@ -45,3 +52,11 @@ export const encodingIoProtocols = {
 		sftp: "SFTP",
 	},
 } as const;
+
+export const encodingCatalogueProtocols: Partial<
+	Record<EncodingCatalogueKind, Readonly<Record<string, string>>>
+> = {
+	...encodingIoProtocols,
+	...encodingCodecProtocols,
+	filters: encodingFilterProtocols,
+};

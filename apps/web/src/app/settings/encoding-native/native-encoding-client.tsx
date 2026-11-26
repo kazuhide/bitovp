@@ -10,9 +10,9 @@ import { apiFetch } from "@/lib/api";
 import {
 	type EncodingCatalogueKind,
 	encodingCatalogueKinds,
-	encodingIoProtocols,
+	encodingCatalogueProtocols,
 } from "@/lib/encoding-catalogue";
-import { formatDateTime } from "@/lib/format";
+import { formatBitrate, formatDateTime } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
 
 type TemplateType = "" | "VOD" | "LIVE";
@@ -32,6 +32,11 @@ type Item = {
 	inputId?: string;
 	outputCount?: number;
 	cloudRegion?: string;
+	bitrateBps?: number;
+	width?: number;
+	height?: number;
+	frameRate?: number;
+	sampleRateHz?: number;
 };
 type Page = { offset: number; totalCount: number; items: Item[] };
 const kindLabels = {
@@ -39,7 +44,18 @@ const kindLabels = {
 	"watch-folders": "encodingNative.watchFolders",
 	inputs: "encodingNative.inputs",
 	outputs: "encodingNative.outputs",
+	"video-codecs": "encodingNative.videoCodecs",
+	"audio-codecs": "encodingNative.audioCodecs",
+	"subtitle-codecs": "encodingNative.subtitleCodecs",
+	filters: "encodingNative.filters",
 } as const;
+const defaultProtocol: Partial<Record<EncodingCatalogueKind, string>> = {
+	inputs: "s3",
+	outputs: "s3",
+	"video-codecs": "h264",
+	"audio-codecs": "aac",
+	"subtitle-codecs": "webvtt",
+};
 
 export function NativeEncodingClient() {
 	const { t } = useT();
@@ -47,7 +63,7 @@ export function NativeEncodingClient() {
 	const [accountId, setAccountId] = useState<string>();
 	const [kind, setKind] = useState<EncodingCatalogueKind>("templates");
 	const [type, setType] = useState<TemplateType>("");
-	const [protocol, setProtocol] = useState("s3");
+	const [protocol, setProtocol] = useState("");
 	const [offsets, setOffsets] = useState([0]);
 	const [selected, setSelected] = useState<string>();
 	const offset = offsets.at(-1) ?? 0;
@@ -60,14 +76,12 @@ export function NativeEncodingClient() {
 	const accountReady =
 		accounts.isSuccess &&
 		accounts.data.some((account) => account.id === activeId);
-	const options =
-		kind === "inputs" || kind === "outputs"
-			? encodingIoProtocols[kind]
-			: undefined;
+	const options = encodingCatalogueProtocols[kind];
+	const storage = kind === "inputs" || kind === "outputs";
 	const params: Target = {
 		kind,
 		bitmovinAccountId: activeId,
-		...(options && { protocol }),
+		...(options && protocol && { protocol }),
 	};
 	const list = useQuery({
 		queryKey: ["encoding-native", params, type, offset],
@@ -149,7 +163,7 @@ export function NativeEncodingClient() {
 									if (!next) return;
 									setKind(next);
 									setType("");
-									setProtocol("s3");
+									setProtocol(defaultProtocol[next] ?? "");
 									moveTo([0]);
 								}}
 							>
@@ -186,7 +200,13 @@ export function NativeEncodingClient() {
 								htmlFor={`${fieldId}-protocol`}
 								className="min-w-0 space-y-1"
 							>
-								<span>{t("encodingNative.protocol")}</span>
+								<span>
+									{t(
+										storage
+											? "encodingNative.protocol"
+											: "encodingNative.configType",
+									)}
+								</span>
 								<SelectNative
 									id={`${fieldId}-protocol`}
 									value={protocol}
@@ -195,6 +215,9 @@ export function NativeEncodingClient() {
 										moveTo([0]);
 									}}
 								>
+									{kind === "filters" && (
+										<option value="">{t("encodingNative.allTypes")}</option>
+									)}
 									{Object.entries(options).map(([value, label]) => (
 										<option key={value} value={value}>
 											{label}
@@ -357,6 +380,32 @@ function ResourceDetail({ target, id }: { target: Target; id: string }) {
 						<>
 							<dt>{t("encodingNative.region")}</dt>
 							<dd>{item.cloudRegion}</dd>
+						</>
+					)}
+					{item.bitrateBps !== undefined && (
+						<>
+							<dt>{t("encodingNative.bitrate")}</dt>
+							<dd>{formatBitrate(item.bitrateBps)}</dd>
+						</>
+					)}
+					{item.width !== undefined && item.height !== undefined && (
+						<>
+							<dt>{t("encodingNative.resolution")}</dt>
+							<dd>
+								{item.width} × {item.height}
+							</dd>
+						</>
+					)}
+					{item.frameRate !== undefined && (
+						<>
+							<dt>{t("encodingNative.frameRate")}</dt>
+							<dd>{item.frameRate} fps</dd>
+						</>
+					)}
+					{item.sampleRateHz !== undefined && (
+						<>
+							<dt>{t("encodingNative.sampleRate")}</dt>
+							<dd>{item.sampleRateHz} Hz</dd>
 						</>
 					)}
 					{item.inputId && (

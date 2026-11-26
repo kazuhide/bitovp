@@ -11,6 +11,7 @@ import { CodecBadge, MuxingBadge } from "@/components/codec-badge";
 import { CopyableId } from "@/components/copyable-id";
 import { Badge } from "@/components/ui/badge";
 import { DetailPopover, KeyValueRows } from "@/components/ui/detail-popover";
+import { formatBitrate } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
 
 type RenditionTablesProps = {
@@ -28,15 +29,6 @@ type RenditionTablesProps = {
 	anchorForResource?: (resourceId: string) => string | undefined;
 	onOpenResource?: (href: string) => void;
 };
-
-export function formatBitrate(bitrate: number | null | undefined): string {
-	if (bitrate === null || bitrate === undefined) {
-		return "—";
-	}
-	return bitrate >= 1_000_000
-		? `${(bitrate / 1_000_000).toFixed(bitrate % 1_000_000 === 0 ? 0 : 1)} Mbps`
-		: `${Math.round(bitrate / 1000)} kbps`;
-}
 
 /**
  * The expanded sheet: every plan field for this rendition, with `set` vs

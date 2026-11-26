@@ -7,10 +7,10 @@ import {
 } from "@bitovp/core";
 import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
-import { formatBitrate } from "@/app/vod/jobs/[id]/rendition-tables";
 import { DetailPopover, KeyValueRows } from "@/components/ui/detail-popover";
 import { apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
+import { formatBitrate } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
 import type { LiveDiagnosticsResponse } from "@/lib/live-diagnostics/types";
 

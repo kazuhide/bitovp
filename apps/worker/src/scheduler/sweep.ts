@@ -2341,7 +2341,34 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			handle: async (row) => {
 				// Exhausted START recovery owns the failure. A missing queue stamp
 				// cannot authorize dispatching that failed provision again.
-				if (row.action === "START" && row.outcome !== "PENDING") return;
+				if (row.action === "START") {
+					if (row.outcome !== "PENDING") return;
+					if (
+						!row.liveChannelRunId ||
+						typeof row.startAdmissionFenceVersion !== "number"
+					) {
+						// An unbound pre-upgrade row supplies no authority for a
+						// delivery or a notification for this broadcast.
+						await recordScheduleOutcomeBestEffort(
+							deps.prisma,
+							{
+								scheduledStart: {
+									id: row.id,
+									liveChannelId: row.liveChannelId,
+									...(row.liveChannelRunId && {
+										liveChannelRunId: row.liveChannelRunId,
+									}),
+									startAdmissionFenceVersion: null,
+								},
+							},
+							"UNKNOWN",
+							"The original Live startup could not be tied to an airing.",
+							now,
+							"STALE_GENERATION_REFUSAL",
+						);
+						return;
+					}
+				}
 				if (row.action === "STOP" && row.outcome !== "PENDING") {
 					if (!row.liveChannelRunId) return;
 					// Older workers could mark every FIRED stop on a channel. Only the

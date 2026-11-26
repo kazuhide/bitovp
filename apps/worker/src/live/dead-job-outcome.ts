@@ -693,8 +693,8 @@ export function deadJobScheduleWrites(
 			return [
 				{
 					target: {
-						// The exact receipt writer records the handoff and notifies.
-						// Leave an unstamped START recoverable if that write fails.
+						// Leave a bound START recoverable until its exact receipt is
+						// recorded. An unbound legacy failure records uncertainty only.
 						...(data.provisionFenceVersion !== undefined && {
 							requireDispatchReceipt: true,
 						}),

@@ -227,6 +227,11 @@ function makeRow(over: Partial<Row> = {}): Row {
 	};
 }
 
+const START_OUTBOX_ADMISSION = {
+	liveChannelRunId: "11111111-1111-4111-8111-111111111111",
+	startAdmissionFenceVersion: 0,
+};
+
 /**
  * A persisted heartbeat COLUMN value proving the ingest is CONNECTED — the
  * production wrapper `{ at, raw, deltas }` (review-224 C1: the first fixture
@@ -3671,12 +3676,14 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 
 	it("the BOOT pass recovers a stale row and leaves a fresh one to the tick", async () => {
 		const stale = makeRow({
+			...START_OUTBOX_ADMISSION,
 			id: "55555555-5555-4555-8555-555555555555",
 			status: "FIRED",
 			// 100s before now — past the 60s grace.
 			firedAt: new Date(1_900_000),
 		});
 		const fresh = makeRow({
+			...START_OUTBOX_ADMISSION,
 			id: "66666666-6666-4666-8666-666666666666",
 			status: "FIRED",
 			// 10s before now — INSIDE the grace: this is a healthy dispatch
@@ -3695,8 +3702,11 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 			{
 				liveChannelId: CH,
 				action: "provision",
+				plannedLiveChannelRunId: START_OUTBOX_ADMISSION.liveChannelRunId,
+				provisionFenceVersion:
+					START_OUTBOX_ADMISSION.startAdmissionFenceVersion,
 			},
-			`sched-${stale.id}`,
+			`sched-${stale.id}-start-${START_OUTBOX_ADMISSION.startAdmissionFenceVersion}`,
 		);
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
 		expect(store.rows[1]?.dispatchedAt).toBeNull();
@@ -3704,11 +3714,13 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 
 	it("a notification failure does not stall the rows behind it", async () => {
 		const first = makeRow({
+			...START_OUTBOX_ADMISSION,
 			id: "77777777-7777-4777-8777-777777777777",
 			status: "FIRED",
 			firedAt: new Date(1_900_000),
 		});
 		const second = makeRow({
+			...START_OUTBOX_ADMISSION,
 			id: "88888888-8888-4888-8888-888888888888",
 			status: "FIRED",
 			firedAt: new Date(1_901_000),
@@ -3737,24 +3749,32 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 
 	it("a re-dispatch that cannot be enqueued keeps the row recoverable (no re-arm)", async () => {
 		const store = makeStore(
-			[makeRow({ status: "FIRED", firedAt: new Date(1_900_000) })],
+			[
+				makeRow({
+					...START_OUTBOX_ADMISSION,
+					status: "FIRED",
+					firedAt: new Date(1_900_000),
+				}),
+			],
 			[makeChannel({ status: "PROVISIONING" })],
 		);
 		const errorSpy = vi
 			.spyOn(console, "error")
 			.mockImplementation(() => undefined);
 		try {
-			const { sweep } = makeSweep(store, {
+			const { sweep, enqueue } = makeSweep(store, {
 				enqueue: async () => {
 					throw new Error("redis down");
 				},
 			});
 			expect(await sweep.dispatchPending()).toBe(0);
+			expect(enqueue).toHaveBeenCalledTimes(1);
 			// Still FIRED and still unstamped: the claim was committed by a
 			// process that is gone, so there is no channel state to hand back
 			// — the next pass tries again.
 			expect(store.rows[0]).toMatchObject({
 				status: "FIRED",
+				outcome: "PENDING",
 				dispatchedAt: null,
 			});
 			expect(store.channels[0]).toMatchObject({ status: "PROVISIONING" });
@@ -3970,6 +3990,7 @@ describe("row #245 — bounded outbox recovery fairness", () => {
 		const rows = Array.from({ length: count }, (_, index) =>
 			makeRow({
 				id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+				...(kind === "fire" && START_OUTBOX_ADMISSION),
 				// Equal timestamps demand the id tie-breaker; storage order is reversed.
 				fireAt: new Date(kind === "stage" ? 3_000_000 : 1_000_000),
 				status: kind === "stage" ? "ARMED" : "FIRED",
@@ -4030,7 +4051,11 @@ describe("row #245 — bounded outbox recovery fairness", () => {
 	});
 	it("coalesces overlapping boot and tick recovery before advancing the cursor", async () => {
 		const store = makeStore([
-			makeRow({ status: "FIRED", firedAt: new Date(1_900_000) }),
+			makeRow({
+				...START_OUTBOX_ADMISSION,
+				status: "FIRED",
+				firedAt: new Date(1_900_000),
+			}),
 		]);
 		let release = () => {};
 		const blocked = new Promise<void>((resolve) => {

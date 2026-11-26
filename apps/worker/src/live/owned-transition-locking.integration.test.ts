@@ -2746,6 +2746,29 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				(await tenant.liveSchedule.findUniqueOrThrow({ where: { id: old.id } }))
 					.liveChannelRunId,
 			).toBeNull();
+			const enqueue = vi.fn(async () => {});
+			const emitEvent = vi.fn(async () => {});
+			await createScheduleSweep({
+				prisma: tenant,
+				now: () => new Date(at),
+				enqueue,
+				emitEvent,
+			}).dispatchPending();
+			expect(enqueue).not.toHaveBeenCalledWith(
+				expect.objectContaining({ liveChannelId: f.channel.id }),
+				`sched-${old.id}`,
+			);
+			expect(emitEvent).not.toHaveBeenCalledWith(
+				expect.objectContaining({ kind: "SCHEDULE_FIRED", scheduleId: old.id }),
+			);
+			expect(
+				await tenant.liveSchedule.findUniqueOrThrow({ where: { id: old.id } }),
+			).toMatchObject({
+				outcome: "UNKNOWN",
+				dispatchedAt: null,
+				dispatchJobId: null,
+				firstStartDispatchAt: null,
+			});
 		});
 
 		it.each([

@@ -29,7 +29,7 @@ export const FEATURES = Object.freeze(
 				"src/vmaf/resource-admission.test.ts": 10,
 				"src/vmaf/resource-admission.property.test.ts": 4,
 				"src/vmaf/supervised-runner.test.ts": 4,
-				"src/feeder/process-runner-abort.test.ts": 19,
+				"src/feeder/process-runner-abort.test.ts": 20,
 				"src/vmaf/deadline.test.ts": 5,
 				"src/vmaf/deadline.property.test.ts": 2,
 			},
@@ -48,11 +48,13 @@ export const FEATURES = Object.freeze(
 			id: "submission-idempotency",
 			workspace: "@bitovp/web",
 			directory: "apps/web",
-			description: "VOD and Live creation routes and request identity",
+			description:
+				"VOD, Live and single-pass feeder creation and request identity",
 			files: {
 				"src/lib/server/create-request.test.ts": 11,
 				"src/app/api/encoding-jobs/route.test.ts": 71,
 				"src/app/api/live-channels/route.test.ts": 92,
+				"src/app/api/feeder-sessions/route.test.ts": 50,
 			},
 		},
 		{

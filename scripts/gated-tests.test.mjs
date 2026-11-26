@@ -186,12 +186,12 @@ test("every listed file exists once, and every FFmpeg, Redis or script test file
 test("a plain run may skip the tests that another job runs", () => {
 	for (const [workspace, skipped] of [
 		["@bitovp/core", 25],
-		["@bitovp/db", 74],
+		["@bitovp/db", 83],
 		["@bitovp/worker", EXPECTED_PLAIN_WORKER_SKIPS],
 		// Includes six favorite-registry, two still-image, two archive/restore and
 		// one WebM recovery case, plus three LOCAL QC cancellation cases and the
 		// retained export, generation history and export re-edit cases.
-		["@bitovp/web", 161],
+		["@bitovp/web", 163],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],

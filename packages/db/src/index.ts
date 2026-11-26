@@ -43,6 +43,11 @@ export {
 	releaseExperimentTrial,
 	renewExperimentTrial,
 } from "./encoding-experiments";
+export type { FeederSinglePassDispatchFence } from "./feeder-single-pass";
+export {
+	claimFeederSinglePassDispatch,
+	hasSupersedingFeederStop,
+} from "./feeder-single-pass";
 export type {
 	AuthenticationToken,
 	IdentityPrismaClient,

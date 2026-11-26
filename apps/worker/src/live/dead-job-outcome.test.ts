@@ -587,12 +587,17 @@ describe("recordDeadFeederJob", () => {
 			count?: number;
 			/** : the ownership lease this session carries. */
 			ownerLeaseAt?: Date | null;
+			playbackMode?: "ONCE" | "LOOP";
+			status?: "CREATED" | "PUSHING";
 		} = {},
 	) {
 		const findUnique = vi.fn(async () => ({
 			pid: over.pid === undefined ? 4242 : over.pid,
 			liveChannelId: CHANNEL,
 			ownerLeaseAt: over.ownerLeaseAt ?? null,
+			ownerGeneration: 7,
+			playbackMode: over.playbackMode ?? "LOOP",
+			status: over.status ?? "PUSHING",
 		}));
 		const updateMany = vi.fn(async () => ({ count: over.count ?? 1 }));
 		const scheduleUpdateMany = vi.fn(async () => ({ count: 1 }));
@@ -625,7 +630,9 @@ describe("recordDeadFeederJob", () => {
 		expect(t.updateMany).toHaveBeenCalledWith({
 			where: {
 				id: SESSION,
-				status: { in: ["CREATED", "DOWNLOADING", "PUSHING"] },
+				status: "PUSHING",
+				ownerLeaseAt: null,
+				ownerGeneration: 7,
 			},
 			data: {
 				status: "ERROR",
@@ -696,6 +703,18 @@ describe("recordDeadFeederJob", () => {
 		expect(t.findUnique).not.toHaveBeenCalled();
 		expect(t.updateMany).not.toHaveBeenCalled();
 		expect(t.emitEvent).not.toHaveBeenCalled();
+	});
+
+	it("preserves an unclaimed single-pass start for same-key queue retry", async () => {
+		const t = setup({ playbackMode: "ONCE", status: "CREATED", pid: null });
+		await recordDeadFeederJob(
+			t.deps,
+			startJob,
+			"Redis delivery lost before claim",
+		);
+		expect(t.updateMany).not.toHaveBeenCalled();
+		expect(t.emitEvent).not.toHaveBeenCalled();
+		expect(t.scheduleUpdateMany).not.toHaveBeenCalled();
 	});
 
 	/**

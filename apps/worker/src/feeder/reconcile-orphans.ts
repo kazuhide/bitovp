@@ -10,6 +10,7 @@ import type { EmitProductEvent } from "../notify/emitter";
 import { recordScheduleOutcomeBestEffort } from "../scheduler/schedule-outcome";
 import {
 	createKillLadder,
+	isProcessAbsent,
 	type KillPid,
 	looksLikeFeederFfmpeg,
 	type ReadProcessCommand,
@@ -102,15 +103,6 @@ export function createFeederOrphanReconciler(deps: {
 		killGraceMs: deps.killGraceMs ?? KILL_GRACE_MS,
 	});
 
-	const pidIsAlive = (pid: number): boolean => {
-		try {
-			deps.killPid(pid, 0); // signal 0 = existence probe (throws ESRCH)
-			return true;
-		} catch {
-			return false;
-		}
-	};
-
 	return async function reconcileFeederOrphans(): Promise<number> {
 		const rows = await deps.prisma.feederSession.findMany({
 			where: {
@@ -166,7 +158,7 @@ export function createFeederOrphanReconciler(deps: {
 				continue;
 			}
 			let note: string;
-			if (!pidIsAlive(pid)) {
+			if (isProcessAbsent(pid, deps.killPid)) {
 				// Proof by absence: nothing to kill, and the row can stop
 				// claiming a process (its DELETE is unblocked).
 				note = `ffmpeg pid ${pid} was already gone at worker start`;
@@ -176,7 +168,7 @@ export function createFeederOrphanReconciler(deps: {
 				const command = await deps.readProcessCommand(pid).catch(() => null);
 				if (command === null) {
 					console.warn(
-						`[feeder] session ${row.id}: pid ${pid} is alive but its command line could not be read — NOT killing it; stop the session to act on it`,
+						`[feeder] session ${row.id}: pid ${pid} could still be active and its command line could not be read; stop the session to act on it`,
 					);
 					continue;
 				}

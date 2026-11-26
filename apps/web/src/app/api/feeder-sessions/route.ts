@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import {
+	type CreateFeederSessionRequest,
 	createFeederSessionSchema,
 	enqueueFeederJob,
 	FEEDER_ACTIVE_STATUSES,
@@ -6,14 +8,26 @@ import {
 	feederJobId,
 	feederOccupancyWhere,
 	masterKeyFromEnv,
+	redactSecrets,
 } from "@bitovp/core";
 import type { Prisma } from "@bitovp/db";
 import type { Queue } from "bullmq";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { AuthContextError } from "@/lib/auth/tenancy";
 import { customerErrorDetails } from "@/lib/customer-error";
 import { isInternalFeederError } from "@/lib/feeder-error-audience";
-import { getServerContext } from "@/lib/server/context";
+import { getServerContext, type ServerContext } from "@/lib/server/context";
+import {
+	type CreateRequestIdentity,
+	createRequestConflictResponse,
+	createRequestGoneResponse,
+	createRequestIdentity,
+	InvalidCreateRequestError,
+	isCreateRequestUniqueConflict,
+	lookupCreateRequest,
+	recordCreateRequest,
+} from "@/lib/server/create-request";
 import {
 	jsonError,
 	readJson,
@@ -61,6 +75,9 @@ const LIST_SELECT = {
 	liveChannelId: true,
 	status: true,
 	protocol: true,
+	playbackMode: true,
+	playbackDispatchedAt: true,
+	playbackReceipt: true,
 	sourceBucket: true,
 	sourceKey: true,
 	// The process ledger (audit 2026-08-29 CRITICAL-2): a terminal row that
@@ -87,6 +104,22 @@ const LIST_SELECT = {
 	createdAt: true,
 	updatedAt: true,
 } as const;
+
+type FeederSession = Prisma.FeederSessionGetPayload<{
+	select: typeof LIST_SELECT;
+}>;
+const ONCE_REQUEST_KIND = "FEEDER_ONCE";
+
+function publicFeederSession<T extends FeederSession>(row: T) {
+	const internalFailure =
+		typeof row.error === "string" && isInternalFeederError(row.error);
+	return {
+		...row,
+		playbackReceipt: redactSecrets(row.playbackReceipt),
+		error: internalFailure ? null : row.error,
+		internalFailure,
+	};
+}
 
 const querySchema = z.object({
 	limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -156,15 +189,7 @@ export async function GET(req: Request) {
 			select: { ...LIST_SELECT, liveChannel: { select: { name: true } } },
 		});
 		const items = rows.slice(0, limit);
-		const customerItems = items.map((item) => {
-			const internalFailure =
-				typeof item.error === "string" && isInternalFeederError(item.error);
-			return {
-				...item,
-				error: internalFailure ? null : item.error,
-				internalFailure,
-			};
-		});
+		const customerItems = items.map(publicFeederSession);
 		const withQueue = queue === "1";
 		// `getFeederQueue` itself can throw with no broker — degrade to
 		// `queued: null` (unknown) rather than failing the whole list.
@@ -196,257 +221,350 @@ export async function GET(req: Request) {
 	}
 }
 
-/**
- * Creates a feeder session and enqueues its start job. The channel must
- * exist and be RUNNING|PROVISIONING — the worker still WAITS for RUNNING
- * before pushing (lifecycle coupling), this gate just rejects sessions
- * that could never start (stopped/error channels). The SRT passphrase is
- * accepted only as a vault credential ref (schema-strict — a literal
- * passphrase field 400s); referenced credentials are existence/provider
- * checked here for fail-fast, and re-gated by the worker at spawn.
- */
-export async function POST(req: Request) {
-	const body = createFeederSessionSchema.safeParse(await readJson(req));
-	if (!body.success) {
-		return validationError(body.error);
+/** Check current admission and seal the selected object outside the receipt transaction. */
+async function prepareFeederSession(
+	ctx: ServerContext,
+	data: CreateFeederSessionRequest,
+): Promise<Prisma.FeederSessionUncheckedCreateInput | NextResponse> {
+	// Stop-slot guarantee: every active session holds a feeder-worker
+	// slot for its WHOLE push, so admissions are capped BELOW the worker
+	// concurrency — a stop job must always find a free slot (soft cap:
+	// the count-then-create window is unguarded, acceptable for an
+	// operator tool; the worst case is one extra session, still < the
+	// concurrency because the cap is concurrency − 1).
+	// The SLOT population — every active row, staged holds included, because
+	// each one's START job occupies a worker slot for its whole life. This
+	// is deliberately NOT replaced by publisher occupancy (
+	// LC-02): that would omit staged holds and break the reserved stop-slot
+	// guarantee. The separate publisher-cap question follows immediately.
+	const activeSessions = await ctx.prisma.feederSession.count({
+		where: { status: { in: [...FEEDER_ACTIVE_STATUSES] } },
+	});
+	if (activeSessions >= FEEDER_MAX_ACTIVE_SESSIONS) {
+		return jsonError(
+			409,
+			`File-input session limit reached (${activeSessions}/${FEEDER_MAX_ACTIVE_SESSIONS}) — stop a session before starting another`,
+			customerErrorDetails("FEEDER_LIMIT_REACHED", {
+				current: activeSessions,
+				limit: FEEDER_MAX_ACTIVE_SESSIONS,
+			}),
+		);
 	}
-	const data = body.data;
-	try {
-		// Fail fast: the worker must decrypt the source (and SRT) credential;
-		// with a broken MASTER_KEY the session would just wedge.
-		masterKeyFromEnv();
-		const ctx = await getServerContext();
-		// Stop-slot guarantee: every active session holds a feeder-worker
-		// slot for its WHOLE push, so admissions are capped BELOW the worker
-		// concurrency — a stop job must always find a free slot (soft cap:
-		// the count-then-create window is unguarded, acceptable for an
-		// operator tool; the worst case is one extra session, still < the
-		// concurrency because the cap is concurrency − 1).
-		// The SLOT population — every active row, staged holds included, because
-		// each one's START job occupies a worker slot for its whole life. This
-		// is deliberately NOT replaced by publisher occupancy (
-		// LC-02): that would omit staged holds and break the reserved stop-slot
-		// guarantee. The separate publisher-cap question follows immediately.
-		const activeSessions = await ctx.prisma.feederSession.count({
-			where: { status: { in: [...FEEDER_ACTIVE_STATUSES] } },
+	// LC-02: the stop-slot cap and the publisher cap protect different
+	// resources. A staged hold consumes a long-lived worker slot but owns no
+	// publisher; conversely, a terminal row whose claim/process is unproven
+	// consumes no BullMQ slot but must still count against publisher
+	// admission. Keep both gates, and ask core's shared occupancy predicate
+	// here exactly as the worker and per-channel doors do.
+	if (!data.switchFromActive) {
+		const publisherOccupancies = await ctx.prisma.feederSession.count({
+			where: feederOccupancyWhere(),
 		});
-		if (activeSessions >= FEEDER_MAX_ACTIVE_SESSIONS) {
+		if (publisherOccupancies >= FEEDER_MAX_ACTIVE_SESSIONS) {
 			return jsonError(
 				409,
-				`File-input session limit reached (${activeSessions}/${FEEDER_MAX_ACTIVE_SESSIONS}) — stop a session before starting another`,
+				`Concurrent file-input limit reached (${publisherOccupancies}/${FEEDER_MAX_ACTIVE_SESSIONS}) — stop a session and wait for shutdown to complete before starting another`,
 				customerErrorDetails("FEEDER_LIMIT_REACHED", {
-					current: activeSessions,
+					current: publisherOccupancies,
 					limit: FEEDER_MAX_ACTIVE_SESSIONS,
 				}),
 			);
 		}
-		// LC-02: the stop-slot cap and the publisher cap protect different
-		// resources. A staged hold consumes a long-lived worker slot but owns no
-		// publisher; conversely, a terminal row whose claim/process is unproven
-		// consumes no BullMQ slot but must still count against publisher
-		// admission. Keep both gates, and ask core's shared occupancy predicate
-		// here exactly as the worker and per-channel doors do.
-		if (!data.switchFromActive) {
-			const publisherOccupancies = await ctx.prisma.feederSession.count({
-				where: feederOccupancyWhere(),
-			});
-			if (publisherOccupancies >= FEEDER_MAX_ACTIVE_SESSIONS) {
-				return jsonError(
-					409,
-					`Concurrent file-input limit reached (${publisherOccupancies}/${FEEDER_MAX_ACTIVE_SESSIONS}) — stop a session and wait for shutdown to complete before starting another`,
-					customerErrorDetails("FEEDER_LIMIT_REACHED", {
-						current: publisherOccupancies,
-						limit: FEEDER_MAX_ACTIVE_SESSIONS,
-					}),
-				);
-			}
-		}
-		const channel = await ctx.prisma.liveChannel.findUnique({
-			where: { id: data.liveChannelId },
-			select: { id: true, status: true },
-		});
-		if (!channel) {
+	}
+	const channel = await ctx.prisma.liveChannel.findUnique({
+		where: { id: data.liveChannelId },
+		select: { id: true, status: true },
+	});
+	if (!channel) {
+		return jsonError(
+			400,
+			"Live channel does not exist",
+			customerErrorDetails("FEEDER_CHANNEL_NOT_FOUND"),
+		);
+	}
+	if (channel.status !== "RUNNING" && channel.status !== "PROVISIONING") {
+		return jsonError(
+			409,
+			`File input is available only while the channel is RUNNING or PROVISIONING (current status: ${channel.status})`,
+			customerErrorDetails("FEEDER_CHANNEL_NOT_READY", {
+				status: channel.status,
+			}),
+		);
+	}
+	/**
+	 * rev367 S-1 — the SERVER owns the single-pusher rule. The panel
+	 * offers the switch checkbox only while a feeder is active, but the
+	 * flag arrived unchecked: an ordinary create beside an active session
+	 * opened a second push at one ingest (the jammed-socket class), and a
+	 * stale switch flag staged a swap from nothing. Both directions are
+	 * refused with the way forward in the message. Soft like the global
+	 * cap above: the count-then-create window is unguarded, acceptable
+	 * for an operator tool.
+	 *
+	 * "active" was the STATUS list, and a
+	 * row that left it with its ffmpeg still pushing — a cross-host takeover
+	 * refusal (ERROR, pid kept), a stop the owner's host could not verify,
+	 * a dead START job — was invisible here for up to a lease renewal plus
+	 * a kill grace, so an ordinary create was admitted beside a live push.
+	 * The population is now the channel's OCCUPANCY, core's one fragment
+	 * (a held publisher claim, a process nobody has proven gone, an active
+	 * uncoordinated session; a staged hold for a LATER switch is none of
+	 * these). The worker refuses to spawn against the same fragment and the
+	 * DB refuses a second claim, so this count is the door's UX, not the
+	 * guarantee — but it is the same door the audit walked through.
+	 */
+	const occupiedOnChannel = await ctx.prisma.feederSession.count({
+		where: feederOccupancyWhere(data.liveChannelId),
+	});
+	if (occupiedOnChannel > 0 && !data.switchFromActive) {
+		return jsonError(
+			409,
+			"This channel already has an active file input. Start the new file as a staged switch, or stop the active input first. A previous session whose shutdown is not yet confirmed also occupies the channel.",
+			customerErrorDetails("FEEDER_CHANNEL_OCCUPIED"),
+		);
+	}
+	if (data.switchFromActive && occupiedOnChannel === 0) {
+		return jsonError(
+			409,
+			"A staged switch needs an active file input on this channel. Start this file as a normal input instead.",
+			customerErrorDetails("FEEDER_SWITCH_REQUIRES_ACTIVE"),
+		);
+	}
+	const sourceCredential = await ctx.credentials.get(data.source.credentialId);
+	if (!sourceCredential) {
+		return jsonError(
+			400,
+			"Source storage credential does not exist",
+			customerErrorDetails("FEEDER_SOURCE_CREDENTIAL_MISSING"),
+		);
+	}
+	if (
+		data.protocol === "SRT_CALLER" &&
+		data.target.passphraseCredentialId !== undefined
+	) {
+		const passCred = await ctx.credentials.get(
+			data.target.passphraseCredentialId,
+		);
+		if (!passCred) {
 			return jsonError(
 				400,
-				"Live channel does not exist",
-				customerErrorDetails("FEEDER_CHANNEL_NOT_FOUND"),
+				"SRT passphrase credential does not exist",
+				customerErrorDetails("FEEDER_SRT_CREDENTIAL_INVALID"),
 			);
 		}
-		if (channel.status !== "RUNNING" && channel.status !== "PROVISIONING") {
-			return jsonError(
-				409,
-				`File input is available only while the channel is RUNNING or PROVISIONING (current status: ${channel.status})`,
-				customerErrorDetails("FEEDER_CHANNEL_NOT_READY", {
-					status: channel.status,
-				}),
-			);
-		}
-		/**
-		 * rev367 S-1 — the SERVER owns the single-pusher rule. The panel
-		 * offers the switch checkbox only while a feeder is active, but the
-		 * flag arrived unchecked: an ordinary create beside an active session
-		 * opened a second push at one ingest (the jammed-socket class), and a
-		 * stale switch flag staged a swap from nothing. Both directions are
-		 * refused with the way forward in the message. Soft like the global
-		 * cap above: the count-then-create window is unguarded, acceptable
-		 * for an operator tool.
-		 *
-		 * "active" was the STATUS list, and a
-		 * row that left it with its ffmpeg still pushing — a cross-host takeover
-		 * refusal (ERROR, pid kept), a stop the owner's host could not verify,
-		 * a dead START job — was invisible here for up to a lease renewal plus
-		 * a kill grace, so an ordinary create was admitted beside a live push.
-		 * The population is now the channel's OCCUPANCY, core's one fragment
-		 * (a held publisher claim, a process nobody has proven gone, an active
-		 * uncoordinated session; a staged hold for a LATER switch is none of
-		 * these). The worker refuses to spawn against the same fragment and the
-		 * DB refuses a second claim, so this count is the door's UX, not the
-		 * guarantee — but it is the same door the audit walked through.
-		 */
-		const occupiedOnChannel = await ctx.prisma.feederSession.count({
-			where: feederOccupancyWhere(data.liveChannelId),
-		});
-		if (occupiedOnChannel > 0 && !data.switchFromActive) {
-			return jsonError(
-				409,
-				"This channel already has an active file input. Start the new file as a staged switch, or stop the active input first. A previous session whose shutdown is not yet confirmed also occupies the channel.",
-				customerErrorDetails("FEEDER_CHANNEL_OCCUPIED"),
-			);
-		}
-		if (data.switchFromActive && occupiedOnChannel === 0) {
-			return jsonError(
-				409,
-				"A staged switch needs an active file input on this channel. Start this file as a normal input instead.",
-				customerErrorDetails("FEEDER_SWITCH_REQUIRES_ACTIVE"),
-			);
-		}
-		const sourceCredential = await ctx.credentials.get(
-			data.source.credentialId,
-		);
-		if (!sourceCredential) {
+		if (passCred.provider !== "SRT_PASSPHRASE") {
 			return jsonError(
 				400,
-				"Source storage credential does not exist",
-				customerErrorDetails("FEEDER_SOURCE_CREDENTIAL_MISSING"),
+				`SRT passphrase credential must have provider SRT_PASSPHRASE (got ${passCred.provider})`,
+				customerErrorDetails("FEEDER_SRT_CREDENTIAL_INVALID"),
 			);
 		}
-		if (
-			data.protocol === "SRT_CALLER" &&
-			data.target.passphraseCredentialId !== undefined
-		) {
-			const passCred = await ctx.credentials.get(
-				data.target.passphraseCredentialId,
-			);
-			if (!passCred) {
-				return jsonError(
-					400,
-					"SRT passphrase credential does not exist",
-					customerErrorDetails("FEEDER_SRT_CREDENTIAL_INVALID"),
-				);
-			}
-			if (passCred.provider !== "SRT_PASSPHRASE") {
-				return jsonError(
-					400,
-					`SRT passphrase credential must have provider SRT_PASSPHRASE (got ${passCred.provider})`,
-					customerErrorDetails("FEEDER_SRT_CREDENTIAL_INVALID"),
-				);
-			}
-		}
-		/**
-		 * SEAL the bytes at creation — the IMMEDIATE door's half of
-		 * the same rule the scheduled door follows. An immediate session is
-		 * short-lived, but "short" is not "atomic": the download still runs
-		 * behind a channel wait, an ffprobe and a compatibility gate, and an
-		 * object replaced in that window used to be pushed with no trace.
-		 *
-		 * A read failure is a 422 here rather than a 502: the operator picked
-		 * this object seconds ago and can pick another, and creating a session
-		 * whose source cannot be read only moves the failure to the worker.
-		 */
-		const seal = await sealSourceIdentity(
-			ctx,
-			data.source.credentialId,
-			data.source.bucket,
-			data.source.key,
+	}
+	/**
+	 * SEAL the bytes at creation — the IMMEDIATE door's half of
+	 * the same rule the scheduled door follows. An immediate session is
+	 * short-lived, but "short" is not "atomic": the download still runs
+	 * behind a channel wait, an ffprobe and a compatibility gate, and an
+	 * object replaced in that window used to be pushed with no trace.
+	 *
+	 * A read failure is a 422 here rather than a 502: the operator picked
+	 * this object seconds ago and can pick another, and creating a session
+	 * whose source cannot be read only moves the failure to the worker.
+	 */
+	const seal = await sealSourceIdentity(
+		ctx,
+		data.source.credentialId,
+		data.source.bucket,
+		data.source.key,
+	);
+	if (!seal.ok) {
+		return jsonError(
+			422,
+			`Source object cannot be read: ${seal.message}`,
+			customerErrorDetails("FEEDER_SOURCE_UNREADABLE"),
 		);
-		if (!seal.ok) {
-			return jsonError(
-				422,
-				`Source object cannot be read: ${seal.message}`,
-				customerErrorDetails("FEEDER_SOURCE_UNREADABLE"),
-			);
-		}
-		//  PR2 + SC-01: a manual feeder is admitted against one exact airing. A nullable run
-		// cannot be fenced at the eventual process-spawn boundary, so legacy
-		// never-run channels fail closed instead of creating an unbound session.
-		const currentRun = await ctx.prisma.liveChannelRun.findFirst({
-			where: { liveChannelId: data.liveChannelId },
-			orderBy: { seq: "desc" },
-			select: { id: true },
-		});
-		if (!currentRun) {
-			return jsonError(
-				409,
-				"Feeder start needs a current live run — start the channel and wait for its run to be created, then retry",
-				customerErrorDetails("FEEDER_RUN_MISSING"),
-			);
-		}
-		/**
-		 * an immediate SWITCH is the scheduled switch with lead 0 —
-		 * the commit instant is now and the commit is requested at creation,
-		 * so the feeder worker stages first, stops the active feeder only
-		 * once the new source is READY, and spawns after it is proven gone.
-		 */
-		const now = new Date();
-		const row = await ctx.prisma.feederSession
-			.create({
-				data: {
-					liveChannelId: data.liveChannelId,
-					liveChannelRunId: currentRun.id,
-					...(data.switchFromActive
-						? { commitAt: now, commitRequestedAt: now }
-						: {}),
-					status: "CREATED",
-					sourceCredentialId: data.source.credentialId,
-					sourceBucket: data.source.bucket,
-					sourceKey: data.source.key,
-					// : null throughout when the driver cannot name a
-					// version — the download then demands nothing, which is the
-					// pre-seal behaviour, named rather than pretended away.
-					...(seal.identity
-						? {
-								sourceEtag: seal.identity.etag ?? null,
-								sourceVersionId: seal.identity.versionId ?? null,
-								sourceGeneration: seal.identity.generation ?? null,
-								sourceSize: BigInt(seal.identity.size),
-							}
-						: {}),
-					protocol: data.protocol,
-					// streamKey inside target rides the ledgered LiveChannel.streamKey
-					// redaction exception (schema comment); the SRT passphrase is a
-					// vault ref only and never reaches this row.
-					target: data.target as unknown as Prisma.InputJsonValue,
-				},
-				select: LIST_SELECT,
-			})
-			// the count above is check-then-act
-			// — two concurrent creates on one channel both clear it. The partial
-			// unique index is the ATOMIC backstop: the racing loser's INSERT is a
-			// P2002, caught here and returned as a clean 409 (not a 500) below. A
-			// null means "lost the single-pusher race"; create never returns null
-			// otherwise.
-			.catch((createErr: unknown) => {
-				if (isActivePusherViolation(createErr)) {
-					return null;
+	}
+	//  PR2 + SC-01: a manual feeder is admitted against one exact airing. A nullable run
+	// cannot be fenced at the eventual process-spawn boundary, so legacy
+	// never-run channels fail closed instead of creating an unbound session.
+	const currentRun = await ctx.prisma.liveChannelRun.findFirst({
+		where: { liveChannelId: data.liveChannelId },
+		orderBy: { seq: "desc" },
+		select: { id: true },
+	});
+	if (!currentRun) {
+		return jsonError(
+			409,
+			"Feeder start needs a current live run — start the channel and wait for its run to be created, then retry",
+			customerErrorDetails("FEEDER_RUN_MISSING"),
+		);
+	}
+	/**
+	 * an immediate SWITCH is the scheduled switch with lead 0 —
+	 * the commit instant is now and the commit is requested at creation,
+	 * so the feeder worker stages first, stops the active feeder only
+	 * once the new source is READY, and spawns after it is proven gone.
+	 */
+	const now = new Date();
+	return {
+		liveChannelId: data.liveChannelId,
+		liveChannelRunId: currentRun.id,
+		...(data.switchFromActive ? { commitAt: now, commitRequestedAt: now } : {}),
+		status: "CREATED",
+		playbackMode: data.playbackMode,
+		sourceCredentialId: data.source.credentialId,
+		sourceBucket: data.source.bucket,
+		sourceKey: data.source.key,
+		// : null throughout when the driver cannot name a
+		// version — the download then demands nothing, which is the
+		// pre-seal behaviour, named rather than pretended away.
+		...(seal.identity
+			? {
+					sourceEtag: seal.identity.etag ?? null,
+					sourceVersionId: seal.identity.versionId ?? null,
+					sourceGeneration: seal.identity.generation ?? null,
+					sourceSize: BigInt(seal.identity.size),
 				}
-				throw createErr;
-			});
-		if (row === null) {
-			return jsonError(
-				409,
-				"This channel already has an active file input. Stop it first, or start the new file as a staged switch.",
-				customerErrorDetails("FEEDER_CHANNEL_OCCUPIED"),
-			);
+			: {}),
+		protocol: data.protocol,
+		// streamKey inside target rides the ledgered LiveChannel.streamKey
+		// redaction exception (schema comment); the SRT passphrase is a
+		// vault ref only and never reaches this row.
+		target: data.target as unknown as Prisma.InputJsonValue,
+	};
+}
+
+async function retryFailedSinglePassStart(queue: Queue, jobId: string) {
+	const job = await queue.getJob(jobId);
+	if (!job || (await job.getState()) !== "failed") return false;
+	try {
+		await job.retry("failed", {
+			resetAttemptsMade: true,
+			resetAttemptsStarted: true,
+		});
+		return true;
+	} catch (error) {
+		if (error instanceof AuthContextError) throw error;
+		// BullMQ only reprocesses a failed job. A concurrent retry can win
+		// first, while deletion of the retained job leaves the ID free to add.
+		const state = await job.getState();
+		if (state === "failed") throw error;
+		return state !== "unknown";
+	}
+}
+
+/** Redeliver only the original UUID. The worker's start claim and ONCE
+ * dispatch fence also apply if the row changes while we contact Redis. */
+async function enqueueSinglePass(row: FeederSession, recoverFailed = false) {
+	if (row.status !== "CREATED" || row.playbackDispatchedAt) return;
+	try {
+		const queue = getFeederQueue();
+		if (recoverFailed && (await retryFailedSinglePassStart(queue, row.id)))
+			return;
+		await enqueueFeederJob(queue, {
+			feederSessionId: row.id,
+			action: "start",
+		});
+	} catch (error) {
+		if (error instanceof AuthContextError) throw error;
+		return jsonError(
+			503,
+			"Could not confirm file-input queueing. Retry with the same Idempotency-Key.",
+			{ code: "FEEDER_ENQUEUE_UNCONFIRMED" },
+		);
+	}
+}
+
+async function replaySinglePass(
+	prisma: ServerContext["prisma"],
+	identity: CreateRequestIdentity,
+) {
+	const receipt = await lookupCreateRequest(
+		prisma,
+		ONCE_REQUEST_KIND,
+		identity,
+	);
+	if (receipt.kind === "none") return;
+	if (receipt.kind === "conflict") return createRequestConflictResponse();
+	const row = await prisma.feederSession.findUnique({
+		where: { id: receipt.resourceId },
+		select: LIST_SELECT,
+	});
+	if (!row) return createRequestGoneResponse();
+	const enqueueFailure = await enqueueSinglePass(row, true);
+	return (
+		enqueueFailure ??
+		NextResponse.json(
+			{ ...publicFeederSession(row), replayed: true },
+			{ status: 200 },
+		)
+	);
+}
+
+export async function POST(req: Request) {
+	const body = createFeederSessionSchema.safeParse(await readJson(req));
+	if (!body.success) return validationError(body.error);
+	const data = body.data;
+	const singlePass = data.playbackMode === "ONCE";
+	let identity: CreateRequestIdentity | undefined;
+	try {
+		identity = createRequestIdentity(req, data);
+	} catch (error) {
+		if (!(error instanceof InvalidCreateRequestError)) throw error;
+		// LOOP historically ignores this header. A valid key can still match
+		// an earlier ONCE receipt if the caller changed the playback mode.
+		if (singlePass) return jsonError(400, error.message);
+	}
+	if (singlePass && !identity)
+		return jsonError(400, "Idempotency-Key is required for ONCE playback");
+
+	try {
+		const ctx = await getServerContext();
+		const replay = () => identity && replaySinglePass(ctx.prisma, identity);
+		const existing = await replay();
+		if (existing) return existing;
+		// New work must be able to decrypt the source at dispatch.
+		masterKeyFromEnv();
+
+		let row: FeederSession | NextResponse;
+		try {
+			const prepared = await prepareFeederSession(ctx, data);
+			if (prepared instanceof NextResponse) row = prepared;
+			else if (singlePass && identity) {
+				const request = identity;
+				const id = randomUUID();
+				row = await ctx.prisma.$transaction(async (tx) => {
+					// Win the request key before hitting the channel's independent
+					// active-publisher index. A rejected insert rolls both back.
+					await recordCreateRequest(tx, ONCE_REQUEST_KIND, request, id);
+					return tx.feederSession.create({
+						data: { ...prepared, id },
+						select: LIST_SELECT,
+					});
+				});
+			} else {
+				row = await ctx.prisma.feederSession.create({
+					data: prepared,
+					select: LIST_SELECT,
+				});
+			}
+		} catch (error) {
+			if (isCreateRequestUniqueConflict(error))
+				row = createRequestConflictResponse();
+			else if (isActivePusherViolation(error)) {
+				row = jsonError(
+					409,
+					"This channel already has an active file input. Stop it first, or start the new file as a staged switch.",
+					customerErrorDetails("FEEDER_CHANNEL_OCCUPIED"),
+				);
+			} else throw error;
+		}
+		// A simultaneous POST can commit after our first miss, before any
+		// capacity check or uniqueness failure has been observed.
+		if (row instanceof NextResponse) return (await replay()) ?? row;
+		if (singlePass) {
+			const enqueueFailure = await enqueueSinglePass(row);
+			return enqueueFailure ?? NextResponse.json(row, { status: 201 });
 		}
 		try {
 			// Shared producer convention: start jobs dedupe on the bare row id.

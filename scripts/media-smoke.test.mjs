@@ -269,7 +269,7 @@ test("media execution is offline, read-only and bounded without mounting the sou
 	);
 });
 
-test("the offline image runs every real editing and reference fixture", () => {
+test("the offline image runs every real feeder, editing and reference fixture", () => {
 	const root = join(import.meta.dirname, "..");
 	const { scripts } = JSON.parse(
 		readFileSync(join(root, "package.json"), "utf8"),
@@ -279,11 +279,15 @@ test("the offline image runs every real editing and reference fixture", () => {
 		new URL("./editing-media.sh", import.meta.url),
 		"utf8",
 	);
-	const discovered = ["library-editing", "vmaf", "vod-input-preview"].flatMap(
-		(folder) =>
-			readdirSync(join(root, "apps/worker/src", folder))
-				.filter((name) => name.endsWith(".media.ts"))
-				.map((name) => `src/${folder}/${name}`),
+	const discovered = [
+		"feeder",
+		"library-editing",
+		"vmaf",
+		"vod-input-preview",
+	].flatMap((folder) =>
+		readdirSync(join(root, "apps/worker/src", folder))
+			.filter((name) => name.endsWith(".media.ts"))
+			.map((name) => `src/${folder}/${name}`),
 	);
 	assert.deepEqual(
 		[...script.matchAll(/src\/[\w/-]+\.media\.ts/g)]
@@ -531,7 +535,7 @@ test(import.meta.filename, () => {});
 
 test("every required fixture must run once and pass its required number of tests", () => {
 	// A lowered count would stop requiring a test that exists.
-	assert.deepEqual(Object.values(FIXTURES), [3, 9, 1, 5, 17, 2, 3, 1]);
+	assert.deepEqual(Object.values(FIXTURES), [3, 9, 1, 5, 17, 2, 3, 1, 2]);
 	const complete = fixtureAccount();
 	// Pipe chunks do not end at line boundaries.
 	for (const chunk of completeLog().match(/[\s\S]{1,37}/g))
@@ -1348,7 +1352,7 @@ test("a media run passes only with every fixture's totals, a valid summary, an u
 				"Reason: Media validation command failed",
 				`  - ${names[0]}: ${first} of ${first} tests passed`,
 				`  - ${names[1]}: did not finish`,
-				`  - not started: ${names.slice(2).join(", ")}`,
+				`  - ${`not started: ${names.slice(2).join(", ")}`.slice(0, 300)}`,
 				"Last 5 lines of the failed command:",
 			],
 		],

@@ -178,6 +178,7 @@ export {
 } from "./feeder/orphan-process";
 export type {
 	CreateFeederSessionRequest,
+	FeederPlaybackMode,
 	FeederProtocolId,
 	FeederRtmpTarget,
 	FeederSource,
@@ -185,6 +186,7 @@ export type {
 } from "./feeder/schemas";
 export {
 	createFeederSessionSchema,
+	feederPlaybackModeSchema,
 	feederProtocolSchema,
 	feederRtmpTargetSchema,
 	feederSourceSchema,

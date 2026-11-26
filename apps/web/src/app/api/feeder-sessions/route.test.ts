@@ -1,9 +1,11 @@
 import {
+	createFeederSessionSchema,
 	FEEDER_ACTIVE_STATUSES,
 	FEEDER_MAX_ACTIVE_SESSIONS,
 	feederOccupancyWhere,
 } from "@bitovp/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthContextError } from "@/lib/auth/tenancy";
 
 const sessionCreate = vi.fn();
 const runFindFirst = vi.fn<() => Promise<{ id: string } | null>>(async () => ({
@@ -11,12 +13,16 @@ const runFindFirst = vi.fn<() => Promise<{ id: string } | null>>(async () => ({
 }));
 const sessionUpdate = vi.fn();
 const sessionFindMany = vi.fn();
+const sessionFindUnique = vi.fn();
 const sessionCount = vi.fn();
 const channelFindUnique = vi.fn();
 const getCredential = vi.fn();
 const queueAdd = vi.fn();
 // Row 268: the cleanup seal's `?queue=1` read looks a session's jobs up by id.
 const queueGetJob = vi.fn();
+const receiptLookup = vi.fn();
+const receiptCreate = vi.fn();
+const transaction = vi.fn();
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
@@ -25,11 +31,14 @@ vi.mock("@/lib/server/context", () => ({
 				create: sessionCreate,
 				update: sessionUpdate,
 				findMany: sessionFindMany,
+				findUnique: sessionFindUnique,
 				count: sessionCount,
 			},
 			liveChannel: { findUnique: channelFindUnique },
 			//  PR2 + SC-01: manual start binds to the exact current airing.
 			liveChannelRun: { findFirst: runFindFirst },
+			createRequest: { findFirst: receiptLookup, create: receiptCreate },
+			$transaction: transaction,
 		},
 		credentials: { get: getCredential },
 	}),
@@ -51,6 +60,7 @@ vi.mock("@/lib/server/storage", () => ({
 	sealSourceIdentity: (...args: unknown[]) => sealSourceIdentity(...args),
 }));
 
+import { createRequestIdentity } from "@/lib/server/create-request";
 import { GET, POST } from "./route";
 
 const CHANNEL_ID = "00000000-0000-4000-8000-0000000000bb";
@@ -65,11 +75,24 @@ const rtmpBody = {
 	target: { url: "rtmp://203.0.113.7/live", streamKey: "sk-secret" },
 };
 
-function postRequest(body: unknown): Request {
+const onceBody = { ...rtmpBody, playbackMode: "ONCE" };
+const ONCE_KEY = "fixture-single-pass";
+
+function postRequest(body: unknown, key?: string): Request {
 	return new Request("http://test/api/feeder-sessions", {
 		method: "POST",
+		...(key === undefined ? {} : { headers: { "Idempotency-Key": key } }),
 		body: JSON.stringify(body),
 	});
+}
+
+function acceptedOnceReceipt(id = SESSION_ID) {
+	const identity = createRequestIdentity(
+		postRequest(onceBody, ONCE_KEY),
+		createFeederSessionSchema.parse(onceBody),
+	);
+	if (!identity) throw new Error("Missing request identity");
+	return { ...identity, resourceId: id };
 }
 
 beforeEach(() => {
@@ -82,7 +105,16 @@ beforeEach(() => {
 	// the global cap — the order the route makes them in.
 	sessionCount.mockResolvedValue(0);
 	// The DRAINED default for the seal read: no job under the looked-up id.
-	queueGetJob.mockResolvedValue(null);
+	queueGetJob.mockReset().mockResolvedValue(null);
+	receiptLookup.mockResolvedValue(null);
+	receiptCreate.mockResolvedValue({});
+	sessionFindUnique.mockResolvedValue(null);
+	transaction.mockImplementation(async (work) =>
+		work({
+			feederSession: { create: sessionCreate },
+			createRequest: { create: receiptCreate },
+		}),
+	);
 	channelFindUnique.mockResolvedValue({ id: CHANNEL_ID, status: "RUNNING" });
 	getCredential.mockImplementation(async (id: string) =>
 		id === SRT_CRED_ID
@@ -95,10 +127,13 @@ beforeEach(() => {
 		identity: { etag: '"abc123"', versionId: "v-1", size: 4096 },
 	});
 	sessionCreate.mockImplementation(async ({ data }) => ({
-		id: SESSION_ID,
+		id: data.id ?? SESSION_ID,
 		liveChannelId: data.liveChannelId,
 		status: data.status,
 		protocol: data.protocol,
+		playbackMode: data.playbackMode,
+		playbackDispatchedAt: null,
+		playbackReceipt: null,
 	}));
 });
 
@@ -107,6 +142,254 @@ afterEach(() => {
 });
 
 describe("POST /api/feeder-sessions", () => {
+	it("persists LOOP for an existing request which omits playbackMode", async () => {
+		const res = await POST(postRequest(rtmpBody));
+		expect(res.status).toBe(201);
+		expect(sessionCreate.mock.calls[0]?.[0]?.data.playbackMode).toBe("LOOP");
+		expect(await res.json()).toMatchObject({
+			playbackMode: "LOOP",
+			playbackDispatchedAt: null,
+			playbackReceipt: null,
+		});
+	});
+
+	it("persists a single-pass request without a dispatch or EOF claim from the client", async () => {
+		const res = await POST(postRequest(onceBody, ONCE_KEY));
+		expect(res.status).toBe(201);
+		const data = sessionCreate.mock.calls[0]?.[0]?.data;
+		expect(data.playbackMode).toBe("ONCE");
+		expect(data).not.toHaveProperty("playbackDispatchedAt");
+		expect(data).not.toHaveProperty("playbackReceipt");
+		expect(transaction).toHaveBeenCalledOnce();
+		expect(receiptCreate).toHaveBeenCalledWith({
+			data: { kind: "FEEDER_ONCE", ...acceptedOnceReceipt(data.id) },
+		});
+		expect(queueAdd).toHaveBeenCalledTimes(1);
+		expect(await res.json()).toMatchObject({
+			playbackMode: "ONCE",
+			playbackDispatchedAt: null,
+			playbackReceipt: null,
+		});
+	});
+
+	it.each([
+		undefined,
+		"invalid key",
+	])("requires a valid key before admitting a single-pass request (%s)", async (key) => {
+		const res = await POST(postRequest(onceBody, key));
+		expect(res.status).toBe(400);
+		expect(sessionCount).not.toHaveBeenCalled();
+		expect(sessionCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it("replays a completed single pass before site capacity, key configuration or source validation", async () => {
+		receiptLookup.mockResolvedValueOnce(acceptedOnceReceipt());
+		sessionFindUnique.mockResolvedValueOnce({
+			id: SESSION_ID,
+			playbackMode: "ONCE",
+			status: "STOPPED",
+			playbackDispatchedAt: new Date("2026-11-26T01:02:03.000Z"),
+			playbackReceipt: { state: "complete", streamKey: "private-fixture" },
+		});
+		vi.stubEnv("MASTER_KEY", "");
+		const res = await POST(postRequest(onceBody, ONCE_KEY));
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body).toMatchObject({
+			id: SESSION_ID,
+			replayed: true,
+			status: "STOPPED",
+		});
+		expect(JSON.stringify(body)).not.toContain("private-fixture");
+		expect(sessionCount).not.toHaveBeenCalled();
+		expect(sealSourceIdentity).not.toHaveBeenCalled();
+		expect(sessionCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ ...onceBody, source: { ...onceBody.source, key: "another.mp4" } },
+		{ ...onceBody, playbackMode: "LOOP" },
+	])("refuses a changed body for an existing single-pass key", async (body) => {
+		receiptLookup.mockResolvedValueOnce(acceptedOnceReceipt());
+		const res = await POST(postRequest(body, ONCE_KEY));
+		expect(res.status).toBe(409);
+		expect(await res.json()).toMatchObject({
+			details: { code: "CREATE_REQUEST_CONFLICT" },
+		});
+		expect(sessionCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it("keeps a deleted single-pass receipt spent", async () => {
+		receiptLookup.mockResolvedValueOnce(acceptedOnceReceipt());
+		const res = await POST(postRequest(onceBody, ONCE_KEY));
+		expect(res.status).toBe(410);
+		expect(await res.json()).toMatchObject({
+			details: { code: "CREATE_REQUEST_GONE" },
+		});
+		expect(sessionCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it("replays a receipt that commits after lookup but before occupancy refusal", async () => {
+		receiptLookup
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce(acceptedOnceReceipt());
+		sessionCount.mockResolvedValueOnce(FEEDER_MAX_ACTIVE_SESSIONS);
+		sessionFindUnique.mockResolvedValueOnce({
+			id: SESSION_ID,
+			status: "STOPPED",
+			playbackMode: "ONCE",
+		});
+		const res = await POST(postRequest(onceBody, ONCE_KEY));
+		expect(res.status).toBe(200);
+		expect(await res.json()).toMatchObject({ id: SESSION_ID, replayed: true });
+		expect(sessionCreate).not.toHaveBeenCalled();
+	});
+
+	it("resolves a racing receipt before attempting a duplicate feeder insert", async () => {
+		receiptLookup
+			.mockResolvedValueOnce(null)
+			.mockResolvedValueOnce(acceptedOnceReceipt());
+		receiptCreate.mockRejectedValueOnce(
+			Object.assign(new Error("receipt exists"), { code: "P2002" }),
+		);
+		sessionFindUnique.mockResolvedValueOnce({
+			id: SESSION_ID,
+			status: "STOPPED",
+			playbackMode: "ONCE",
+		});
+		const res = await POST(postRequest(onceBody, ONCE_KEY));
+		expect(res.status).toBe(200);
+		expect(await res.json()).toMatchObject({ id: SESSION_ID, replayed: true });
+		expect(sessionCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it("recovers from an ambiguous enqueue by retrying only the original CREATED session ID", async () => {
+		queueAdd.mockRejectedValueOnce(new Error("Redis acknowledgment lost"));
+		const first = await POST(postRequest(onceBody, ONCE_KEY));
+		expect(first.status).toBe(503);
+		expect(await first.json()).toMatchObject({
+			details: { code: "FEEDER_ENQUEUE_UNCONFIRMED" },
+		});
+		expect(sessionUpdate).not.toHaveBeenCalled();
+		const receipt = receiptCreate.mock.calls[0]?.[0].data;
+		expect(receipt.resourceId).toEqual(expect.any(String));
+		receiptLookup.mockResolvedValueOnce(receipt);
+		sessionFindUnique.mockResolvedValueOnce({
+			id: receipt.resourceId,
+			status: "CREATED",
+			playbackMode: "ONCE",
+			playbackDispatchedAt: null,
+		});
+		const replay = await POST(postRequest(onceBody, ONCE_KEY));
+		expect(replay.status).toBe(200);
+		expect(await replay.json()).toMatchObject({
+			id: receipt.resourceId,
+			replayed: true,
+		});
+		expect(sessionCreate).toHaveBeenCalledOnce();
+		expect(queueAdd).toHaveBeenCalledTimes(2);
+		for (const [, payload, options] of queueAdd.mock.calls) {
+			expect(payload).toMatchObject({
+				feederSessionId: receipt.resourceId,
+				action: "start",
+			});
+			expect(options.jobId).toBe(receipt.resourceId);
+		}
+		expect(queueGetJob).toHaveBeenCalledExactlyOnceWith(receipt.resourceId);
+	});
+
+	it("retries a retained failed start in place for an undispatched single-pass receipt", async () => {
+		receiptLookup.mockResolvedValueOnce(acceptedOnceReceipt());
+		sessionFindUnique.mockResolvedValueOnce({
+			id: SESSION_ID,
+			status: "CREATED",
+			playbackMode: "ONCE",
+			playbackDispatchedAt: null,
+		});
+		const retry = vi.fn(async () => {});
+		queueGetJob.mockResolvedValueOnce({
+			getState: async () => "failed",
+			retry,
+		});
+		const res = await POST(postRequest(onceBody, ONCE_KEY));
+		expect(res.status).toBe(200);
+		expect(queueGetJob).toHaveBeenCalledExactlyOnceWith(SESSION_ID);
+		expect(retry).toHaveBeenCalledExactlyOnceWith("failed", {
+			resetAttemptsMade: true,
+			resetAttemptsStarted: true,
+		});
+		expect(queueAdd).not.toHaveBeenCalled();
+		expect(sessionCreate).not.toHaveBeenCalled();
+	});
+
+	it("does not inspect or retry a retained job once its single-pass dispatch is spent", async () => {
+		receiptLookup.mockResolvedValueOnce(acceptedOnceReceipt());
+		sessionFindUnique.mockResolvedValueOnce({
+			id: SESSION_ID,
+			status: "CREATED",
+			playbackMode: "ONCE",
+			playbackDispatchedAt: new Date("2026-11-26T01:02:03.000Z"),
+		});
+		expect((await POST(postRequest(onceBody, ONCE_KEY))).status).toBe(200);
+		expect(queueGetJob).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it("accepts a parallel recovery that already moved the same failed start to active", async () => {
+		receiptLookup.mockResolvedValueOnce(acceptedOnceReceipt());
+		sessionFindUnique.mockResolvedValueOnce({
+			id: SESSION_ID,
+			status: "CREATED",
+			playbackMode: "ONCE",
+			playbackDispatchedAt: null,
+		});
+		const getState = vi
+			.fn()
+			.mockResolvedValueOnce("failed")
+			.mockResolvedValueOnce("active");
+		const retry = vi.fn().mockRejectedValue(new Error("Job is not failed"));
+		queueGetJob.mockResolvedValueOnce({ getState, retry });
+		expect((await POST(postRequest(onceBody, ONCE_KEY))).status).toBe(200);
+		expect(retry).toHaveBeenCalledOnce();
+		expect(getState).toHaveBeenCalledTimes(2);
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it("preserves an authorization refusal when trying to recover a CREATED replay", async () => {
+		receiptLookup.mockResolvedValueOnce(acceptedOnceReceipt());
+		sessionFindUnique.mockResolvedValueOnce({
+			id: SESSION_ID,
+			status: "CREATED",
+			playbackDispatchedAt: null,
+		});
+		queueAdd.mockRejectedValueOnce(
+			new AuthContextError(403, "Queue mutation is not allowed"),
+		);
+		const response = await POST(postRequest(onceBody, ONCE_KEY));
+		expect(response.status).toBe(403);
+		expect(sessionUpdate).not.toHaveBeenCalled();
+		expect(sessionCreate).not.toHaveBeenCalled();
+	});
+
+	it("rejects single-pass staged switching before admitting or enqueueing a session", async () => {
+		const res = await POST(
+			postRequest({
+				...rtmpBody,
+				playbackMode: "ONCE",
+				switchFromActive: true,
+			}),
+		);
+		expect(res.status).toBe(400);
+		expect(sessionCreate).not.toHaveBeenCalled();
+		expect(sessionCount).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
 	it("rejects malformed bodies and mismatched protocol/target shapes", async () => {
 		expect((await POST(postRequest({}))).status).toBe(400);
 		expect(
@@ -549,6 +832,35 @@ describe("POST /api/feeder-sessions", () => {
 });
 
 describe("GET /api/feeder-sessions", () => {
+	it("keeps single-pass completion evidence readable and redacts secret-shaped receipt data", async () => {
+		sessionFindMany.mockResolvedValueOnce([
+			{
+				id: SESSION_ID,
+				status: "STOPPED",
+				playbackMode: "ONCE",
+				playbackDispatchedAt: new Date("2026-11-09T00:00:00.000Z"),
+				playbackReceipt: {
+					outcome: "EOF",
+					outTimeSec: 120,
+					streamKey: "must-stay-private",
+				},
+			},
+		]);
+		const res = await GET(new Request("http://test/api/feeder-sessions"));
+		const body = await res.json();
+		expect(body.items[0]).toMatchObject({
+			playbackMode: "ONCE",
+			playbackDispatchedAt: "2026-11-09T00:00:00.000Z",
+			playbackReceipt: { outcome: "EOF", outTimeSec: 120 },
+		});
+		expect(JSON.stringify(body)).not.toContain("must-stay-private");
+		expect(sessionFindMany.mock.calls[0]?.[0]?.select).toMatchObject({
+			playbackMode: true,
+			playbackDispatchedAt: true,
+			playbackReceipt: true,
+		});
+	});
+
 	it("returns a lean projection — never target/logTail/loopBoundaries", async () => {
 		sessionFindMany.mockResolvedValueOnce([
 			{

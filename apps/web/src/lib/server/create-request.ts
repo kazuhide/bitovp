@@ -3,7 +3,11 @@ import { createHash } from "node:crypto";
 import type { AppPrismaClient } from "@bitovp/db";
 import { jsonError } from "./http";
 
-export type CreateRequestKind = "VOD_JOB" | "LIVE_CHANNEL" | "LIBRARY_EDIT";
+export type CreateRequestKind =
+	| "VOD_JOB"
+	| "LIVE_CHANNEL"
+	| "LIBRARY_EDIT"
+	| "FEEDER_ONCE";
 export type CreateRequestIdentity = {
 	requestKey: string;
 	requestSha256: string;
@@ -82,7 +86,7 @@ export async function lookupCreateRequest(
 	return { kind: "existing", resourceId: receipt.resourceId } as const;
 }
 
-/** Call only in the transaction that creates the resource and its schedules. */
+/** Call only in the transaction that creates the resource and its dependents. */
 export async function recordCreateRequest(
 	tx: ReceiptClient,
 	kind: CreateRequestKind,

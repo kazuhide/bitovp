@@ -878,8 +878,20 @@ export async function recordDeadFeederJob(
 	try {
 		const row = await deps.prisma.feederSession.findUnique({
 			where: { id: feederSessionId },
-			select: { pid: true, liveChannelId: true, ownerLeaseAt: true },
+			select: {
+				pid: true,
+				liveChannelId: true,
+				status: true,
+				playbackMode: true,
+				ownerLeaseAt: true,
+				ownerGeneration: true,
+			},
 		});
+		if (!row || !["CREATED", "DOWNLOADING", "PUSHING"].includes(row.status))
+			return;
+		// The exact retained job may be retried by a same-key request.
+		// Keep an unclaimed single pass eligible for that admission.
+		if (row.playbackMode === "ONCE" && row.status === "CREATED") return;
 		/**
 		 *  — the STALENESS GUARD, the shape #216 gave the live failed
 		 * handler for the identical reason.
@@ -920,7 +932,9 @@ export async function recordDeadFeederJob(
 		const { count } = await deps.prisma.feederSession.updateMany({
 			where: {
 				id: feederSessionId,
-				status: { in: ["CREATED", "DOWNLOADING", "PUSHING"] },
+				status: row.status,
+				ownerLeaseAt: row.ownerLeaseAt,
+				ownerGeneration: row.ownerGeneration,
 			},
 			data: {
 				status: "ERROR",

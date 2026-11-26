@@ -39,6 +39,7 @@ export const GROUPS = [
 			"src/create-request.integration.test.ts": 7,
 			"src/transaction-options.integration.test.ts": 6,
 			"src/live-run-step-log.integration.test.ts": 5,
+			"src/feeder-single-pass.integration.test.ts": 9,
 			"src/library-editing-db.integration.test.ts": 12,
 			"src/library-production.integration.test.ts": 19,
 			"src/library-flow-evidence-pins.integration.test.ts": 12,
@@ -50,6 +51,7 @@ export const GROUPS = [
 		directory: "apps/web",
 		files: {
 			"src/lib/server/create-request.integration.test.ts": 3,
+			"src/app/api/feeder-sessions/route.integration.test.ts": 2,
 			"src/lib/server/vod-input-previews.integration.test.ts": 11,
 			"src/lib/server/vod-input-favorites.integration.test.ts": 6,
 			"src/lib/server/latest-runs.integration.test.ts": 3,

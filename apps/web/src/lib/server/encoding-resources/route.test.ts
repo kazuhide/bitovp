@@ -117,6 +117,97 @@ it.each(
 	}
 	expect(transport).toHaveBeenCalledTimes(contract.collection ? 2 : 1);
 });
+
+it("projects an HDR10+ track without exposing its media, sidecar, or free-form provider fields", async () => {
+	const contract = contracts.find(
+		(c) => c.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",
+	);
+	if (!contract) throw new Error("Missing HDR10+ fixture");
+	const { steps, id, expected } = fixture(contract);
+	seeded(steps);
+	const privateFields = {
+		inputId: "private-input",
+		videoInputPath: "s3://private-picture",
+		metadataInputPath: "private-metadata.json",
+		customData: { liveToken: "private-token" },
+		name: "private-name",
+		description: "private-description",
+		metadata: { source: "private-content" },
+	};
+	const createdAt = "2026-11-25T12:13:14.000Z";
+	const item = {
+		...privateFields,
+		id,
+		createdAt,
+		selectionMode: "VIDEO_RELATIVE",
+		position: 0,
+	};
+	const selectedPath = expected.slice(0, expected.lastIndexOf("/"));
+	const siblingId = randomUUID();
+	transport.mockImplementation(async (url: URL | string, init: RequestInit) => {
+		const address = new URL(url);
+		expect(init.method).toBe("GET");
+		expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+		if (address.pathname === expected) {
+			return Response.json({ status: "SUCCESS", data: { result: item } });
+		}
+		expect(address.pathname).toBe(selectedPath);
+		expect(Object.fromEntries(address.searchParams)).toEqual({
+			offset: "1",
+			limit: "25",
+		});
+		return Response.json({
+			status: "SUCCESS",
+			data: {
+				result: {
+					items: [
+						{
+							...item,
+							id: siblingId,
+							selectionMode: "private-token",
+							position: 99,
+						},
+					],
+					offset: 1,
+					totalCount: 2,
+				},
+			},
+		});
+	});
+	const res = await read("step=selected&attempt=0");
+	expect(res.status).toBe(200);
+	expect(await res.json()).toEqual({
+		fields: { id, createdAt, selectionMode: "VIDEO_RELATIVE", position: 0 },
+	});
+	const page = await read("step=selected&attempt=0&view=siblings&offset=1");
+	expect(page.status).toBe(200);
+	expect(await page.json()).toEqual({
+		offset: 1,
+		total: 2,
+		items: [{ id: siblingId, createdAt }],
+	});
+	expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it("refuses an HDR10+ read outside the recorded encoding and account scope", async () => {
+	const contract = contracts.find(
+		(c) => c.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",
+	);
+	if (!contract) throw new Error("Missing HDR10+ fixture");
+	const { steps } = fixture(contract),
+		[parent, track] = steps;
+	if (!parent || !track) throw new Error("Missing recorded encoding and track");
+	const attempt = "step=selected&attempt=0";
+	parent.resourceAccount = { id: accountId, version: randomUUID() };
+	seeded(steps);
+	expect((await read(attempt)).status).toBe(409);
+	expect((await read(`${attempt}&view=siblings`)).status).toBe(409);
+	parent.resourceAccount = { id: accountId, version };
+	track.request = { refs: { encodingId: randomUUID() } };
+	expect((await read(attempt)).status).toBe(404);
+	expect(transport).not.toHaveBeenCalled();
+});
+
 it("rejects a swapped parent, stale attempt, changed account or a foreign execution before using the provider", async () => {
 	const sample = contracts.find(
 		(c) => c.kind === "CREATE_DASH_REPRESENTATION_FMP4",

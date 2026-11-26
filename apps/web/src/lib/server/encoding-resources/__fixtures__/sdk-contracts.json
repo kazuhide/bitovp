@@ -10,6 +10,11 @@
     "parents": {}
   },
   {
+    "kind": "CREATE_CODEC_AUDIO_PASSTHROUGH",
+    "detail": "/encoding/configurations/audio/passthrough/{configuration_id}",
+    "parents": {}
+  },
+  {
     "kind": "CREATE_CODEC_DOLBY_ATMOS",
     "detail": "/encoding/configurations/audio/dolby-atmos/{configuration_id}",
     "parents": {}
@@ -35,6 +40,11 @@
     "parents": {}
   },
   {
+    "kind": "CREATE_CODEC_PCM",
+    "detail": "/encoding/configurations/audio/pcm/{configuration_id}",
+    "parents": {}
+  },
+  {
     "kind": "CREATE_CODEC_IMSC",
     "detail": "/encoding/configurations/subtitles/imsc/{configuration_id}",
     "parents": {}
@@ -53,6 +63,17 @@
     "kind": "CREATE_CODEC_H264",
     "detail": "/encoding/configurations/video/h264/{configuration_id}",
     "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_H265",
+    "detail": "/encoding/configurations/video/h265/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_H265",
+    "detail": "/encoding/configurations/video/h265v2/{configuration_id}",
+    "parents": {},
+    "hevcV2": true
   },
   {
     "kind": "CREATE_CODEC_VP9",
@@ -90,6 +111,14 @@
       "encoding_id": "encodingId"
     },
     "collection": "/encoding/encodings/{encoding_id}/input-streams/dolby-vision"
+  },
+  {
+    "kind": "CREATE_HDR10_PLUS_INPUT_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus/{hdr10_plus_input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus"
   },
   {
     "kind": "CREATE_FILE_INPUT_STREAM",
@@ -194,6 +223,14 @@
       "encoding_id": "encodingId"
     },
     "collection": "/encoding/encodings/{encoding_id}/muxings/progressive-ts"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_WAV",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/progressive-wav/{muxing_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/muxings/progressive-wav"
   },
   {
     "kind": "CREATE_MUXING_PROGRESSIVE_WEBM",

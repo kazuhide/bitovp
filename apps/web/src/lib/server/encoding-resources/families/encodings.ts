@@ -14,11 +14,13 @@ import type {
 	FileInputStream,
 	Fmp4Muxing,
 	H264PictureTimingTrimmingInputStream,
+	Hdr10PlusInputStream,
 	IngestInputStream,
 	Keyframe,
 	Mp4Muxing,
 	ProgressiveMovMuxing,
 	ProgressiveTsMuxing,
+	ProgressiveWavMuxing,
 	ProgressiveWebmMuxing,
 	Sprite,
 	Stream,
@@ -30,6 +32,26 @@ import type {
 	WebmMuxing,
 } from "@bitmovin/api-sdk";
 import { defineFamily } from "../family";
+
+function hdr10PlusTrack(stream: Hdr10PlusInputStream) {
+	const { id, createdAt, modifiedAt, selectionMode, position } = stream;
+	const positioned =
+		selectionMode === "POSITION_ABSOLUTE" || selectionMode === "VIDEO_RELATIVE";
+	return {
+		id,
+		createdAt,
+		modifiedAt,
+		selectionMode:
+			positioned || selectionMode === "AUTO" ? selectionMode : undefined,
+		position:
+			positioned &&
+			position !== undefined &&
+			Number.isSafeInteger(position) &&
+			position >= 0
+				? position
+				: undefined,
+	};
+}
 
 export const encodings = {
 	CREATE_DVB_SUBTITLE_INPUT_STREAM: defineFamily<DvbSubtitleInputStream>({
@@ -161,6 +183,35 @@ export const encodings = {
 			),
 		remove: (api, { id, parent }) =>
 			api.encoding.encodings.inputStreams.dolbyVision.delete(
+				parent("encodingId"),
+				id,
+			),
+	}),
+	CREATE_HDR10_PLUS_INPUT_STREAM: defineFamily<
+		ReturnType<typeof hdr10PlusTrack>
+	>({
+		parents: ["encodingId"],
+		fields: ["createdAt", "modifiedAt", "position", "selectionMode"],
+		get: async (api, { id, parent }) =>
+			hdr10PlusTrack(
+				await api.encoding.encodings.inputStreams.hdr10Plus.get(
+					parent("encodingId"),
+					id,
+				),
+			),
+		list: async (api, { parent }, page) => {
+			const result = await api.encoding.encodings.inputStreams.hdr10Plus.list(
+				parent("encodingId"),
+				page,
+			);
+			return {
+				offset: result.offset,
+				totalCount: result.totalCount,
+				items: result.items?.map(hdr10PlusTrack),
+			};
+		},
+		remove: (api, { id, parent }) =>
+			api.encoding.encodings.inputStreams.hdr10Plus.delete(
 				parent("encodingId"),
 				id,
 			),
@@ -367,6 +418,25 @@ export const encodings = {
 			),
 		remove: (api, { id, parent }) =>
 			api.encoding.encodings.muxings.progressiveTs.delete(
+				parent("encodingId"),
+				id,
+			),
+	}),
+	CREATE_MUXING_PROGRESSIVE_WAV: defineFamily<ProgressiveWavMuxing>({
+		parents: ["encodingId"],
+		fields: ["createdAt", "modifiedAt", "type"],
+		get: (api, { id, parent }) =>
+			api.encoding.encodings.muxings.progressiveWav.get(
+				parent("encodingId"),
+				id,
+			),
+		list: (api, { parent }, page) =>
+			api.encoding.encodings.muxings.progressiveWav.list(
+				parent("encodingId"),
+				page,
+			),
+		remove: (api, { id, parent }) =>
+			api.encoding.encodings.muxings.progressiveWav.delete(
 				parent("encodingId"),
 				id,
 			),

@@ -237,6 +237,11 @@ See [supported features and limits](../BITMOVIN-API-COVERAGE.md) for more restri
 
 Open a job’s **Resources** tab, expand **Inspect provider resources** and select a recorded step. Details are read from the provider using the job’s original account. Where available, the collection view lists resources under the selected parent. If the account binding or resource history cannot be verified, the saved job history is still available.
 
+For a recorded HDR10+ input, the detail and collection views show the track
+selection when available. They omit the video and JSON paths and the metadata
+contents. HEVC and HEVC v2, PCM and audio passthrough configurations, and
+Progressive WAV muxings can also be inspected from their recorded steps.
+
 Select a recorded fMP4, MP4, TS, Progressive TS, WebM or Progressive WebM muxing to see its DRM systems. Progressive TS also exposes ID3 tags. Choose a type, then open a row to see its public details or check whether its metadata identifies this job. The general DRM list shows the entries the provider returned. Choose a specific DRM system to browse further pages.
 
 For protected DASH or Smooth manifests, select the representation or content-protection creation step to inspect the recorded provider resource and its collection. BitOVP checks the manifest hierarchy and the encoding, muxing and DRM references saved by that step.

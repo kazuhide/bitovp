@@ -159,7 +159,7 @@ import {
 } from "./orchestrator/stop-remote-encodings";
 import { createResetCleanupSweep } from "./reset/cleanup";
 import { resetCleanupProvider } from "./reset/provider";
-import { legacyScheduleId } from "./scheduler/schedule-outcome";
+import { scheduledStartScheduleId } from "./scheduler/schedule-outcome";
 import {
 	createScheduleSweep,
 	DEFAULT_START_GRACE_MINUTES,
@@ -1932,7 +1932,10 @@ function startQueueWorker(
 								new Date(at.getTime() - PROVISION_LEASE_MS),
 								at,
 								admission,
-								legacyScheduleId(job?.id),
+								scheduledStartScheduleId(
+									job?.id,
+									liveJob.provisionFenceVersion,
+								),
 							).catch((updateErr) =>
 								console.error(
 									"[worker:liveChannel] failed to mark channel/run ERROR:",

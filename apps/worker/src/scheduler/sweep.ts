@@ -48,6 +48,7 @@ import { admitInactiveOrganization } from "../tenant/admission";
 import {
 	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
 	recordScheduleOutcomeBestEffort,
+	scheduledStartJobId,
 	transitionScheduleToStale,
 } from "./schedule-outcome";
 import {
@@ -712,9 +713,22 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	 * re-add that deduped against an already-running job stamps the row it
 	 * found, and never overwrites an earlier truthful stamp.
 	 */
-	async function markDispatched(rowId: string, jobId: string): Promise<void> {
+	async function markDispatched(
+		row: ScheduleRow,
+		jobId: string,
+	): Promise<void> {
 		await deps.prisma.liveSchedule.updateMany({
-			where: { id: rowId, status: "FIRED", dispatchedAt: null },
+			where: {
+				id: row.id,
+				status: "FIRED",
+				dispatchedAt: null,
+				...(row.action === "START" && {
+					action: "START",
+					liveChannelId: row.liveChannelId,
+					liveChannelRunId: row.liveChannelRunId,
+					startAdmissionFenceVersion: row.startAdmissionFenceVersion ?? null,
+				}),
+			},
 			data: { dispatchedAt: deps.now(), dispatchJobId: jobId },
 		});
 	}
@@ -1276,14 +1290,18 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					stats.waiting += 1;
 					return;
 				}
+				const jobId = scheduledStartJobId(
+					row.id,
+					row.startAdmissionFenceVersion,
+				);
 				try {
-					await deps.enqueue(scheduledProvision(row), scheduleJobId(row.id));
+					await deps.enqueue(scheduledProvision(row), jobId);
 				} catch {
 					// Redis may have accepted the job. The FIRED outbox owns its retry.
 					stats.errors += 1;
 					return;
 				}
-				await markDispatched(row.id, scheduleJobId(row.id));
+				await markDispatched(row, jobId);
 				stats.fired += 1;
 				await emitFired(row);
 				return;
@@ -1400,14 +1418,18 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					stats.waiting += 1;
 					return;
 				}
+				const jobId = scheduledStartJobId(
+					row.id,
+					row.startAdmissionFenceVersion,
+				);
 				try {
-					await deps.enqueue(scheduledProvision(row), scheduleJobId(row.id));
+					await deps.enqueue(scheduledProvision(row), jobId);
 				} catch {
 					// Redis may have accepted the job. The FIRED outbox owns its retry.
 					stats.errors += 1;
 					return;
 				}
-				await markDispatched(row.id, scheduleJobId(row.id));
+				await markDispatched(row, jobId);
 				stats.fired += 1;
 				await emitFired(row);
 				return;
@@ -1765,7 +1787,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			stats.errors += 1;
 			return;
 		}
-		await markDispatched(row.id, scheduleJobId(row.id));
+		await markDispatched(row, scheduleJobId(row.id));
 		stats.fired += 1;
 		await emitFired(row);
 	}
@@ -1843,7 +1865,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			stats.errors += 1;
 			return;
 		}
-		await markDispatched(row.id, scheduleJobId(row.id));
+		await markDispatched(row, scheduleJobId(row.id));
 		stats.fired += 1;
 		await emitFired(row);
 	}
@@ -1918,7 +1940,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			stats.errors += 1;
 			return;
 		}
-		await markDispatched(row.id, scheduleJobId(row.id));
+		await markDispatched(row, scheduleJobId(row.id));
 		stats.fired += 1;
 		await emitFired(row);
 	}
@@ -2337,7 +2359,12 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 									action: "insert-content",
 									params: { scheduleId: row.id },
 								},
-						{ id: scheduleJobId(row.id) },
+						{
+							id:
+								row.action === "START"
+									? scheduledStartJobId(row.id, row.startAdmissionFenceVersion)
+									: scheduleJobId(row.id),
+						},
 					);
 					if (!allowed) {
 						if (row.action === "START") return;
@@ -2358,7 +2385,9 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				const jobId =
 					job.action === "stop"
 						? scheduledStopJobId(row.id, job.effect?.stopDeliveryToken)
-						: scheduleJobId(row.id);
+						: row.action === "START"
+							? scheduledStartJobId(row.id, row.startAdmissionFenceVersion)
+							: scheduleJobId(row.id);
 				try {
 					await deps.enqueue(job, jobId);
 				} catch (err) {
@@ -2388,7 +2417,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					redispatched += 1;
 					return;
 				}
-				await markDispatched(row.id, jobId);
+				await markDispatched(row, jobId);
 				redispatched += 1;
 				// The notification is the LAST thing and cannot stall the pass: a
 				// notify channel that throws for one row would otherwise abort the

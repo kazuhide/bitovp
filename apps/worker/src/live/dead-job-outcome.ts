@@ -16,11 +16,11 @@ import { feederLeaseIsFresh } from "../feeder/ownership";
 import { HEARTBEAT_SWEEP_JOB } from "../handlers";
 import type { EmitProductEvent } from "../notify/emitter";
 import {
-	legacyScheduleId,
 	recordScheduleOutcome,
 	recordScheduleOutcomeBestEffort,
 	type ScheduleOutcome,
 	type ScheduleOutcomeTarget,
+	scheduledStartScheduleId,
 } from "../scheduler/schedule-outcome";
 import { recordScheduledStopHandoff } from "../scheduler/stop-handoff";
 
@@ -616,8 +616,15 @@ export function deadJobScheduleWrites(
 
 	switch (action) {
 		case "provision": {
-			const id = legacyScheduleId(job?.id);
-			if (!data.liveChannelId || !id || !isTerminalDelivery(job)) return [];
+			const id = scheduledStartScheduleId(job?.id, data.provisionFenceVersion);
+			if (
+				!data.liveChannelId ||
+				!id ||
+				!isTerminalDelivery(job) ||
+				(data.provisionFenceVersion !== undefined &&
+					!data.plannedLiveChannelRunId)
+			)
+				return [];
 			return [
 				{
 					target: {

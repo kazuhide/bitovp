@@ -1,6 +1,9 @@
 import { hasAisaLiveBinding } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
-import { legacyScheduleId } from "../scheduler/schedule-outcome";
+import {
+	scheduledStartJobId,
+	scheduledStartScheduleId,
+} from "../scheduler/schedule-outcome";
 import { provisionJobGeneration } from "./reconcile-stranded-runs";
 
 export type ProvisionAdmission =
@@ -87,11 +90,15 @@ export async function resolveProvisionAdmission(
 		}
 		return { runId, generation: manualGeneration };
 	}
-	const scheduleId = legacyScheduleId(jobId);
+	const scheduleId = scheduledStartScheduleId(
+		jobId,
+		delivery.provisionFenceVersion,
+	);
 	// Old manual IDs contain only a producer clock, which may be sampled
 	// after a later same-run revival. The SQL sweeper resumes the frozen
 	// airing under a new generation-addressed job instead.
-	if (!scheduleId) return null;
+	if (!scheduleId || (!runId && jobId !== scheduledStartJobId(scheduleId)))
+		return null;
 	const row = await prisma.liveSchedule.findFirst({
 		where: {
 			id: scheduleId,

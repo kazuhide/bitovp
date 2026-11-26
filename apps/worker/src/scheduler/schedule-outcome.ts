@@ -33,6 +33,26 @@ export function legacyScheduleId(
 	)?.[1];
 }
 
+export function scheduledStartJobId(
+	scheduleId: string,
+	generation?: number | null,
+): string {
+	return generation == null
+		? `sched-${scheduleId}`
+		: `sched-${scheduleId}-start-${generation}`;
+}
+
+/** A generation-qualified key must match the generation in the delivery. */
+export function scheduledStartScheduleId(
+	queueJobId: string | undefined,
+	generation?: number,
+): string | undefined {
+	const suffix = `-start-${generation}`;
+	return generation !== undefined && queueJobId?.endsWith(suffix)
+		? legacyScheduleId(queueJobId.slice(0, -suffix.length))
+		: legacyScheduleId(queueJobId);
+}
+
 export type ScheduleOutcome =
 	| "PENDING"
 	| "PROCESS_PUSHING"

@@ -4,7 +4,10 @@ import {
 	liveChannelJobSchema,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
-import { legacyScheduleId } from "../scheduler/schedule-outcome";
+import {
+	scheduledStartJobId,
+	scheduledStartScheduleId,
+} from "../scheduler/schedule-outcome";
 import { resolveProvisionAdmission } from "./provision-admission";
 import { PROVISION_LEASE_MS } from "./provision-lease";
 import { recordExpiredProvisionFailure } from "./reconcile-stranded-runs";
@@ -23,11 +26,10 @@ export function createExhaustedProvisionRecovery(
 	let after: string | undefined;
 	const error =
 		"The original Live startup job exhausted its deliveries. Check the encoder before starting again.";
-	async function retireFailed(
+	async function identify(
 		id: string,
 		job: NonNullable<Awaited<ReturnType<ReadJob>>>,
-		at: Date,
-		expectedChannel?: string,
+		channelId: string,
 	) {
 		const parsed = liveChannelJobSchema.safeParse(job.data);
 		if (
@@ -35,27 +37,17 @@ export function createExhaustedProvisionRecovery(
 			parsed.data.action !== "provision" ||
 			parsed.data.params ||
 			parsed.data.effect ||
-			(expectedChannel && expectedChannel !== parsed.data.liveChannelId) ||
-			(await job.getState()) !== "failed"
+			channelId !== parsed.data.liveChannelId
 		)
-			return;
+			return null;
 		const admission = await resolveProvisionAdmission(
 			prisma,
-			parsed.data.liveChannelId,
+			channelId,
 			parsed.data,
 			id,
 			job.timestamp,
 		);
-		if (admission)
-			await recordExpiredProvisionFailure(
-				prisma,
-				parsed.data.liveChannelId,
-				error,
-				new Date(at.getTime() - PROVISION_LEASE_MS),
-				at,
-				admission,
-				legacyScheduleId(id),
-			);
+		return admission ? { admission, data: parsed.data } : null;
 	}
 	return async (at: Date) => {
 		// The database identifies all current admissions, including an initial CREATED
@@ -105,6 +97,7 @@ export function createExhaustedProvisionRecovery(
 			)
 				continue;
 			let terminalScheduleId: string | undefined;
+			let scheduledStartId: string | undefined;
 			let id: string,
 				data: LiveChannelJob = { liveChannelId: row.id, action: "provision" };
 			if (
@@ -143,7 +136,8 @@ export function createExhaustedProvisionRecovery(
 						);
 						continue;
 					}
-					id = `sched-${schedule.id}`;
+					scheduledStartId = schedule.id;
+					id = scheduledStartJobId(schedule.id, generation);
 					if (schedule.outcome !== "PENDING") terminalScheduleId = schedule.id;
 					data.provisionFenceVersion = generation;
 				} else {
@@ -187,7 +181,35 @@ export function createExhaustedProvisionRecovery(
 					id = `${source}-provision-${row.id}-${run.id}-${generation}`;
 				}
 			}
-			const job = await readOwnedJob(id);
+			let job = await readOwnedJob(id);
+			if (!job && scheduledStartId && run) {
+				const legacyId = scheduledStartJobId(scheduledStartId);
+				const legacy = await readOwnedJob(legacyId);
+				const original = legacy && (await identify(legacyId, legacy, row.id));
+				if (
+					legacy &&
+					original &&
+					"runId" in original.admission &&
+					original.admission.runId === run.id &&
+					original.admission.generation === generation
+				) {
+					id = legacyId;
+					job = legacy;
+					await prisma.liveSchedule.updateMany({
+						where: {
+							id: scheduledStartId,
+							liveChannelId: row.id,
+							liveChannelRunId: run.id,
+							action: "START",
+							status: "FIRED",
+							outcome: "PENDING",
+							startAdmissionFenceVersion: generation,
+							dispatchedAt: null,
+						},
+						data: { dispatchedAt: at, dispatchJobId: legacyId },
+					});
+				}
+			}
 			if (
 				terminalScheduleId &&
 				run &&
@@ -202,8 +224,20 @@ export function createExhaustedProvisionRecovery(
 					{ runId: run.id, generation },
 					terminalScheduleId,
 				);
-			else if (job) await retireFailed(id, job, at, row.id);
-			else await reenqueue(data, id);
+			else if (job) {
+				if ((await job.getState()) !== "failed") continue;
+				const original = await identify(id, job, row.id);
+				if (original)
+					await recordExpiredProvisionFailure(
+						prisma,
+						row.id,
+						error,
+						new Date(at.getTime() - PROVISION_LEASE_MS),
+						at,
+						original.admission,
+						scheduledStartScheduleId(id, original.data.provisionFenceVersion),
+					);
+			} else await reenqueue(data, id);
 		}
 	};
 }

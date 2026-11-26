@@ -157,6 +157,7 @@ import {
 import {
 	legacyScheduleId,
 	recordScheduleOutcomeBestEffort,
+	scheduledStartScheduleId,
 	transitionScheduleToStale,
 } from "../scheduler/schedule-outcome";
 import { recordScheduledStopHandoff } from "../scheduler/stop-handoff";
@@ -7751,7 +7752,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		const scheduleId =
 			job.action === "stop"
 				? scheduledStopScheduleId(queueJobId)
-				: legacyScheduleId(queueJobId);
+				: job.action === "provision"
+					? scheduledStartScheduleId(queueJobId, job.provisionFenceVersion)
+					: legacyScheduleId(queueJobId);
 		const stopScheduleId = job.effect?.scheduleId ?? scheduleId;
 		if (
 			job.action === "stop" &&

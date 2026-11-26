@@ -15,7 +15,7 @@ import {
 	hasCommittedStart,
 	suppressInactiveProvision,
 } from "../live/reconcile-stranded-runs";
-import { legacyScheduleId } from "../scheduler/schedule-outcome";
+import { scheduledStartScheduleId } from "../scheduler/schedule-outcome";
 export const INACTIVE_ORGANIZATION_ERROR =
 	"Organization is inactive; new work was suppressed";
 export { hasCommittedStart } from "../live/reconcile-stranded-runs";
@@ -58,7 +58,7 @@ export async function admitInactiveOrganization(
 				prisma,
 				data.liveChannelId,
 				admission,
-				legacyScheduleId(delivery.id),
+				scheduledStartScheduleId(delivery.id, data.provisionFenceVersion),
 				INACTIVE_ORGANIZATION_ERROR,
 				new Date(),
 			);

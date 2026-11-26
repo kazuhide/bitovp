@@ -127,7 +127,7 @@ test("accepts exactly the required files and all passed assertions", () => {
 			(a, b) => a + b,
 			0,
 		),
-		682,
+		683,
 	);
 });
 
@@ -280,7 +280,7 @@ for (const [name, wroteReport, failed, expected] of [
 			"Reason: PostgreSQL tests must have no failures, skips or unfinished cases",
 			"  - Vitest reported a failed run",
 			"  - failed tests: 1, required 0",
-			"  - tests passed: 87, required 88",
+			"  - tests passed: 88, required 89",
 			'  - src/runtime-role.integration.test.ts: 0 of 1 tests passed, 1 required; file status "failed"',
 			'  - "failed": runtime role > cannot create tables',
 			"    | Error: permission was granted",

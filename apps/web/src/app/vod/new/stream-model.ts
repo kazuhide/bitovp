@@ -166,6 +166,25 @@ export function outputKindHasAcl(kind: WizardState["output"]["kind"]): boolean {
 	);
 }
 
+export function withOutputCredential(
+	output: WizardState["output"],
+	kind: WizardState["output"]["kind"],
+	credentialId: string,
+): WizardState["output"] {
+	const supportsAcl = outputKindHasAcl(kind);
+	const enteringRoleBased = kind === "S3_ROLE_BASED" && output.kind !== kind;
+	return {
+		...output,
+		credentialId,
+		kind,
+		name: outputNameForKind(kind),
+		publicRead: supportsAcl && !enteringRoleBased && output.publicRead,
+		explicitPrivateAcl: supportsAcl
+			? enteringRoleBased || output.explicitPrivateAcl
+			: undefined,
+	};
+}
+
 /** Output kinds whose location is browsable via the StoragePicker. */
 export function outputKindIsBrowsable(
 	kind: WizardState["output"]["kind"] | "LIVE_MEDIA_INGEST" | "MOQ",

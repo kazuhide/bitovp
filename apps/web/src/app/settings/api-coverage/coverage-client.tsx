@@ -88,6 +88,9 @@ export function ApiCoverageClient() {
 	const [scope, setScope] = useState("");
 	const [search, setSearch] = useState("");
 	const [page, setPage] = useState(0);
+	const [downloadState, setDownloadState] = useState<
+		"idle" | "pending" | "error"
+	>("idle");
 	const filtered = useMemo(
 		() =>
 			filterCoverageOperations(
@@ -135,6 +138,35 @@ export function ApiCoverageClient() {
 		scope,
 		q: search,
 	});
+	async function downloadCsv() {
+		setDownloadState("pending");
+		try {
+			const response = await fetch(`${coveragePath}?${download}`, {
+				headers: { Accept: "text/csv" },
+			});
+			if (
+				!response.ok ||
+				response.headers.get("Content-Type")?.split(";")[0] !== "text/csv"
+			) {
+				throw new Error("CSV response unavailable");
+			}
+			const objectUrl = window.URL;
+			const url = objectUrl.createObjectURL(await response.blob());
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = "encoding-api-coverage.csv";
+			document.body.append(link);
+			try {
+				link.click();
+			} finally {
+				link.remove();
+				window.setTimeout(() => objectUrl.revokeObjectURL(url), 1_000);
+			}
+			setDownloadState("idle");
+		} catch {
+			setDownloadState("error");
+		}
+	}
 	const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 	const safePage = Math.min(page, pageCount - 1);
 	const rows = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
@@ -342,9 +374,19 @@ export function ApiCoverageClient() {
 						))}
 					</select>
 					{operationLedger && (
-						<a href={`${coveragePath}?${download}`} className={buttonClass}>
+						<button
+							type="button"
+							disabled={downloadState === "pending"}
+							onClick={downloadCsv}
+							className={buttonClass}
+						>
 							{t("apiCoverage.operationLedger.download")}
-						</a>
+						</button>
+					)}
+					{downloadState === "error" && (
+						<span role="alert" className="text-red-400 text-xs">
+							{t("apiCoverage.operationLedger.downloadFailed")}
+						</span>
 					)}
 					<span aria-live="polite" className="text-xs text-zinc-500">
 						{t("apiCoverage.matchCount", { n: filtered.length })}

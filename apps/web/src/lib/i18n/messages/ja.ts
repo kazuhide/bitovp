@@ -4571,7 +4571,7 @@ export const ja = {
 		operationLedger: {
 			title: "操作経路の検証",
 			notice:
-				"検証範囲は各操作の詳細に記載しています。通信テストはインストール済みの SDK を使い、Bitmovin の応答をモックしています。",
+				"各操作の詳細に検証範囲を表示します。通信テストには模擬応答を使います。",
 			appConfirmed: "アプリの操作経路あり",
 			unreviewed: "レビュー待ち",
 			contractConfirmed: "モック通信テスト済み",
@@ -4583,6 +4583,7 @@ export const ja = {
 			scope: "操作範囲",
 			allScopes: "すべての操作範囲",
 			download: "表示条件で CSV をダウンロード",
+			downloadFailed: "CSV をダウンロードできませんでした。",
 			scopes: {
 				vod: "VOD ワークフロー",
 				live: "ライブ",
@@ -6473,6 +6474,8 @@ export const ja = {
 		curlNoEndpoint:
 			"{kind} に対応する Bitmovin の単一エンドポイントがありません",
 		curlVaultFieldsOmitted:
+			"暗号化の作成には保存済みの鍵が必要です。履歴には鍵を含めていないため、cURL は利用できません。",
+		curlRoleFieldsOmitted:
 			"このコマンドの実行に必要な認証情報は、リクエスト履歴に含まれていません。",
 		curlUnresolvedPathParams:
 			"{kind} の URL パスパラメータをすべて解決できませんでした",

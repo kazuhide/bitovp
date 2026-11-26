@@ -4633,7 +4633,7 @@ export const en = {
 		operationLedger: {
 			title: "Workflow evidence",
 			notice:
-				"Each confirmation applies to the workflow described in its evidence. Transport tests use the installed SDK and a mock provider response.",
+				"The details show what each test covers. Transport tests use simulated Bitmovin responses.",
 			appConfirmed: "App route confirmed",
 			unreviewed: "Review pending",
 			contractConfirmed: "Mock transport passed",
@@ -4645,6 +4645,7 @@ export const en = {
 			scope: "Workflow scope",
 			allScopes: "All workflow scopes",
 			download: "Download matching CSV",
+			downloadFailed: "Could not download the CSV.",
 			scopes: {
 				vod: "VOD",
 				live: "Live",
@@ -6523,6 +6524,8 @@ export const en = {
 		curlUnavailable: "cURL unavailable",
 		curlNoEndpoint: "No single Bitmovin endpoint maps to {kind}",
 		curlVaultFieldsOmitted:
+			"Encryption keys and key-server credentials are omitted from saved logs, so this request cannot be copied as cURL.",
+		curlRoleFieldsOmitted:
 			"The saved request omits credential fields needed to run this command.",
 		curlUnresolvedPathParams:
 			"Could not resolve all URL path parameters for {kind}",

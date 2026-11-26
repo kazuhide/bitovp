@@ -163,28 +163,9 @@ percentage of GUI fields, successful provider calls, or verified playback
 scenarios. An unconfirmed operation can still be used through a wrapper that
 the analysis cannot resolve.
 
-The workflow evidence ledger shows an app reachability, SDK transport, and
-provider status for every canonical operation. A reviewed operation identifies
-the exact SDK method, HTTP method, and provider path. Its proof names a BitOVP
-entrypoint and the scenario it reaches, the resolved SDK call, and the test
-that observes the HTTP request through the installed SDK using a mock transport.
-Operations without a matching proof are unreviewed, including operations with
-resolved source calls. The provider status stays unverified until independently
-collected execution receipts can be audited.
-
-Filter the ledger by SDK family, source status, app review state, and workflow
-scope. The CSV download includes every matching operation, its workflow and
-source references. It covers the full filtered result across pages. The same
-read-only endpoint serves the export with `format=csv` and the optional
-`family`, `source`, `reachability`, `scope`, and `q` query parameters.
-
-To add evidence, run the real SDK with an isolated transport fixture that checks
-the method, target, and request inputs. Trace the supported scenario from an
-actual app route to that call. Register the exact operation and relevant code
-and test anchors in the audit. `pnpm test:api-coverage` checks the proof against
-the SDK inventories, rejects duplicates and stale anchors, and validates the
-canonical operation denominator. Change or remove proofs when their scenarios
-change. SDK upgrades require reviewing their proofs against the updated SDK.
+The workflow ledger records app entry points, SDK transport tests, and provider
+execution status for each operation. It includes full filtered CSV exports.
+See [coverage queries and evidence](API-USAGE.md#encoding-api-coverage).
 
 The current SDK body-model inventory lists top-level properties for each
 operation that sends a body. Search by property, model, operation, or source

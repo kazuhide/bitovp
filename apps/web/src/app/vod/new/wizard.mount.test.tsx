@@ -312,9 +312,15 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 		expect((base as HTMLInputElement).value).toContain("{uuid}");
 	});
 
-	it("authors VOD with a role credential and manual input/output locations", async () => {
+	it.each([
+		["AWS_S3_ROLE_BASED", "S3_ROLE_BASED"],
+		["AZURE_BLOB", "AZURE"],
+		["SFTP", "SFTP"],
+		["AKAMAI_NETSTORAGE", "AKAMAI_NETSTORAGE"],
+	])("authors role-based input and submits the selected %s output ACL", async (provider, outputKind) => {
 		const accountId = "33333333-3333-4333-8333-333333333333";
 		const credentialId = "44444444-4444-4444-8444-444444444444";
+		const otherOutput = "55555555-5555-4555-8555-555555555555";
 		apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
 			if (url === "/api/auth/session")
 				return {
@@ -334,6 +340,7 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 						label: "Encoding IAM role",
 						provider: "AWS_S3_ROLE_BASED",
 					},
+					{ id: otherOutput, label: "Other storage", provider },
 				];
 			if (url === "/api/encoding-jobs" && init?.method === "POST")
 				return { id: "vod-role" };
@@ -379,6 +386,12 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 			screen.getByLabelText(/output folder/i, { selector: "input" }),
 			{ target: { value: "processed/clip" } },
 		);
+		if (outputKind !== "S3_ROLE_BASED") {
+			await userEvent.selectOptions(
+				screen.getByRole("combobox", { name: /^credential/i }),
+				otherOutput,
+			);
+		}
 		await step(/review/i);
 		const start = screen.getByRole("button", { name: "Start encoding" });
 		expect(start).toBeEnabled();
@@ -400,15 +413,19 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 		expect(plan.ingest[0]).toMatchObject({ inputPath: "media/clip.mp4" });
 		expect(plan.outputs).toEqual([
 			expect.objectContaining({
-				kind: "S3_ROLE_BASED",
-				credentialId,
-				bucket: "output-bucket",
+				kind: outputKind,
+				credentialId:
+					outputKind === "S3_ROLE_BASED" ? credentialId : otherOutput,
+				...(outputKind === "S3_ROLE_BASED" ? { bucket: "output-bucket" } : {}),
+				...(outputKind === "AZURE" ? { container: "output-bucket" } : {}),
 			}),
 		]);
 		expect(plan.muxings[0].destination).toMatchObject({
-			acl: "PRIVATE",
 			path: expect.stringContaining("processed/clip/"),
 		});
+		if (outputKind === "S3_ROLE_BASED")
+			expect(plan.muxings[0].destination.acl).toBe("PRIVATE");
+		else expect(plan.muxings[0].destination).not.toHaveProperty("acl");
 		expect(apiFetch.mock.calls.some(([url]) => url.includes("/storage/"))).toBe(
 			false,
 		);

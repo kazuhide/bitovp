@@ -150,6 +150,19 @@ tests):
   strict descending keyset, including same-time ties. Invalid input400, foreign
   run404, read failure5xx (not empty success). No provider call or mutation.
 
+## Encoding API coverage
+
+Request `GET /api/settings/api-coverage?format=csv` for every matching
+operation. Optional filters are `family`, `source`, `reachability`, `scope`
+and `q`. The export includes the workflow and source references.
+
+To record a workflow, trace the app entry point to its resolved SDK call and
+use the installed SDK with a transport fixture that checks the method, target
+and applicable inputs. Register the operation identity and evidence anchors
+in `implementation-audit.json`. `pnpm test:api-coverage` checks the canonical
+operation inventory and rejects duplicate or stale proof anchors. Provider
+execution and request-field audits are tracked independently.
+
 ## Public request body limits
 
 `POST /api/auth/login` accepts up to **4 KiB**, `POST /api/auth/setup` up to

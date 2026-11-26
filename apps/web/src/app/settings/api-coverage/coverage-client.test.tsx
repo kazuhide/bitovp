@@ -1,7 +1,8 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildOperationLedger } from "@/lib/api-coverage/operation-ledger";
 import { messagesFor } from "@/lib/i18n";
+import { installTenantFetch } from "@/lib/tenant-fetch";
 import { renderWithQuery } from "@/test/render";
 import { ApiCoverageClient } from "./coverage-client";
 
@@ -177,16 +178,61 @@ describe("ApiCoverageClient current source census", () => {
 		expect(
 			screen.queryByRole("row", { name: /encoding\.inputs\.rtmp\.list/ }),
 		).not.toBeInTheDocument();
-		const href = screen
-			.getByRole("link", { name: "Download matching CSV" })
-			.getAttribute("href");
-		const url = new URL(href ?? "", "http://test");
-		expect(url.pathname).toBe("/api/settings/api-coverage");
-		expect(Object.fromEntries(url.searchParams)).toMatchObject({
-			format: "csv",
-			scope: "live",
-			reachability: "app-confirmed",
-		});
+		const fetchCsv = vi.fn(
+			async (_url: string, _init?: RequestInit) =>
+				new Response("path,method\n/encoding/inputs/rtmp,POST", {
+					headers: { "Content-Type": "text/csv; charset=utf-8" },
+				}),
+		);
+		const click = vi
+			.spyOn(HTMLAnchorElement.prototype, "click")
+			.mockImplementation(function (this: HTMLAnchorElement) {
+				expect(this.download).toBe("encoding-api-coverage.csv");
+			});
+		const createObjectURL = vi.fn(() => "blob:coverage-fixture");
+		vi.stubGlobal("fetch", fetchCsv);
+		vi.stubGlobal(
+			"URL",
+			class extends URL {
+				static createObjectURL = createObjectURL;
+				static revokeObjectURL = vi.fn();
+			},
+		);
+		const org = "00000000-0000-4000-8000-000000000001";
+		installTenantFetch(org);
+		try {
+			fireEvent.click(
+				screen.getByRole("button", { name: "Download matching CSV" }),
+			);
+			await waitFor(() => expect(click).toHaveBeenCalledOnce());
+			const call = fetchCsv.mock.calls[0];
+			if (!call)
+				throw new Error("CSV request did not reach the tenant-bound fetch");
+			const url = new URL(call[0], "http://test");
+			expect(url.pathname).toBe("/api/settings/api-coverage");
+			expect(new Headers(call[1]?.headers).get("x-bitovp-expected-org")).toBe(
+				org,
+			);
+			expect(Object.fromEntries(url.searchParams)).toMatchObject({
+				format: "csv",
+				scope: "live",
+				reachability: "app-confirmed",
+			});
+			expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+			fetchCsv.mockResolvedValueOnce(
+				Response.json({ error: "Organization changed" }, { status: 409 }),
+			);
+			fireEvent.click(
+				screen.getByRole("button", { name: "Download matching CSV" }),
+			);
+			expect(await screen.findByRole("alert")).toHaveTextContent(
+				"Could not download the CSV.",
+			);
+			expect(click).toHaveBeenCalledOnce();
+		} finally {
+			click.mockRestore();
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it("separates fresh verb-specific source evidence from collapsed historical parameters", async () => {

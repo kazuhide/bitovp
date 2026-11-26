@@ -1,9 +1,13 @@
-import { CloudRegion, EncodingTemplateType } from "@bitmovin/api-sdk";
+import {
+	AwsCloudRegion,
+	EncodingTemplateType,
+	GoogleCloudRegion,
+} from "@bitmovin/api-sdk";
 import { publicStorageDiagnostic } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { encodingCatalogueKinds } from "@/lib/encoding-catalogue";
-import { bitmovinClientForAccount } from "@/lib/server/bitmovin";
+import { bitmovinClientFromBinding } from "@/lib/server/bitmovin";
 import { getServerContext } from "@/lib/server/context";
 import { encodingIoReader } from "@/lib/server/encoding-io-catalogue";
 import { jsonError, routeError, validationError } from "@/lib/server/http";
@@ -38,13 +42,21 @@ const providerResponse = z.object({
 	data: z.object({ result: z.unknown() }),
 });
 type Resource = z.infer<typeof resourceSchema>;
-type Kind = z.infer<typeof querySchema>["kind"];
+type Target = Pick<z.infer<typeof querySchema>, "kind" | "protocol">;
 const timestamp = z.iso.datetime({ offset: true });
-const cloudRegion = z.enum(CloudRegion);
+const awsRegion = z.enum(AwsCloudRegion);
+const googleRegion = z.enum(GoogleCloudRegion);
+const storageRegions: Readonly<Record<string, z.ZodType<string> | undefined>> =
+	{
+		s3: awsRegion,
+		"s3-role-based": awsRegion,
+		gcs: googleRegion,
+		"gcs-service-account": googleRegion,
+	};
 const watchInput = z.object({ inputId: uuid });
 const watchOutputs = z.array(z.object({ outputId: uuid }));
 
-function project(item: Resource, kind: Kind, detail = false) {
+function project(item: Resource, { kind, protocol }: Target, detail = false) {
 	const id = item.id;
 	const name =
 		typeof item.name === "string"
@@ -59,7 +71,9 @@ function project(item: Resource, kind: Kind, detail = false) {
 	if (kind !== "watch-folders") {
 		return {
 			...metadata,
-			cloudRegion: cloudRegion.safeParse(item.cloudRegion).data,
+			cloudRegion: protocol
+				? storageRegions[protocol]?.safeParse(item.cloudRegion).data
+				: undefined,
 		};
 	}
 	return {
@@ -111,10 +125,13 @@ export async function GET(req: Request) {
 	try {
 		signal.throwIfAborted();
 		const ctx = await getServerContext();
+		const binding =
+			await ctx.bitmovinAccounts.revealForEncoding(bitmovinAccountId);
+		signal.throwIfAborted();
+		if (!binding) return jsonError(404, "Bitmovin account not found");
 		let result: unknown;
-		const api = await bitmovinClientForAccount(
-			ctx,
-			bitmovinAccountId,
+		const api = bitmovinClientFromBinding(
+			binding,
 			signal,
 			async (_url, upstream) => {
 				if (!upstream.ok) return;
@@ -123,8 +140,6 @@ export async function GET(req: Request) {
 				result = providerResponse.safeParse(body).data?.data.result;
 			},
 		);
-		signal.throwIfAborted();
-		if (!api) return jsonError(404, "Bitmovin account not found");
 		try {
 			if (io) {
 				if (id) await io.get(api, id);
@@ -157,7 +172,7 @@ export async function GET(req: Request) {
 		if (id) {
 			const item = resourceSchema.safeParse(result).data;
 			return item?.id === id
-				? response({ ...target, item: project(item, kind, true) })
+				? response({ ...target, item: project(item, target, true) })
 				: malformedResponse();
 		}
 		const page = providerPage.safeParse(result).data;
@@ -175,7 +190,7 @@ export async function GET(req: Request) {
 			...target,
 			offset,
 			totalCount: page.totalCount,
-			items: page.items.map((item) => project(item, kind)),
+			items: page.items.map((item) => project(item, target)),
 		});
 	} catch (err) {
 		if (req.signal.aborted) return jsonError(499, "Request cancelled");

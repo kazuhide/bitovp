@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getAccount, revealApiKey } = vi.hoisted(() => ({
+const { getAccount, revealApiKey, revealForEncoding } = vi.hoisted(() => ({
 	getAccount: vi.fn(),
 	revealApiKey: vi.fn(),
+	revealForEncoding: vi.fn(),
 }));
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: async () => ({
-		bitmovinAccounts: { get: getAccount, revealApiKey },
+		bitmovinAccounts: { get: getAccount, revealApiKey, revealForEncoding },
 	}),
 }));
 
@@ -106,7 +107,7 @@ function assertGet(
 	);
 	expect(new Headers(init.headers).get("X-Api-Key")).toBe("fixture-api-key");
 	expect(init.signal).toBeInstanceOf(AbortSignal);
-	expect(getAccount).toHaveBeenCalledWith(ACCOUNT);
+	expect(revealForEncoding).toHaveBeenCalledWith(ACCOUNT);
 }
 
 beforeEach(() => {
@@ -116,10 +117,48 @@ beforeEach(() => {
 		tenantOrgId: "fixture-organization",
 	});
 	revealApiKey.mockResolvedValue("fixture-api-key");
+	revealForEncoding.mockResolvedValue({
+		apiKey: "fixture-api-key",
+		tenantOrgId: "fixture-organization",
+	});
 });
 afterEach(() => vi.unstubAllGlobals());
 
 describe("native Encoding resources through the installed SDK", () => {
+	it("uses the credentials and tenant header from one account snapshot", async () => {
+		getAccount.mockResolvedValue({
+			id: ACCOUNT,
+			tenantOrgId: "old-organization",
+		});
+		revealApiKey.mockResolvedValue("a-different-key-revision");
+		const transport = mockTransport({ totalCount: 0, items: [] });
+		expect((await GET(request("templates"))).status).toBe(200);
+		expect(revealForEncoding).toHaveBeenCalledOnce();
+		expect(revealForEncoding).toHaveBeenCalledWith(ACCOUNT);
+		expect(getAccount).not.toHaveBeenCalled();
+		expect(revealApiKey).not.toHaveBeenCalled();
+		const headers = new Headers(transport.mock.calls[0]?.[1].headers);
+		expect(headers.get("X-Api-Key")).toBe("fixture-api-key");
+		expect(headers.get("X-Tenant-Org-Id")).toBe("fixture-organization");
+	});
+
+	it.each([
+		["inputs", "s3", "US_EAST_1"],
+		["outputs", "s3-role-based", "US_EAST_1"],
+		["inputs", "gcs-service-account", "EUROPE_WEST_1"],
+		["outputs", "gcs", "EUROPE_WEST_1"],
+	])("keeps the %s/%s storage region %s", async (kind, protocol, cloudRegion) => {
+		mockTransport({ id: RESOURCE, cloudRegion });
+		const response = await GET(
+			request(kind, `&protocol=${protocol}&id=${RESOURCE}`),
+		);
+		expect(await response.json()).toEqual({
+			kind,
+			protocol,
+			item: { id: RESOURCE, cloudRegion },
+		});
+	});
+
 	it("sends the template collection GET with its type and paging query", async () => {
 		const transport = mockTransport({
 			offset: 2,
@@ -271,8 +310,8 @@ describe("native Encoding resources through the installed SDK", () => {
 		assertGet(transport, `/v1/encoding/${kind}/${protocol}/${RESOURCE}`);
 	});
 
-	it("rejects foreign accounts before credential lookup or sending a request", async () => {
-		getAccount.mockResolvedValue(null);
+	it("rejects a foreign account before sending a provider request", async () => {
+		revealForEncoding.mockResolvedValue(null);
 		const transport = mockTransport({});
 		expect((await GET(request("templates"))).status).toBe(404);
 		expect(revealApiKey).not.toHaveBeenCalled();
@@ -293,7 +332,7 @@ describe("native Encoding resources through the installed SDK", () => {
 	])("rejects unsupported query boundaries (%s %s)", async (kind, suffix) => {
 		const transport = mockTransport({});
 		expect((await GET(request(kind, suffix))).status).toBe(400);
-		expect(getAccount).not.toHaveBeenCalled();
+		expect(revealForEncoding).not.toHaveBeenCalled();
 		expect(transport).not.toHaveBeenCalled();
 	});
 

@@ -74,6 +74,8 @@ const envSchema = z.object({
 	VMAF_NATIVE_PATH: z.string().min(1).optional(),
 	/** Reuse whole-frame CPU-verified owned scores on eligible manual retries. */
 	VMAF_REUSE_VERIFIED_NATIVE_RESULTS: z.enum(["0", "1"]).default("0"),
+	/** Both worker entrypoints must agree on the VMAF queue's owner. */
+	VMAF_QUEUE_OWNER: z.enum(["worker", "dedicated"]).default("worker"),
 	/** Device index among GPUs visible to the selected local backend. */
 	VMAF_GPU_DEVICE: z.coerce.number().int().nonnegative().safe().default(0),
 	/** Optional local VOD binary, independent of the Live feeder and cloud image. */

@@ -1,6 +1,88 @@
-import { describe, expect, it } from "vitest";
+import { createServer } from "node:http";
+import { describe, expect, it, vi } from "vitest";
 import { createRetryingFetch, isRetryable } from "./retrying-fetch";
 import { createBitmovinSdkOps } from "./sdk-ops";
+
+it("journals a real child POST refusal before its response body breaks and never follows a redirect", async () => {
+	const requests: string[] = [];
+	let breakBody: (() => void) | undefined;
+	const server = createServer((req, res) => {
+		requests.push(req.url ?? "");
+		if (req.url === "/redirect") {
+			res.writeHead(307, { location: "/target" });
+			res.end();
+			return;
+		}
+		res.writeHead(429, {
+			"content-type": "application/json",
+			"content-length": 500,
+		});
+		res.write("{");
+		breakBody = () => res.destroy();
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	try {
+		const address = server.address();
+		if (!address || typeof address === "string")
+			throw new Error("missing listen address");
+		const base = "http://127.0.0.1:" + address.port;
+		const record = vi.fn(async () => {});
+		const send = createRetryingFetch({
+			childCreateJournal: () => ({ isPreparing: () => false, record }),
+		});
+		const redirect = await send(base + "/redirect", { method: "POST" });
+		expect(redirect.status).toBe(307);
+		expect(record).not.toHaveBeenCalled();
+		await redirect.body?.cancel();
+		const rejected = await send(base + "/refused", { method: "POST" });
+		expect(record.mock.calls).toEqual([["PREPARING"]]);
+		breakBody?.();
+		await expect(rejected.text()).rejects.toThrow();
+		expect(requests).toEqual(["/redirect", "/refused"]);
+	} finally {
+		server.closeAllConnections();
+		await new Promise<void>((resolve, reject) =>
+			server.close((error) => (error ? reject(error) : resolve())),
+		);
+	}
+});
+
+it("closes a refused child POST response when its durable journal loses the lease", async () => {
+	let requests = 0;
+	let closed = false;
+	const server = createServer((_request, response) => {
+		requests++;
+		response.once("close", () => {
+			closed = true;
+		});
+		response.writeHead(429, { "content-type": "application/json" });
+		response.write("{");
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	try {
+		const address = server.address();
+		if (!address || typeof address === "string")
+			throw new Error("missing listen address");
+		const lost = new Error("lease lost");
+		const record = vi.fn(async () => {
+			throw lost;
+		});
+		const send = createRetryingFetch({
+			childCreateJournal: () => ({ isPreparing: () => false, record }),
+		});
+		await expect(
+			send("http://127.0.0.1:" + address.port + "/child", { method: "POST" }),
+		).rejects.toBe(lost);
+		await expect.poll(() => closed, { timeout: 2000 }).toBe(true);
+		expect(requests).toBe(1);
+		expect(record.mock.calls).toEqual([["PREPARING"]]);
+	} finally {
+		server.closeAllConnections();
+		await new Promise<void>((resolve, reject) =>
+			server.close((error) => (error ? reject(error) : resolve())),
+		);
+	}
+});
 
 /**
  * The distinction that matters is REJECTED vs RESPONDED. A dropped connection is
@@ -69,6 +151,30 @@ describe("createRetryingFetch", () => {
 		expect(warnings[0]).toContain("POST https://api.bitmovin.com");
 		expect(warnings[0]).toContain("UND_ERR_SOCKET");
 		expect(warnings[0]).toContain("retrying 1/2");
+	});
+
+	it.each([
+		"POST",
+		"DELETE",
+		"GET",
+	])("retries only reads on an attempt-owned manifest request (%s)", async (method) => {
+		const target = flaky(1);
+		const send = createRetryingFetch({
+			fetchImpl: target.impl,
+			sleep: noSleep,
+			warn: () => {},
+			retryMutations: false,
+		});
+		const request = send("https://api.bitmovin.com/v1/encoding/manifests/hls", {
+			method,
+		});
+		if (method === "GET") {
+			expect((await request).status).toBe(201);
+			expect(target.calls()).toBe(2);
+		} else {
+			await expect(request).rejects.toThrow();
+			expect(target.calls()).toBe(1);
+		}
 	});
 
 	it("gives up after the attempt budget and rethrows the LAST error", async () => {

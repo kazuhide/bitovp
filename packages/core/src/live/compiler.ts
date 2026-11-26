@@ -2,6 +2,7 @@ import { h26xPictureControls } from "../plan/codec-controls";
 import { codecDetailControls } from "../plan/codec-detail-controls";
 import type { CompiledOperation } from "../plan/compiler";
 import { relativeSegmentPath } from "../plan/compiler";
+import { heAacConfiguration } from "../plan/he-aac";
 import {
 	checkMslEncoderVersion,
 	MslEncoderVersionError,
@@ -9,6 +10,7 @@ import {
 import { hasMuxedInAudio, muxingStreamKeys } from "../plan/muxing-streams";
 import type { PlanRendition } from "../plan/schema";
 import { isAisaManagedLivePlan } from "./aisa";
+import { compileDvbManifest, compileDvbStreams } from "./dvb-subtitles";
 import { resolveLiveEncodingOption } from "./encoding-option";
 import { compileLiveManifestDetails } from "./manifest-details";
 import {
@@ -75,8 +77,13 @@ function isLiveVideoCodec(
 /** Live audio codecs (no Atmos in live). */
 function isLiveAudioCodec(
 	rendition: PlanRendition,
-): rendition is Extract<PlanRendition, { codec: "AAC" | "DDPLUS" | "DD" }> {
+): rendition is Extract<
+	PlanRendition,
+	{ codec: "HE_AAC_V1" | "HE_AAC_V2" | "AAC" | "DDPLUS" | "DD" }
+> {
 	return (
+		rendition.codec === "HE_AAC_V1" ||
+		rendition.codec === "HE_AAC_V2" ||
 		rendition.codec === "AAC" ||
 		rendition.codec === "DDPLUS" ||
 		rendition.codec === "DD"
@@ -91,6 +98,8 @@ function streamName(rendition: PlanRendition): string {
 			return rendition.height === null
 				? `Stream ${rendition.codec}`
 				: `Stream ${rendition.codec} ${rendition.height}p`;
+		case "HE_AAC_V1":
+		case "HE_AAC_V2":
 		case "AAC":
 			return `Stream AAC ${kbps(rendition.bitrate)}`;
 		case "DDPLUS":
@@ -120,12 +129,23 @@ function muxingName(
 /** The rendition subset the live encoder accepts (validator-enforced). */
 type LiveRendition = Extract<
 	PlanRendition,
-	{ codec: "H264" | "H265" | "AAC" | "DDPLUS" | "DD" }
+	{
+		codec:
+			| "H264"
+			| "H265"
+			| "AAC"
+			| "HE_AAC_V1"
+			| "HE_AAC_V2"
+			| "DDPLUS"
+			| "DD";
+	}
 >;
 const LIVE_RENDITION_CODECS: ReadonlySet<string> = new Set([
 	"H264",
 	"H265",
 	"AAC",
+	"HE_AAC_V1",
+	"HE_AAC_V2",
 	"DDPLUS",
 	"DD",
 ]);
@@ -640,6 +660,8 @@ function codecPayload(rendition: PlanRendition): Record<string, unknown> {
 				: {}),
 		};
 	}
+	if (rendition.codec === "HE_AAC_V1" || rendition.codec === "HE_AAC_V2")
+		return heAacConfiguration(rendition);
 	if (
 		rendition.codec === "AAC" ||
 		rendition.codec === "DDPLUS" ||
@@ -665,6 +687,8 @@ function codecKind(
 	| "CREATE_CODEC_H264"
 	| "CREATE_CODEC_H265"
 	| "CREATE_CODEC_AAC"
+	| "CREATE_CODEC_HE_AAC_V1"
+	| "CREATE_CODEC_HE_AAC_V2"
 	| "CREATE_CODEC_DDPLUS"
 	| "CREATE_CODEC_DD" {
 	switch (rendition.codec) {
@@ -672,6 +696,9 @@ function codecKind(
 			return "CREATE_CODEC_H264";
 		case "H265":
 			return "CREATE_CODEC_H265";
+		case "HE_AAC_V1":
+		case "HE_AAC_V2":
+			return `CREATE_CODEC_${rendition.codec}`;
 		case "AAC":
 			return "CREATE_CODEC_AAC";
 		case "DDPLUS":
@@ -1049,14 +1076,19 @@ export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
 			},
 		});
 	}
+	ops.push(...compileDvbStreams(plan));
 	for (const manifest of plan.liveManifests) {
 		ops.push(
 			...compileLiveManifestDetails(
 				plan,
 				manifest,
-				manifest.kind === "HLS"
-					? compileLiveHlsManifest(plan, manifest)
-					: compileLiveDashManifest(plan, manifest),
+				compileDvbManifest(
+					plan,
+					manifest,
+					manifest.kind === "HLS"
+						? compileLiveHlsManifest(plan, manifest)
+						: compileLiveDashManifest(plan, manifest),
+				),
 			),
 		);
 	}

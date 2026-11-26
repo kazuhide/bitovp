@@ -208,14 +208,18 @@ child.once('close', (code, signal) => {
 });
 `;
 
-export function groupExists(pid) {
+function signalGroup(pid, signal) {
 	try {
-		process.kill(-pid, 0);
+		process.kill(-pid, signal);
 		return true;
 	} catch (error) {
 		if (error.code === "ESRCH") return false;
 		throw error;
 	}
+}
+
+export function groupExists(pid) {
+	return signalGroup(pid, 0);
 }
 
 export async function guardedCommand(binary, args, options) {
@@ -249,14 +253,23 @@ export async function guardedCommand(binary, args, options) {
 	} finally {
 		try {
 			if (pid && groupExists(pid)) {
-				process.kill(-pid, "SIGKILL");
+				// The last member can exit between the probe and the signal.
+				signalGroup(pid, "SIGKILL");
 				const limit = Date.now() + 1000;
 				while (groupExists(pid) && Date.now() < limit)
 					await new Promise((resolve) => setTimeout(resolve, 20));
-				problem = Object.assign(failure("PROCESS_GROUP_REMAINED"), {
-					cause: problem,
-				});
-				if (groupExists(pid)) problem = failure("PROCESS_CLEANUP_FAILED");
+				if (groupExists(pid)) {
+					problem = Object.assign(failure("PROCESS_CLEANUP_FAILED"), {
+						cause: problem,
+					});
+				} else if (problem?.code !== "COMMAND_TIMEOUT") {
+					// A normally finished command must never leave descendants.
+					// A timed out command is already a failure; once its entire
+					// group is gone, retain the original diagnostic for the caller.
+					problem = Object.assign(failure("PROCESS_GROUP_REMAINED"), {
+						cause: problem,
+					});
+				}
 			}
 		} catch (error) {
 			problem = Object.assign(failure("PROCESS_CLEANUP_FAILED"), {

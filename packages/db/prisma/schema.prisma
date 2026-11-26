@@ -114,6 +114,29 @@ model ResetCleanupTask {
   @@index([organizationId])
 }
 
+/// A terminal product event and its bounded delivery history survive deletion of the broadcast.
+model LiveStopNotification {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  /// Broadcast events use the run ID. Schedule events use their own ID and retain the original schedule.
+  id             String @id @db.Uuid
+  channelId      String @db.Uuid
+  channelName    String
+  scheduleId     String? @unique @db.Uuid
+  kind           String
+  occurredAt     DateTime
+  failures       Int @default(0)
+  nextAttemptAt  DateTime? @default(now())
+  leaseToken     String? @db.Uuid
+  finishedAt     DateTime?
+  failureReason  String?
+  skipped        Boolean @default(false)
+
+  @@index([organizationId, nextAttemptAt, id])
+  @@index([organizationId, finishedAt, id])
+}
+
 model BitmovinAccount {
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
@@ -124,6 +147,11 @@ model BitmovinAccount {
   encryptedApiKey String
   /// Optional X-Tenant-Org-Id sent with every API call.
   tenantOrgId     String?
+  /// Prior provider scopes used to protect encoders during deferred reset. Empty string means unknown.
+  resetPriorTenantScopes String[] @default([])
+  /// Local revision of the upstream Bitmovin organization used for resource operations.
+  resourceScopeVersion String @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  resourceScopeSince DateTime? @default(now())
   /// Defaults applied to new plans: encoderVersion, cloudRegion,
   /// fallbackRegions, schedulingPriority, prewarmedPoolIds.
   defaults        Json     @default("{}")
@@ -213,6 +241,7 @@ model CreateRequest {
 }
 
 model EncodingJob {
+  pendingResourceRemovals EncodingResourceRemoval[]
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
@@ -830,6 +859,10 @@ model LiveChannel {
   /// transition increments it; an effect may send only while its committed
   /// claim generation is still current.
   liveEffectFenceVersion Int           @default(0)
+  /// Upgrade-only fence for retained START and STOP deliveries without a recorded admission.
+  legacyAdmissionFenceVersion Int?
+  /// Generation claimed by the public manual START transaction.
+  manualProvisionAdmissionFenceVersion Int?
   /// Ledger #160 PR4: startup probes ride the NORMAL pipeline but are
   /// not operator content — PROBE rows are hidden from the default
   /// channel list (a toggle reveals them) and their finalize sample
@@ -865,6 +898,8 @@ model LiveChannel {
   /// or verified absent by reset-only account/provenance checks and locked CAS.
   /// Exempts only the current bitmovinEncodingId; every (re)start clears it.
   /// Unknown/ambiguous reads remain blocking. Absence never changes lifecycle.
+  /// Exact account/encoding terminal reads for surviving claims whose owning run no longer exists.
+  resetOrphanEncoderEvidence Json?
   encoderStoppedConfirmedFor String?
   bitmovinAccountId  String?           @db.Uuid
   bitmovinAccount    BitmovinAccount?  @relation(fields: [bitmovinAccountId], references: [id], onDelete: SetNull)
@@ -955,17 +990,26 @@ model LiveChannel {
 /// (#108 PR1) is schema+backfill+derivation only — the worker still writes
 /// the channel columns; the run rows become the write path in the follow-up.
 model LiveChannelRun {
+  pendingResourceRemovals EncodingResourceRemoval[]
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
   id                            String            @id @default(uuid()) @db.Uuid
   liveChannelId                 String            @db.Uuid
   liveChannel                   LiveChannel       @relation(fields: [liveChannelId], references: [id], onDelete: Cascade)
+  /// Upgrade-only lower bound for a timestamped START delivery on this airing.
+  legacyProvisionAdmissionAt DateTime?
   /// Monotonic per channel, starting at one; displayed as the broadcast number.
   seq                           Int
   status                        LiveChannelStatus @default(CREATED)
   /// Durable cooperative startup cancellation; kept on the exact airing across retries.
   cancelRequested               Boolean           @default(false)
+  /// Encoder IDs removed when this broadcast's RTMP provisioning graph was rebuilt.
+  previousProviderEncodingIds   String[]          @default([])
+  /// Highest contiguous RTMP rebuild attempt whose replaced encoder IDs were archived.
+  archivedRtmpAttempt            Int               @default(0)
+  /// Displaced RTMP encoder IDs positively retired under their originating account.
+  rtmpRetirementEvidence        Json?
   /// Unique across ALL runs; null only until CREATE_ENCODING lands.
   bitmovinEncodingId            String?           @unique
   /// Provider Analysis identity belongs to this exact airing, never the channel.
@@ -1028,6 +1072,10 @@ model LiveChannelRun {
   queueSeconds                  Int?
   runningSince                  DateTime?
   endedAt                       DateTime?
+  /// Transactional handoff of the confirmed STOP event for this broadcast.
+  stopNotificationKind          String?
+  stopNotificationAt            DateTime?
+  stopNotificationState         String?
   /// Snapshot of the window THIS run served (R6): the channel's own
   /// programStartAt/EndAt mean the UPCOMING window and get rewritten.
   programStartAt                DateTime?
@@ -1235,6 +1283,15 @@ model FeederSession {
   liveChannelRunId   String?         @db.Uuid
   liveChannelRun     LiveChannelRun? @relation(fields: [liveChannelRunId], references: [id], onDelete: Cascade)
   status             FeederStatus    @default(CREATED)
+  /// LOOP is the legacy default. ONCE never restarts from the beginning.
+  /// Values are constrained by FeederSession_playbackMode_check in SQL.
+  playbackMode       String          @default("LOOP")
+  /// Durable intent taken once, immediately before a single-pass spawn.
+  /// A takeover must not replay a session once this is present.
+  playbackDispatchedAt DateTime?
+  /// The worker's single-pass end evidence (exit, progress and source span).
+  /// A STOPPED status alone does not prove that the source reached EOF.
+  playbackReceipt    Json?
   /// Source MP4 storage coordinates; the credential is resolved from the
   /// vault at spawn only — never persisted here.
   sourceCredentialId String          @db.Uuid
@@ -1667,6 +1724,9 @@ model StorageInspection {
   /// exceed Int32. Advisory only: the worker still bounds on arrival and
   /// requires Content-Range, so a stale/wrong size cannot unbound the read.
   objectSize   BigInt?
+  verifyAudioCopy Boolean @default(false)
+  /// Immutable version used for the audio-track inspection.
+  sourceIdentity Json?
   error        String?
   createdAt    DateTime                @default(now())
   updatedAt    DateTime                @updatedAt
@@ -2233,15 +2293,27 @@ model LiveSchedule {
   /// STOP the channel STOPPING) and only THEN call `queue.add`; a SIGKILL
   /// between the two lost the action forever, because the next sweep reads
   /// only ARMED rows. A FIRED row now means CLAIMED, and `dispatchedAt`
-  /// means HANDED TO THE QUEUE — it is written only after `add` resolves.
+  /// means HANDED TO THE QUEUE — a successful add or the actual queue job
+  /// can prove the handoff.
   /// FIRED + null is therefore the recoverable state the dispatcher pass
   /// re-adds (under the same deterministic job id, so a handoff that DID
   /// land dedupes instead of running twice).
   dispatchedAt          DateTime?
-  /// The BullMQ job id the handoff used. Forensics only — never the
-  /// re-dispatch INPUT, because a crash leaves it null by construction; the
-  /// dispatcher always DERIVES the id from the row id.
+  /// First acknowledged START handoff in this admission, even after its
+  /// original BullMQ job is replaced. Null means no handoff was observed.
+  firstStartDispatchAt  DateTime?
+  /// The BullMQ job id reserved for or acknowledged by this handoff.
   dispatchJobId         String?
+  /// The STOP envelope committed with FIRED. Redis retries retain the admitted encoder and generation.
+  stopProviderEncodingId String?
+  stopAdmissionFenceVersion Int?
+  /// Distinguishes instances of a scheduled STOP requeued under its same Redis key.
+  stopDeliveryToken         String? @db.Uuid
+  /// No queue delivery remains for this schedule at the sampled legacy channel fence.
+  /// This observation does not identify which schedule originally admitted the channel.
+  legacyStopExhaustedFence Int?
+  /// Exact channel generation committed with a scheduled START and its airing.
+  startAdmissionFenceVersion Int?
   note                  String?
   error                 String?
   /// Ledger #238: did the fired action actually land? Written by whoever
@@ -2369,6 +2441,17 @@ model LiveEffectClaim {
   idempotencyKey        String               @unique
   requestSha256         String?
   providerResultId      String?
+  /// Analysis STOP is reserved at its independent provider boundary.
+  stopAnalysisSendId    String?
+  /// NULL marks a legacy STOP with no per-encoder send journal.
+  stopProtocolVersion   Int?
+  /// A pre-upgrade attempt failed before send and may have emitted CHANNEL_ERROR.
+  legacyStopErrorNotificationPossible Boolean @default(false)
+  stopSendEncodingIds   String[]             @default([])
+  /// Archived IDs outside the earlier confirmed STOP's target set. Null protocol still preserves legacy delivery provenance.
+  legacyUnsentStopIds   String[]             @default([])
+  /// Account-bound terminal GETs and the exact failed projection from the original owner.
+  stopOutcomeEvidence   Json?
   providerEncodingId    String
   targetId              String?
   generation            Int
@@ -2978,6 +3061,7 @@ model VmafExecutionProfile {
 }
 
 model Organization {
+  encodingResourceRemovalRows EncodingResourceRemoval[]
   id String @id @default(uuid()) @db.Uuid
   name String
   slug String @unique
@@ -2988,6 +3072,7 @@ model Organization {
   appSettingRows AppSetting[]
   credentialRows Credential[]
   resetCleanupTaskRows ResetCleanupTask[]
+  liveStopNotificationRows LiveStopNotification[]
   bitmovinAccountRows BitmovinAccount[]
   storageLocationPresetRows StorageLocationPreset[]
   createRequestRows CreateRequest[]
@@ -3126,4 +3211,29 @@ model EditProjectResource {
  @@index([organizationId])
  @@index([mediaVersionId])
  @@index([imageAssetId])
+}
+
+/// Account-bound provider deletion. Uncertain sends retain references to the exact source.
+model EncodingResourceRemoval {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  sourceKind String
+  sourceId String @db.Uuid
+  channelId String? @db.Uuid
+  step String
+  attempt Int
+  providerId String
+  accountId String @db.Uuid
+  scopeVersion String @db.Uuid
+  token String @db.Uuid
+  state String
+  pendingJobId String? @db.Uuid
+  pendingRunId String? @db.Uuid
+  pendingJob EncodingJob? @relation(fields: [organizationId, pendingJobId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "EncodingResourceRemoval_pendingJob_fkey")
+  pendingRun LiveChannelRun? @relation(fields: [organizationId, pendingRunId], references: [organizationId, id], onDelete: NoAction, onUpdate: NoAction, map: "EncodingResourceRemoval_pendingRun_fkey")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([organizationId,sourceKind,sourceId,step,attempt,providerId],map:"EncodingResourceRemoval_source_key")
+  @@index([organizationId,channelId,state],map:"EncodingResourceRemoval_channel_state")
 }

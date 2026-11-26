@@ -24,7 +24,7 @@ import {
  * Bitmovin dashboard to look; now the app asks the provider itself, per
  * encoding, and stamps the rows whose encoding is TERMINAL (FINISHED /
  * ERROR / CANCELED by core's `classifyProviderStatusWord`) — or CREATED,
- * which was never started, so there is nothing to stop (owner decision
+ * for Live only when the locked creation journal also proves START was never sent (owner decision
  * 2026-09-07, rev431; the stamp is cleared again by every (re)start door:
  * the VOD retry route, every live PROVISIONING claim and revived run, and
  * the workers' pointer writes) — with that encoding's

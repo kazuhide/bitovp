@@ -217,7 +217,12 @@ export function createTenantConsumer(deps: TenantConsumerDeps) {
 					options?.enforceActive !== false &&
 					deps.isOrganizationActive &&
 					!(await deps.isOrganizationActive(envelope.organizationId)) &&
-					!(await admitInactiveOrganization(deps.prisma, key, envelope.payload))
+					!(await admitInactiveOrganization(
+						deps.prisma,
+						key,
+						envelope.payload,
+						job,
+					))
 				)
 					throw new Error(INACTIVE_ORGANIZATION_ERROR);
 				const feederStart =

@@ -72,6 +72,46 @@ function plan() {
 }
 
 describe("existing full-source HLS QC targets", () => {
+	it.each([
+		"AUTO",
+		"VIDEO_RELATIVE",
+	] as const)("uses HDR10+ video, never its JSON metadata, as the %s QC reference", (selectionMode) => {
+		const source = plan();
+		const p = encodingPlanSchema.parse({
+			...source,
+			dolbyStreams: [],
+			hdr10PlusStreams: [
+				{
+					key: "hdr10plus",
+					inputKey: "in",
+					videoInputPath: "source/hdr10.mov",
+					metadataInputPath: "source/hdr10plus.json",
+					selectionMode,
+				},
+			],
+			renditions: [
+				{
+					...source.renditions[0],
+					codec: "H265",
+					ingestKey: "hdr10plus",
+					dynamicRangeFormat: "HDR10",
+				},
+			],
+		});
+		expect(enumerateExistingHlsQcTargets(p)[0]?.reference).toEqual({
+			inputKey: "in",
+			inputPath: "source/hdr10.mov",
+		});
+		const hdr = p.hdr10PlusStreams[0];
+		if (!hdr) throw new Error("Missing HDR10+ fixture");
+		hdr.selectionMode = "VIDEO_RELATIVE";
+		hdr.position = 1;
+		expect(enumerateExistingHlsQcTargets(p)).toEqual([]);
+		hdr.selectionMode = "POSITION_ABSOLUTE";
+		hdr.position = 0;
+		expect(enumerateExistingHlsQcTargets(p)).toEqual([]);
+	});
+
 	it("resolves embedded Dolby video only through the explicit HLS path", () => {
 		const p = plan();
 		const before = JSON.stringify(p);

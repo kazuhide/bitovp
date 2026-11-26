@@ -13,6 +13,9 @@ import {
 	AudioMixSourceChannelType,
 	BurnInSubtitleSrt,
 	CaptionCharacterEncoding,
+	Cea608CaptionInputStream,
+	Cea608ChannelType,
+	Cea708CaptionInputStream,
 	ChunkedTextMuxing,
 	CmafMuxing,
 	ConcatenationInputConfiguration,
@@ -30,11 +33,13 @@ import {
 	DolbyVisionMuxingConfiguration,
 	DolbyVisionProfile,
 	DolbyVisionTrackSampleEntryName,
+	DvbSubtitleInputStream,
 	FileInputStream,
 	FileInputStreamType,
 	Fmp4Muxing,
 	FragmentedMp4MuxingManifestType,
 	H264PictureTimingTrimmingInputStream,
+	Hdr10PlusInputStream,
 	IngestInputStream,
 	InputPath,
 	Keyframe,
@@ -46,6 +51,7 @@ import {
 	PictureFieldParity,
 	ProgressiveMovMuxing,
 	ProgressiveTsMuxing,
+	ProgressiveWavMuxing,
 	ProgressiveWebmMuxing,
 	Sprite,
 	SpriteCreationMode,
@@ -83,6 +89,10 @@ export function createMediaOps(
 	| "createFileInputStream"
 	| "createDolbyAtmosInputStream"
 	| "createDolbyVisionInputStream"
+	| "createCea608InputStream"
+	| "createCea708InputStream"
+	| "createDvbSubtitleInputStream"
+	| "createHdr10PlusInputStream"
 	| "createDolbyVisionMetadataInputStream"
 	| "createTimeBasedTrimmingInputStream"
 	| "createTimecodeTrackTrimmingInputStream"
@@ -101,6 +111,7 @@ export function createMediaOps(
 	| "createCmafMuxing"
 	| "createFmp4Muxing"
 	| "createMp4Muxing"
+	| "createProgressiveWavMuxing"
 	| "createProgressiveMovMuxing"
 	| "createProgressiveTsMuxing"
 	| "createProgressiveWebmMuxing"
@@ -215,6 +226,88 @@ export function createMediaOps(
 							inputId: p.inputId,
 							videoInputPath: p.videoInputPath,
 							metadataInputPath: p.metadataInputPath,
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+
+		createCea608InputStream: (encodingId, p) =>
+			audited(
+				"POST",
+				`/encoding/encodings/${encodingId}/input-streams/captions/cea608`,
+				{ ...p },
+				() =>
+					api.encoding.encodings.inputStreams.captions.cea608.create(
+						encodingId,
+						new Cea608CaptionInputStream({
+							...p,
+							channel: sdkEnumValue(
+								Cea608ChannelType,
+								p.channel,
+								"Cea608ChannelType",
+							),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+
+		createCea708InputStream: (encodingId, p) =>
+			audited(
+				"POST",
+				`/encoding/encodings/${encodingId}/input-streams/captions/cea708`,
+				{ ...p },
+				() =>
+					api.encoding.encodings.inputStreams.captions.cea708.create(
+						encodingId,
+						new Cea708CaptionInputStream({ ...p }),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+
+		createDvbSubtitleInputStream: (encodingId, p) =>
+			audited(
+				"POST",
+				`/encoding/encodings/${encodingId}/input-streams/subtitles/dvb-subtitle`,
+				{ ...p },
+				() =>
+					api.encoding.encodings.inputStreams.subtitles.dvbSubtitle.create(
+						encodingId,
+						new DvbSubtitleInputStream({
+							...p,
+							selectionMode: sdkEnumValue(
+								StreamSelectionMode,
+								p.selectionMode,
+								"StreamSelectionMode",
+							),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+
+		createHdr10PlusInputStream: (encodingId, p) =>
+			audited(
+				"POST",
+				`/encoding/encodings/${encodingId}/input-streams/hdr10-plus`,
+				{
+					videoInputPath: p.videoInputPath,
+					metadataInputPath: p.metadataInputPath,
+					selectionMode: p.selectionMode,
+				},
+				() =>
+					api.encoding.encodings.inputStreams.hdr10Plus.create(
+						encodingId,
+						new Hdr10PlusInputStream({
+							inputId: p.inputId,
+							videoInputPath: p.videoInputPath,
+							metadataInputPath: p.metadataInputPath,
+							selectionMode: sdkEnumValue(
+								StreamSelectionMode,
+								p.selectionMode,
+								"StreamSelectionMode",
+							),
+							...(p.selectionMode !== "AUTO" && p.position !== undefined
+								? { position: p.position }
+								: {}),
 						}),
 					),
 				(r) => ({ id: r.id }),
@@ -775,6 +868,44 @@ export function createMediaOps(
 							muxings().progressiveMov.create(
 								encodingId,
 								new ProgressiveMovMuxing({
+									filename: p.filename,
+									streams: muxingStreams(p),
+									outputs: outputs(p.destination),
+									name: p.name,
+								}),
+							),
+						(r) => ({ id: r.id }),
+					).then(id),
+			}),
+
+		createProgressiveWavMuxing: (encodingId, p) =>
+			adoptOrCreateStamped({
+				label: "progressive wav muxing",
+				stamp: options.stamp,
+				lookup: (expect) =>
+					findStampedResource({
+						label: "progressive wav muxing",
+						expect,
+						list: (q) => muxings().progressiveWav.list(encodingId, q),
+						customData: (rid) =>
+							muxings().progressiveWav.customdata.get(encodingId, rid),
+					}),
+				auditAdopt: stampAuditAdopt(
+					`/encoding/encodings/${encodingId}/muxings/progressive-wav`,
+				),
+				create: () =>
+					audited(
+						"POST",
+						`/encoding/encodings/${encodingId}/muxings/progressive-wav`,
+						{
+							name: p.name,
+							filename: p.filename,
+							outputPath: p.destination?.outputPath,
+						},
+						() =>
+							muxings().progressiveWav.create(
+								encodingId,
+								new ProgressiveWavMuxing({
 									filename: p.filename,
 									streams: muxingStreams(p),
 									outputs: outputs(p.destination),

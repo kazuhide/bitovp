@@ -36,6 +36,24 @@ describe("createBitmovinAccountSchema", () => {
 	});
 });
 
+it("canonicalizes organization header whitespace on create and update and rejects a whitespace-only scope", () => {
+	const valid = {
+		label: "scope",
+		apiKey: "fixture",
+		tenantOrgId: " Tenant-A\t",
+	};
+	expect(createBitmovinAccountSchema.parse(valid).tenantOrgId).toBe("Tenant-A");
+	expect(updateBitmovinAccountSchema.parse(valid).tenantOrgId).toBe("Tenant-A");
+	for (const schema of [
+		createBitmovinAccountSchema,
+		updateBitmovinAccountSchema,
+	]) {
+		expect(schema.safeParse({ ...valid, tenantOrgId: " \t" }).success).toBe(
+			false,
+		);
+	}
+});
+
 describe("updateBitmovinAccountSchema", () => {
 	it("accepts clearing tenantOrgId with null", () => {
 		const parsed = updateBitmovinAccountSchema.parse({ tenantOrgId: null });

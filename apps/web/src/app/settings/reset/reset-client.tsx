@@ -227,6 +227,29 @@ export function ResetClient() {
 						<p className="mt-3 text-xs text-zinc-400">
 							{t("settingsX.resetSelectionKept")}
 						</p>
+						{data.selectionBlocked ? (
+							<div role="alert" className="mt-3 text-amber-300 text-xs">
+								<p>{t("settingsX.resetLiveOwnershipPending")}</p>
+								<ul>
+									{[
+										...data.active.liveChannels.map((row) => ({
+											href: row.href,
+											label: row.name,
+										})),
+										...data.active.pseudoLiveFeeds.map((row) => ({
+											href: row.href,
+											label: `${row.channelName} / ${row.sourceName}`,
+										})),
+									].map((row) => (
+										<li key={row.href}>
+											<a href={row.href} className="underline">
+												{row.label}
+											</a>
+										</li>
+									))}
+								</ul>
+							</div>
+						) : null}
 						{editingSelectionBlocked ? (
 							<p role="alert" className="mt-3 text-amber-300 text-xs">
 								{t("settingsX.resetEditingDataProtected", {
@@ -276,6 +299,7 @@ export function ResetClient() {
 									categories.length === 0 ||
 									preview.isFetching ||
 									editingSelectionBlocked ||
+									data.selectionBlocked ||
 									(reset.isSuccess && reset.data.reportStatus === "unconfirmed")
 								}
 								onClick={() => reset.mutate()}

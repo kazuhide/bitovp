@@ -1,3 +1,8 @@
+import {
+	markWithheldPlanSources,
+	publicStorageDiagnostic,
+	publicVodSourceProjection,
+} from "@bitovp/core";
 import { mergeEncodingJobSnapshot } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { bitmovinClientForAccount } from "@/lib/server/bitmovin";
@@ -124,8 +129,11 @@ export async function GET(_req: Request, { params }: RouteParams) {
 		if (!row) {
 			return jsonError(404, "Not found");
 		}
+		const safe = publicVodSourceProjection(row, row.plan, row.stepLog);
 		return NextResponse.json({
-			...row,
+			...safe,
+			plan: markWithheldPlanSources(row.plan, safe.plan),
+			error: publicStorageDiagnostic(safe.error),
 			playbackLinks: await playbackLinksForPlan(ctx, row.plan),
 			// Labels for the storage panel — `{id, label, provider}` for the
 			// credentials this plan names, and nothing else (see credential-refs.ts).

@@ -1,5 +1,6 @@
 import {
 	masterKeyFromEnv,
+	publicStorageDiagnostic,
 	submitEncodingJob,
 	VERIFICATION_DISPATCH_FENCE_REJECTED,
 	VERIFICATION_DISPATCH_FENCE_REQUIRED,
@@ -11,10 +12,16 @@ import type { EncodingJobStatus, Prisma } from "@bitovp/db";
 import { listVmafCloudProfiles } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+	CREATE_REQUEST_DIGEST_HEADER,
+	CREATE_REQUEST_NOT_FOUND,
+	CREATE_SESSION_HEADER,
+} from "@/lib/creation-submission-contract";
 import { actorFrom } from "@/lib/server/audit";
 import { getServerContext } from "@/lib/server/context";
 import {
 	type CreateRequestIdentity,
+	changedCreationSession,
 	createRequestConflictResponse,
 	createRequestGoneResponse,
 	createRequestIdentity,
@@ -49,6 +56,7 @@ import {
 	verificationReplay,
 } from "@/lib/server/verification-key";
 import { validateVodInputPreparation } from "@/lib/server/vod-input-preparation";
+import { equivalentVodPlanDefaults } from "@/lib/server/vod-plan-defaults";
 
 /**
  * `presetId`+`presetRevision`: template provenance from the
@@ -144,6 +152,8 @@ const querySchema = z.object({
 
 /** Lean projection (never plan/stepLog/snapshots in lists — schema contract). */
 export async function GET(req: Request) {
+	const digest = req.headers.get(CREATE_REQUEST_DIGEST_HEADER);
+	if (digest !== null) return readCreationReceipt(req, digest);
 	const url = new URL(req.url);
 	const parsed = querySchema.safeParse({
 		limit: url.searchParams.get("limit") ?? undefined,
@@ -179,6 +189,7 @@ export async function GET(req: Request) {
 		});
 		const items = rows.slice(0, limit).map((row) => ({
 			...row,
+			error: publicStorageDiagnostic(row.error),
 			// Projection, not the whole verdict (review-202 N3).
 			qcVerdict: row.qcVerdict
 				? { pass: (row.qcVerdict as { pass?: unknown }).pass === true }
@@ -217,7 +228,12 @@ function verificationKeyResponse(
 		// The resource the caller already paid for, not a twin. 200, not 201:
 		// nothing was created by THIS request.
 		return NextResponse.json(
-			{ ...verdict.row, issues: [], replayed: true },
+			{
+				...verdict.row,
+				error: publicStorageDiagnostic(verdict.row.error),
+				issues: [],
+				replayed: true,
+			},
 			{ status: 200 },
 		);
 	}
@@ -235,8 +251,14 @@ function verificationKeyResponse(
 async function ordinaryCreateReplay(
 	prisma: Awaited<ReturnType<typeof getServerContext>>["prisma"],
 	identity: CreateRequestIdentity,
+	matchesHistoricalDigest?: (digest: string) => boolean,
 ) {
-	const receipt = await lookupCreateRequest(prisma, "VOD_JOB", identity);
+	const receipt = await lookupCreateRequest(
+		prisma,
+		"VOD_JOB",
+		identity,
+		matchesHistoricalDigest,
+	);
 	if (receipt.kind === "none") return undefined;
 	if (receipt.kind === "conflict") return createRequestConflictResponse();
 	const row = await prisma.encodingJob.findUnique({
@@ -245,9 +267,44 @@ async function ordinaryCreateReplay(
 	});
 	if (!row) return createRequestGoneResponse();
 	return NextResponse.json(
-		{ ...row, issues: [], replayed: true },
+		{
+			...row,
+			error: publicStorageDiagnostic(row.error),
+			issues: [],
+			replayed: true,
+		},
 		{ status: 200 },
 	);
+}
+
+/** A GET can recover an old Quick Launch even during a mixed-version rollout. */
+async function readCreationReceipt(req: Request, digest: string) {
+	const requestKey = req.headers.get("Idempotency-Key");
+	if (
+		!req.headers.has(CREATE_SESSION_HEADER) ||
+		!requestKey ||
+		!/^[A-Za-z0-9._:-]{1,200}$/u.test(requestKey) ||
+		!/^[a-f\d]{64}$/u.test(digest)
+	)
+		return jsonError(400, "Invalid creation receipt lookup");
+	try {
+		const ctx = await getServerContext();
+		const changed = changedCreationSession(req, ctx.tenant);
+		if (changed) return changed;
+		const replay = await ordinaryCreateReplay(ctx.prisma, {
+			requestKey,
+			requestSha256: digest,
+		});
+		const response =
+			replay ??
+			jsonError(404, "The creation request has not been accepted", {
+				code: CREATE_REQUEST_NOT_FOUND,
+			});
+		response.headers.set("Cache-Control", "private, no-store");
+		return response;
+	} catch (err) {
+		return routeError(err);
+	}
 }
 
 /**
@@ -273,6 +330,13 @@ export async function POST(req: Request) {
 			);
 		throw err;
 	}
+	// Historical GUI receipts can differ only by omitted empty stream lists.
+	const matchesHistoricalDigest = (digest: string) =>
+		equivalentVodPlanDefaults(body.data.plan).some(
+			(plan) =>
+				createRequestIdentity(req, { ...body.data, plan })?.requestSha256 ===
+				digest,
+		);
 	const { verificationKey, requestSha256, verificationDispatch } = body.data;
 	if (
 		verificationKey !== undefined &&
@@ -286,9 +350,15 @@ export async function POST(req: Request) {
 	}
 	try {
 		const ctx = await getServerContext();
+		const changed = changedCreationSession(req, ctx.tenant);
+		if (changed) return changed;
 		if (ordinaryIdentity) {
 			ordinaryContext = ctx;
-			const replay = await ordinaryCreateReplay(ctx.prisma, ordinaryIdentity);
+			const replay = await ordinaryCreateReplay(
+				ctx.prisma,
+				ordinaryIdentity,
+				matchesHistoricalDigest,
+			);
 			if (replay) return replay;
 		}
 		// A replay needs no decryption; a new job must fail before persisting
@@ -459,7 +529,11 @@ export async function POST(req: Request) {
 			select: LIST_SELECT,
 		});
 		return NextResponse.json(
-			{ ...row, issues: outcome.issues },
+			{
+				...row,
+				error: publicStorageDiagnostic(row.error),
+				issues: outcome.issues,
+			},
 			{
 				status: 201,
 			},
@@ -474,6 +548,7 @@ export async function POST(req: Request) {
 				const replay = await ordinaryCreateReplay(
 					ordinaryContext.prisma,
 					ordinaryIdentity,
+					matchesHistoricalDigest,
 				);
 				if (replay) return replay;
 			} catch (lookupErr) {

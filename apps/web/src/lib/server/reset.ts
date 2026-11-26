@@ -3,7 +3,12 @@ import {
 	feederOccupancyWhere,
 	verificationIntentsSealable,
 } from "@bitovp/core";
-import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	liveChannelAccountId,
+	type Prisma,
+	retainLibraryInputsBeforeJobDeletion,
+} from "@bitovp/db";
 import { RESET_RETAINED_EXPERIMENT_MODELS } from "@/lib/reset-selection";
 import { assertAisaSnapshotCaptured } from "./delete-jobs";
 import {
@@ -15,6 +20,15 @@ import {
 	type MoqArchiveCleanupSnapshot,
 	snapshotMoqArchiveCleanup,
 } from "./moq-archive-cleanup";
+import {
+	assertResetLiveAnalyses,
+	resetLiveAnalysisBlockers,
+} from "./reset-live-analyses";
+import { lockResetAccount } from "./reset-provider";
+import {
+	confirmArchivedRtmpEncoding,
+	readResetRtmpArchives,
+} from "./reset-rtmp-archives";
 
 /**
  *  — "reset the data and start over".
@@ -64,8 +78,12 @@ export const RESET_DELETES = [
  * would cascade away the exact proof needed to find and clean a paid resource.
  */
 export const RESET_PRESERVES = [
+	// The pending terminal event remains deliverable after its broadcast is deleted.
+	"liveStopNotification",
 	// A stale create retry must remain spent after its resource is reset.
 	"createRequest",
+	// Pending receipts protect the original job or run. Resolved receipts are immutable history.
+	"encodingResourceRemoval",
 	...RESET_RETAINED_EXPERIMENT_MODELS,
 	"librarySource",
 	"sceneAnalysisRevision",
@@ -275,6 +293,8 @@ export type VerificationIntentBlocker = {
 
 /** A row that is the only local record of a Bitmovin encoding resource. */
 export type EncoderPointer = {
+	archivedRtmp?: true;
+	planAccount?: true;
 	/** Available for reset reconcile; not needed by post-reset cleanup pointers. */
 	createdAt?: Date;
 	liveChannelId?: string;
@@ -330,7 +350,7 @@ export const RESET_BLOCKING_FEEDER_STATUSES = [
  * only durable pointer to a publisher. Active staged holds remain blocking
  * too even though they deliberately do not occupy the publisher slot.
  */
-function resetBlockingFeederWhere() {
+export function resetBlockingFeederWhere() {
 	return {
 		OR: [
 			{ status: { in: [...RESET_BLOCKING_FEEDER_STATUSES] } },
@@ -472,7 +492,11 @@ export type ProviderEncoderState =
 			kind: "missing";
 			account: import("./reset-provider").ResetAccountSnapshot;
 	  }
-	| { kind: "stopped"; providerStatus: string }
+	| {
+			kind: "stopped";
+			providerStatus: string;
+			account?: import("./reset-provider").ResetAccountSnapshot;
+	  }
 	| { kind: "running"; providerStatus: string }
 	| { kind: "unverified"; message: string };
 
@@ -497,7 +521,7 @@ export type ReconcileReport = {
 export async function listEncoderPointers(
 	prisma: AppPrismaClient,
 ): Promise<EncoderPointer[]> {
-	const [jobs, channels, runs] = await Promise.all([
+	const [jobs, channels, runs, archives] = await Promise.all([
 		prisma.encodingJob.findMany({
 			where: {
 				...pointerJobWhere(prisma),
@@ -529,6 +553,7 @@ export async function listEncoderPointers(
 				status: true,
 				bitmovinEncodingId: true,
 				bitmovinAccountId: true,
+				plan: true,
 			},
 		}),
 		prisma.liveChannelRun.findMany({
@@ -542,11 +567,18 @@ export async function listEncoderPointers(
 				liveChannelId: true,
 				status: true,
 				bitmovinEncodingId: true,
-				liveChannel: { select: { bitmovinAccountId: true, createdAt: true } },
+				liveChannel: {
+					select: { bitmovinAccountId: true, plan: true, createdAt: true },
+				},
 			},
 		}),
+		readResetRtmpArchives(prisma),
 	]);
 	return [
+		...archives.pointers.filter(
+			(p) =>
+				!RESET_BLOCKING_CHANNEL_STATUSES.some((status) => status === p.status),
+		),
 		...jobs.map((r) => ({
 			createdAt: r.createdAt,
 			kind: "encodingJob" as const,
@@ -563,7 +595,10 @@ export async function listEncoderPointers(
 			name: r.name,
 			status: r.status,
 			bitmovinEncodingId: r.bitmovinEncodingId as string,
-			bitmovinAccountId: r.bitmovinAccountId ?? null,
+			bitmovinAccountId: liveChannelAccountId(r),
+			...(!r.bitmovinAccountId && liveChannelAccountId(r)
+				? { planAccount: true as const }
+				: {}),
 		})),
 		...runs.map((r) => ({
 			createdAt: r.createdAt,
@@ -574,15 +609,22 @@ export async function listEncoderPointers(
 			name: null,
 			status: r.status,
 			bitmovinEncodingId: r.bitmovinEncodingId as string,
-			bitmovinAccountId: r.liveChannel?.bitmovinAccountId ?? null,
+			bitmovinAccountId: r.liveChannel
+				? liveChannelAccountId(r.liveChannel)
+				: null,
+			...(r.liveChannel &&
+			!r.liveChannel.bitmovinAccountId &&
+			liveChannelAccountId(r.liveChannel)
+				? { planAccount: true as const }
+				: {}),
 		})),
 	];
 }
 
 /**
  * : ask the provider about every unconfirmed encoder pointer and
- * stamp the rows whose encoding is TERMINAL — or CREATED, never started
- * (rev431) — with that encoding's id. A row whose encoding is
+ * stamp the rows whose encoding is TERMINAL, or CREATED with the required
+ * never-started evidence for Live, with that encoding's id. A row whose encoding is
  * QUEUED/RUNNING is reported and left alone: that is the population the
  * refusal exists for. Failed/ambiguous reads remain unverified. Exact entity
  * absence can clear a historical pointer only under the account fence. The
@@ -624,6 +666,26 @@ export async function reconcileEncoderPointers(
 			report.unverified.push({ ...pointer, message: state.message });
 			continue;
 		}
+		if (pointer.archivedRtmp) {
+			if (
+				state.kind === "stopped" &&
+				(await confirmArchivedRtmpEncoding(
+					prisma,
+					pointer,
+					state.providerStatus,
+					state.account,
+				))
+			) {
+				report.confirmed.push(pointer);
+			} else {
+				report.unverified.push({
+					...pointer,
+					message:
+						"A terminal status for this archived encoding and its recorded account could not be confirmed",
+				});
+			}
+			continue;
+		}
 		// Resource absence is a reset-only disposition, never a terminal
 		// provider status. A credential edit after this row existed is ambiguous.
 		if (
@@ -653,6 +715,15 @@ export async function reconcileEncoderPointers(
 				? { bitmovinAccount: { is: state.account } }
 				: {}),
 		};
+		const liveAccountFence = pointer.planAccount
+			? {
+					bitmovinAccountId: null,
+					plan: {
+						path: ["bitmovin", "accountId"],
+						equals: pointer.bitmovinAccountId,
+					},
+				}
+			: accountFence;
 		// The stamp lands only on the row AS LISTED: same pointer AND same
 		// status. A retry RESUMES the same encoding  without
 		// re-pointing, so the pointer alone cannot see it — but every exit from
@@ -685,7 +756,7 @@ export async function reconcileEncoderPointers(
 					? await db.liveChannel.updateMany({
 							where: {
 								...where,
-								...accountFence,
+								...liveAccountFence,
 								status:
 									pointer.status as Prisma.LiveChannelWhereInput["status"],
 							},
@@ -696,7 +767,7 @@ export async function reconcileEncoderPointers(
 								...where,
 								liveChannel: {
 									is: {
-										...accountFence,
+										...liveAccountFence,
 										...(state.kind === "missing"
 											? { createdAt: pointer.liveChannelCreatedAt }
 											: {}),
@@ -710,31 +781,72 @@ export async function reconcileEncoderPointers(
 							},
 							data,
 						});
+		const liveCreated =
+			pointer.kind !== "encodingJob" &&
+			state.kind === "stopped" &&
+			state.providerStatus === "CREATED";
 		const { count } =
-			state.kind === "missing"
-				? await prisma
-						.$transaction(async (tx) => {
-							// A relation predicate alone does not lock its parent. Keep the
-							// account version and run-parent binding stable through commit.
-							const accounts = await tx.$queryRaw<
-								{ id: string }[]
-							>`SELECT id FROM "BitmovinAccount" WHERE id = ${pointer.bitmovinAccountId}::uuid FOR UPDATE`;
-							if (accounts.length !== 1) return { count: 0 };
-							if (pointer.kind === "liveChannelRun") {
-								const channels = await tx.$queryRaw<
+			state.kind === "stopped" &&
+			pointer.kind !== "encodingJob" &&
+			(liveCreated || state.account)
+				? await prisma.$transaction(async (tx) => {
+						if (
+							state.account &&
+							(state.account.id !== pointer.bitmovinAccountId ||
+								!(await lockResetAccount(tx, state.account)))
+						)
+							return { count: 0 };
+						const channelId = pointer.liveChannelId ?? pointer.id;
+						await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${channelId}::uuid FOR UPDATE`;
+						await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE "liveChannelId" = ${channelId}::uuid ORDER BY seq DESC FOR UPDATE`;
+						if (!liveCreated) return stamp(tx);
+						const proof = await readResetRtmpArchives(tx, channelId);
+						if (
+							!proof.neverStarted.has(
+								JSON.stringify([
+									pointer.kind,
+									pointer.id,
+									pointer.bitmovinAccountId,
+									pointer.bitmovinEncodingId,
+								]),
+							)
+						)
+							return { count: 0 };
+						return stamp(tx);
+					})
+				: state.kind === "missing"
+					? await prisma
+							.$transaction(async (tx) => {
+								// A relation predicate alone does not lock its parent. Keep the
+								// account version and run-parent binding stable through commit.
+								const accounts = await tx.$queryRaw<
 									{ id: string }[]
-								>`SELECT id FROM "LiveChannel" WHERE id = ${pointer.liveChannelId}::uuid FOR UPDATE`;
-								if (channels.length !== 1) return { count: 0 };
-							}
-							return stamp(tx);
-						})
-						.catch(() => ({ count: 0 }))
-				: await stamp(prisma);
+								>`SELECT id FROM "BitmovinAccount" WHERE id = ${pointer.bitmovinAccountId}::uuid FOR UPDATE`;
+								if (accounts.length !== 1) return { count: 0 };
+								if (
+									pointer.planAccount &&
+									!(await tx.bitmovinAccount.findFirst({
+										where: state.account,
+										select: { id: true },
+									}))
+								)
+									return { count: 0 };
+								if (pointer.kind === "liveChannelRun") {
+									const channels = await tx.$queryRaw<
+										{ id: string }[]
+									>`SELECT id FROM "LiveChannel" WHERE id = ${pointer.liveChannelId}::uuid FOR UPDATE`;
+									if (channels.length !== 1) return { count: 0 };
+								}
+								return stamp(tx);
+							})
+							.catch(() => ({ count: 0 }))
+					: await stamp(prisma);
 		if (count === 0) {
 			report.unverified.push({
 				...pointer,
-				message:
-					state.kind === "missing"
+				message: liveCreated
+					? "Live START was not proven unsent for this encoding; check again for a terminal provider status"
+					: state.kind === "missing"
 						? "The row or account changed, or the reset confirmation could not be saved; check again"
 						: "the row was pointed at another encoding or changed state while Bitmovin was being read; check again",
 			});
@@ -743,6 +855,52 @@ export async function reconcileEncoderPointers(
 		report.confirmed.push(pointer);
 	}
 	return report;
+}
+
+export async function resetFeederBlockers(
+	prisma: Pick<AppPrismaClient, "feederSession">,
+) {
+	const where = resetBlockingFeederWhere();
+	const [rows, total] = await Promise.all([
+		prisma.feederSession.findMany({
+			where,
+			select: {
+				id: true,
+				status: true,
+				sourceKey: true,
+				createdAt: true,
+				liveChannel: { select: { name: true } },
+			},
+			take: 50,
+			orderBy: { id: "asc" },
+		}),
+		prisma.feederSession.count({ where }),
+	]);
+	return { rows: visibleResetFeeders(rows), total };
+}
+
+function visibleResetFeeders<
+	T extends {
+		id: string;
+		status: string;
+		sourceKey: string;
+		createdAt: Date;
+		liveChannel: { name: string };
+	},
+>(feederRows: T[]) {
+	const sourceName = (sourceKey: string) => {
+		const trimmed = sourceKey.endsWith("/")
+			? sourceKey.slice(0, -1)
+			: sourceKey;
+		return trimmed.slice(trimmed.lastIndexOf("/") + 1) || sourceKey;
+	};
+	return feederRows.map((row) => ({
+		id: row.id,
+		status: row.status,
+		channelName: row.liveChannel.name,
+		sourceName: sourceName(row.sourceKey),
+		createdAt: row.createdAt,
+	}));
 }
 
 export async function findActiveWork(
@@ -760,6 +918,8 @@ export async function findActiveWork(
 		pointerChannelIdentities,
 		pointerRunIdentities,
 		intentRows,
+		archives,
+		analyses,
 	] = await Promise.all([
 		prisma.encodingJob.findMany({
 			where: { status: { in: [...RESET_BLOCKING_JOB_STATUSES] } },
@@ -873,20 +1033,11 @@ export async function findActiveWork(
 				closureDigest: true,
 			},
 		}),
+		readResetRtmpArchives(prisma),
+		resetLiveAnalysisBlockers(prisma),
 	]);
-	const sourceName = (sourceKey: string) => {
-		const trimmed = sourceKey.endsWith("/")
-			? sourceKey.slice(0, -1)
-			: sourceKey;
-		return trimmed.slice(trimmed.lastIndexOf("/") + 1) || sourceKey;
-	};
-	const feederSessions = feederRows.map((row) => ({
-		id: row.id,
-		status: row.status,
-		channelName: row.liveChannel.name,
-		sourceName: sourceName(row.sourceKey),
-		createdAt: row.createdAt,
-	}));
+
+	const feederSessions = visibleResetFeeders(feederRows);
 	const vmafJobs = vmafRows.map((row) => ({
 		id: row.id,
 		status: row.status,
@@ -930,12 +1081,14 @@ export async function findActiveWork(
 		...pointerJobs.flatMap((r) => pointer("encodingJob", r)),
 		...pointerChannels.flatMap((r) => pointer("liveChannel", r)),
 		...pointerRuns.flatMap((r) => pointer("liveChannelRun", r)),
+		...archives.pointers.slice(0, 50),
 	];
 	const providerIdentityIds = new Set(
 		[
 			...pointerJobIdentities,
 			...pointerChannelIdentities,
 			...pointerRunIdentities,
+			...archives.pointers,
 		].flatMap((row) =>
 			row.bitmovinEncodingId ? [row.bitmovinEncodingId] : [],
 		),
@@ -965,21 +1118,34 @@ export async function findActiveWork(
 		prisma.liveChannel.count({ where: pointerChannelWhere(prisma) }),
 		prisma.liveChannelRun.count({ where: pointerRunWhere(prisma) }),
 	]);
+	const incomplete = [
+		...new Map(
+			[...archives.incomplete, ...analyses].map((c) => [c.id, c]),
+		).values(),
+	].filter(
+		(channel) =>
+			!RESET_BLOCKING_CHANNEL_STATUSES.some(
+				(status) => status === channel.status,
+			),
+	);
 	return {
 		encodingJobs,
-		liveChannels,
+		liveChannels: [...liveChannels, ...incomplete].slice(0, 50),
 		feederSessions,
 		vmafJobs,
 		verificationIntents,
 		unstoppedEncoders,
 		totals: {
 			encodingJobs: jobTotal,
-			liveChannels: channelTotal,
+			liveChannels: channelTotal + incomplete.length,
 			feederSessions: feederTotal,
 			vmafJobs: vmafTotal,
 			verificationIntents: unresolvedIntents.length,
 			unstoppedEncoderPointers:
-				pointerJobTotal + pointerChannelTotal + pointerRunTotal,
+				pointerJobTotal +
+				pointerChannelTotal +
+				pointerRunTotal +
+				archives.pointers.length,
 			unstoppedEncoders: providerIdentityIds.size,
 		},
 	};
@@ -1016,7 +1182,7 @@ export async function collectEncoderPointers(
 	// standing, so "the recorded set may not be the set that died" is a defect
 	// in the one thing left. A rule stated here and violated forty lines below
 	// teaches the next reader that the paragraph is decoration.
-	const [jobs, channels, runs] = await Promise.all([
+	const [jobs, channels, runs, archive] = await Promise.all([
 		selected.vodJobs
 			? prisma.encodingJob.findMany({
 					where: { bitmovinEncodingId: { not: null } },
@@ -1038,24 +1204,32 @@ export async function collectEncoderPointers(
 						status: true,
 						bitmovinEncodingId: true,
 						bitmovinAccountId: true,
+						plan: true,
 					},
 				})
 			: [],
 		selected.liveChannels
 			? prisma.liveChannelRun.findMany({
-					where: { bitmovinEncodingId: { not: null } },
+					where: {
+						OR: [
+							{ bitmovinEncodingId: { not: null } },
+							{ previousProviderEncodingIds: { isEmpty: false } },
+						],
+					},
 					// The run has no account column of its own; its channel (still
 					// alive inside this transaction) does.
 					select: {
 						id: true,
 						status: true,
 						bitmovinEncodingId: true,
-						liveChannel: { select: { bitmovinAccountId: true } },
+						previousProviderEncodingIds: true,
+						liveChannel: { select: { bitmovinAccountId: true, plan: true } },
 					},
 				})
 			: [],
+		selected.liveChannels ? readResetRtmpArchives(prisma) : { allPointers: [] },
 	]);
-	const all = [
+	const all: EncoderPointer[] = [
 		...jobs.map((r) => ({
 			kind: "encodingJob" as const,
 			id: r.id,
@@ -1070,17 +1244,45 @@ export async function collectEncoderPointers(
 			name: r.name,
 			status: r.status,
 			bitmovinEncodingId: r.bitmovinEncodingId as string,
-			bitmovinAccountId: r.bitmovinAccountId ?? null,
+			bitmovinAccountId: liveChannelAccountId(r),
 		})),
-		...runs.map((r) => ({
-			kind: "liveChannelRun" as const,
-			id: r.id,
-			name: null,
-			status: r.status,
-			bitmovinEncodingId: r.bitmovinEncodingId as string,
-			bitmovinAccountId: r.liveChannel?.bitmovinAccountId ?? null,
-		})),
+		...runs.flatMap((r) =>
+			[
+				...new Set([
+					r.bitmovinEncodingId,
+					...(r.previousProviderEncodingIds ?? []),
+				]),
+			]
+				.filter((id): id is string => !!id)
+				.map((encodingId) => ({
+					kind: "liveChannelRun" as const,
+					id: r.id,
+					name: null,
+					status: r.status,
+					bitmovinEncodingId: encodingId,
+					bitmovinAccountId: r.liveChannel
+						? liveChannelAccountId(r.liveChannel)
+						: null,
+				})),
+		),
 	];
+	const source = new Set(
+		all.map((p) => JSON.stringify([p.kind, p.id, p.bitmovinEncodingId])),
+	);
+	for (const p of archive.allPointers) {
+		const key = JSON.stringify([p.kind, p.id, p.bitmovinEncodingId]);
+		if (!source.has(key)) {
+			source.add(key);
+			all.push({
+				kind: p.kind,
+				id: p.id,
+				name: p.name,
+				status: p.status,
+				bitmovinEncodingId: p.bitmovinEncodingId,
+				bitmovinAccountId: p.bitmovinAccountId,
+			});
+		}
+	}
 	// One audit row holds this as JSON, and a long-lived install can carry
 	// thousands of finished encodes. Capped — but the total and the flag ride
 	// along, because a truncated list that does not SAY it is truncated reads
@@ -1174,9 +1376,11 @@ export async function deleteOperationalData(
 				await tx.$queryRaw`SELECT id FROM "EncodingJob" ORDER BY id FOR UPDATE`;
 				await assertNoJobEvidenceReferences(tx);
 				await assertAisaSnapshotCaptured(tx);
+				await retainLibraryInputsBeforeJobDeletion(tx);
 				// Match owned Live transitions before deleting any child rows. Lock all
 				// visible channels in a stable order, then recheck admission and stop proof.
 				await tx.$queryRaw`SELECT id FROM "LiveChannel" ORDER BY id FOR UPDATE`;
+				await assertResetLiveAnalyses(tx);
 				// review-265 130-A1: re-assert INSIDE the transaction. The
 				// pre-check ran seconds earlier, and the watch-folder sweep (a 30s
 				// timer) or any submit door can create and enqueue a job in

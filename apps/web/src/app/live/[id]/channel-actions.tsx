@@ -87,7 +87,9 @@ export function ChannelLifecycleActions({
 	encodingId,
 	hasError = false,
 	providerTerminal = false,
+	archivedStopRevision,
 	canRetryAisaFinalization = false,
+	canResumeAisaStop = false,
 	plan,
 	runId,
 	generation = 0,
@@ -101,7 +103,9 @@ export function ChannelLifecycleActions({
 	encodingId?: string;
 	hasError?: boolean;
 	providerTerminal?: boolean;
+	archivedStopRevision?: string;
 	canRetryAisaFinalization?: boolean;
+	canResumeAisaStop?: boolean;
 	plan?: LiveChannelPlan;
 	runId?: string;
 	generation?: number;
@@ -116,6 +120,7 @@ export function ChannelLifecycleActions({
 		runId: string | undefined;
 		encodingId: string | undefined;
 		generation: number;
+		archivedStopRevision?: string;
 	};
 	const [confirming, setConfirming] = useState<Confirmation | null>(null);
 	const [lastError, setLastError] = useState<string | null>(null);
@@ -184,18 +189,28 @@ export function ChannelLifecycleActions({
 	const act = useMutation({
 		mutationFn: ({
 			action,
-			finalization,
+			scopedStop,
 		}: {
 			action: LiveChannelAction;
-			finalization?: { runId: string; encodingId: string };
+			scopedStop?:
+				| {
+						action: "retry-finalization" | "retry-aisa-stop";
+						runId: string;
+						encodingId: string;
+				  }
+				| { action: "recover-archived-stop"; runId: string; revision: string }
+				| {
+						action: "stop";
+						target: {
+							runId: string | null;
+							encodingId: string | null;
+							generation: number;
+						};
+				  };
 		}) =>
 			apiFetch(`/api/live-channels/${channelId}/actions`, {
 				method: "POST",
-				body: JSON.stringify(
-					finalization
-						? { action: "retry-finalization", ...finalization }
-						: { action },
-				),
+				body: JSON.stringify(scopedStop ?? { action }),
 			}),
 		onMutate: () => {
 			setLastError(null);
@@ -213,7 +228,7 @@ export function ChannelLifecycleActions({
 			// English frame, on an otherwise-localized screen.
 			const accepted = t("live.actionAccepted", {
 				label: t(
-					vars.finalization
+					vars.scopedStop?.action === "retry-finalization"
 						? "live.retryAisaFinalization"
 						: ACTION_LABEL_KEYS[vars.action],
 				),
@@ -336,11 +351,17 @@ export function ChannelLifecycleActions({
 	);
 	const isNewRun =
 		status === "STOPPED" || (status === "ERROR" && providerTerminal);
+	const retryActiveStop =
+		canResumeAisaStop &&
+		managedAisa &&
+		status === "STOPPING" &&
+		Boolean(runId && encodingId);
 	const canStop =
-		!cancellationPending &&
-		hasEncoding &&
-		!providerTerminal &&
-		(status === "RUNNING" || status === "ERROR");
+		Boolean(archivedStopRevision && runId) ||
+		(!cancellationPending &&
+			hasEncoding &&
+			!providerTerminal &&
+			(status === "RUNNING" || status === "ERROR" || retryActiveStop));
 	/**
 	 * Restart is for an encoding that is STILL UP. A stopped channel's
 	 * encoding is FINISHED (stopChannel calls stopLiveEncoding), and Bitmovin
@@ -356,11 +377,18 @@ export function ChannelLifecycleActions({
 		!providerTerminal &&
 		(status === "RUNNING" || status === "ERROR");
 	const confirm = (kind: Confirmation["kind"]) =>
-		setConfirming({ kind, generation, runId, encodingId });
+		setConfirming({
+			kind,
+			generation,
+			runId,
+			encodingId,
+			archivedStopRevision,
+		});
 	const confirmation =
 		confirming?.runId === runId &&
 		confirming?.generation === generation &&
 		confirming.encodingId === encodingId &&
+		confirming.archivedStopRevision === archivedStopRevision &&
 		((confirming.kind === "stop" && canStop) ||
 			(confirming.kind === "restart" && canRestart) ||
 			(confirming.kind === "retry-finalization" && canRecoverFinalization))
@@ -501,18 +529,45 @@ export function ChannelLifecycleActions({
 						disabled={act.isPending}
 						onClick={() => {
 							if (!confirmation) return;
-							if (confirmation === "retry-finalization") {
-								if (runId && encodingId) {
-									act.mutate({
+							if (confirmation === "stop" && runId && archivedStopRevision) {
+								act.mutate({
+									action: "stop",
+									scopedStop: {
+										action: "recover-archived-stop",
+										runId,
+										revision: archivedStopRevision,
+									},
+								});
+							} else if (
+								(confirmation === "retry-finalization" ||
+									(confirmation === "stop" && retryActiveStop)) &&
+								runId &&
+								encodingId
+							) {
+								act.mutate({
+									action: "stop",
+									scopedStop: {
+										action:
+											confirmation === "retry-finalization"
+												? "retry-finalization"
+												: "retry-aisa-stop",
+										runId,
+										encodingId,
+									},
+								});
+							} else if (confirmation === "stop" && confirming) {
+								act.mutate({
+									action: "stop",
+									scopedStop: {
 										action: "stop",
-										finalization: { runId, encodingId },
-									});
-								}
-								return;
-							}
-							act.mutate({
-								action: dialogCopy.action,
-							});
+										target: {
+											runId: confirming.runId ?? null,
+											encodingId: confirming.encodingId ?? null,
+											generation: confirming.generation,
+										},
+									},
+								});
+							} else act.mutate({ action: dialogCopy.action });
 						}}
 					>
 						{t(dialogCopy.label)}

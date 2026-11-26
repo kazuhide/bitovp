@@ -471,6 +471,62 @@
 			}
 		],
 		[
+			"encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusInputStreamListQueryParams.d.ts#Hdr10PlusInputStreamListQueryParams",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusInputStreamListQueryParams.d.ts",
+					"line": 1
+				},
+				"properties": [
+					{
+						"name": "limit",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusInputStreamListQueryParams.d.ts",
+							"line": 13
+						},
+						"documentation": "Maximum number of items to return. Default is 25, maximum is 100",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Hdr10PlusInputStreamListQueryParams"
+							}
+						]
+					},
+					{
+						"name": "offset",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "union",
+							"variants": [{ "kind": "undefined" }, { "kind": "number" }]
+						},
+						"sdkEvidence": {
+							"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusInputStreamListQueryParams.d.ts",
+							"line": 7
+						},
+						"documentation": "Index of the first item to return, starting at 0. Default is 0",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{
+								"name": "memberof",
+								"text": "Hdr10PlusInputStreamListQueryParams"
+							}
+						]
+					}
+				]
+			}
+		],
+		[
 			"encoding/encodings/inputStreams/trimming/h264PictureTiming/H264PictureTimingTrimmingInputStreamListQueryParams.d.ts#H264PictureTimingTrimmingInputStreamListQueryParams",
 			{
 				"kind": "object",
@@ -5503,6 +5559,220 @@
 						"sdkDocTags": [
 							{ "name": "type", "text": "{number}" },
 							{ "name": "memberof", "text": "VideoConfiguration" }
+						]
+					}
+				]
+			}
+		],
+		[
+			"models/Hdr10PlusInputStream.d.ts#Hdr10PlusInputStream",
+			{
+				"kind": "object",
+				"sdkEvidence": {
+					"file": "models/Hdr10PlusInputStream.d.ts",
+					"line": 9
+				},
+				"properties": [
+					{
+						"name": "createdAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 24
+						},
+						"documentation": "Creation timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "customData",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/BitmovinResource.d.ts#anonymous:1019" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 36
+						},
+						"documentation": "User-specific meta data. This can hold anything.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{{ [key: string]: any; }}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "description",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 18
+						},
+						"documentation": "Description of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "id",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResponse.d.ts",
+							"line": 11
+						},
+						"documentation": "Id of the resource (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResponse" }
+						]
+					},
+					{
+						"name": "inputId",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/Hdr10PlusInputStream.d.ts",
+							"line": 21
+						},
+						"documentation": "Id of input (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Hdr10PlusInputStream" }
+						]
+					},
+					{
+						"name": "metadataInputPath",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/Hdr10PlusInputStream.d.ts",
+							"line": 33
+						},
+						"documentation": "Path to the HDR10+ JSON metadata file. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Hdr10PlusInputStream" }
+						]
+					},
+					{
+						"name": "modifiedAt",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"kind": "builtin",
+							"type": "Date",
+							"scope": "TypeScript builtin; wire representation unconfirmed"
+						},
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 30
+						},
+						"documentation": "Modified timestamp, returned as UTC expressed in ISO 8601 format: YYYY-MM-DDThh:mm:ssZ",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{Date}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "name",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/BitmovinResource.d.ts",
+							"line": 12
+						},
+						"documentation": "Name of the resource. Can be freely chosen by the user.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "BitmovinResource" }
+						]
+					},
+					{
+						"name": "position",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "number" },
+						"sdkEvidence": {
+							"file": "models/Hdr10PlusInputStream.d.ts",
+							"line": 45
+						},
+						"documentation": "Position of the video stream to be selected from the input file (zero-based). Must not be set in combination with selectionMode 'AUTO', defaults to 0 for any other selectionMode. Only used with selectionMode POSITION_ABSOLUTE and VIDEO_RELATIVE.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{number}" },
+							{ "name": "memberof", "text": "Hdr10PlusInputStream" }
+						]
+					},
+					{
+						"name": "selectionMode",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": {
+							"ref": "models/StreamSelectionMode.d.ts#StreamSelectionMode"
+						},
+						"sdkEvidence": {
+							"file": "models/Hdr10PlusInputStream.d.ts",
+							"line": 39
+						},
+						"documentation": "Specifies the strategy for selecting a video stream from the input file. Only AUTO, POSITION_ABSOLUTE and VIDEO_RELATIVE are supported.",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{StreamSelectionMode}" },
+							{ "name": "memberof", "text": "Hdr10PlusInputStream" }
+						]
+					},
+					{
+						"name": "type",
+						"optional": false,
+						"sdkReadonly": true,
+						"apiWriteability": "unconfirmed",
+						"type": { "ref": "models/InputStreamType.d.ts#InputStreamType" },
+						"sdkEvidence": {
+							"file": "models/Hdr10PlusInputStream.d.ts",
+							"line": 15
+						},
+						"documentation": "Discriminator property for InputStream",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Hdr10PlusInputStream" }
+						]
+					},
+					{
+						"name": "videoInputPath",
+						"optional": true,
+						"sdkReadonly": false,
+						"apiWriteability": "unconfirmed",
+						"type": { "kind": "string" },
+						"sdkEvidence": {
+							"file": "models/Hdr10PlusInputStream.d.ts",
+							"line": 27
+						},
+						"documentation": "Path to the HDR10 input video file. (required)",
+						"sdkDocTags": [
+							{ "name": "type", "text": "{string}" },
+							{ "name": "memberof", "text": "Hdr10PlusInputStream" }
 						]
 					}
 				]

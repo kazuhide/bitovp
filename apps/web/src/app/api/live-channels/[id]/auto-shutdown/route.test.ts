@@ -113,6 +113,19 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("running Live automatic stop route", () => {
+	it.each([
+		{ aisaAnalysisId: RUN },
+		{ aisaStatus: "RUNNING" },
+		{ aisaSnapshot: {} },
+		{ stepLog: [{ kind: "CREATE_AISA_LIVE_ANALYSIS" }] },
+	])("protects a run-bound AISA timer before reading receipts or enqueueing", async (binding) => {
+		Object.assign(run, binding);
+		expect((await get(REQUEST)).status).toBe(404);
+		expect((await post()).status).toBe(404);
+		expect(mocks.claim).not.toHaveBeenCalled();
+		expect(mocks.latestClaim).not.toHaveBeenCalled();
+		expect(mocks.add).not.toHaveBeenCalled();
+	});
 	it("waits for a run-bound receipt when the claim becomes ACKED after the run snapshot was read", async () => {
 		mocks.latestClaim.mockResolvedValue({
 			idempotencyKey: KEY,

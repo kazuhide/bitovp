@@ -5,6 +5,17 @@ Bitmovin JavaScript SDK: **1.288.0**. This is a bounded source audit of encoding
 creation and configuration, following the Error Definitions integration.
 No paid encoding was started for this audit.
 
+The November 25 follow-up uses the published JavaScript SDK 1.289.0.
+Its Encoding surface has 1,098 operations. The four additions are the HDR10+
+input-stream create, get, list and delete operations. The VOD wizard
+and Worker now use HDR10+ create. The HDR10+ get, list and delete operations
+lack a confirmed application call. Across all families, the current census confirms
+677 of 1,098 operations in application source, including 157 of 219 create
+operations. The remaining 421 operations lack a confirmed application call.
+The separate cross-service inventory includes 84 notification operations
+(76 Encoding-specific and eight shared) for a total of 1,182. Notification
+operations are outside the application's Encoding-only census.
+
 ## How to read the results
 
 The audit follows **form → validated plan → compiled operation → Worker → SDK**.
@@ -20,10 +31,12 @@ families below. Neither table is a full-field GUI coverage percentage.
 
 ## Creation families checked
 
+The following counts describe the November 16 baseline. The individual entries below record subsequent implementations.
+
 | SDK create family | SDK types | Existing creation paths | Gaps checked against the plan and Worker |
 |---|---:|---:|---|
 | Video configurations | 8 | 5 | H.262, MJPEG, VP8 |
-| Audio configurations | 17 | 7 | HE-AAC v1/v2, PCM, passthrough, MP2, MP3, Vorbis, DTS, DTS passthrough, DTS:X |
+| Audio configurations | 17 | 9 | PCM, passthrough, MP2, MP3, Vorbis, DTS, DTS passthrough, DTS:X |
 | Subtitle configurations | 3 | 2 | DVB subtitle |
 | Input streams | 13 | 10 | CEA608, CEA708 and DVB subtitle extraction |
 | Filters | 17 | 10 | AudioMix, AzureSpeechToCaptions, Conform, DolbyLoudness, EnhancedDeinterlace, EnhancedWatermark, Interlace |
@@ -35,7 +48,7 @@ An absent AudioMix **filter** API is not a missing mixing capability: the app
 already uses AudioMixInputStream. Adding a second mixing mechanism is not a
 priority.
 
-The compared SDK operations are reproducible from
+The November 16 operation counts use the baseline revision's
 `apps/web/src/data/api-coverage/current.json`, selecting each family's direct
 resource-type `create` methods. For muxings, use
 `encoding.encodings.muxings.<type>.create`; nested DRM and ID3 frame creation
@@ -67,70 +80,50 @@ containers and unsupported combinations continue to matter.
 
 ### E01 · P1 · HE-AAC v1 and v2
 
-The current AAC plan and form do not expose a HE-AAC profile. Worker
-`orchestrator/ops/configs.ts` constructs only `AacAudioConfiguration` for AAC;
-the SDK has separate `heAacV1.create` and `heAacV2.create` operations and models.
-Earlier comments suggesting AAC profile support were inaccurate and have been
-corrected. This is a relatively narrow addition with direct low-bitrate value.
+HE-AAC v1/v2 are available in the VOD and ordinary Live audio ladders. Saved presets and channel duplication preserve optional sampling rate, layout and signaling. VOD uses segmented fMP4; Live also supports HLS with TS. Each profile calls its dedicated configuration endpoint and streams use that configuration’s ID. Offline SDK tests verify the request; a provider encode and device playback remain unmeasured.
 
-Acceptance must cover the codec discriminants, official bitrate/sample-rate/
-channel restrictions, compiled wire payloads, HLS CODECS/audio groups and
-import/export preservation. Establish Live applicability separately.
 
-### E02 · P1 · Stream Conditions authoring and AND/OR
+### E02 · Stream Conditions authoring and AND/OR
 
-`streamConditionSchema` accepts a single comparison. Expert JSON can supply it;
-the GUI currently generates only `audioGuard` (`AUDIOSTREAMCOUNT > 0`). Recursive
-Stream AND/OR has no plan or Worker conversion path. **Manifest** AND/OR already
-exists in `plan/manifest-options.ts` and its period editor.
-
-Add bounded condition groups, a compact rendition editor, backward-compatible
-single comparisons and explicit Live/VOD attribute restrictions. Test
-form/JSON round trips and SDK `AbstractCondition`, `AndConjunction` and
-`OrConjunction` serialization. This enables conditional ladders for varying
-input dimensions or missing audio. See the
-[official Stream Conditions guide](https://developer.bitmovin.com/encoding/docs/stream-conditions).
+VOD streaming and file wizards expose input conditions on their available
+renditions. Live exposes them on video and audio renditions. The editors and
+Expert JSON preserve single comparisons and nested AND/OR groups. Plan
+validation checks stream type, Live availability and value format. The Worker
+and YAML export serialize the same comparisons and groups. The global VOD audio
+guard combines with any condition already present on the audio rendition.
+See the [official Stream Conditions guide](https://developer.bitmovin.com/encoding/docs/stream-conditions).
 
 ### E03 · P1 · PCM/WAV, then bounded audio passthrough
 
-PCM configuration, audio passthrough and Progressive WAV are absent from the
-plan, forms and Worker. Existing MOV output does not supply these audio paths.
-They directly extend mezzanine and editing deliverables.
+The VOD file wizard can now convert a selected audio track to PCM/WAV. It can also copy one inspected AAC track to MP4 or MOV, or one signed-integer PCM track to MOV or WAV. The Worker binds the selected track and immutable object version before creating its input stream. Editing, mixing, filtering and streaming manifests are outside the copy workflow.
 
-Start with PCM/WAV, then permit passthrough only for documented combinations.
-Cover sample formats, channels, rates, container compatibility, multiple audio
-tracks, trimming/concatenation and filter/mix conflicts. Do not assume arbitrary
-HLS/DASH audio copying is valid. The
-[official audio guide](https://developer.bitmovin.com/encoding/docs/separating-and-combining-audio-streams)
-describes mixing and passthrough constraints.
+Tests cover the installed SDK's request bodies, plan round trips, tenant-scoped evidence and output-file verification. The local media fixture produced all five combinations and preserved the selected audio payload in the four copy cases. Provider execution remains unverified. [VOD file workflow](user-guide/VOD.md#audio-only-files) · [Encoder release history](https://developer.bitmovin.com/encoding/docs/encoder-22000-22490)
 
 ### E04 · P1 · Embedded caption extraction
 
-CEA608/708 passthrough is present in video configuration. The separate
-`Cea608CaptionInputStream`, `Cea708CaptionInputStream` and
-`DvbSubtitleInputStream` creation paths, plus the DVB subtitle configuration,
-are absent. Start with CEA608/708 extraction and treat DVB and Live subtitles
-as separate additions.
-
-Acceptance includes channel/service selection, missing captions, PTS/time
-mapping across trimming and concatenation, HLS/DASH language/accessibility
-attributes and playback. Live currently permits video/audio renditions, so
-subtitle extraction requires changes beyond the VOD input-stream union.
+VOD operators can select a CEA-608 channel, CEA-708 service or DVB subtitle
+track and extract it to WebVTT for a sidecar file or HLS. The Live wizard
+extracts DVB bitmap subtitles from supported transport-stream inputs and
+packages WebVTT for HLS or DASH. Drafts and templates retain the selections.
+These workflows are covered by local compiler and SDK transport tests.
+Provider OCR quality, source-specific timing and receiver playback still need
+validation on representative media. [VOD guide](user-guide/VOD.md) · [Live guide](user-guide/LIVE.md)
 
 ### E05–E07 · P2 · Purpose-specific extensions
 
-- **Filters:** prioritize EnhancedWatermark for logo size/opacity, then qualify
-  EnhancedDeinterlace and Conform with suitable sources. Existing Watermark,
-  ordinary deinterlace and frame-rate settings are not equivalent mechanisms.
-  Live validation explicitly rejects filters today; investigate provider
-  support before enabling individual filters there.
+- **Filters:** The VOD wizard supports EnhancedWatermark, EnhancedDeinterlace,
+  and Interlace for video, Conform across the encoding’s video and audio streams, plus AudioMix and DolbyLoudness on compatible
+  audio renditions. Audio Mix runs before volume and loudness processing. The VOD plan checks that order and rejects Audio Mix or Conform on Dolby Atmos file inputs.
+  Provider output and visual or loudness measurements require a matching source
+  and an encoding run. Live speech-to-captions remains a separate workflow.
 - **Broadcast delivery:** Broadcast TS/MXF with H.262/MP2/PCM, driven by a
   specific delivery specification. Progressive TS does not expose the same
   PCR/PID/PAT/PMT controls. MJPEG, VP8, MP3, Vorbis and DTS need an identified
   use case, entitlement and playback target.
 - **Encryption/delivery:** AES-128/ClearKey are absent choices; CENC already
-  serves Widevine/PlayReady use cases. SPEKE currently accepts only fMP4 in
-  Worker dispatch. Live MSL/SFTP mirrors are valid expert-JSON paths with a
+  serves Widevine/PlayReady use cases. The VOD wizard supports SPEKE on fMP4, MP4, TS, progressive TS, WebM
+  and progressive WebM. Standalone progressive TS and WebM files also support
+  FairPlay and CENC respectively. Live MSL/SFTP mirrors are valid expert-JSON paths with a
   missing GUI authoring path; primary MSL is already supported.
 
 ### E08 · P3 · Other inputs and management
@@ -139,14 +132,22 @@ VOD input plans currently support S3, HTTPS, Akamai NetStorage, Azure,
 GenericS3 and the two GCS credential variants. FTP/SFTP/Aspera/direct-upload/
 local/S3-role-based inputs need their own end-to-end audit, including stored
 credentials, browser access and output inspection. Output support for a
-protocol does not imply input support. MoQ output remains Beta/account-gated;
-an experimental Live expert-JSON path now resolves encrypted relay credentials
-and creates the output through the Worker. This addition is independent of the
-SDK upgrade and does not qualify a relay or Player Web X playback.
+protocol does not imply input support. MoQ output still requires account-level Beta access. The Live wizard
+can now author compatible Custom Live plans using a stored MoQ relay credential.
+A documented Cloudflare draft 16 trial with Encoder 2.294.0 observed moving
+640×360 video in Player Web X. Draft 18 interoperability and other relays require
+their own verification. See the [Live wizard guide](user-guide/LIVE.md#experimental-moq-delivery)
+and [trial conditions and results](MOQ-LIVE-ENCODER-TEST-RESULTS.md).
 
-Native Templates, Native Watch Folders and resource CRUD/custom-data/query
-controls belong to a separate management lane. Existing app presets and watch
-rules do not implement their native provider counterparts.
+VOD job details and Live run details now support inspecting provider resources
+recorded by their execution steps. Available actions depend on the resource
+family and include scoped collection browsing, metadata checks and operator-
+confirmed removal on finished VOD jobs. Live run resources are read-only. See the [VOD guide](user-guide/VOD.md#inspect-or-remove-a-provider-resource)
+and the [Live guide](user-guide/LIVE.md#inspect-a-runs-provider-resources) for the
+supported actions and safeguards.
+Account-wide inventory and native Templates and Watch Folders remain separate
+from these job- and run-scoped controls. App presets and watch rules use their
+own storage.
 
 ## Evidence limits and future verification
 

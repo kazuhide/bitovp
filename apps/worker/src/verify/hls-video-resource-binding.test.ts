@@ -7,9 +7,14 @@ import {
 	liveChannelPlanSchema,
 } from "@bitovp/core";
 import { describe, expect, it, vi } from "vitest";
-import { parseHlsText } from "./adapters";
+import { parseDashText, parseHlsText } from "./adapters";
 import { type EngineDeps, verifyArtefacts } from "./engine";
-import { collectHlsReferenceChecks } from "./manifest-reference-checks";
+import {
+	bindDashDvbSubtitles,
+	checkDashDvbOrigin,
+	collectHlsReferenceChecks,
+	hlsMediaReferenceChecks,
+} from "./manifest-reference-checks";
 import { collectEdgeClosures, type LiveRunnerDeps } from "./runner-live";
 
 const FIXTURES = join(import.meta.dirname, "../../../../packages/core/src");
@@ -732,4 +737,188 @@ describe("additional HLS VIDEO writer identity", () => {
 				)?.closed,
 			).toBe(false);
 	});
+});
+
+it.each([
+	"jpn",
+	"other",
+] as const)("verifies chunked Live WebVTT against its own storage namespace (%s)", async (folder) => {
+	const raw = JSON.parse(
+		readFileSync(
+			join(FIXTURES, "live/__fixtures__/live-srt-listener.plan.json"),
+			"utf8",
+		),
+	);
+	const root = "output/live-srt-listener";
+	const track = {
+		key: "jpn",
+		inputPath: "/",
+		position: 2,
+		language: "ja",
+		label: "Japanese",
+		packaging: "CHUNKED_TEXT",
+		segmentLength: 6,
+		destination: { outputKey: "origin", path: root + "/subtitles/jpn" },
+	};
+	const projected = compileExpectedLiveArtefacts(
+		liveChannelPlanSchema.parse({ ...raw, dvbSubtitles: [track] }),
+	);
+	const manifest = projected.manifests.find((m) => m.kind === "HLS");
+	if (!manifest) throw Error("No HLS fixture");
+	const media = manifest.hlsAdditionalMedia?.find(
+		(m) => m.type === "SUBTITLES",
+	);
+	expect(media).toMatchObject({
+		resource: {
+			container: "CHUNKED_TEXT",
+			directory: root + "/subtitles/jpn/",
+		},
+	});
+	const master = await parseHlsText(
+		'#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subtitles",NAME="Japanese",LANGUAGE="ja",URI="subtitles_jpn.m3u8"\n#EXT-X-STREAM-INF:BANDWIDTH=800000,SUBTITLES="subtitles"\nvideo.m3u8\n',
+	);
+	for (const unreachable of [undefined, "missing"]) {
+		expect(
+			hlsMediaReferenceChecks("dvb", manifest.hlsAdditionalMedia ?? [], {
+				...master,
+				variants: master.variants.map((v) => ({
+					...v,
+					subtitles: unreachable,
+				})),
+			})[0]?.verdict,
+		).toBe("FAIL");
+	}
+	const result = await collectHlsReferenceChecks(
+		originDeps(`#EXTM3U\n#EXTINF:6,\nsubtitles/${folder}/segment_1.vtt\n`, [
+			root + "/subtitles/" + folder + "/segment_1.vtt",
+		]),
+		"dvb",
+		manifest,
+		master,
+	);
+	expect(result).toContainEqual(
+		expect.objectContaining({
+			id: "dvb:additional-media:0:playlist:binding",
+			verdict: folder === "jpn" ? "PASS" : "FAIL",
+		}),
+	);
+	if (folder === "jpn")
+		expect(result).toContainEqual(
+			expect.objectContaining({
+				id: "dvb:additional-media:0:playlist:objects",
+				verdict: "PASS",
+			}),
+		);
+});
+
+it("binds each segmented DVB subtitle to its language and output directory", async () => {
+	const uri = "https://origin.invalid/live/manifests/show.mpd";
+	const xml =
+		'<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT6S"><Period><AdaptationSet lang="en" mimeType="text/vtt"><Representation id="external"><BaseURL>https://example.invalid/sub.vtt</BaseURL></Representation></AdaptationSet><AdaptationSet lang="ja" mimeType="application/mp4" codecs="wvtt"><BaseURL>../subs/</BaseURL><SegmentTemplate media="ja/segment_$Number$.m4s" initialization="ja/init.mp4" duration="6"/><Representation id="ja" bandwidth="1000"/></AdaptationSet></Period></MPD>';
+	const tracks = [
+		{ key: "wrong", language: "ja", segmentPath: "../subs/other" },
+		{
+			key: "foreign",
+			language: "ja",
+			segmentPath: "https://other.invalid/live/subs/ja",
+		},
+		{ key: "right", language: "ja", segmentPath: "../subs/ja/" },
+		{ key: "external", language: "en", segmentPath: "../subs/en" },
+		{ key: "extra", language: "ja", segmentPath: "../subs/ja" },
+	];
+	const writer = {
+		segmentNaming: "segment_%number%.m4s",
+		initSegment: "init.mp4",
+	};
+	const periodTemplate =
+		'<SegmentTemplate media="ja/segment_$Number$.m4s" initialization="ja/init.mp4" duration="6"/>';
+	const inherited = xml
+		.replace(periodTemplate, "")
+		.replace("<Period>", "<Period>" + periodTemplate);
+	expect(
+		bindDashDvbSubtitles(
+			"mpd",
+			[{ key: "ja", language: "ja", segmentPath: "../subs/ja", ...writer }],
+			await parseDashText(inherited, uri),
+			uri,
+		)[0]?.check.verdict,
+	).toBe("PASS");
+	const result = bindDashDvbSubtitles(
+		"mpd",
+		tracks.map((track) => ({ ...track, ...writer })),
+		await parseDashText(xml, uri),
+		uri,
+	);
+	expect(result.map((c) => c.check.verdict)).toEqual([
+		"FAIL",
+		"FAIL",
+		"PASS",
+		"FAIL",
+		"FAIL",
+	]);
+	const list = (second: string, init = "init.mp4") =>
+		'<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" mediaPresentationDuration="PT12S"><Period><AdaptationSet lang="ja" mimeType="application/mp4" codecs="wvtt"><BaseURL>../subs/ja/</BaseURL><Representation id="subtitle" bandwidth="1000"><SegmentList duration="6"><Initialization sourceURL="' +
+		init +
+		'"/><SegmentURL media="segment_1.m4s"/><SegmentURL media="' +
+		second +
+		'"/></SegmentList></Representation></AdaptationSet></Period></MPD>';
+	for (const [last, verdict] of [
+		["segment_2.m4s", "PASS"],
+		["../other/segment_2.m4s", "FAIL"],
+		["nonexistent.m4s", "FAIL"],
+	] as const) {
+		expect(
+			bindDashDvbSubtitles(
+				"mpd",
+				[{ key: "ja", language: "ja", segmentPath: "../subs/ja", ...writer }],
+				await parseDashText(list(last), uri),
+				uri,
+			)[0]?.check.verdict,
+		).toBe(verdict);
+	}
+	const bind = async (media: string, init = "init.mp4") =>
+		bindDashDvbSubtitles(
+			"mpd",
+			[{ key: "ja", language: "ja", segmentPath: "../subs/ja", ...writer }],
+			await parseDashText(list(media, init), uri),
+			uri,
+		);
+	const listed = async () =>
+		["segment_1.m4s", "segment_2.m4s", "init.mp4"].map((name) => ({
+			key: "live/subs/ja/" + name,
+			size: 20,
+		}));
+	for (const [attribute, range] of [
+		['media="segment_2.m4s"', "mediaRange"],
+		['sourceURL="init.mp4"', "range"],
+	] as const) {
+		for (const [bytes, expected] of [
+			["0-19", "PASS"],
+			["20-20", "FAIL"],
+		] as const) {
+			const xmlWithRange = list("segment_2.m4s").replace(
+				attribute,
+				attribute + " " + range + '="' + bytes + '"',
+			);
+			const bindings = bindDashDvbSubtitles(
+				"mpd",
+				[{ key: "ja", language: "ja", segmentPath: "../subs/ja", ...writer }],
+				await parseDashText(xmlWithRange, uri),
+				uri,
+			);
+			expect((await checkDashDvbOrigin(bindings, listed))[0]?.verdict).toBe(
+				expected,
+			);
+		}
+	}
+	expect(
+		(await checkDashDvbOrigin(await bind("segment_2.m4s"), listed))[0]?.verdict,
+	).toBe("PASS");
+	expect(
+		(await checkDashDvbOrigin(await bind("segment_99.m4s"), listed))[0]
+			?.verdict,
+	).toBe("FAIL");
+	expect(
+		(await bind("segment_2.m4s", "../other/init.mp4"))[0]?.check.verdict,
+	).toBe("FAIL");
 });

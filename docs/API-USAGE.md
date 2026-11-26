@@ -221,6 +221,10 @@ Keys accept 1–200 letters, digits, periods, underscores, colons, or hyphens.
 Requests without this header retain the existing behavior: each accepted request
 creates new work.
 
+Use a BitOVP bearer token for programmatic creation. The web console also binds
+each creation request to the signed-in operator. Reload a console tab opened
+before an upgrade if it asks you to refresh before retrying a creation.
+
 In the examples below, set `CREATE_KEY` to a key generated once for that intended
 creation. Preserve it for retries; replace it before creating new work.
 
@@ -543,6 +547,24 @@ curl -H "Authorization: Bearer $TOKEN" https://ovp.example.com/api/live-channels
 ```
 
 Stop also stops attached feeders. `DELETE /api/live-channels/<id>` removes a stopped channel.
+
+`POST /api/feeder-sessions` accepts optional `playbackMode: "LOOP" | "ONCE"`
+(omitted = `LOOP`). `ONCE` sends the selected copy-compatible H.264/AAC streams
+once, including their full tails. A source with an edit list the live muxer
+cannot preserve is refused before dispatch. Use ONCE for an immediate input.
+For `ONCE`, send an `Idempotency-Key` and reuse it with the same request body
+on every retry. First acceptance returns `201`. Replays return `200`, the
+original session ID and `replayed: true`. Changed content returns `409`.
+Deleting the session spends the key permanently and subsequent replays return
+`410`. If queueing returns `503 FEEDER_ENQUEUE_UNCONFIRMED`, retry with the
+same key. A session still waiting to start uses its original queue job ID.
+
+The normal feeder list/detail includes `playbackMode`, `playbackDispatchedAt`
+and `playbackReceipt`. A natural EOF receipt requires exit 0, final progress,
+and matching input and muxed packet totals for each selected video and audio
+stream. Use the normal channel STOP action to finish the paid live channel
+and verify provider finalization separately.
+See [single-pass contract and rollout](feeder-single-pass.md).
 
 The status body's `playbackLinks[]` carries one entry per manifest with `url`
 (or `null` plus a coded `reason`) and `via`. For an Akamai MSL output the URL

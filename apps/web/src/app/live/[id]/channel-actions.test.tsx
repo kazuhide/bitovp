@@ -82,6 +82,99 @@ describe("ChannelDangerZone — delete", () => {
 });
 
 describe("ChannelLifecycleActions — restart is only offered where it can work (ledger #107)", () => {
+	it("sends the airing, encoding and generation displayed by the ordinary Stop confirmation", async () => {
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				runId={RUN_ID}
+				encodingId="view-encoder"
+				generation={9}
+				status="RUNNING"
+				hasEncoding
+			/>,
+		);
+		await userEvent.click(screen.getByRole("button", { name: "Stop channel" }));
+		await userEvent.click(
+			within(screen.getByRole("dialog")).getByRole("button", {
+				name: "Stop channel",
+			}),
+		);
+		await waitFor(() =>
+			expect(apiFetch).toHaveBeenCalledWith(
+				`/api/live-channels/${CHANNEL_ID}/actions`,
+				{
+					method: "POST",
+					body: JSON.stringify({
+						action: "stop",
+						target: {
+							runId: RUN_ID,
+							encodingId: "view-encoder",
+							generation: 9,
+						},
+					}),
+				},
+			),
+		);
+	});
+	it("confirms the displayed archived encoder even before its primary pointer is restored", async () => {
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				runId={RUN_ID}
+				status="ERROR"
+				hasEncoding={false}
+				hasError
+				archivedStopRevision={"a".repeat(64)}
+			/>,
+		);
+		expect(screen.getByRole("button", { name: "Stop channel" })).toBeEnabled();
+		expect(screen.queryByRole("button", { name: /restart/i })).toBeNull();
+		await userEvent.click(screen.getByRole("button", { name: "Stop channel" }));
+		await userEvent.click(
+			within(screen.getByRole("dialog")).getByRole("button", {
+				name: "Stop channel",
+			}),
+		);
+		await waitFor(() =>
+			expect(apiFetch).toHaveBeenCalledWith(
+				`/api/live-channels/${CHANNEL_ID}/actions`,
+				{
+					method: "POST",
+					body: JSON.stringify({
+						action: "recover-archived-stop",
+						runId: RUN_ID,
+						revision: "a".repeat(64),
+					}),
+				},
+			),
+		);
+	});
+	it("closes an open Stop confirmation if the selected archive changes", async () => {
+		const props = {
+			channelId: CHANNEL_ID,
+			runId: RUN_ID,
+			status: "STOPPED" as const,
+			hasEncoding: false,
+		};
+		const view = wrap(
+			<ChannelLifecycleActions
+				{...props}
+				archivedStopRevision={"1".repeat(64)}
+			/>,
+		);
+		await userEvent.click(screen.getByRole("button", { name: "Stop channel" }));
+		expect(screen.getByRole("dialog")).toBeInTheDocument();
+		view.rerender(
+			<ChannelLifecycleActions
+				{...props}
+				archivedStopRevision={"2".repeat(64)}
+			/>,
+		);
+		expect(screen.queryByRole("dialog")).toBeNull();
+		expect(
+			apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(false);
+	});
 	it("groups the re-air and copy buttons without successful preview or pricing banners", async () => {
 		apiFetch.mockImplementation(async (input: string) =>
 			input.startsWith("/api/live-channels/moq-readiness?")
@@ -179,6 +272,38 @@ describe("ChannelLifecycleActions — restart is only offered where it can work 
 		).toBeNull();
 	});
 
+	it("binds the retry of an interrupted active AISA stop to the displayed airing", async () => {
+		wrap(
+			<ChannelLifecycleActions
+				channelId={CHANNEL_ID}
+				runId={RUN_ID}
+				encodingId="encoder-1"
+				status="STOPPING"
+				hasEncoding
+				managedAisa
+				canResumeAisaStop
+			/>,
+		);
+		await userEvent.click(screen.getByRole("button", { name: "Stop channel" }));
+		await userEvent.click(
+			within(screen.getByRole("dialog")).getByRole("button", {
+				name: "Stop channel",
+			}),
+		);
+		await waitFor(() =>
+			expect(apiFetch).toHaveBeenCalledWith(
+				`/api/live-channels/${CHANNEL_ID}/actions`,
+				{
+					method: "POST",
+					body: JSON.stringify({
+						action: "retry-aisa-stop",
+						runId: RUN_ID,
+						encodingId: "encoder-1",
+					}),
+				},
+			),
+		);
+	});
 	it("targets finalization recovery at the ended AISA encoder while local state is running", async () => {
 		wrap(
 			<ChannelLifecycleActions

@@ -24,7 +24,9 @@ describe("media authoring", () => {
 				onPatch={onPatch}
 			/>,
 		);
-		const source = screen.getByLabelText("File stream") as HTMLSelectElement;
+		const source = screen.getByLabelText(
+			"Subtitle source",
+		) as HTMLSelectElement;
 		expect(Array.from(source.options).map((x) => x.value)).toEqual([
 			"",
 			"ttml",

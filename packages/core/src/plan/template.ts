@@ -7,15 +7,20 @@ import {
 	relativeFilePath,
 	relativeSegmentPath,
 } from "./compiler";
+import { filterParametersForPlan } from "./conform-rate";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
+import { isHdr10PlusObjectPath } from "./hdr-source-paths";
+import { hdr10PlusTransformIssues } from "./hdr10-plus";
+import { heAacConfiguration, isHeAac } from "./he-aac";
 import { hlsChildEntries, hlsSubtitleGroups } from "./hls-media-defaults";
 import { checkHlsVideoUris } from "./hls-video-uri-validation";
-import { FILTER_ENDPOINTS, filterParameters } from "./media-filters";
+import { FILTER_ENDPOINTS } from "./media-filters";
 import { isFileOnlyMuxingKind, muxingStreamKeys } from "./muxing-streams";
 import { streamPerTitleSettings } from "./per-title-settings";
 import type { EncodingPlan } from "./schema";
 import { AUDIO_CODECS } from "./schema";
 import { SRT_CHARACTER_ENCODING_VALUES } from "./srt-character-encodings";
+import type { StreamCondition } from "./stream-conditions";
 
 /**
  * Exports an EncodingPlan as a Bitmovin Encoding Template (YAML) — the
@@ -70,6 +75,22 @@ const CONDITION_OPERATOR_WIRE: Record<string, string> = {
 	GREATER_THAN: ">",
 	GREATER_THAN_OR_EQUAL: ">=",
 };
+
+function templateStreamCondition(
+	condition: StreamCondition,
+): Record<string, unknown> {
+	if ("conditions" in condition)
+		return {
+			type: condition.type,
+			conditions: condition.conditions.map(templateStreamCondition),
+		};
+	return {
+		type: "CONDITION",
+		attribute: condition.attribute,
+		operator: wire(CONDITION_OPERATOR_WIRE, condition.operator),
+		value: condition.value,
+	};
+}
 
 const PROFILE_H265_WIRE: Record<string, string> = {
 	MAIN: "main",
@@ -144,6 +165,8 @@ function placeholder(
 }
 
 type Tree = Record<string, unknown>;
+/** Resource names can be any valid plan key, including __proto__. */
+const resourceTable = (): Tree => Object.create(null);
 
 /** Template muxing section per plan muxing kind. */
 const MUXING_SECTION = {
@@ -156,6 +179,7 @@ const MUXING_SECTION = {
 	WEBM: "webm",
 	PROGRESSIVE_TS: "progressiveTs",
 	PROGRESSIVE_MOV: "progressiveMov",
+	PROGRESSIVE_WAV: "progressiveWav",
 	PROGRESSIVE_WEBM: "progressiveWebm",
 } as const satisfies Record<EncodingPlan["muxings"][number]["kind"], string>;
 
@@ -175,13 +199,26 @@ function isVideoCodec(
 	);
 }
 
-function isAudioCodec(
-	rendition: AnyRendition,
-): rendition is Extract<
+function isAudioCodec(rendition: AnyRendition): rendition is Extract<
 	AnyRendition,
-	{ codec: "AAC" | "OPUS" | "DOLBY_ATMOS" | "DDPLUS" | "DD" | "AC3" | "EAC3" }
+	{
+		codec:
+			| "HE_AAC_V1"
+			| "HE_AAC_V2"
+			| "AAC"
+			| "OPUS"
+			| "DOLBY_ATMOS"
+			| "DDPLUS"
+			| "DD"
+			| "AC3"
+			| "EAC3";
+	}
 > {
-	return AUDIO_CODECS.has(rendition.codec);
+	return (
+		rendition.codec !== "AUDIO_PASSTHROUGH" &&
+		rendition.codec !== "PCM" &&
+		AUDIO_CODECS.has(rendition.codec)
+	);
 }
 
 function isPerTitle(rendition: AnyRendition): boolean {
@@ -248,19 +285,19 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	const perEnc = <T extends Tree>(store: Map<string, T>, name: string): T => {
 		let tree = store.get(name);
 		if (!tree) {
-			tree = {} as T;
+			tree = Object.create(null) as T;
 			store.set(name, tree);
 		}
 		return tree;
 	};
 
-	const inputsS3: Tree = {};
-	const inputsAzure: Tree = {};
-	const inputsHttps: Tree = {};
-	const inputsGenericS3: Tree = {};
-	const inputsGcs: Tree = {};
-	const inputsGcsServiceAccount: Tree = {};
-	const inputsAkamaiNetStorage: Tree = {};
+	const inputsS3: Tree = resourceTable();
+	const inputsAzure: Tree = resourceTable();
+	const inputsHttps: Tree = resourceTable();
+	const inputsGenericS3: Tree = resourceTable();
+	const inputsGcs: Tree = resourceTable();
+	const inputsGcsServiceAccount: Tree = resourceTable();
+	const inputsAkamaiNetStorage: Tree = resourceTable();
 	const inputRef = new Map<string, string>();
 	for (const input of plan.inputs) {
 		if (input.kind === "S3") {
@@ -344,14 +381,14 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		}
 	}
 
-	const outputsS3: Tree = {};
-	const outputsAzure: Tree = {};
-	const outputsSftp: Tree = {};
-	const outputsGenericS3: Tree = {};
-	const outputsGcs: Tree = {};
-	const outputsGcsServiceAccount: Tree = {};
-	const outputsAkamaiMsl: Tree = {};
-	const outputsAkamaiNetStorage: Tree = {};
+	const outputsS3: Tree = resourceTable();
+	const outputsAzure: Tree = resourceTable();
+	const outputsSftp: Tree = resourceTable();
+	const outputsGenericS3: Tree = resourceTable();
+	const outputsGcs: Tree = resourceTable();
+	const outputsGcsServiceAccount: Tree = resourceTable();
+	const outputsAkamaiMsl: Tree = resourceTable();
+	const outputsAkamaiNetStorage: Tree = resourceTable();
 	const outputRef = new Map<string, string>();
 	for (const output of plan.outputs) {
 		if (output.kind === "AZURE") {
@@ -495,19 +532,23 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		}
 	}
 
-	const h264: Tree = {};
-	const h265: Tree = {};
-	const vp9: Tree = {};
-	const av1: Tree = {};
-	const aac: Tree = {};
-	const ac3: Tree = {};
-	const eac3: Tree = {};
-	const opus: Tree = {};
-	const imsc: Tree = {};
-	const dolbyAtmos: Tree = {};
-	const ddPlus: Tree = {};
-	const dd: Tree = {};
-	const webvtt: Tree = {};
+	const h264: Tree = resourceTable();
+	const h265: Tree = resourceTable();
+	const vp9: Tree = resourceTable();
+	const av1: Tree = resourceTable();
+	const aac: Tree = resourceTable();
+	const heAacV1: Tree = resourceTable();
+	const heAacV2: Tree = resourceTable();
+	const ac3: Tree = resourceTable();
+	const eac3: Tree = resourceTable();
+	const opus: Tree = resourceTable();
+	const pcm: Tree = resourceTable();
+	const passthrough: Tree = resourceTable();
+	const imsc: Tree = resourceTable();
+	const dolbyAtmos: Tree = resourceTable();
+	const ddPlus: Tree = resourceTable();
+	const dd: Tree = resourceTable();
+	const webvtt: Tree = resourceTable();
 	const codecRef = new Map<string, string>();
 	for (const rendition of plan.renditions) {
 		if (rendition.codec === "IMSC") {
@@ -713,6 +754,29 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				rendition.key,
 				`$/configurations/video/h264/${rendition.key}`,
 			);
+		} else if (
+			rendition.codec === "PCM" ||
+			rendition.codec === "AUDIO_PASSTHROUGH"
+		) {
+			const family = rendition.codec === "PCM" ? "pcm" : "passthrough";
+			const configs = rendition.codec === "PCM" ? pcm : passthrough;
+			configs[rendition.key] = {
+				properties:
+					rendition.codec === "PCM"
+						? dense({
+								name: rendition.name,
+								bitrate: rendition.bitrate,
+								rate: rendition.rate,
+								channelLayout: rendition.channelLayout,
+								sampleFormat: rendition.sampleFormat,
+								presetConfiguration: rendition.presetConfiguration,
+							})
+						: { name: rendition.name },
+			};
+			codecRef.set(
+				rendition.key,
+				`$/configurations/audio/${family}/${rendition.key}`,
+			);
 		} else if (rendition.codec === "OPUS") {
 			const wireLayouts: Record<string, string> = {
 				CL_STEREO: "STEREO",
@@ -735,6 +799,24 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			codecRef.set(
 				rendition.key,
 				`$/configurations/audio/opus/${rendition.key}`,
+			);
+		} else if (
+			rendition.codec === "HE_AAC_V1" ||
+			rendition.codec === "HE_AAC_V2"
+		) {
+			const group = rendition.codec === "HE_AAC_V1" ? "heAacV1" : "heAacV2";
+			const tree = group === "heAacV1" ? heAacV1 : heAacV2;
+			tree[rendition.key] = {
+				properties: dense({
+					...heAacConfiguration(rendition),
+					channelLayout:
+						rendition.channelLayout &&
+						wire(AAC_CHANNEL_LAYOUT_WIRE, rendition.channelLayout),
+				}),
+			};
+			codecRef.set(
+				rendition.key,
+				`$/configurations/audio/${group}/${rendition.key}`,
 			);
 		} else if (rendition.codec === "AAC") {
 			aac[rendition.key] = {
@@ -837,6 +919,58 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	const ingestByKey = new Map(plan.ingest.map((s) => [s.key, s]));
 	const fileByKey = new Map(plan.fileStreams.map((f) => [f.key, f]));
 	const dolbyByKey = new Map(plan.dolbyStreams.map((d) => [d.key, d]));
+	const captionSections = {
+		CEA608: ["captions", "cea608"],
+		CEA708: ["captions", "cea708"],
+		DVB: ["subtitles", "dvbSubtitle"],
+	} as const;
+	const captionRefs = new Map<string, string>();
+	const captionsByEnc = new Map<string, Record<string, Record<string, Tree>>>();
+	for (const {
+		key,
+		kind,
+		inputKey,
+		encodingKey,
+		...properties
+	} of plan.captionStreams) {
+		const owner = plan.encodings?.length
+			? (encodingKey ?? encNames[0] ?? ENCODING_NAME)
+			: ENCODING_NAME;
+		const [section, collection] = captionSections[kind];
+		const entries = captionsByEnc.get(owner) ?? {};
+		entries[section] ??= {};
+		entries[section][collection] ??= resourceTable();
+		entries[section][collection][key] = {
+			properties: {
+				// The API omits an empty selection, but the template requires its default.
+				...(kind === "CEA708" ? { channel: 1 } : {}),
+				...dense(properties),
+				inputId: inputRef.get(inputKey),
+			},
+		};
+		captionsByEnc.set(owner, entries);
+		captionRefs.set(
+			key,
+			`$/encodings/${owner}/inputStreams/${section}/${collection}/${key}`,
+		);
+	}
+
+	const hdr10PlusKeys = new Set(plan.hdr10PlusStreams.map((s) => s.key));
+	const hdr10PlusByEnc = new Map<string, Tree>();
+	for (const stream of plan.hdr10PlusStreams) {
+		const owner = plan.encodings?.length
+			? (stream.encodingKey ?? encNames[0] ?? ENCODING_NAME)
+			: ENCODING_NAME;
+		perEnc(hdr10PlusByEnc, owner)[stream.key] = {
+			properties: dense({
+				inputId: inputRef.get(stream.inputKey),
+				videoInputPath: stream.videoInputPath,
+				metadataInputPath: stream.metadataInputPath,
+				selectionMode: stream.selectionMode,
+				position: stream.position,
+			}),
+		};
+	}
 
 	// FileInputStreams are named template resources (the typed entry keeps
 	// fileType); streams reference them via $/ refs.
@@ -901,37 +1035,48 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	}
 
 	const mixResources = new Map<string, Tree>();
-	const required = new Set<string>();
+	const required = new Set<string>([...hdr10PlusKeys, ...captionRefs.keys()]);
+	const sourceByKey = new Map(
+		(plan.audioMixStreams.length
+			? [
+					...plan.ingest,
+					...plan.trimmingStreams,
+					...plan.concatenationStreams,
+					...plan.audioMixStreams,
+				]
+			: []
+		).map((stream) => [stream.key, stream] as const),
+	);
 	const streamRef = (owner: string, key: string): string => {
+		const caption = captionRefs.get(key);
+		if (caption) return caption;
 		if (dolbyByKey.has(key)) return dolbyStreamRef(owner, key);
-		const trim = plan.trimmingStreams.find((s) => s.key === key);
-		const section = trim
-			? `trimming/${trim.kind === "TIME_BASED" ? "timeBased" : trim.kind === "TIMECODE_TRACK" ? "timecodeTrack" : "h264PictureTiming"}`
-			: plan.audioMixStreams.some((s) => s.key === key)
-				? "audioMix"
-				: plan.concatenationStreams.some((s) => s.key === key)
-					? "concatenation"
-					: fileByKey.has(key)
-						? "file"
-						: "ingest";
+		if (hdr10PlusKeys.has(key))
+			return `$/encodings/${owner}/inputStreams/hdr10Plus/${key}`;
+		const stream = sourceByKey.get(key);
+		const section =
+			stream && "sourceKey" in stream
+				? `trimming/${stream.kind === "TIME_BASED" ? "timeBased" : stream.kind === "TIMECODE_TRACK" ? "timecodeTrack" : "h264PictureTiming"}`
+				: stream && "audioMixChannels" in stream
+					? "audioMix"
+					: stream && "sources" in stream
+						? "concatenation"
+						: fileByKey.has(key)
+							? "file"
+							: "ingest";
 		return `$/encodings/${owner}/inputStreams/${section}/${key}`;
 	};
 	const requireStream = (key: string): void => {
 		if (required.has(key)) return;
 		required.add(key);
-		const stream = [
-			...plan.ingest,
-			...plan.trimmingStreams,
-			...plan.concatenationStreams,
-			...plan.audioMixStreams,
-		].find((s) => s.key === key);
+		const stream = sourceByKey.get(key);
 		if (!stream) return;
 		const owner = plan.encodings?.length
 			? (stream.encodingKey ?? encNames[0] ?? ENCODING_NAME)
 			: ENCODING_NAME;
 		const node = perEnc(mixResources, owner);
 		const add = (section: string, properties: Tree) => {
-			node[section] ??= {};
+			node[section] ??= Object.create(null);
 			const entries = node[section] as Tree;
 			entries[key] = { properties };
 		};
@@ -961,7 +1106,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 						: "h264PictureTiming";
 			node.trimming ??= {};
 			const trims = node.trimming as Tree;
-			trims[section] ??= {};
+			trims[section] ??= Object.create(null);
 			const entries = trims[section] as Tree;
 			entries[key] = {
 				properties: { ...rest, inputStreamId: streamRef(owner, sourceKey) },
@@ -1024,15 +1169,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				mode: isVideoCodec(rendition) ? rendition.mode : "STANDARD",
 				...(rendition.conditions
 					? {
-							conditions: {
-								type: "CONDITION",
-								attribute: rendition.conditions.attribute,
-								operator: wire(
-									CONDITION_OPERATOR_WIRE,
-									rendition.conditions.operator,
-								),
-								value: rendition.conditions.value,
-							},
+							conditions: templateStreamCondition(rendition.conditions),
 						}
 					: {}),
 				...(isVideoCodec(rendition) && rendition.perTitleSettings
@@ -1062,7 +1199,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				},
 			};
 		}
-		const thumbs: Tree = {};
+		const thumbs: Tree = resourceTable();
 		for (const thumbnail of plan.thumbnails) {
 			if (thumbnail.streamKey !== rendition.key) {
 				continue;
@@ -1091,7 +1228,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		// Trick-play sprites: a streams.<key>.sprites node (sibling of
 		// properties, like thumbnails). Optional grid/dimension fields are
 		// dropped by dense; the destination becomes an EncodingOutput.
-		const sprites: Tree = {};
+		const sprites: Tree = resourceTable();
 		for (const sprite of plan.sprites) {
 			if (sprite.streamKey !== rendition.key) {
 				continue;
@@ -1154,6 +1291,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	// thumbnails): filters.properties = [{id, position}] per the official
 	// schema.
 	const filterByKey = new Map(plan.filters.map((f) => [f.key, f]));
+	const filterParameters = filterParametersForPlan(plan);
 	const filterResources: Record<string, Tree> = {};
 	const usedFilterInstanceKeys = new Set<string>();
 	for (const rendition of plan.renditions) {
@@ -1171,17 +1309,21 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			}
 			usedFilterInstanceKeys.add(instanceKey);
 			const endpoint = FILTER_ENDPOINTS[filter.kind];
-			filterResources[endpoint] ??= {};
+			filterResources[endpoint] ??= resourceTable();
 			const group = filterResources[endpoint];
-			const properties = filterParameters(filter);
-			if (filter.kind === "WATERMARK") {
+			const properties = filterParameters(filter, rendition.encodingKey);
+			if (filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK") {
 				delete properties.inputKey;
 				delete properties.imagePath;
-				properties.image = placeholder(
-					"INPUT",
-					filter.inputKey,
-					`WATERMARK_${instanceKey.replaceAll("-", "_").toUpperCase()}_URL`,
-				);
+				const label = `WATERMARK_${instanceKey.replaceAll("-", "_").toUpperCase()}`;
+				let suffix = `${label}_URL`;
+				for (
+					let i = 2;
+					usedPlaceholders.has(placeholder("INPUT", filter.inputKey, suffix));
+					i++
+				)
+					suffix = `${label}_${i}_URL`;
+				properties.image = ph("INPUT", filter.inputKey, suffix);
 			}
 			group[instanceKey] = { properties };
 			attachmentRefs.push({
@@ -1221,6 +1363,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			webm: Tree;
 			progressiveTs: Tree;
 			progressiveMov: Tree;
+			progressiveWav: Tree;
 			progressiveWebm: Tree;
 		}
 	>();
@@ -1236,9 +1379,10 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				chunkedText: {},
 				ts: {},
 				webm: {},
-				progressiveTs: {},
+				progressiveTs: Object.create(null),
 				progressiveMov: {},
-				progressiveWebm: {},
+				progressiveWav: resourceTable(),
+				progressiveWebm: resourceTable(),
 			};
 			muxingsByEnc.set(ownerEnc, legs);
 		}
@@ -1252,6 +1396,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			webm,
 			progressiveTs,
 			progressiveMov,
+
+			progressiveWav,
 			progressiveWebm,
 		} = legs;
 		const shared = {
@@ -1282,8 +1428,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		};
 		// Muxing-node drm section (sibling of properties, per the official
 		// schema). The content key is vault material → {{PLACEHOLDER}}.
-		const cencEntries: Tree = {};
-		const fairplayEntries: Tree = {};
+		const cencEntries: Tree = resourceTable();
+		const fairplayEntries: Tree = resourceTable();
 		for (const drm of plan.drm) {
 			if (drm.muxingKey !== muxing.key) {
 				continue;
@@ -1404,8 +1550,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				},
 			};
 		} else if (muxing.kind === "PROGRESSIVE_TS") {
-			// No `drm` node: validation refuses a DRM row on a whole-file kind.
 			progressiveTs[muxing.key] = {
+				...drmNode,
 				properties: {
 					filename: muxing.filename,
 					// Absent fields stay absent — the encoder's defaults apply.
@@ -1416,6 +1562,10 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					...shared,
 				},
 			};
+		} else if (muxing.kind === "PROGRESSIVE_WAV") {
+			progressiveWav[muxing.key] = {
+				properties: { filename: muxing.filename, ...shared },
+			};
 		} else if (muxing.kind === "PROGRESSIVE_MOV") {
 			progressiveMov[muxing.key] = {
 				properties: { filename: muxing.filename, ...shared },
@@ -1424,6 +1574,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			// The schema's `progressiveWebm` section. `manifestType` and
 			// `segmentLength` stay out: the plan kind does not carry them.
 			progressiveWebm[muxing.key] = {
+				...drmNode,
 				properties: { filename: muxing.filename, ...shared },
 			};
 		} else {
@@ -1432,9 +1583,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	}
 
 	const jit = plan.generation.timing === "JUST_IN_TIME";
-	const hlsManifests: Tree = {};
-	const dashManifests: Tree = {};
-	const smoothManifests: Tree = {};
+	const hlsManifests: Tree = resourceTable();
+	const dashManifests: Tree = resourceTable();
+	const smoothManifests: Tree = resourceTable();
 	for (const manifest of plan.manifests) {
 		const manifestOutput = {
 			outputId: outputRef.get(manifest.destination.outputKey),
@@ -1456,9 +1607,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			const subtitleReference = subtitleGroup
 				? { subtitles: subtitleGroup }
 				: {};
-			const media: Tree = {};
-			const subtitles: Tree = {};
-			const variantStreams: Tree = {};
+			const media: Tree = resourceTable();
+			const subtitles: Tree = resourceTable();
+			const variantStreams: Tree = resourceTable();
 			for (const muxing of plan.muxings) {
 				const rendition = renditionByKey.get(muxing.streamKey);
 				// Per-title entries expand at run time — not representable
@@ -1579,7 +1730,10 @@ function buildTemplate(plan: EncodingPlan): Tree {
 								},
 							};
 						}
-					} else {
+					} else if (
+						rendition.codec !== "AUDIO_PASSTHROUGH" &&
+						rendition.codec !== "PCM"
+					) {
 						variantStreams[muxing.key] = {
 							properties: {
 								audio: manifest.audioGroupId,
@@ -1648,8 +1802,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 						? "cmaf"
 						: "fmp4";
 			const repsBySet = new Map<string, Tree>();
-			const representations: Tree = {};
-			const subtitleSets: Tree = {};
+			const representations: Tree = resourceTable();
+			const subtitleSets: Tree = resourceTable();
 			for (const muxing of plan.muxings) {
 				const rendition = renditionByKey.get(muxing.streamKey);
 				if (muxing.kind !== "TEXT" || rendition?.codec !== "IMSC") continue;
@@ -1702,7 +1856,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			const subtitleTree = Object.keys(subtitleSets).length
 				? { subtitle: subtitleSets }
 				: {};
-			const audioRepresentations: Tree = {};
+			const audioRepresentations: Tree = resourceTable();
 			for (const muxing of plan.muxings) {
 				const rendition = renditionByKey.get(muxing.streamKey);
 				// Only the selected muxing kind of STANDARD AV renditions
@@ -1723,7 +1877,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					continue;
 				}
 				if (
-					rendition.codec === "AAC" &&
+					(rendition.codec === "AAC" || isHeAac(rendition.codec)) &&
 					!dashOnDemand &&
 					manifest.audioMuxingKind &&
 					muxing.kind !== manifest.audioMuxingKind
@@ -1783,7 +1937,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			// with `representations` only where routed. Video set nodes take
 			// labels only; audio set nodes also take lang.
 			const setNode = (set: NonNullable<typeof explicitSets>[number]): Tree => {
-				const reps = repsBySet.get(set.key) ?? {};
+				const reps = repsBySet.get(set.key) ?? resourceTable();
 				return {
 					properties: dense({
 						lang: set.type === "AUDIO" ? set.lang : undefined,
@@ -1861,8 +2015,8 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			// Static (STANDARD) MP4 representations only; per-title entries
 			// expand at run time (header note). drmId refs point into the
 			// muxing's drm node by $/ path.
-			const representations: Tree = {};
-			const contentProtections: Tree = {};
+			const representations: Tree = resourceTable();
+			const contentProtections: Tree = resourceTable();
 			for (const muxing of plan.muxings) {
 				const rendition = renditionByKey.get(muxing.streamKey);
 				if (
@@ -2024,18 +2178,26 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					}
 				: {}),
 			...(Object.keys(aac).length > 0 ||
+			Object.keys(heAacV1).length > 0 ||
+			Object.keys(heAacV2).length > 0 ||
 			Object.keys(ac3).length > 0 ||
 			Object.keys(eac3).length > 0 ||
 			Object.keys(opus).length > 0 ||
+			Object.keys(pcm).length > 0 ||
+			Object.keys(passthrough).length > 0 ||
 			Object.keys(dolbyAtmos).length > 0 ||
 			Object.keys(ddPlus).length > 0 ||
 			Object.keys(dd).length > 0
 				? {
 						audio: {
 							...(Object.keys(aac).length > 0 ? { aac } : {}),
+							...(Object.keys(heAacV1).length ? { heAacV1 } : {}),
+							...(Object.keys(heAacV2).length ? { heAacV2 } : {}),
 							...(Object.keys(ac3).length > 0 ? { ac3 } : {}),
 							...(Object.keys(eac3).length > 0 ? { eac3 } : {}),
 							...(Object.keys(opus).length > 0 ? { opus } : {}),
+							...(Object.keys(pcm).length > 0 ? { pcm } : {}),
+							...(Object.keys(passthrough).length > 0 ? { passthrough } : {}),
 							...(Object.keys(dolbyAtmos).length > 0 ? { dolbyAtmos } : {}),
 							...(Object.keys(ddPlus).length > 0
 								? { dolbyDigitalPlus: ddPlus }
@@ -2069,14 +2231,20 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					webm: {},
 					progressiveTs: {},
 					progressiveMov: {},
+					progressiveWav: {},
 					progressiveWebm: {},
 				};
 				const fileEntries = fileInputStreamsByEnc.get(name) ?? {};
 				const atmosEntries = dolbyAtmosByEnc.get(name) ?? {};
 				const visionEntries = dolbyVisionByEnc.get(name) ?? {};
+				const hdr10PlusEntries = hdr10PlusByEnc.get(name) ?? {};
 				const sidecarEntries = dolbySidecarByEnc.get(name) ?? {};
 				const inputStreamsNode = {
 					...(mixResources.get(name) ?? {}),
+					...(captionsByEnc.get(name) ?? {}),
+					...(Object.keys(hdr10PlusEntries).length > 0
+						? { hdr10Plus: hdr10PlusEntries }
+						: {}),
 					...(Object.keys(fileEntries).length > 0 ? { file: fileEntries } : {}),
 					...(Object.keys(atmosEntries).length > 0
 						? { dolbyAtmos: atmosEntries }
@@ -2164,6 +2332,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 								: {}),
 							...(Object.keys(legs.progressiveMov).length > 0
 								? { progressiveMov: legs.progressiveMov }
+								: {}),
+							...(Object.keys(legs.progressiveWav).length > 0
+								? { progressiveWav: legs.progressiveWav }
 								: {}),
 							...(Object.keys(legs.progressiveWebm).length > 0
 								? { progressiveWebm: legs.progressiveWebm }
@@ -2307,7 +2478,23 @@ function commentSafe(text: string): string {
 /** A template must not silently omit selected DRM from an executable plan. */
 export function encodingTemplateExportUnavailableReason(
 	plan: EncodingPlan,
-): "SPEKE" | "DASH_ON_DEMAND_MP4_DRM" | "MANIFEST_DETAILS" | undefined {
+):
+	| "SPEKE"
+	| "DASH_ON_DEMAND_MP4_DRM"
+	| "MANIFEST_DETAILS"
+	| "PINNED_AUDIO_INPUT"
+	| "DOLBY_LOUDNESS"
+	| undefined {
+	if (plan.renditions.some((r) => r.codec === "AUDIO_PASSTHROUGH"))
+		return "PINNED_AUDIO_INPUT";
+	const dolby = new Set(
+		plan.filters.filter((f) => f.kind === "DOLBY_LOUDNESS").map((f) => f.key),
+	);
+	if (
+		dolby.size &&
+		plan.renditions.some((r) => r.filters?.some((a) => dolby.has(a.filterKey)))
+	)
+		return "DOLBY_LOUDNESS";
 	if (plan.drm.some((drm) => drm.kind === "SPEKE")) return "SPEKE";
 	if (
 		plan.muxings.some(
@@ -2375,7 +2562,27 @@ export function encodingTemplateExportUnavailableReason(
 }
 
 export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
+	const invalidHdr = hdr10PlusTransformIssues(plan)[0];
+	if (invalidHdr) throw new Error(invalidHdr.message);
+	if (
+		plan.hdr10PlusStreams?.some(
+			(stream) =>
+				!isHdr10PlusObjectPath(stream.videoInputPath) ||
+				!isHdr10PlusObjectPath(stream.metadataInputPath),
+		)
+	)
+		throw new Error(
+			"Re-select the HDR10+ video and metadata objects before exporting the template.",
+		);
 	const unavailable = encodingTemplateExportUnavailableReason(plan);
+	if (unavailable === "PINNED_AUDIO_INPUT")
+		throw new Error(
+			"Use Plan JSON to retain the verified input version and selected audio track.",
+		);
+	if (unavailable === "DOLBY_LOUDNESS")
+		throw new Error(
+			"Dolby Loudness is unavailable in encoding-template YAML. Use Plan JSON or run the job in the app.",
+		);
 	if (unavailable === "MANIFEST_DETAILS")
 		throw new Error(
 			"Advanced manifest settings and progressive WebM require Plan JSON or execution in the app; encoding-template YAML export is unavailable.",
@@ -2404,7 +2611,9 @@ export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
 		"# schema: https://raw.githubusercontent.com/bitmovin/bitmovin-api-sdk-examples/main/bitmovin-encoding-template.json",
 		"# Secrets are exported as {{PLACEHOLDER}} variables (vault never leaves this app).",
 		"# Numeric substitutions (e.g. the SFTP port) must be unquoted numbers.",
-		...(plan.filters.some((f) => f.kind === "WATERMARK")
+		...(plan.filters.some(
+			(f) => f.kind === "WATERMARK" || f.kind === "ENHANCED_WATERMARK",
+		)
 			? [
 					"# NOTE: watermark image URL placeholders require a fresh signed URL for the referenced input object.",
 				]

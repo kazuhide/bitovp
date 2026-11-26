@@ -438,11 +438,19 @@ describe("the audio that goes into the file", () => {
 	});
 });
 
-describe("encryption is not offered on a file", () => {
-	it.each(FILE_KINDS)("%s shows no encryption section", (kind) => {
+describe("encryption follows the physical file muxing", () => {
+	it.each(
+		FILE_KINDS,
+	)("%s offers the DRM methods supported by that file container", (kind) => {
 		render(fileRow(kind));
-		expect(screen.queryByText(/Encryption \/ DRM/)).toBeNull();
-		expect(screen.queryByText("Add CENC")).toBeNull();
+		expect(!!screen.queryByText(/Encryption \/ DRM/)).toBe(
+			kind !== "PROGRESSIVE_MOV",
+		);
+		expect(!!screen.queryByText("Add CENC")).toBe(kind === "PROGRESSIVE_WEBM");
+		expect(!!screen.queryByText("Add FairPlay")).toBe(
+			kind === "PROGRESSIVE_TS",
+		);
+		expect(!!screen.queryByText("+ SPEKE")).toBe(kind !== "PROGRESSIVE_MOV");
 	});
 
 	it("the counterfactual — a streaming container does", () => {
@@ -451,14 +459,14 @@ describe("encryption is not offered on a file", () => {
 		expect(screen.getByText("Add CENC")).toBeTruthy();
 	});
 
-	it("a row left behind by a kind change stays on screen to be removed, with nothing to add", () => {
+	it("a row left behind by a kind change stays on screen to be removed, with nothing to add", async () => {
 		// Hiding the section outright would leave the preview refusing the plan
 		// (PLAN_DRM_MUXING_MISMATCH) with no control anywhere that could fix it.
 		const onPatch = vi.fn();
 		renderWithQuery(
 			<MuxingsSection
 				state={stateWith(
-					{ kind: "PROGRESSIVE_TS" },
+					{ kind: "PROGRESSIVE_MOV" },
 					{
 						drm: [
 							{
@@ -479,5 +487,10 @@ describe("encryption is not offered on a file", () => {
 		expect(screen.getByText(/Encryption \/ DRM \(1\)/)).toBeTruthy();
 		expect(screen.queryByText("Add CENC")).toBeNull();
 		expect(screen.queryByText("Add FairPlay")).toBeNull();
+		expect(screen.queryByText("+ SPEKE")).toBeNull();
+		await userEvent.click(
+			screen.getByRole("button", { name: "Remove encryption" }),
+		);
+		expect(onPatch).toHaveBeenCalledWith({ drm: [] });
 	});
 });

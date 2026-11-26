@@ -2,6 +2,7 @@
 // re-exported. Construct clients via createPrismaClient/getPrisma (which
 // enforce a global omit on ciphertext columns) and reach secrets only
 // through the stores.
+
 export type * from "../generated/client";
 export type {
 	AisaLiveImportOutcome,
@@ -43,6 +44,11 @@ export {
 	releaseExperimentTrial,
 	renewExperimentTrial,
 } from "./encoding-experiments";
+export type { FeederSinglePassDispatchFence } from "./feeder-single-pass";
+export {
+	claimFeederSinglePassDispatch,
+	hasSupersedingFeederStop,
+} from "./feeder-single-pass";
 export type {
 	AuthenticationToken,
 	IdentityPrismaClient,
@@ -72,7 +78,11 @@ export {
 	getPreparedNormalizationReceipt,
 	LibraryNormalizationClockError,
 } from "./library-normalization-clock";
-export { LibrarySourceError, requestLibrarySource } from "./library-source";
+export {
+	LibrarySourceError,
+	requestLibrarySource,
+	retainLibraryInputsBeforeJobDeletion,
+} from "./library-source";
 export type {
 	LiveEffectAction,
 	LiveEffectBeginInput,
@@ -81,18 +91,60 @@ export type {
 	LiveEffectTargetClaimResult,
 	ResolveLiveEffectsAfterConfirmedStopInput,
 	ResolveLiveEffectsAfterConfirmedStopResult,
+	RtmpRetirementReceipt,
 } from "./live-effect-claim";
 export {
+	acknowledgedProviderTargets,
+	archivedStopRecoveryTarget,
+	archivedStopRevision,
 	assertLiveEffectCurrent,
 	beginLiveEffect,
+	bindArchivedStopTarget,
+	bindArchivedStopTargetInTransaction,
 	bindLiveEffectTarget,
+	canObserveLiveStop,
+	claimLiveStopSend,
+	collectLiveStopTargets,
+	competingScheduledStop,
+	failUnstartedLoopFeederHandoff,
 	LIVE_EFFECT_OPEN_STATES,
+	liveChannelAccountId,
+	liveEffectSendUncertainty,
+	liveStopFeederWhere,
+	liveStopKnownTargets,
+	liveStopLogEncodings,
+	liveStopRunOwnsEncoding,
 	loadLiveEffectTargetClaim,
 	markLiveEffectAcked,
 	markLiveEffectAmbiguous,
 	markLiveEffectFailed,
+	mergeRtmpRetirementEvidence,
+	outstandingLiveStopTargets,
+	ownedLiveStopEncoders,
+	pendingSecondaryStopTargets,
+	readAiringEffectHistory,
+	recordLiveStopFailure,
+	reserveAisaStop,
 	resolveLiveEffectsAfterConfirmedStop,
+	STRANDED_RUN_ERROR,
+	savedStopReadbacks,
+	stopNotificationHistoryEligible,
+	unconfirmedRtmpEncoders,
+	unreservedStopTargets,
+	unresolvedOrphanLiveClaimTargets,
+	validLiveRetirementReceipts,
+	wasLiveStopAcknowledged,
 } from "./live-effect-claim";
+export {
+	readLockedLiveStartState,
+	reconcileOrphanLiveStops,
+} from "./live-reair-guard";
+export {
+	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+	isLiveStopAdmissionFence,
+	recordConfirmedLiveStopNotification,
+	settleExhaustedStopSchedules,
+} from "./live-stop-delivery";
 export {
 	claimLiveToVodAttempt,
 	LiveToVodFenceError,
@@ -115,6 +167,8 @@ export {
 	recordResetCleanupWebhookResult,
 	revealResetCleanupAccount,
 } from "./reset-cleanup";
+export { readResetRtmpArchives } from "./reset-live-inventory";
+export { readVerificationCleanupWork } from "./reset-verification-encodings";
 export {
 	appendLiveChannelStepLogEntry,
 	appendLiveEffectStepLogEntry,
@@ -137,6 +191,7 @@ export {
 	projectingMany,
 	projectSelected,
 } from "./test-helpers";
+export { resolveInspectedAudioSource } from "./verified-audio-source";
 export * from "./vmaf-profiles";
 export type { VmafTriggerKind } from "./vmaf-trigger-key";
 export {

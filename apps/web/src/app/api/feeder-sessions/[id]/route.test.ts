@@ -54,6 +54,44 @@ beforeEach(() => {
 });
 
 describe("GET /api/feeder-sessions/[id]", () => {
+	it("returns the durable single-pass mode and EOF receipt without exposing the stream key", async () => {
+		const receipt = {
+			version: 1,
+			outcome: "EOF",
+			outTimeSec: 120,
+			observedAt: "2026-11-09T00:02:00.000Z",
+		};
+		findUnique.mockResolvedValueOnce({
+			id: SESSION_ID,
+			status: "STOPPED",
+			protocol: "RTMP",
+			playbackMode: "ONCE",
+			playbackDispatchedAt: new Date("2026-11-09T00:00:00.000Z"),
+			playbackReceipt: receipt,
+			target: { url: "rtmp://h/live", streamKey: "sk-single-pass" },
+			pid: null,
+			processGoneAt: new Date("2026-11-09T00:02:00.000Z"),
+		});
+		const res = await getDetail();
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body).toMatchObject({
+			playbackMode: "ONCE",
+			playbackDispatchedAt: "2026-11-09T00:00:00.000Z",
+			playbackReceipt: receipt,
+			stoppable: false,
+		});
+		expect(JSON.stringify(body)).not.toContain("sk-single-pass");
+		expect(findUnique).toHaveBeenCalledWith({
+			where: { id: SESSION_ID },
+			select: expect.objectContaining({
+				playbackMode: true,
+				playbackDispatchedAt: true,
+				playbackReceipt: true,
+			}),
+		});
+	});
+
 	it("rejects invalid ids and 404s unknown sessions", async () => {
 		expect((await getDetail("nope")).status).toBe(400);
 		findUnique.mockResolvedValueOnce(null);

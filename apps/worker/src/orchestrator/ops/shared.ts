@@ -9,6 +9,7 @@ import {
 	type AbstractCondition,
 	AclEntry,
 	AclPermission,
+	AndConjunction,
 	CacheControl,
 	ChromaLocation,
 	ColorConfig,
@@ -20,9 +21,12 @@ import {
 	ConditionOperator,
 	EncodingOutput,
 	Label,
+	OrConjunction,
 	type Task,
 } from "@bitmovin/api-sdk";
 import {
+	publicStorageDiagnostic,
+	type StreamCondition,
 	type VerificationEncodingIdentity,
 	verificationKeyLabel,
 } from "@bitovp/core";
@@ -78,6 +82,15 @@ export function isBitmovinError(err: unknown): err is {
 	);
 }
 
+/** Classify while the provider's wording is available; only the boolean is public. */
+export function isMissingInputMessage(message: string): boolean {
+	// The missing resource must be the subject. A manifest's location can
+	// itself be named input.m3u8 or include that word in a signed query.
+	return /^\s*(?:the |an? )?(?:requested )?(?:(?:rtmp|ingest|live) )?input(?: with (?:the )?id\s*:?\s*["']?[\w-]+["']?)?\s+(?:could not be found|(?:was )?not found)\b/iu.test(
+		message,
+	);
+}
+
 /**
  * Body-free text for a Bitmovin failure: the API's own `shortMessage` (and
  * error code) only. NEVER `.message` — see the BitmovinCallError note.
@@ -87,10 +100,10 @@ export function bitmovinErrorText(err: unknown): string {
 		const code =
 			typeof err.errorCode === "number" ? ` (code ${err.errorCode})` : "";
 		return err.shortMessage
-			? `${err.shortMessage}${code}`
+			? `${publicStorageDiagnostic(err.shortMessage)}${code}`
 			: `Bitmovin request failed with status ${err.httpStatusCode ?? "unknown"}${code}`;
 	}
-	return err instanceof Error ? err.message : "failed";
+	return err instanceof Error ? publicStorageDiagnostic(err.message) : "failed";
 }
 
 /**
@@ -103,6 +116,7 @@ export function bitmovinErrorText(err: unknown): string {
  */
 export class BitmovinCallError extends Error {
 	readonly httpStatusCode?: number;
+	readonly inputNotFound: boolean;
 	readonly shortMessage?: string;
 	/**
 	 * Structured capture (E2E 2026-08-14, I-01): the start-1004 investigation
@@ -117,7 +131,11 @@ export class BitmovinCallError extends Error {
 	readonly requestId?: string;
 	readonly developerMessage?: string;
 	readonly errorCode?: number;
-	constructor(method: string, path: string, source: unknown) {
+	constructor(
+		readonly method: string,
+		path: string,
+		source: unknown,
+	) {
 		const bm = isBitmovinError(source) ? source : undefined;
 		const status = bm?.httpStatusCode;
 		// review-206 N1: the field is SERVER-controlled response-body JSON —
@@ -136,9 +154,12 @@ export class BitmovinCallError extends Error {
 		);
 		this.name = "BitmovinCallError";
 		this.httpStatusCode = status;
-		this.shortMessage = bm?.shortMessage;
+		this.inputNotFound =
+			typeof bm?.shortMessage === "string" &&
+			isMissingInputMessage(bm.shortMessage);
+		this.shortMessage = publicStorageDiagnostic(bm?.shortMessage);
 		this.requestId = requestId;
-		this.developerMessage = bm?.developerMessage;
+		this.developerMessage = publicStorageDiagnostic(bm?.developerMessage);
 		this.errorCode = bm?.errorCode;
 	}
 }
@@ -148,7 +169,7 @@ export function taskResult(task: Task): TaskStatusResult {
 		status: String(task.status),
 		progress: task.progress,
 		messages: (task.messages ?? [])
-			.map((m) => m.text ?? "")
+			.map((m) => publicStorageDiagnostic(m.text ?? ""))
 			.filter((t) => t.length > 0),
 	};
 }
@@ -200,20 +221,24 @@ export function cacheControl(
 		: undefined;
 }
 
+function sdkCondition(c: StreamCondition): AbstractCondition {
+	if ("conditions" in c) {
+		const children = c.conditions.map(sdkCondition);
+		return c.type === "AND"
+			? new AndConjunction({ conditions: children })
+			: new OrConjunction({ conditions: children });
+	}
+	return new Condition({
+		attribute: c.attribute,
+		operator: sdkEnumValue(ConditionOperator, c.operator, "ConditionOperator"),
+		value: c.value,
+	});
+}
+
 export function conditions(
-	c: { attribute: string; operator: string; value: string } | undefined,
+	c: StreamCondition | undefined,
 ): AbstractCondition | undefined {
-	return c
-		? new Condition({
-				attribute: c.attribute,
-				operator: sdkEnumValue(
-					ConditionOperator,
-					c.operator,
-					"ConditionOperator",
-				),
-				value: c.value,
-			})
-		: undefined;
+	return c && sdkCondition(c);
 }
 
 export function colorConfig(
@@ -922,8 +947,10 @@ export async function adoptOrCreateStamped(args: {
 	}
 	if (args.stamp?.allowCreate?.() === false)
 		throw new Error(
-			"Cancelled startup CREATE remains unresolved; no new resource was created",
+			"The existing CREATE remains unresolved; no new resource was created",
 		);
+	const childJournal = args.stamp?.childCreateJournal?.();
+	await childJournal?.record("DISPATCHING");
 	let created: string;
 	try {
 		const onResolved = args.onResolved;
@@ -937,6 +964,9 @@ export async function adoptOrCreateStamped(args: {
 			// reinterpret it as a lost response and run lookup/adoption again.
 			throw err.cause;
 		}
+		// The native POST transport can establish non-admission before the SDK
+		// parses a response body or normalizes a network error to HTTP status 0.
+		if (childJournal?.isPreparing()) throw err;
 		if (!expect) {
 			throw err;
 		}

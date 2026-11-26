@@ -26,7 +26,26 @@ export type EmitInput = {
 	> & { path: string };
 }[ProductEventKind];
 
-export type EmitProductEvent = (input: EmitInput) => Promise<void>;
+export type EmitProductEvent = (
+	input: EmitInput,
+	occurredAt?: Date,
+) => Promise<void>;
+
+export async function emitScheduleFired(
+	row: { id: string; liveChannelId: string },
+	emitEvent: EmitProductEvent | undefined,
+) {
+	try {
+		await emitEvent?.({
+			kind: "SCHEDULE_FIRED",
+			scheduleId: row.id,
+			liveChannelId: row.liveChannelId,
+			path: `/live/${row.liveChannelId}`,
+		});
+	} catch {
+		console.warn(`[scheduler] notification for schedule ${row.id} failed`);
+	}
+}
 
 type NotifyQueueLike = {
 	add(
@@ -38,18 +57,19 @@ type NotifyQueueLike = {
 
 export function createEventEmitter(deps: {
 	queue: NotifyQueueLike;
+	organizationId?: string;
 	/** PUBLIC_BASE_URL; undefined ⇒ links fall back to the bare path. */
 	publicBaseUrl?: string;
 	now?: () => Date;
 }): EmitProductEvent {
 	const base = (deps.publicBaseUrl ?? "").replace(/\/$/, "");
-	return async (input) => {
+	return async (input, occurredAt) => {
 		try {
 			const { path, ...event } = input;
 			const candidate = {
 				...event,
 				eventVersion: EVENT_VERSION,
-				occurredAt: (deps.now?.() ?? new Date()).toISOString(),
+				occurredAt: (occurredAt ?? deps.now?.() ?? new Date()).toISOString(),
 				// Without PUBLIC_BASE_URL the link is not a valid URL; use a
 				// placeholder origin so the schema holds and the path survives —
 				// the operator-facing fix is setting the variable.
@@ -66,6 +86,12 @@ export function createEventEmitter(deps: {
 				return;
 			}
 			await deps.queue.add(QUEUE_NAMES.notify, parsed.data, {
+				// The producer and recovery can see the same accepted handoff.
+				// Deduplicate that firing for as long as BullMQ retains the job.
+				...(parsed.data.kind === "SCHEDULE_FIRED" &&
+					deps.organizationId && {
+						jobId: `schedule-fired-${deps.organizationId}-${parsed.data.scheduleId}`,
+					}),
 				// review-183 C1: WITHOUT attempts, BullMQ's default is 0 and a
 				// thrown delivery is gone permanently — the bus was at-MOST-once
 				// while three artefacts (the processor comment, the retry test's

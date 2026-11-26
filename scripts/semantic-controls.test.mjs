@@ -60,7 +60,7 @@ function report(control, mutant, checkout = root) {
 	};
 }
 
-test("four fixed product faults retain complete, distinct 91-case inventories and 22 semantic witnesses", () => {
+test("four fixed product faults retain complete, distinct 97-case inventories and 22 semantic witnesses", () => {
 	assert.deepEqual(
 		CONTROLS.map((control) => control.id),
 		[
@@ -72,7 +72,7 @@ test("four fixed product faults retain complete, distinct 91-case inventories an
 	);
 	assert.equal(
 		CONTROLS.reduce((sum, control) => sum + control.cases.length, 0),
-		91,
+		97,
 	);
 	assert.equal(
 		CONTROLS.reduce(
@@ -406,6 +406,39 @@ test("guarded command preserves the actual child exit and bounds a stuck child",
 			}),
 		);
 		assert(!groupExists(group));
+	} finally {
+		if (group && groupExists(group)) process.kill(-group, "SIGKILL");
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test("a timed out command keeps its timeout after the last owned descendant is killed", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "semantic-timeout-"));
+	const ready = join(directory, "descendant-ready");
+	let group;
+	// An inherited output pipe would keep the supervisor's close event pending.
+	// The background worker has no such pipe and outlives the first group TERM.
+	const descendant = `
+		process.on("SIGTERM", () => {});
+		require("node:fs").writeFileSync(${JSON.stringify(ready)}, String(process.pid));
+		setInterval(() => {}, 1000);`;
+	const driver = `
+		require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(descendant)}], {stdio: "ignore"});
+		setInterval(() => {}, 1000);`;
+	try {
+		await assert.rejects(
+			guardedCommand(process.execPath, ["-e", driver], {
+				cwd: directory,
+				exitPath: join(directory, "exit"),
+				timeout: 1200,
+				onSpawn: (pid) => {
+					group = pid;
+				},
+			}),
+			{ code: "COMMAND_TIMEOUT" },
+		);
+		assert(existsSync(ready), "the survivor was running at the timeout");
+		assert(!groupExists(group), "the owned process group must be gone");
 	} finally {
 		if (group && groupExists(group)) process.kill(-group, "SIGKILL");
 		rmSync(directory, { recursive: true, force: true });

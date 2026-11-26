@@ -64,14 +64,19 @@ const controls = [
 		workspace: "@bitovp/worker",
 		directory: "apps/worker",
 		files: {
-			"src/orchestrator/retrying-fetch.test.ts": 21,
+			"src/orchestrator/retrying-fetch.test.ts": 26,
 		},
 		source: "apps/worker/src/orchestrator/retrying-fetch.ts",
 		anchor: "return !/\\/(live\\/)?start\\/?$/.test(path);",
 		replacement: "return true;",
 		cases: [
+			"closes a refused child POST response when its durable journal loses the lease",
+			"journals a real child POST refusal before its response body breaks and never follows a redirect",
 			"createRetryingFetch refuses RTMP reassignment retries with URL query/trailing slash, while preserving reads",
 			"createRetryingFetch retries a transport rejection and returns the eventual response",
+			"createRetryingFetch retries only reads on an attempt-owned manifest request (POST)",
+			"createRetryingFetch retries only reads on an attempt-owned manifest request (DELETE)",
+			"createRetryingFetch retries only reads on an attempt-owned manifest request (GET)",
 			"createRetryingFetch gives up after the attempt budget and rethrows the LAST error",
 			"createRetryingFetch does NOT retry a response that arrived, whatever its status",
 			"createRetryingFetch backs off exponentially from the base delay",
@@ -165,13 +170,14 @@ const controls = [
 		workspace: "@bitovp/worker",
 		directory: "apps/worker",
 		files: {
-			"src/feeder/process-runner-abort.test.ts": 19,
+			"src/feeder/process-runner-abort.test.ts": 20,
 		},
 		source: "apps/worker/src/feeder/process-runner.ts",
 		anchor: "aborted = true;",
 		replacement:
 			"aborted = true;\nresolve({ code: null, stdout, stderr: err.message });",
 		cases: [
+			"streaming process exit keeps a spawned publisher owned after both termination signals are denied",
 			"one-shot abort grace ownership holds an opted-in child when its first SIGTERM attempt emits a normal error",
 			"one-shot abort grace ownership sends one hard kill at the deadline but retains ownership until close",
 			"one-shot abort grace ownership clears the deadline on exit even while stdio keeps close pending",

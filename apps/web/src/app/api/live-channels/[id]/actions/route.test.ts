@@ -9,6 +9,7 @@ import { DB_NULL } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
+const channelArchives = vi.fn(async (): Promise<unknown[]> => []);
 const aisaOwnerId = "00000000-0000-4000-8000-0000000000a2";
 const runFindFirst = vi.fn(
 	async (): Promise<{
@@ -23,6 +24,9 @@ const runFindFirst = vi.fn(
 		aisaSnapshot?: unknown;
 		aisaFinalization?: unknown;
 		stepLog?: unknown;
+		previousProviderEncodingIds?: string[];
+		archivedRtmpAttempt?: number;
+		rtmpRetirementEvidence?: unknown;
 		encoderStoppedConfirmedFor?: string | null;
 		/** : the provider-lifecycle columns the route now reads. */
 		providerStatus?: string | null;
@@ -122,15 +126,24 @@ vi.mock("@/lib/server/context", () => ({
 			$transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
 				fn({
 					$queryRaw: lockRows,
+					liveEffectClaim: {
+						findFirst: async () => null,
+						findMany: async () => [],
+					},
+					feederSession: { findFirst: async () => null },
 					vmafJob: { count: vmafCount, deleteMany: vmafDeleteMany },
 					liveChannel: {
 						findUnique,
+						findMany: channelArchives,
 						update,
 						updateMany,
 						deleteMany: channelDeleteMany,
 					},
 					liveChannelRun: {
-						findFirst: runFindFirst,
+						findFirst: async (...args: Parameters<typeof runFindFirst>) => {
+							const run = await runFindFirst(...args);
+							return run ? { stepLog: [], ...run } : null;
+						},
 						findMany: runFindMany,
 						create: runCreate,
 						update: runUpdate,
@@ -305,6 +318,7 @@ describe("AISA lifecycle admission", () => {
 		"reair",
 		"legacy-revive",
 		"dispatched-revive",
+		"run-dispatched-revive",
 	])("keeps the run log authoritative across Start → SDK setup failure → DELETE: %s", async (phase) => {
 		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "true");
 		const plan = liveChannelPlanSchema.parse({
@@ -328,7 +342,7 @@ describe("AISA lifecycle admission", () => {
 			},
 		});
 		const canonical = initStepLog(compileAisaManagedLiveChannel(plan));
-		if (phase === "dispatched-revive") {
+		if (phase.endsWith("dispatched-revive")) {
 			const create = canonical[0];
 			if (!create) throw new Error("missing CREATE fixture");
 			create.status = "FAILED";
@@ -344,7 +358,10 @@ describe("AISA lifecycle admission", () => {
 			error: null,
 			bitmovinEncodingId: null,
 			plan,
-			stepLog: canonical,
+			stepLog:
+				phase === "run-dispatched-revive"
+					? initStepLog(compileAisaManagedLiveChannel(plan))
+					: canonical,
 		});
 		let storedRun: Awaited<ReturnType<typeof runFindFirst>> =
 			phase === "first-start"
@@ -357,7 +374,10 @@ describe("AISA lifecycle admission", () => {
 						aisaAnalysisId: null,
 						bitmovinEncodingId: null,
 						// Legacy route-created runs defaulted to [] until the first persist.
-						stepLog: phase === "reair" ? structuredClone(canonical) : [],
+						stepLog:
+							phase === "reair" || phase === "run-dispatched-revive"
+								? structuredClone(canonical)
+								: [],
 						...(phase === "reair"
 							? {
 									aisaFinalization: {
@@ -370,12 +390,22 @@ describe("AISA lifecycle admission", () => {
 							: {}),
 					};
 		findUnique.mockImplementation(async () => storedChannel);
+		channelArchives.mockImplementationOnce(async () => [
+			{
+				...storedChannel,
+				runs: storedRun ? [storedRun] : [],
+				effectClaims: [],
+			},
+		]);
 		runFindFirst.mockImplementation(async () => storedRun);
 		runFindMany.mockImplementation(async () =>
 			storedRun
 				? [
 						{
 							...storedRun,
+							liveChannel: { ...storedChannel, runs: [{ id: storedRun.id }] },
+							previousProviderEncodingIds: [],
+							archivedRtmpAttempt: 0,
 							organizationId: "00000000-0000-4000-8000-000000000001",
 							liveChannelId: CHANNEL_ID,
 							moqObservations: { version: 1, sessions: [] },
@@ -402,7 +432,7 @@ describe("AISA lifecycle admission", () => {
 				};
 				return { id: storedRun.id };
 			});
-		if (phase === "legacy-revive" || phase === "dispatched-revive")
+		if (phase === "legacy-revive" || phase.endsWith("dispatched-revive"))
 			runUpdate.mockImplementationOnce(async (args) => {
 				if (!args || !storedRun) throw new Error("missing run revive");
 				Object.assign(storedRun, args.data);
@@ -426,12 +456,18 @@ describe("AISA lifecycle admission", () => {
 			}),
 			{ params: Promise.resolve({ id: CHANNEL_ID }) },
 		);
-		expect(response.status).toBe(phase === "dispatched-revive" ? 409 : 200);
+		expect(response.status).toBe(
+			phase.endsWith("dispatched-revive") ? 409 : 200,
+		);
 		expect(startedRunLog).toEqual(startedChannelLog);
-		if (phase === "dispatched-revive") {
+		if (phase.endsWith("dispatched-revive")) {
 			expect(JSON.stringify(startedRunLog)).toContain("aisaCreateDispatched");
 			expect(channelDeleteMany).not.toHaveBeenCalled();
-			expect(runFindMany).not.toHaveBeenCalled();
+			expect(runFindMany).not.toHaveBeenCalledWith(
+				expect.objectContaining({
+					select: expect.objectContaining({ moqObservations: true }),
+				}),
+			);
 		} else {
 			expect(channelDeleteMany).toHaveBeenCalledTimes(1);
 			expect(runFindMany).toHaveBeenCalledWith(
@@ -691,6 +727,63 @@ describe("AISA lifecycle admission", () => {
 			expect(queuedJobs.get(jobId)).toBe(job);
 		}
 	});
+	it.each([
+		["expired", 202],
+		["missing-job", 202],
+		["before-run-mirror", 202],
+		["old-generation", 409],
+		["stale-observation", 202],
+		["current-lease", 409],
+		["legacy", 409],
+		["wrong-run", 409],
+		["wrong-encoder", 409],
+		["terminal", 409],
+		["cancelled", 409],
+	] as const)("retries the interrupted active AISA Stop from the detail view (%s)", async (condition, status) => {
+		findUnique.mockResolvedValue(
+			channel({
+				status: "STOPPING",
+				plan: {
+					start: { aiSceneAnalysisLive: { preset: "AISA_PREVIEW_MANAGED" } },
+				},
+			}),
+		);
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: condition === "before-run-mirror" ? "RUNNING" : "STOPPING",
+			bitmovinEncodingId: "bm-live-enc",
+			cancelRequested: condition === "cancelled",
+			aisaAnalysisId: "analysis-1",
+			aisaStatus: "RUNNING",
+			providerStatus: condition === "terminal" ? "FINISHED" : "RUNNING",
+			providerTerminalAt: condition === "terminal" ? new Date() : null,
+			providerStatusObservedAt:
+				condition === "stale-observation" ? new Date(0) : new Date(),
+		});
+		effectClaimFindUnique.mockResolvedValue(
+			manualStopClaim("DISPATCHING", {
+				stopProtocolVersion: condition === "legacy" ? null : 1,
+				generation: condition === "old-generation" ? 9 : 0,
+				expiresAt:
+					condition === "current-lease"
+						? new Date(Date.now() + 60000)
+						: new Date(0),
+			}),
+		);
+		const jobId = `manual-stop-${CHANNEL_ID}-${RUN_ID}`;
+		if (condition !== "missing-job")
+			retainQueuedJob(jobId, manualStopJobData(), "failed");
+		const result = await postAction({
+			action: "retry-aisa-stop",
+			runId: condition === "wrong-run" ? REQUEST_ID : RUN_ID,
+			encodingId: condition === "wrong-encoder" ? "old-encoder" : "bm-live-enc",
+		});
+		expect(result.status).toBe(status);
+		expect(queueAdd).toHaveBeenCalledTimes(status === 202 ? 1 : 0);
+		if (status === 202)
+			expect(queuedJobs.get(jobId)?.data).toMatchObject(manualStopJobData());
+	});
 	it("rejects the old finalization field on Stop before dispatching against the current run", async () => {
 		const result = await postAction({
 			action: "stop",
@@ -801,6 +894,40 @@ describe("AISA lifecycle admission", () => {
 		expect(updateMany).not.toHaveBeenCalled();
 		expect(queueAdd).not.toHaveBeenCalled();
 	});
+	it.each([
+		["nonowner", "stop", 404],
+		["nonowner", "restart", 404],
+		["owner", "restart", 409],
+		["missing-analysis", "stop", 409],
+		["missing-account", "stop", 409],
+		["wrong-encoder", "stop", 409],
+		["owner", "stop", 202],
+	] as const)("authorizes the saved Analysis binding with an unreadable plan (%s, %s)", async (mode, action, expected) => {
+		if (mode === "nonowner")
+			vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", REQUEST_ID);
+		const run = {
+			id: RUN_ID,
+			seq: 1,
+			status: "RUNNING",
+			bitmovinEncodingId: mode === "wrong-encoder" ? "other" : "bm-live-enc",
+			aisaAnalysisId: mode === "missing-analysis" ? null : "analysis-1",
+			aisaStatus: "RUNNING",
+			providerStatus: "RUNNING",
+			providerStatusObservedAt: new Date(),
+		};
+		findUnique.mockResolvedValue(
+			channel({
+				origin: "MANAGED",
+				runs: [run],
+				plan: {},
+				bitmovinAccountId: mode === "missing-account" ? null : CHANNEL_ID,
+			}),
+		);
+		runFindFirst.mockResolvedValue(run);
+		expect((await postAction({ action })).status).toBe(expected);
+		expect(queueAdd).toHaveBeenCalledTimes(expected === 202 ? 1 : 0);
+		expect(updateMany).not.toHaveBeenCalled();
+	});
 	it("refuses a managed start when Preview is disabled before claiming a run", async () => {
 		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "false");
 		findUnique.mockResolvedValue(
@@ -887,7 +1014,11 @@ beforeEach(() => {
 	vmafCount.mockResolvedValue(0);
 	vmafDeleteMany.mockResolvedValue({ count: 0 });
 	auditCreate.mockResolvedValue({});
-	lockRows.mockResolvedValue([]);
+	lockRows.mockImplementation(async (sql: TemplateStringsArray) =>
+		sql[0]?.includes('SELECT "stepLog", plan')
+			? [await (findUnique.mock.results.at(-1)?.value ?? channel())]
+			: [],
+	);
 	queuedJobs.clear();
 	effectClaimFindUnique.mockReset();
 	effectClaimFindUnique.mockResolvedValue(null);
@@ -906,6 +1037,7 @@ beforeEach(() => {
 	runFindFirst.mockReset();
 	runFindFirst.mockResolvedValue({
 		id: RUN_ID,
+		bitmovinEncodingId: "bm-live-enc",
 		seq: 1,
 		status: "RUNNING",
 		providerStatus: "RUNNING",
@@ -1232,11 +1364,58 @@ describe("POST /api/live-channels/[id]/actions", () => {
 		);
 		expect(queueAdd).toHaveBeenCalledWith(
 			"live-channel",
-			{ liveChannelId: CHANNEL_ID, action: "provision" },
+			{
+				liveChannelId: CHANNEL_ID,
+				action: "provision",
+				plannedLiveChannelRunId: runCreate.mock.calls[0]?.[0]?.data.id,
+			},
 			expect.anything(),
 		);
 	});
 
+	it.each([
+		false,
+		true,
+	])("revives a native encoder whose completed CREATE is retained only on its own run (nullable run pointer %s)", async (nullable) => {
+		const primary = "same-encoder";
+		const step = {
+			kind: "CREATE_ENCODING",
+			step: "encoding",
+			refs: {},
+			payload: {},
+			status: "DONE",
+			resourceId: primary,
+		};
+		findUnique.mockResolvedValueOnce(
+			channel({
+				status: "ERROR",
+				stepLog: nullable
+					? [
+							{
+								kind: step.kind,
+								step: step.step,
+								payload: {},
+								refs: {},
+								status: "PENDING",
+							},
+						]
+					: [],
+				bitmovinEncodingId: primary,
+			}),
+		);
+		runFindFirst.mockResolvedValueOnce({
+			id: RUN_ID,
+			seq: 1,
+			status: "ERROR",
+			bitmovinEncodingId: nullable ? null : primary,
+			stepLog: [step],
+		});
+		updateMany.mockResolvedValueOnce({ count: 1 });
+		expect((await postAction({ action: "start" })).status).toBe(200);
+		expect(updateMany.mock.calls[0]?.[0]).toMatchObject({
+			data: { stepLog: [step] },
+		});
+	});
 	it("ERROR resume with an EMPTY log compiles fresh — the stranded-corpse recovery (ledger #108)", async () => {
 		// The exact shape the old re-air bug left behind: channel ERROR,
 		// latest run ERROR, stepLog []. Reseeding [] would walk zero steps
@@ -1417,11 +1596,64 @@ describe("POST /api/live-channels/[id]/actions", () => {
 		]);
 		expect(queueAdd).toHaveBeenCalledWith(
 			"live-channel",
-			{ liveChannelId: CHANNEL_ID, action: "provision" },
+			{
+				liveChannelId: CHANNEL_ID,
+				action: "provision",
+				plannedLiveChannelRunId: "run-error",
+			},
 			expect.objectContaining({ jobId: expect.stringContaining(CHANNEL_ID) }),
 		);
 	});
 
+	it.each([
+		"retained",
+		"new-owner",
+		"rejected",
+	] as const)("start: reconciles a lost Redis reply against the admitted run (%s)", async (reply) => {
+		findUnique.mockResolvedValue(
+			channel({ status: "ERROR", liveEffectFenceVersion: 4 }),
+		);
+		runFindFirst.mockResolvedValue({ id: RUN_ID, seq: 1, status: "ERROR" });
+		const jobId = `manual-provision-${CHANNEL_ID}-${RUN_ID}-5`;
+		updateMany.mockResolvedValueOnce({ count: 1 });
+		if (reply !== "retained")
+			updateMany.mockResolvedValueOnce({
+				count: reply === "new-owner" ? 0 : 1,
+			});
+		queueAdd.mockImplementationOnce(async (_name, data, options) => {
+			expect(options.jobId).toBe(jobId);
+			expect(data).toEqual({
+				liveChannelId: CHANNEL_ID,
+				action: "provision",
+				plannedLiveChannelRunId: RUN_ID,
+			});
+			if (reply === "retained") retainQueuedJob(jobId, data);
+			throw new Error("Redis reply lost");
+		});
+		expect((await postAction({ action: "start" })).status).toBe(
+			reply === "retained" ? 200 : 500,
+		);
+		expect(update).not.toHaveBeenCalled();
+		if (reply === "retained") expect(updateMany).toHaveBeenCalledTimes(1);
+		else
+			expect(updateMany).toHaveBeenLastCalledWith({
+				where: {
+					id: CHANNEL_ID,
+					status: "PROVISIONING",
+					provisionClaimedAt: null,
+					liveEffectFenceVersion: 5,
+					runs: {
+						some: {
+							id: RUN_ID,
+							status: "PROVISIONING",
+							cancelRequested: false,
+						},
+					},
+				},
+				data: { status: "ERROR", error: "Enqueue failed — start again" },
+			});
+		expect(runUpdate).toHaveBeenCalledTimes(reply === "rejected" ? 2 : 1);
+	});
 	it("start's atomic claim RELEASES the provisioning lease (AKR-E57-003)", async () => {
 		/**
 		 * The wiring, which nothing pinned: deleting `provisionClaimedAt: null`
@@ -1822,6 +2054,22 @@ describe("POST /api/live-channels/[id]/actions", () => {
 		expect(res.status).toBe(409);
 	});
 
+	it.each([
+		"RUNNING",
+		"STOPPING",
+	])("rejects the displayed previous airing before enqueue or replay while %s", async (status) => {
+		findUnique.mockResolvedValueOnce(channel({ status }));
+		const res = await postAction({
+			action: "stop",
+			target: {
+				runId: "24bcb108-9040-4961-af6f-d4fc45b482bc",
+				encodingId: "bm-live-enc",
+				generation: 0,
+			},
+		});
+		expect(res.status).toBe(409);
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
 	it("stop: concurrent exact admissions retain one executable provider effect", async () => {
 		let initialReads = 0;
 		let releaseInitialReads: (() => void) | undefined;
@@ -2034,6 +2282,34 @@ describe("POST /api/live-channels/[id]/actions", () => {
 		expect(updateMany).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		"missing",
+		"owned",
+	])("checks the creation receipt before using a legacy channel encoder for STOP (%s)", async (proof) => {
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "RUNNING",
+			bitmovinEncodingId: null,
+			stepLog:
+				proof === "owned"
+					? [
+							{
+								step: "encoding",
+								kind: "CREATE_ENCODING",
+								status: "DONE",
+								payload: {},
+								refs: {},
+								resourceId: "bm-live-enc",
+							},
+						]
+					: [],
+		});
+		const response = await postAction({ action: "stop" });
+		expect(response.status).toBe(proof === "owned" ? 202 : 409);
+		expect(queueAdd).toHaveBeenCalledTimes(proof === "owned" ? 1 : 0);
+	});
+
 	it("stop: 409s when the channel has no Bitmovin encoding yet", async () => {
 		findUnique.mockResolvedValueOnce(channel({ bitmovinEncodingId: null }));
 		const res = await postAction({ action: "stop" });
@@ -2077,6 +2353,68 @@ describe("POST /api/live-channels/[id]/actions", () => {
 
 		findUnique.mockResolvedValueOnce(channel({ status: "PROVISIONING" }));
 		expect((await postAction({ action: "restart" })).status).toBe(409);
+	});
+
+	it.each([
+		"STOP",
+		"provision",
+	] as const)("restart: a delayed enqueue failure preserves the newer %s owner", async (winner) => {
+		findUnique.mockResolvedValueOnce(
+			channel({ status: "RUNNING", liveEffectFenceVersion: 4 }),
+		);
+		const state = {
+			status: "RUNNING",
+			generation: 4,
+			provisionClaimedAt: null as Date | null,
+		};
+		updateMany.mockImplementation(async ({ where, data }) => {
+			const matchingStatus =
+				typeof where.status === "string"
+					? where.status === state.status
+					: where.status.in.includes(state.status);
+			if (
+				!matchingStatus ||
+				where.liveEffectFenceVersion !== state.generation ||
+				("provisionClaimedAt" in where &&
+					where.provisionClaimedAt !== state.provisionClaimedAt)
+			)
+				return { count: 0 };
+			state.status = data.status;
+			state.generation += data.liveEffectFenceVersion?.increment ?? 0;
+			return { count: 1 };
+		});
+		queueAdd.mockImplementationOnce(async () => {
+			expect(state).toEqual({
+				status: "PROVISIONING",
+				generation: 5,
+				provisionClaimedAt: null,
+			});
+			if (winner === "STOP") {
+				state.status = "STOPPING";
+				state.generation++;
+			} else state.provisionClaimedAt = new Date(0);
+			throw new Error("Redis response lost");
+		});
+		expect((await postAction({ action: "restart" })).status).toBe(500);
+		expect(update).not.toHaveBeenCalled();
+		expect(updateMany).toHaveBeenLastCalledWith({
+			where: {
+				id: CHANNEL_ID,
+				status: "PROVISIONING",
+				provisionClaimedAt: null,
+				liveEffectFenceVersion: 5,
+			},
+			data: { status: "ERROR", error: "Enqueue failed — restart again" },
+		});
+		expect(state).toEqual(
+			winner === "STOP"
+				? { status: "STOPPING", generation: 6, provisionClaimedAt: null }
+				: {
+						status: "PROVISIONING",
+						generation: 5,
+						provisionClaimedAt: new Date(0),
+					},
+		);
 	});
 
 	it("restart: a STOPPED channel is refused, naming the real recovery (ledger #107)", async () => {
@@ -2539,7 +2877,11 @@ describe("provider lifecycle admission (row #280)", () => {
 		expect(claim.data.stepLog.every((e) => e.status === "PENDING")).toBe(true);
 		expect(queueAdd).toHaveBeenCalledWith(
 			"live-channel",
-			{ liveChannelId: CHANNEL_ID, action: "provision" },
+			{
+				liveChannelId: CHANNEL_ID,
+				action: "provision",
+				plannedLiveChannelRunId: runCreate.mock.calls[0]?.[0]?.data.id,
+			},
 			expect.anything(),
 		);
 	});
@@ -2597,6 +2939,12 @@ describe("provider lifecycle admission (row #280)", () => {
 
 describe("stopping a stop that never confirmed (ledger #130 C-fold)", () => {
 	async function stopClaim() {
+		runFindFirst.mockResolvedValue({
+			id: RUN_ID,
+			seq: 1,
+			status: "STOPPED",
+			bitmovinEncodingId: "enc-1",
+		});
 		findUnique.mockResolvedValueOnce(
 			channel({
 				status: "STOPPED",
@@ -2634,6 +2982,184 @@ describe("stopping a stop that never confirmed (ledger #130 C-fold)", () => {
 		expect(res.status).toBe(409);
 		expect(queueAdd).not.toHaveBeenCalled();
 		expect(updateMany).not.toHaveBeenCalled();
+	});
+});
+
+describe("displaced RTMP encoders after upgrade", () => {
+	it.each([
+		false,
+		true,
+	])("blocks an ERROR resume with an unretired archived encoder on the current or older airing (older=%s)", async (older) => {
+		findUnique.mockResolvedValue(
+			channel({
+				status: "ERROR",
+				origin: "MANAGED",
+				bitmovinEncodingId: null,
+				error: null,
+				bitmovinAccountId: "account",
+			}),
+		);
+		const old = {
+			id: RUN_ID,
+			seq: 1,
+			status: "ERROR",
+			bitmovinEncodingId: null,
+			stepLog: [],
+			previousProviderEncodingIds: ["displaced"],
+			archivedRtmpAttempt: 1,
+		};
+		runFindFirst.mockResolvedValue(
+			older
+				? {
+						...old,
+						seq: 2,
+						id: "current",
+						previousProviderEncodingIds: [],
+						archivedRtmpAttempt: 0,
+					}
+				: old,
+		);
+		runFindMany.mockResolvedValue(older ? [old] : []);
+		const result = await postAction({ action: "start" });
+		expect(result.status).toBe(409);
+		expect((await result.json()).details.code).toBe(
+			"LIVE_ACTION_PROVIDER_UNKNOWN",
+		);
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"STOPPED",
+		"ERROR",
+	] as const)("holds %s re-air until the archive has an exact account receipt", async (status) => {
+		const current = channel({
+			origin: "MANAGED",
+			status,
+			error: null,
+			bitmovinAccountId: "account",
+		});
+		findUnique.mockResolvedValue(current);
+		const run = {
+			id: RUN_ID,
+			seq: 1,
+			status,
+			bitmovinEncodingId: "bm-live-enc",
+			previousProviderEncodingIds: ["old"],
+			archivedRtmpAttempt: 1,
+			stepLog: [],
+			providerStatus: "FINISHED",
+			providerTerminalAt: new Date(),
+			providerStatusObservedAt: new Date(),
+		};
+		runFindFirst.mockResolvedValue({ ...run, rtmpRetirementEvidence: [] });
+		expect((await postAction({ action: "start" })).status).toBe(409);
+		expect(runCreate).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+		runFindFirst.mockResolvedValue({
+			...run,
+			rtmpRetirementEvidence: [
+				{
+					accountId: "account",
+					encodingId: "old",
+					disposition: "TERMINAL",
+					providerStatus: "FINISHED",
+					observedAt: new Date().toISOString(),
+				},
+			],
+		});
+		expect((await postAction({ action: "start" })).status).toBe(200);
+		expect(runCreate).toHaveBeenCalledOnce();
+	});
+	it("refuses the archive confirmation after the displayed airing has been replaced", async () => {
+		findUnique.mockResolvedValue(
+			channel({
+				origin: "MANAGED",
+				status: "RUNNING",
+				bitmovinEncodingId: "successor",
+				liveEffectFenceVersion: 3,
+			}),
+		);
+		runFindFirst.mockResolvedValue({
+			id: REQUEST_ID,
+			seq: 2,
+			status: "RUNNING",
+			bitmovinEncodingId: "successor",
+			stepLog: [],
+		});
+		lockRows.mockResolvedValue([{ id: CHANNEL_ID }]);
+		const res = await postAction({
+			action: "recover-archived-stop",
+			runId: RUN_ID,
+			revision: "a".repeat(64),
+		});
+		expect(res.status).toBe(409);
+		expect(queueAdd).not.toHaveBeenCalled();
+		expect(runUpdate).not.toHaveBeenCalled();
+		expect(update).not.toHaveBeenCalled();
+	});
+	it.each([
+		false,
+		true,
+	])("requeues a confirmed STOP archive for the selected encoding without changing earlier acknowledgements (promoted=%s)", async (promoted) => {
+		findUnique.mockResolvedValue(
+			channel({
+				origin: "MANAGED",
+				status: "STOPPED",
+				error: null,
+				bitmovinAccountId: "account",
+				provisionClaimedAt: null,
+			}),
+		);
+		const selectedRun = {
+			id: RUN_ID,
+			seq: 1,
+			status: "STOPPED",
+			bitmovinEncodingId: "bm-live-enc",
+			stepLog: [],
+			previousProviderEncodingIds: ["previous"],
+			archivedRtmpAttempt: 1,
+			providerStatus: "FINISHED",
+			providerTerminalAt: new Date(),
+		};
+		runFindFirst.mockResolvedValue(selectedRun);
+		lockRows.mockResolvedValue([{ id: CHANNEL_ID }]);
+		effectClaimFindUnique.mockImplementation(async ({ where }) =>
+			where.idempotencyKey === `manual:stop:${CHANNEL_ID}:${RUN_ID}`
+				? manualStopClaim(
+						"ACKED",
+						promoted ? { providerEncodingId: "retired-primary" } : {},
+					)
+				: null,
+		);
+		const retained = retainQueuedJob(
+			`manual-stop-${CHANNEL_ID}-${RUN_ID}`,
+			manualStopJobData(),
+			"completed",
+			manualStopSuccess(),
+		);
+		const remove = vi.spyOn(retained, "remove");
+		const { archivedStopRevision } = await import("@bitovp/db");
+		const revision = archivedStopRevision(await findUnique(), selectedRun);
+		const res = await postAction({
+			action: "recover-archived-stop",
+			runId: RUN_ID,
+			revision,
+		});
+		expect(res.status).toBe(202);
+		expect(remove).toHaveBeenCalledTimes(promoted ? 0 : 1);
+		expect(queueAdd).toHaveBeenCalledWith(
+			"live-channel",
+			expect.objectContaining({
+				effect: expect.objectContaining({
+					providerEncodingId: "bm-live-enc",
+					liveChannelRunId: RUN_ID,
+					idempotencyKey: `manual:stop:${CHANNEL_ID}:${RUN_ID}${promoted ? ":archive:bm-live-enc" : ""}`,
+				}),
+			}),
+			expect.anything(),
+		);
+		expect(update).not.toHaveBeenCalled();
+		expect(runUpdate).not.toHaveBeenCalled();
 	});
 });
 

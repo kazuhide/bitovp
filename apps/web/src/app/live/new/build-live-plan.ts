@@ -2,11 +2,18 @@ import type {
 	LiveChannelPlanInput,
 	LiveDashDetailedOptions,
 	LiveHlsDetailedOptions,
+	StreamCondition,
 } from "@bitovp/core";
 import {
 	akamaiMsl5InitSegmentName,
 	akamaiMslSegmentNaming,
 	codecDetailControls,
+	type HeAacCodec,
+	type HeAacSignaling,
+	type HeAacV1Config,
+	isHeAac,
+	outputFileKeys,
+	planOutputSchema,
 } from "@bitovp/core";
 import type {
 	WizardH264Options,
@@ -163,6 +170,7 @@ export type LiveStaticIngestPoint = {
 };
 
 export type LiveVideoRendition = {
+	conditions?: StreamCondition;
 	input?: LiveInputSelection;
 	muxing?: LiveMuxingOptions;
 	/** Stable form identity, preserved when editing a rendition. */
@@ -196,14 +204,17 @@ export type LiveVideoRendition = {
 };
 
 export type LiveAudioRendition = {
+	conditions?: StreamCondition;
 	cutoffFrequency?: number;
 	input?: LiveInputSelection;
 	muxing?: LiveMuxingOptions;
 	/** Stable form identity, preserved when editing a rendition. */
 	extras?: { key?: string };
-	codec: "AAC" | "DDPLUS" | "DD";
+	codec: "AAC" | "DDPLUS" | "DD" | HeAacCodec;
+	name?: string;
+	signaling?: HeAacSignaling;
 	bitrate: number;
-	rate: number;
+	rate?: number;
 	channelLayout?: string;
 	container?: "FMP4" | "CMAF" | "TS";
 	cmaf?: LiveCmafOptions;
@@ -300,7 +311,25 @@ export type LiveStartState = {
 	adInsertion?: LiveAdInsertionState;
 };
 
+type LiveDvbTrack = NonNullable<LiveChannelPlanInput["dvbSubtitles"]>[number];
+export type LiveDvbRow = Pick<
+	LiveDvbTrack,
+	"key" | "language" | "label" | "packaging"
+> &
+	Partial<
+		Pick<
+			LiveDvbTrack,
+			"position" | "inputPath" | "segmentLength" | "destination"
+		>
+	>;
 export type LiveWizardState = {
+	dvbSubtitles?: LiveDvbRow[];
+	/** Original output folder of an imported plan, retained when the copy is moved. */
+	dvbSource?: {
+		base: string;
+		folders: string[];
+		acl?: LiveDvbTrack["destination"]["acl"];
+	};
 	/** Managed Preview settings coexist with the normal graph until explicitly selected. */
 	aisaLive?: AisaLiveWizardSettings;
 	name: string;
@@ -628,6 +657,82 @@ export function liveBasePath(state: LiveWizardState): string {
 
 function joinPath(base: string, rel: string): string {
 	return base === "" ? rel : `${base}/${rel}`;
+}
+
+function dvbDestination(
+	track: LiveDvbRow,
+	state: LiveWizardState,
+	primaryKey: string,
+	reserveFolder: (destination: { outputKey: string; path: string }) => string,
+) {
+	const original = track.destination;
+	const outputKey = original?.outputKey ?? primaryKey;
+	const source = state.dvbSource;
+	const base = liveBasePath(state);
+	const acl =
+		original && source && original.acl !== source.acl
+			? original.acl
+			: outputAcl(state.output);
+	let path = joinPath(base, `subtitles/${track.key}`);
+	if (original && source) {
+		if (base === source.base) path = original.path;
+		else if (original.path === source.base) path = base;
+		else if (!source.base) path = joinPath(base, original.path);
+		else if (original.path.startsWith(`${source.base}/`))
+			path = joinPath(base, original.path.slice(source.base.length + 1));
+	}
+	return { outputKey, path: reserveFolder({ outputKey, path }), acl };
+}
+
+function buildDvbSubtitles(
+	state: LiveWizardState,
+	primaryKey: string,
+	outputs: LiveOutputInput[],
+	mirrors: ReturnType<typeof liveMirrorEntries>,
+) {
+	if (!state.dvbSubtitles?.length) return state.dvbSubtitles ? [] : undefined;
+	const base = liveBasePath(state);
+	// A copied row may be removed, renamed, or point to a mirror sharing the
+	// original bucket. Reserve physical folders from the immutable source plan.
+	const occupied = new Set(state.dvbSource?.folders);
+	const storagePlan = {
+		outputs: outputs.flatMap((item) => {
+			const parsed = planOutputSchema.safeParse(item);
+			return parsed.success ? [parsed.data] : [];
+		}),
+		deliveryMirrors: mirrors.map((mirror) => ({ outputKey: mirror.key })),
+	};
+	function reserveSubtitleFolder(destination: {
+		outputKey: string;
+		path: string;
+	}) {
+		if (!state.dvbSource || base === state.dvbSource.base)
+			return destination.path;
+		let path = destination.path;
+		for (let suffix = 2; ; suffix++) {
+			const keys = outputFileKeys(storagePlan, {
+				destination: { ...destination, path },
+				filename: "",
+			});
+			if (![...keys].some((key) => occupied.has(key))) {
+				for (const key of keys) occupied.add(key);
+				return path;
+			}
+			path = `${destination.path.replace(/\/+$/, "")}-${suffix}`;
+		}
+	}
+	return state.dvbSubtitles.map((track) => ({
+		...track,
+		position: track.position ?? -1,
+		inputPath: track.inputPath ?? ingestInputPath(state.inputKind),
+		segmentLength: track.segmentLength ?? state.segmentLength,
+		destination: dvbDestination(
+			track,
+			state,
+			primaryKey,
+			reserveSubtitleFolder,
+		),
+	}));
 }
 
 /**
@@ -1036,6 +1141,7 @@ function videoRendition(
 			key,
 			codec: "H265" as const,
 			...codecDetailControls("H265", o),
+			conditions: video.conditions,
 			hlsVariantUri: video.extras?.hlsVariantUri,
 			name: str(video.name) ?? derivedName,
 			ingestKey,
@@ -1098,6 +1204,7 @@ function videoRendition(
 		key,
 		codec: "H264" as const,
 		...codecDetailControls("H264", o),
+		conditions: video.conditions,
 		hlsVariantUri: video.extras?.hlsVariantUri,
 		name: str(video.name) ?? derivedName,
 		ingestKey,
@@ -1146,12 +1253,31 @@ function audioRendition(
 	key: string,
 	ingestKey: string,
 ): LiveRenditionInput {
+	if (isHeAac(audio.codec)) {
+		const settings = {
+			key,
+			ingestKey,
+			conditions: audio.conditions,
+			name: str(audio.name),
+			bitrate: audio.bitrate,
+			rate: audio.rate,
+			channelLayout: str(audio.channelLayout),
+		};
+		return audio.codec === "HE_AAC_V1"
+			? prune({
+					...settings,
+					codec: audio.codec,
+					signaling: audio.signaling as HeAacV1Config["signaling"],
+				})
+			: prune({ ...settings, codec: audio.codec, signaling: audio.signaling });
+	}
 	return prune({
 		key,
 		codec: audio.codec,
+		conditions: audio.conditions,
 		ingestKey,
 		bitrate: audio.bitrate,
-		rate: audio.rate,
+		rate: audio.rate ?? 0,
 		...(audio.codec === "AAC"
 			? { cutoffFrequency: audio.cutoffFrequency }
 			: {}),
@@ -1357,7 +1483,7 @@ function cacheControlSettings(
 	});
 }
 
-function outputAcl(output: LiveWizardState["output"]) {
+export function outputAcl(output: LiveWizardState["output"]) {
 	if (output.kind === "MOQ") return undefined;
 	return output.publicRead
 		? ("PUBLIC_READ" as const)
@@ -1636,6 +1762,7 @@ export function buildLiveChannelPlan(
 			),
 		);
 	}
+
 	const s = state.start;
 	const reupload = group({
 		dashManifestInterval: s.reupload.dashManifestInterval,
@@ -1672,6 +1799,7 @@ export function buildLiveChannelPlan(
 		// video position 0, audio position 1 (C13). These entries are the
 		// per-ingestKey selection spec the compiler inlines onto each stream.
 		ingest: ingest.ingest,
+		dvbSubtitles: buildDvbSubtitles(state, output.key, outputs, mirrors),
 		renditions,
 		muxings,
 		drm: state.drm,

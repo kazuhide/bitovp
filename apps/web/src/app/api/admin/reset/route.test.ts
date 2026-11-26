@@ -159,6 +159,8 @@ const EXPERIMENT_MODELS = [
 	"encodingExperimentBatch",
 ];
 const PRESERVES = [
+	"liveStopNotification",
+	"encodingResourceRemoval",
 	...RESET_PROTECTED_EDITING_MODELS,
 	...EXPERIMENT_MODELS,
 	"createRequest",
@@ -251,8 +253,20 @@ function findManyFor(
 		async (args?: {
 			where?: { bitmovinEncodingId?: unknown; status?: unknown; NOT?: unknown };
 			distinct?: string[];
-			select?: { plan?: boolean };
+			select?: {
+				plan?: boolean;
+				previousProviderEncodingIds?: boolean;
+				rtmpRetirementEvidence?: boolean;
+				effectClaims?: unknown;
+				runs?: unknown;
+			};
 		}) => {
+			if (name === "liveChannel" && args?.select?.runs) return [];
+			if (
+				name === "liveChannelRun" &&
+				args?.select?.previousProviderEncodingIds
+			)
+				return args.select.rtmpRetirementEvidence ? [] : allPointers();
 			if (name === "encodingJob" && args?.select?.plan) return finishedAisaJobs;
 			const where = args?.where ?? {};
 			if (where.bitmovinEncodingId) {
@@ -491,6 +505,11 @@ beforeEach(() => {
 	}
 	wireFindMany();
 	wirePointerCounts();
+	(
+		prisma.feederSession as { count: ReturnType<typeof vi.fn> }
+	).count.mockImplementation(async (args?: { where?: unknown }) =>
+		args?.where ? active.feederSessions.length : 1,
+	);
 });
 
 describe("POST /api/admin/reset (ledger #130)", () => {

@@ -61,6 +61,25 @@ const allNames = readdirSync(FIXTURES)
 	.sort();
 
 describe("capabilitiesFor — a source's ROLE, not its filename", () => {
+	it("requires matching HDR10 video and JSON even with generic-looking paths", () => {
+		const plan = planOf("fixed-bitrate-hls-on-aws");
+		plan.hdr10PlusStreams = [
+			{
+				key: "hdr10plus",
+				inputKey: plan.inputs[0]?.key ?? "in",
+				videoInputPath: "assets/source.mov",
+				metadataInputPath: "assets/metadata.json",
+				selectionMode: "AUTO",
+			},
+		];
+		expect(capabilitiesFor(plan, "ordinary-name")).toEqual(
+			expect.arrayContaining(["HDR10_ASSET", "TYPED_SOURCE_ASSETS"]),
+		);
+		expect(sourcesOf(plan)).toEqual(
+			expect.arrayContaining(["assets/source.mov", "assets/metadata.json"]),
+		);
+	});
+
 	it("found the corpus, so a broken read cannot pass over nothing", () => {
 		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 71→72 same day: `mixed-codec-dash-hls` .

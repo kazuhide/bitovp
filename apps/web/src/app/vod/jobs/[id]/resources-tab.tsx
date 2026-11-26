@@ -3,6 +3,7 @@
 import {
 	buildResourceTree,
 	curlForStep,
+	objectInputReceipts,
 	type ResourceLink,
 	type ResourceNode,
 	type StepLogEntry,
@@ -10,6 +11,7 @@ import {
 import { Check, Copy } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CopyableId } from "@/components/copyable-id";
+import { ProviderResources } from "@/components/provider-resources";
 import { Badge } from "@/components/ui/badge";
 import { DetailPopover } from "@/components/ui/detail-popover";
 import { useT } from "@/lib/i18n/context";
@@ -44,8 +46,17 @@ export function anchorId(step: string): string {
  * from the step's persisted (already-redacted) request snapshot, so the tab
  * keeps an index of step→entry to feed curlForStep the real body.
  */
-export function ResourcesTab({ entries }: { entries: StepLogEntry[] }) {
+export function ResourcesTab({
+	entries,
+	jobId,
+	plan,
+}: {
+	entries: StepLogEntry[];
+	jobId?: string;
+	plan?: unknown;
+}) {
 	const { t } = useT();
+	const objectInputs = useMemo(() => objectInputReceipts(entries), [entries]);
 	const groups = useMemo(() => buildResourceTree(entries), [entries]);
 	const entryByStep = useMemo(() => {
 		const map = new Map<string, StepLogEntry>();
@@ -62,6 +73,9 @@ export function ResourcesTab({ entries }: { entries: StepLogEntry[] }) {
 	}
 	return (
 		<div className="mt-2 space-y-6">
+			{jobId && (
+				<ProviderResources endpoint={`/api/encoding-jobs/${jobId}/resources`} />
+			)}
 			{groups.map((group) => (
 				<section key={group.id}>
 					<h3 className="font-medium text-xs text-zinc-400 uppercase tracking-wide">
@@ -74,6 +88,8 @@ export function ResourcesTab({ entries }: { entries: StepLogEntry[] }) {
 								key={node.step}
 								node={node}
 								entry={entryByStep.get(node.step)}
+								objectInputs={objectInputs}
+								plan={plan}
 							/>
 						))}
 					</ul>
@@ -86,15 +102,19 @@ export function ResourcesTab({ entries }: { entries: StepLogEntry[] }) {
 function ResourceRow({
 	node,
 	entry,
+	objectInputs,
+	plan,
 }: {
+	objectInputs: ReturnType<typeof objectInputReceipts>;
 	node: ResourceNode;
 	entry: StepLogEntry | undefined;
+	plan?: unknown;
 }) {
 	const { t } = useT();
 	// curlForStep reads kind/refs/payload.muxingKind/request — all on the source
 	// entry. An entry is always present (the tree is built from the same array),
 	// but guard for robustness.
-	const curl = entry ? curlForStep(entry) : null;
+	const curl = entry ? curlForStep(entry, { objectInputs, plan }) : null;
 	// The reason is a CODE from core (which is UI-free), so the copy lives here. It
 	// renders as a tooltip, which is why it was the last English string on the page.
 	const unavailableReason =

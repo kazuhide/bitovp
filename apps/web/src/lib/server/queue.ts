@@ -378,8 +378,7 @@ export function getVodInputPreviewQueue(): Queue {
 	return globalForQueues.vodInputPreviewQueue;
 }
 
-/** Read side of the notify queue ( PR2: the delivery-log panel
- * reads the queue — no extra table in v1, per the design's own trade). */
+/** Tenant-scoped BullMQ history for queued notifications. */
 export function getNotifyQueue(): Queue {
 	if (!globalForQueues.notifyQueue) {
 		globalForQueues.notifyQueue = authenticatedQueue(

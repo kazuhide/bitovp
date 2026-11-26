@@ -1,13 +1,34 @@
-import { liveChannelJobSchema, redactSecrets } from "@bitovp/core";
-import type { AppPrismaClient } from "@bitovp/db";
+import {
+	type LiveEffectIntent,
+	liveChannelJobSchema,
+	publicStorageDiagnostic,
+	redactSecrets,
+	scheduledStopJobId,
+	scheduledStopScheduleId,
+} from "@bitovp/core";
+import {
+	type AppPrismaClient,
+	competingScheduledStop,
+	isLiveStopAdmissionFence,
+	settleExhaustedStopSchedules,
+} from "@bitovp/db";
 import { feederLeaseIsFresh } from "../feeder/ownership";
 import { HEARTBEAT_SWEEP_JOB } from "../handlers";
-import type { EmitProductEvent } from "../notify/emitter";
+import { type EmitProductEvent, emitScheduleFired } from "../notify/emitter";
 import {
+	recordScheduleOutcome,
 	recordScheduleOutcomeBestEffort,
 	type ScheduleOutcome,
 	type ScheduleOutcomeTarget,
+	scheduledStartScheduleId,
 } from "../scheduler/schedule-outcome";
+import { recordScheduledStopHandoff } from "../scheduler/stop-handoff";
+import {
+	recordRetainedScheduledStart,
+	resolveProvisionAdmission,
+} from "./provision-admission";
+import { PROVISION_LEASE_MS } from "./provision-lease";
+import { recordExpiredProvisionFailure } from "./reconcile-stranded-runs";
 
 /**
  *  — what a liveChannel job that died OUTSIDE its processor means
@@ -52,25 +73,33 @@ import {
 /** The job shape this reads — BullMQ's `Job`, narrowed to what matters. */
 export type DeadLiveJob =
 	| {
+			id?: string;
 			name?: string;
 			data?: unknown;
 			attemptsMade?: number;
 			finishedOn?: number;
+			timestamp?: number;
 			opts?: { attempts?: number };
 	  }
 	| undefined;
 
-function manualStopIntent(job: DeadLiveJob) {
+function boundStopIntent(job: DeadLiveJob) {
 	const parsed = liveChannelJobSchema.safeParse(job?.data);
 	if (
 		!parsed.success ||
 		parsed.data.action !== "stop" ||
-		parsed.data.effect?.action !== "STOP" ||
-		!parsed.data.effect.idempotencyKey.startsWith("manual:stop:") ||
-		parsed.data.effect.scheduleId
+		parsed.data.effect?.action !== "STOP"
 	) {
 		return null;
 	}
+	const { effect } = parsed.data;
+	if (
+		effect.stopDeliveryToken &&
+		(!effect.scheduleId ||
+			job?.id !==
+				scheduledStopJobId(effect.scheduleId, effect.stopDeliveryToken))
+	)
+		return null;
 	return {
 		liveChannelId: parsed.data.liveChannelId,
 		...parsed.data.effect,
@@ -78,12 +107,15 @@ function manualStopIntent(job: DeadLiveJob) {
 }
 
 /** BullMQ emits `failed` after incrementing attemptsMade on every delivery. */
-export function isManualStopJob(job: DeadLiveJob): boolean {
-	return manualStopIntent(job) !== null;
+export function isRunBoundStopJob(job: DeadLiveJob): boolean {
+	return boundStopIntent(job) !== null;
 }
 
-export function isFinalManualStopFailure(job: DeadLiveJob): boolean {
-	if (!manualStopIntent(job)) return false;
+export function isFinalStopFailure(job: DeadLiveJob): boolean {
+	return boundStopIntent(job) !== null && isTerminalDelivery(job);
+}
+
+function isTerminalDelivery(job: DeadLiveJob): boolean {
 	// BullMQ stamps finishedOn before emitting `failed` for every terminal
 	// failure, including stalled-limit, UnrecoverableError, discard and a
 	// backoff strategy that refuses another delivery. Those paths may stop
@@ -99,76 +131,407 @@ export function isFinalManualStopFailure(job: DeadLiveJob): boolean {
 	return (job?.attemptsMade ?? 0) >= attempts;
 }
 
+export async function recordFinalProvisionFailure(
+	prisma: AppPrismaClient,
+	job: DeadLiveJob,
+	message: string,
+	at = new Date(),
+	emitEvent?: EmitProductEvent,
+): Promise<boolean> {
+	if (!job || !isTerminalDelivery(job)) return false;
+	const parsed = liveChannelJobSchema.safeParse(job.data);
+	if (
+		!parsed.success ||
+		parsed.data.action !== "provision" ||
+		parsed.data.params ||
+		parsed.data.effect
+	)
+		return false;
+	const data = parsed.data;
+	const admission = await resolveProvisionAdmission(
+		prisma,
+		data.liveChannelId,
+		data,
+		job.id,
+		job.timestamp,
+	);
+	if (!admission) return false;
+	const scheduleId = scheduledStartScheduleId(
+		job.id,
+		data.provisionFenceVersion,
+	);
+	if (scheduleId && job.id && "runId" in admission) {
+		// Save the exact terminal evidence before attempting to retire the
+		// channel. A failed retirement must not enable replay after eviction.
+		const start = {
+			id: scheduleId,
+			liveChannelId: data.liveChannelId,
+			liveChannelRunId: admission.runId,
+			startAdmissionFenceVersion: admission.generation,
+		};
+		const recorded = await recordRetainedScheduledStart(
+			prisma,
+			start,
+			{ id: job.id, state: "failed" },
+			at,
+		);
+		if (!recorded) return false;
+		if (recorded === "handoff") void emitScheduleFired(start, emitEvent);
+	}
+	return recordExpiredProvisionFailure(
+		prisma,
+		data.liveChannelId,
+		redactSecrets(message),
+		new Date(at.getTime() - PROVISION_LEASE_MS),
+		at,
+		admission,
+		scheduleId,
+	);
+}
+
+/** RESTART may only retire the exact PROVISIONING admission it stranded. */
+export async function recordFinalRestartFailure(
+	prisma: AppPrismaClient,
+	job: DeadLiveJob,
+	message: string,
+	at = new Date(),
+	emitEvent?: EmitProductEvent,
+): Promise<boolean> {
+	const parsed = liveChannelJobSchema.safeParse(job?.data);
+	if (
+		!isTerminalDelivery(job) ||
+		!parsed.success ||
+		parsed.data.action !== "restart" ||
+		parsed.data.effect?.action !== "RESTART"
+	)
+		return false;
+	return retireRestartAdmission(
+		prisma,
+		parsed.data.liveChannelId,
+		parsed.data.effect,
+		"FINAL_FAILURE",
+		message,
+		at,
+		emitEvent,
+	);
+}
+
+/** A queue callback can run before its worker lease expires. Expiry fences
+ * provider work; retire only the same still-unowned provisioning projection. */
+export function createExpiredRestartReconciler(
+	prisma: AppPrismaClient,
+	emitEvent?: EmitProductEvent,
+) {
+	let after: string | undefined;
+	return async (at = new Date()) => {
+		const claims = await prisma.liveEffectClaim.findMany({
+			where: {
+				action: "RESTART",
+				state: { in: ["DISPATCHING", "AMBIGUOUS"] },
+				expiresAt: { lte: at },
+				liveChannel: { status: "PROVISIONING", provisionClaimedAt: null },
+				...(after ? { id: { gt: after } } : {}),
+			},
+			orderBy: { id: "asc" },
+			take: 4,
+		});
+		after = claims.length === 4 ? claims.at(-1)?.id : undefined;
+		let retired = 0;
+		for (const claim of claims)
+			if (
+				await retireRestartAdmission(
+					prisma,
+					claim.liveChannelId,
+					{
+						action: "RESTART",
+						liveChannelRunId: claim.liveChannelRunId,
+						providerEncodingId: claim.providerEncodingId,
+						idempotencyKey: claim.idempotencyKey,
+						admissionFenceVersion: claim.generation,
+					},
+					"FINAL_FAILURE",
+					"Restart worker expired without a confirmed provider result. Check the encoder or use Stop.",
+					at,
+					emitEvent,
+					claim.id,
+				)
+			)
+				retired++;
+		return retired;
+	};
+}
+
+export async function retireRestartAdmission(
+	prisma: AppPrismaClient,
+	liveChannelId: string,
+	effect: LiveEffectIntent,
+	cause: "FINAL_FAILURE" | "INACTIVE_ORGANIZATION",
+	message: string,
+	at: Date,
+	emitEvent?: EmitProductEvent,
+	expiredClaimId?: string,
+): Promise<boolean> {
+	if (effect.action !== "RESTART") return false;
+	const error = redactSecrets(message);
+	const projected = await prisma.$transaction(async (tx) => {
+		// Lock in the same order as STOP admission and re-air. A run can change
+		// while the failed callback is queued, even if the channel ID survives.
+		const [channel] = await tx.$queryRaw<
+			{ name: string }[]
+		>`SELECT name FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
+		if (!channel) return false;
+		const latest = await tx.liveChannelRun.findFirst({
+			where: { liveChannelId },
+			orderBy: { seq: "desc" },
+			select: { id: true, bitmovinEncodingId: true },
+		});
+		if (
+			latest?.id !== effect.liveChannelRunId ||
+			(latest.bitmovinEncodingId !== null &&
+				latest.bitmovinEncodingId !== effect.providerEncodingId)
+		)
+			return false;
+		const claim = await tx.liveEffectClaim.findUnique({
+			where: { idempotencyKey: effect.idempotencyKey },
+		});
+		if (
+			expiredClaimId &&
+			(claim?.id !== expiredClaimId ||
+				claim.generation !== effect.admissionFenceVersion ||
+				!["DISPATCHING", "AMBIGUOUS"].includes(claim.state) ||
+				claim.expiresAt > at)
+		)
+			return false;
+		if (claim) {
+			if (cause === "INACTIVE_ORGANIZATION") return false;
+			const canRetire =
+				claim.state === "FAILED" ||
+				claim.state === "AMBIGUOUS" ||
+				(claim.state === "DISPATCHING" && claim.expiresAt <= at);
+			if (
+				!canRetire ||
+				claim.action !== "RESTART" ||
+				claim.liveChannelId !== liveChannelId ||
+				claim.liveChannelRunId !== latest.id ||
+				claim.providerEncodingId !== effect.providerEncodingId
+			)
+				return false;
+		}
+		const projected = await tx.liveChannel.updateMany({
+			where: {
+				id: liveChannelId,
+				status: "PROVISIONING",
+				// RESTART owns the route's null lease. A non-null token belongs to a
+				// provision worker or to the separate exact-token expiry sweep.
+				provisionClaimedAt: null,
+				bitmovinEncodingId: effect.providerEncodingId,
+				liveEffectFenceVersion:
+					claim?.generation ?? effect.admissionFenceVersion,
+			},
+			data: { status: "ERROR", error },
+		});
+		if (projected.count !== 1) return false;
+		if (claim?.state === "DISPATCHING") {
+			const stopped = await tx.liveEffectClaim.updateMany({
+				where: {
+					id: claim.id,
+					token: claim.token,
+					state: "DISPATCHING",
+					expiresAt: { lte: at },
+				},
+				data: { state: "AMBIGUOUS", failure: error },
+			});
+			if (stopped.count !== 1)
+				throw new Error(
+					"RESTART ownership changed while retiring its expired worker",
+				);
+		}
+		// RUNNING describes a possibly billing encoder; keep that historical
+		// state unless this run really remained in its startup transition.
+		const retired = await tx.liveChannelRun.updateMany({
+			where: { id: latest.id, status: { in: ["CREATED", "PROVISIONING"] } },
+			data: { status: "ERROR", error },
+		});
+		if (retired.count)
+			await tx.liveChannelRun.updateMany({
+				where: { id: latest.id, endedAt: null },
+				data: { endedAt: at },
+			});
+		return channel;
+	});
+	if (!projected) return false;
+	await emitEvent?.(
+		{
+			kind: "CHANNEL_ERROR",
+			liveChannelId,
+			name: projected.name,
+			error,
+			path: `/live/${liveChannelId}`,
+		},
+		at,
+	);
+	return true;
+}
+
 /**
- * A manual STOP that exhausts every delivery before crossing the provider
+ * A run-bound STOP that exhausts every delivery before crossing the provider
  * boundary must not disappear behind the route's earlier 202. Project an
  * operator-visible ERROR only while this exact run/provider/fence still owns
  * the channel. A newer run, generation, ACK or unresolved send boundary wins
  * and is never overwritten by this failed-job callback.
  */
-export async function recordFinalManualStopFailure(
+export async function recordFinalStopFailure(
 	prisma: AppPrismaClient,
 	job: DeadLiveJob,
 	message: string,
 	emitEvent?: EmitProductEvent,
+	unboundSchedule = false,
 ): Promise<boolean> {
-	const intent = manualStopIntent(job);
-	if (!intent || !isFinalManualStopFailure(job)) return false;
+	const intent = boundStopIntent(job);
+	if (!intent || !isFinalStopFailure(job)) return false;
 	const error = redactSecrets(
-		`Manual stop delivery exhausted before the provider send was confirmed — retry Stop. ${message}`,
+		`Live stop delivery exhausted before the provider send was confirmed — retry Stop. ${message}`,
 	);
 
 	const result = await prisma.$transaction(async (tx) => {
-		const [channel, currentRun, claim] = await Promise.all([
+		// A refire reuses the job key. Read its receipt under the same channel
+		// lock that guards schedule admission and effect generation changes.
+		const scheduleId = intent.scheduleId;
+		if (scheduleId) {
+			await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${intent.liveChannelId}::uuid FOR UPDATE`;
+			await tx.$queryRaw`SELECT id FROM "LiveSchedule" WHERE id = ${scheduleId}::uuid FOR UPDATE`;
+		}
+		const [channel, currentRun, claim, schedule] = await Promise.all([
 			tx.liveChannel.findUnique({
 				where: { id: intent.liveChannelId },
 				select: {
 					name: true,
 					status: true,
 					liveEffectFenceVersion: true,
+					legacyAdmissionFenceVersion: true,
 					bitmovinEncodingId: true,
 				},
 			}),
 			tx.liveChannelRun.findFirst({
 				where: { liveChannelId: intent.liveChannelId },
 				orderBy: { seq: "desc" },
-				select: { id: true, bitmovinEncodingId: true },
+				select: {
+					id: true,
+					bitmovinEncodingId: true,
+					status: true,
+					endedAt: true,
+				},
 			}),
 			tx.liveEffectClaim.findUnique({
 				where: { idempotencyKey: intent.idempotencyKey },
 				select: {
 					state: true,
+					scheduleId: true,
 					generation: true,
+					attempt: true,
 					liveChannelId: true,
 					liveChannelRunId: true,
 					providerEncodingId: true,
 					action: true,
 				},
 			}),
+			scheduleId
+				? tx.liveSchedule.findUnique({
+						where: { id: scheduleId },
+						select: {
+							liveChannelId: true,
+							liveChannelRunId: true,
+							action: true,
+							stopAdmissionFenceVersion: true,
+							stopProviderEncodingId: true,
+							stopDeliveryToken: true,
+						},
+					})
+				: null,
 		]);
+		const stamped =
+			schedule?.stopAdmissionFenceVersion != null ||
+			schedule?.stopProviderEncodingId != null;
 		if (
 			!channel ||
 			currentRun?.id !== intent.liveChannelRunId ||
+			channel.bitmovinEncodingId !== intent.providerEncodingId ||
+			!["RUNNING", "STOPPING", "ERROR"].includes(currentRun.status) ||
 			(currentRun.bitmovinEncodingId ?? channel.bitmovinEncodingId) !==
-				intent.providerEncodingId
+				intent.providerEncodingId ||
+			(schedule &&
+				(schedule.liveChannelId !== intent.liveChannelId ||
+					schedule.liveChannelRunId !== currentRun.id ||
+					schedule.action !== "STOP" ||
+					schedule.stopDeliveryToken !== (intent.stopDeliveryToken ?? null) ||
+					(stamped &&
+						(schedule.stopAdmissionFenceVersion !==
+							intent.admissionFenceVersion ||
+							schedule.stopProviderEncodingId !== intent.providerEncodingId))))
 		) {
 			return { projected: false as const };
 		}
 
 		let ownedFence = intent.admissionFenceVersion;
 		if (claim) {
+			const oldAdmission =
+				unboundSchedule &&
+				!!intent.scheduleId &&
+				channel.legacyAdmissionFenceVersion === intent.admissionFenceVersion &&
+				claim.generation < intent.admissionFenceVersion;
 			if (
 				claim.state !== "FAILED" ||
+				(claim.scheduleId ?? null) !== (intent.scheduleId ?? null) ||
 				claim.action !== "STOP" ||
 				claim.liveChannelId !== intent.liveChannelId ||
 				claim.liveChannelRunId !== intent.liveChannelRunId ||
-				claim.providerEncodingId !== intent.providerEncodingId
+				(!oldAdmission &&
+					claim.providerEncodingId !== intent.providerEncodingId) ||
+				// The legacy queue has no admission stamp. Each reattempt advances
+				// both counters from the original generation on a scheduled key.
+				(scheduleId &&
+					!unboundSchedule &&
+					!stamped &&
+					claim.generation - claim.attempt !== intent.admissionFenceVersion)
 			) {
 				return { projected: false as const };
 			}
-			ownedFence = claim.generation;
+			if (!oldAdmission) ownedFence = claim.generation;
 		}
 		if (channel.liveEffectFenceVersion !== ownedFence) {
+			return { projected: false as const };
+		}
+		const at = new Date();
+		const admissionFence = channel.legacyAdmissionFenceVersion;
+		const settleSiblings = async () => {
+			if (
+				isLiveStopAdmissionFence(
+					admissionFence,
+					ownedFence,
+					claim?.generation === ownedFence ? claim : undefined,
+				)
+			) {
+				await settleExhaustedStopSchedules(tx, {
+					liveChannelId: intent.liveChannelId,
+					liveChannelRunId: currentRun.id,
+					providerEncodingId: intent.providerEncodingId,
+					admissionFence,
+					at,
+				});
+			}
+		};
+		if (
+			channel.status === "ERROR" &&
+			currentRun.status === "ERROR" &&
+			claim?.generation === ownedFence
+		) {
+			const [held] = await tx.$queryRaw<{ id: string }[]>`
+				SELECT id FROM "LiveChannel"
+				WHERE id = ${intent.liveChannelId}::uuid AND status = 'ERROR'
+					AND "liveEffectFenceVersion" = ${ownedFence}
+					AND "bitmovinEncodingId" = ${intent.providerEncodingId}
+				FOR UPDATE`;
+			if (held) await settleSiblings();
 			return { projected: false as const };
 		}
 
@@ -176,16 +539,82 @@ export async function recordFinalManualStopFailure(
 			where: {
 				id: intent.liveChannelId,
 				status: { in: ["RUNNING", "STOPPING"] },
+				bitmovinEncodingId: intent.providerEncodingId,
 				liveEffectFenceVersion: ownedFence,
+				...(unboundSchedule && intent.scheduleId
+					? {
+							effectClaims: {
+								none: {
+									action: "STOP",
+									liveChannelRunId: currentRun.id,
+									generation: ownedFence,
+									state: { in: ["CLAIMED", "DISPATCHING", "AMBIGUOUS"] },
+								},
+							},
+							schedules: {
+								some: {
+									id: intent.scheduleId,
+									liveChannelRunId: currentRun.id,
+									action: "STOP",
+									status: "FIRED",
+									outcome: { in: ["PENDING", "UNKNOWN"] },
+								},
+								none: competingScheduledStop(
+									intent.scheduleId,
+									currentRun.id,
+									ownedFence,
+								),
+							},
+						}
+					: {}),
 			},
 			data: {
 				status: "ERROR",
 				error,
 			},
 		});
-		return projected.count === 1
-			? { projected: true as const, channelName: channel.name }
-			: { projected: false as const };
+		if (projected.count !== 1) return { projected: false as const };
+		const run = await tx.liveChannelRun.updateMany({
+			where: {
+				id: currentRun.id,
+				liveChannelId: intent.liveChannelId,
+				bitmovinEncodingId: currentRun.bitmovinEncodingId,
+				status: currentRun.status,
+				endedAt: currentRun.endedAt,
+			},
+			data: {
+				status: "ERROR",
+				error,
+				endedAt: currentRun.endedAt ?? new Date(),
+			},
+		});
+		if (run.count !== 1)
+			throw new Error(
+				"Live STOP failure lost its exact airing during projection",
+			);
+		if (
+			intent.scheduleId &&
+			job?.id ===
+				scheduledStopJobId(intent.scheduleId, intent.stopDeliveryToken) &&
+			intent.idempotencyKey === `schedule:${intent.scheduleId}:stop`
+		) {
+			await recordScheduleOutcome(
+				tx,
+				{
+					scheduledStop: {
+						id: intent.scheduleId,
+						liveChannelId: intent.liveChannelId,
+						liveChannelRunId: currentRun.id,
+					},
+				},
+				"UNKNOWN",
+				error,
+				at,
+				"JOB_TERMINAL_UNKNOWN",
+			);
+		}
+		await settleSiblings();
+		return { projected: true as const, channelName: channel.name };
 	});
 	if (!result.projected) return false;
 	await emitEvent?.({
@@ -212,7 +641,10 @@ export type DeadJobScheduleWrite = {
 type LiveJobData = {
 	liveChannelId?: string;
 	action?: string;
+	plannedLiveChannelRunId?: string;
+	provisionFenceVersion?: number;
 	params?: { scheduleId?: string };
+	effect?: { action?: string; scheduleId?: string; liveChannelRunId?: string };
 };
 
 /**
@@ -231,7 +663,8 @@ export function deadJobScheduleWrites(
 	// Durable manual STOP has its own run/provider/fence-bound failure
 	// projection. It never owns a LiveSchedule row; reverse-looking up the
 	// channel here could corrupt an unrelated FIRED scheduled STOP as UNKNOWN.
-	if (manualStopIntent(job)) {
+	const intent = boundStopIntent(job);
+	if (intent && !intent.scheduleId) {
 		return [];
 	}
 	// The repeatable heartbeat sweep rides the same queue with no channel id
@@ -248,27 +681,69 @@ export function deadJobScheduleWrites(
 
 	switch (action) {
 		case "provision": {
-			// A scheduled START enqueues `action: "provision"` with no params
-			// (sweep.ts, both the first-start and the re-air site), so the FIRED
-			// START row is found by reverse lookup.
-			if (!data.liveChannelId) {
+			const id = scheduledStartScheduleId(job?.id, data.provisionFenceVersion);
+			if (
+				!data.liveChannelId ||
+				!id ||
+				!isTerminalDelivery(job) ||
+				(data.provisionFenceVersion !== undefined &&
+					!data.plannedLiveChannelRunId)
+			)
 				return [];
-			}
 			return [
 				{
-					target: { channelStart: data.liveChannelId },
+					target: {
+						// Leave a bound START recoverable until its exact receipt is
+						// recorded. An unbound legacy failure records uncertainty only.
+						...(data.provisionFenceVersion !== undefined && {
+							requireDispatchReceipt: true,
+						}),
+						scheduledStart: {
+							id,
+							liveChannelId: data.liveChannelId,
+							dispatchJobId: job?.id,
+							...(data.plannedLiveChannelRunId
+								? { liveChannelRunId: data.plannedLiveChannelRunId }
+								: {}),
+							// A reused queue key gives a legacy job no evidence about a
+							// later generation of the same scheduled START.
+							startAdmissionFenceVersion: data.provisionFenceVersion ?? null,
+						},
+					},
 					outcome: "UNKNOWN",
 					note: `the scheduled start's job died before it could report a result: ${message}`,
 				},
 			];
 		}
 		case "stop": {
-			if (!data.liveChannelId) {
+			if (job?.attemptsMade !== undefined && !isTerminalDelivery(job))
 				return [];
-			}
+			// A bare legacy job's queue key cannot identify its admission.
+			const id = intent?.scheduleId;
+			if (!data.liveChannelId || !id) return [];
 			return [
 				{
-					target: { channelStop: data.liveChannelId },
+					target: {
+						scheduledStop: {
+							id,
+							liveChannelId: data.liveChannelId,
+							...(intent && {
+								admission: {
+									providerEncodingId: intent.providerEncodingId,
+									admissionFenceVersion: intent.admissionFenceVersion,
+									...(intent.stopDeliveryToken && {
+										stopDeliveryToken: intent.stopDeliveryToken,
+									}),
+								},
+							}),
+							...((intent?.liveChannelRunId ?? data.plannedLiveChannelRunId)
+								? {
+										liveChannelRunId:
+											intent?.liveChannelRunId ?? data.plannedLiveChannelRunId,
+									}
+								: {}),
+						},
+					},
 					outcome: "UNKNOWN",
 					note: `the scheduled stop's job died before it could report a result: ${message}`,
 				},
@@ -324,13 +799,71 @@ export function deadJobScheduleWrites(
  * that must not throw, and the row it could not write stays amber, which is
  * the honest reading of "we do not know".
  */
+async function recordExhaustedScheduledStop(
+	prisma: AppPrismaClient,
+	job: DeadLiveJob,
+	at: Date,
+) {
+	const parsed = liveChannelJobSchema.safeParse(job?.data);
+	const id = scheduledStopScheduleId(job?.id);
+	if (
+		!id ||
+		!parsed.success ||
+		parsed.data.action !== "stop" ||
+		!parsed.data.effect ||
+		!isTerminalDelivery(job)
+	)
+		return;
+	const { liveChannelId, plannedLiveChannelRunId, effect } = parsed.data;
+	const expectedJobId = scheduledStopJobId(id, effect.stopDeliveryToken);
+	if (
+		effect.action !== "STOP" ||
+		job?.id !== expectedJobId ||
+		effect.scheduleId !== id ||
+		effect.idempotencyKey !== `schedule:${id}:stop` ||
+		(plannedLiveChannelRunId &&
+			effect.liveChannelRunId !== plannedLiveChannelRunId)
+	)
+		return;
+	const receipt = await prisma.liveSchedule.findFirst({
+		where: {
+			id,
+			liveChannelId,
+			action: "STOP",
+			status: "FIRED",
+			...(effect?.liveChannelRunId || plannedLiveChannelRunId
+				? {
+						liveChannelRunId:
+							effect?.liveChannelRunId ?? plannedLiveChannelRunId,
+					}
+				: {}),
+			OR: [{ dispatchJobId: null }, { dispatchJobId: expectedJobId }],
+		},
+		select: { liveChannelRunId: true },
+	});
+	if (!receipt?.liveChannelRunId) return;
+	const liveChannelRunId = receipt.liveChannelRunId;
+	// A native failed event for the exact retained queue ID is a queue receipt,
+	// even when the consumer died before it could create a claim.
+	await recordScheduledStopHandoff(
+		prisma,
+		{ id, liveChannelId, liveChannelRunId },
+		at,
+		effect,
+	);
+}
+
 export async function recordDeadJobScheduleOutcomes(
 	prisma: AppPrismaClient,
 	job: DeadLiveJob,
 	message: string,
 	at: Date,
 ): Promise<void> {
-	for (const write of deadJobScheduleWrites(job, message)) {
+	await recordExhaustedScheduledStop(prisma, job, at);
+	for (const write of deadJobScheduleWrites(
+		job,
+		publicStorageDiagnostic(message),
+	)) {
 		await recordScheduleOutcomeBestEffort(
 			prisma,
 			write.target,
@@ -427,8 +960,20 @@ export async function recordDeadFeederJob(
 	try {
 		const row = await deps.prisma.feederSession.findUnique({
 			where: { id: feederSessionId },
-			select: { pid: true, liveChannelId: true, ownerLeaseAt: true },
+			select: {
+				pid: true,
+				liveChannelId: true,
+				status: true,
+				playbackMode: true,
+				ownerLeaseAt: true,
+				ownerGeneration: true,
+			},
 		});
+		if (!row || !["CREATED", "DOWNLOADING", "PUSHING"].includes(row.status))
+			return;
+		// The exact retained job may be retried by a same-key request.
+		// Keep an unclaimed single pass eligible for that admission.
+		if (row.playbackMode === "ONCE" && row.status === "CREATED") return;
 		/**
 		 *  — the STALENESS GUARD, the shape #216 gave the live failed
 		 * handler for the identical reason.
@@ -469,7 +1014,9 @@ export async function recordDeadFeederJob(
 		const { count } = await deps.prisma.feederSession.updateMany({
 			where: {
 				id: feederSessionId,
-				status: { in: ["CREATED", "DOWNLOADING", "PUSHING"] },
+				status: row.status,
+				ownerLeaseAt: row.ownerLeaseAt,
+				ownerGeneration: row.ownerGeneration,
 			},
 			data: {
 				status: "ERROR",

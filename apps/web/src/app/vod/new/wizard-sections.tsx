@@ -3,9 +3,12 @@
 import type { CredentialSummaryWire } from "@bitovp/core";
 import {
 	filterFamily,
+	HE_AAC_MAX_BITRATE,
 	INTERNAL_HEVC_V2_BCF_VERSION,
+	isHeAac,
 	QC_GATE_METRICS,
 	qcRuleSeverity,
+	supportsDolbyLoudness,
 } from "@bitovp/core";
 import { useEffect, useId } from "react";
 import { InfrastructureIdPicker } from "@/components/infrastructure-pickers";
@@ -52,6 +55,12 @@ import {
 import { AudioCutoffEditor } from "./codec-detail-editor";
 import { editFilter } from "./filter-editing";
 import {
+	audioCodecLabel,
+	audioProfileTransition,
+	HeAacSignalingField,
+	readAudioRate,
+} from "./he-aac-fields";
+import {
 	AdaptationDetailEditor,
 	defaultHlsConflicts,
 	ManifestAdvancedEditor,
@@ -83,6 +92,7 @@ import {
 	Vp9AdvancedEditor,
 } from "./rendition-editors";
 import { renditionSourceOptions } from "./rendition-sources";
+import { StreamConditionEditor } from "./stream-condition-editor";
 import {
 	flattenStreams,
 	inputFileOptions,
@@ -196,6 +206,14 @@ export function LadderSection({
 	const subtitles = state.subtitles ?? [];
 	const filters = state.filters ?? [];
 	const sources = state.sources ?? {};
+	const subtitleSources = (codec: WizardSubtitle["codec"]) => [
+		...(sources.fileStreams ?? []).filter(
+			(stream) =>
+				(stream.fileType ?? "WEBVTT") ===
+				(codec === "IMSC" ? "TTML" : "WEBVTT"),
+		),
+		...(codec === "IMSC" ? [] : (sources.captionStreams ?? [])),
+	];
 	const encodingKeys = (sources.encodings ?? []).map((e) => e.key);
 	const filterKeys = filters.map((f) => f.key);
 	let filterNumber = 1;
@@ -607,6 +625,12 @@ export function LadderSection({
 										onChange={(av1) => patchVideo(index, { av1 })}
 									/>
 								)}
+								<StreamConditionEditor
+									idBase={`wz-v-${index}-condition`}
+									media="video"
+									value={video.conditions}
+									onChange={(conditions) => patchVideo(index, { conditions })}
+								/>
 								<ExtrasEditor
 									idBase={`wz-v-${index}-x`}
 									family="video"
@@ -633,7 +657,7 @@ export function LadderSection({
 									encodingKeys={encodingKeys}
 									filterKeys={filters
 										.filter(
-											(f) => filterFamily(f.kind ?? "DEINTERLACE") === "video",
+											(f) => filterFamily(f.kind ?? "DEINTERLACE") !== "audio",
 										)
 										.map((f) => f.key)}
 									nexguardCredentials={nexguardCredentials}
@@ -710,7 +734,9 @@ export function LadderSection({
 							idBase={`wz-flt-${index}`}
 							filter={filter}
 							inputFiles={state.inputFiles}
-							onChange={(next) => onPatch(editFilter(state, index, next))}
+							onChange={(next, storageSelected) =>
+								onPatch(editFilter(state, index, next, false, storageSelected))
+							}
 						/>
 						{!filter.kind || filter.kind === "DEINTERLACE" ? (
 							<OptionsGrid
@@ -782,6 +808,7 @@ export function LadderSection({
 											onChange={(e) =>
 												patchAudio(index, {
 													codec: e.target.value as WizardAudioCodec,
+													...audioProfileTransition(e.target.value, audio),
 													channelLayout: undefined,
 													cutoffFrequency: undefined,
 													...(e.target.value === "OPUS"
@@ -789,7 +816,10 @@ export function LadderSection({
 																rate: 48000,
 																muxing: { ...audio.muxing, kind: "WEBM" },
 															}
-														: codec === "OPUS"
+														: codec === "OPUS" ||
+																(isHeAac(e.target.value) &&
+																	audio.muxing?.kind &&
+																	audio.muxing.kind !== "FMP4")
 															? { muxing: { ...audio.muxing, kind: "FMP4" } }
 															: {}),
 												})
@@ -797,7 +827,7 @@ export function LadderSection({
 										>
 											{AUDIO_CODECS.map((c) => (
 												<option key={c} value={c}>
-													{c}
+													{audioCodecLabel(c)}
 												</option>
 											))}
 										</SelectNative>
@@ -805,11 +835,22 @@ export function LadderSection({
 									<div className="flex-1">
 										<Field
 											label={t("wizard.bitrateBps")}
+											help={
+												isHeAac(codec)
+													? t("wizard.heAacBitrateLimit", {
+															bps: HE_AAC_MAX_BITRATE[codec],
+														})
+													: undefined
+											}
 											htmlFor={`wz-a-${index}-bitrate`}
 										>
 											<Input
 												id={`wz-a-${index}-bitrate`}
 												type="number"
+												min={1}
+												max={
+													isHeAac(codec) ? HE_AAC_MAX_BITRATE[codec] : undefined
+												}
 												aria-label={t("wizardX.audioNBitrate", {
 													n: index + 1,
 												})}
@@ -833,16 +874,17 @@ export function LadderSection({
 											<Input
 												id={`wz-a-${index}-rate`}
 												type="number"
+												step={isHeAac(codec) ? "any" : undefined}
 												aria-label={t("wizardX.audioNSampleRate", {
 													n: index + 1,
 												})}
-												value={audio.rate}
+												value={audio.rate ?? ""}
+												placeholder={
+													isHeAac(codec) ? t("wizard.default") : undefined
+												}
 												onChange={(e) =>
 													patchAudio(index, {
-														rate: Math.max(
-															0,
-															Math.round(Number(e.target.value)),
-														),
+														rate: readAudioRate(codec, e.target.value),
 													})
 												}
 											/>
@@ -873,7 +915,11 @@ export function LadderSection({
 									<Field
 										label={t("wizard.channelLayout")}
 										htmlFor={`wz-a-${index}-cl`}
-										help={t("wizard.clEnumEmptyClStereo")}
+										help={
+											isHeAac(codec)
+												? undefined
+												: t("wizard.clEnumEmptyClStereo")
+										}
 									>
 										<SelectNative
 											id={`wz-a-${index}-cl`}
@@ -909,6 +955,14 @@ export function LadderSection({
 										onPatch={onPatch}
 									/>
 								)}
+								{isHeAac(codec) ? (
+									<HeAacSignalingField
+										id={`wz-a-${index}-signaling`}
+										codec={codec}
+										value={audio.signaling}
+										onChange={(signaling) => patchAudio(index, { signaling })}
+									/>
+								) : null}
 								{(["AAC", "AC3", "EAC3"] as string[]).includes(codec) ? (
 									<AudioCutoffEditor
 										id={`wz-a-${index}-cutoff`}
@@ -918,6 +972,12 @@ export function LadderSection({
 										}
 									/>
 								) : null}
+								<StreamConditionEditor
+									idBase={`wz-a-${index}-condition`}
+									media="audio"
+									value={audio.conditions}
+									onChange={(conditions) => patchAudio(index, { conditions })}
+								/>
 								<ExtrasEditor
 									idBase={`wz-a-${index}-x`}
 									family="audio"
@@ -935,7 +995,10 @@ export function LadderSection({
 									encodingKeys={encodingKeys}
 									filterKeys={filters
 										.filter(
-											(f) => filterFamily(f.kind ?? "DEINTERLACE") === "audio",
+											(f) =>
+												filterFamily(f.kind ?? "DEINTERLACE") !== "video" &&
+												(f.kind !== "DOLBY_LOUDNESS" ||
+													supportsDolbyLoudness(codec)),
 										)
 										.map((f) => f.key)}
 									nexguardCredentials={nexguardCredentials}
@@ -964,7 +1027,7 @@ export function LadderSection({
 							onPatch({
 								subtitles: [
 									...subtitles,
-									{ source: (sources.fileStreams ?? [])[0]?.key ?? "" },
+									{ source: subtitleSources("WEBVTT")[0]?.key ?? "" },
 								],
 							})
 						}
@@ -996,12 +1059,7 @@ export function LadderSection({
 												const codec = e.target.value as "WEBVTT" | "IMSC";
 												patchSubtitle(index, {
 													codec,
-													source:
-														(sources.fileStreams ?? []).find(
-															(s) =>
-																(s.fileType ?? "WEBVTT") ===
-																(codec === "IMSC" ? "TTML" : "WEBVTT"),
-														)?.key ?? "",
+													source: subtitleSources(codec)[0]?.key ?? "",
 													muxing: undefined,
 													styling: undefined,
 												});
@@ -1038,15 +1096,8 @@ export function LadderSection({
 										</Field>
 									) : null}
 									<Field
-										label={t("wizard.fileStream")}
+										label={ja ? "字幕ソース" : "Subtitle source"}
 										htmlFor={`wz-s-${index}-src`}
-										tooltip={
-											subtitle.codec === "IMSC"
-												? ja
-													? "「ソース」でTTMLファイルのストリームを追加してください。"
-													: "Add a TTML file stream in Sources."
-												: t("wizard.webvttFileStreamsComeFromTheSources")
-										}
 									>
 										<SelectNative
 											id={`wz-s-${index}-src`}
@@ -1055,26 +1106,22 @@ export function LadderSection({
 												patchSubtitle(index, { source: e.target.value })
 											}
 										>
-											<option value="">{t("wizard.selectFileStream")}</option>
+											<option value="">
+												{ja ? "字幕ソースを選択" : "Select a subtitle source"}
+											</option>
 											{subtitle.source &&
-											!(sources.fileStreams ?? []).some(
+											!subtitleSources(subtitle.codec).some(
 												(stream) => stream.key === subtitle.source,
 											) ? (
 												<option value={subtitle.source}>
 													{subtitle.source} {t("wizardX.missingParen")}
 												</option>
 											) : null}
-											{(sources.fileStreams ?? [])
-												.filter(
-													(s) =>
-														(s.fileType ?? "WEBVTT") ===
-														(subtitle.codec === "IMSC" ? "TTML" : "WEBVTT"),
-												)
-												.map((stream) => (
-													<option key={stream.key} value={stream.key}>
-														{stream.key}
-													</option>
-												))}
+											{subtitleSources(subtitle.codec).map((stream) => (
+												<option key={stream.key} value={stream.key}>
+													{stream.key}
+												</option>
+											))}
 										</SelectNative>
 									</Field>
 									<Field
@@ -1154,6 +1201,14 @@ export function LadderSection({
 										</>
 									) : null}
 								</div>
+								<StreamConditionEditor
+									idBase={`wz-s-${index}-condition`}
+									media="subtitle"
+									value={subtitle.conditions}
+									onChange={(conditions) =>
+										patchSubtitle(index, { conditions })
+									}
+								/>
 								<ExtrasEditor
 									idBase={`wz-s-${index}-x`}
 									family="subtitle"
@@ -1169,7 +1224,7 @@ export function LadderSection({
 											label: streamReferenceLabel(state, s),
 										}))}
 									encodingKeys={encodingKeys}
-									filterKeys={filterKeys}
+									filterKeys={[]}
 									nexguardCredentials={nexguardCredentials}
 									onChange={(extras) => patchSubtitle(index, { extras })}
 								/>

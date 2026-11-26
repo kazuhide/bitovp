@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { type StepLogEntry, stepLogSchema } from "../plan/steplog";
+import { isAisaManagedLivePlan } from "./aisa";
 import { aisaResultSchema } from "./aisa-result";
 
 export const aisaNeverStartedProofSchema = z.discriminatedUnion("basis", [
@@ -21,14 +22,49 @@ export const aisaNeverStartedProofSchema = z.discriminatedUnion("basis", [
 	}),
 ]);
 export type AisaNeverStartedProof = z.infer<typeof aisaNeverStartedProofSchema>;
+export const AISA_LIVE_STEP_KINDS = [
+	"CREATE_AISA_LIVE_ANALYSIS",
+	"RESOLVE_AISA_LIVE_ENCODING",
+	"START_AISA_LIVE_ANALYSIS",
+] as const;
+
+/** An interrupted create can leave only its compiler step, before any provider ID exists. */
+export function hasAisaLiveStepLog(log: unknown): boolean {
+	return (
+		Array.isArray(log) &&
+		log.some(
+			(entry) =>
+				entry !== null &&
+				typeof entry === "object" &&
+				AISA_LIVE_STEP_KINDS.some((kind) => entry.kind === kind),
+		)
+	);
+}
+function record(value: unknown): Record<string, unknown> | null {
+	return value !== null && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
+}
+
+/** A persisted run binding still protects a channel whose old plan is unreadable. */
+export function hasAisaLiveBinding(channel: unknown, run: unknown): boolean {
+	const row = record(channel);
+	const binding = record(run);
+	return (
+		row?.origin === "AISA_IMPORTED" ||
+		isAisaManagedLivePlan(row?.plan) ||
+		hasAisaLiveStepLog(row?.stepLog) ||
+		hasAisaLiveStepLog(binding?.stepLog) ||
+		(binding !== null &&
+			["aisaAnalysisId", "aisaStatus", "aisaSnapshot"].some(
+				(key) => binding[key] !== null && binding[key] !== undefined,
+			))
+	);
+}
+
 function managedEntries(log: unknown): StepLogEntry[] | null {
 	const parsed = stepLogSchema.safeParse(log);
-	const kinds = [
-		"CREATE_AISA_LIVE_ANALYSIS",
-		"RESOLVE_AISA_LIVE_ENCODING",
-		"START_AISA_LIVE_ANALYSIS",
-		"AWAIT_LIVE_RUNNING",
-	];
+	const kinds = [...AISA_LIVE_STEP_KINDS, "AWAIT_LIVE_RUNNING"];
 	return parsed.success &&
 		parsed.data.length === kinds.length &&
 		parsed.data.every((entry, index) => entry.kind === kinds[index])

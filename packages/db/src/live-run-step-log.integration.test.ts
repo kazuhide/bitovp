@@ -222,6 +222,38 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			});
 			return entry;
 		}
+		it("archives displaced native and AISA encoder IDs without replaying old creation steps", async () => {
+			const f = await fixture();
+			const create = (kind: string, resourceId: string) => ({
+				kind,
+				resourceId,
+			});
+			const remaining = create("CREATE_ENCODING", "B");
+			const retired = create("CREATE_ENCODING", "C");
+			const analysisEncoder = create("RESOLVE_AISA_LIVE_ENCODING", "D");
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: {
+					stepLog: [
+						remaining,
+						retired,
+						retired,
+						analysisEncoder,
+						create("CREATE_ENCODING", f.encodingId),
+					],
+					previousProviderEncodingIds: ["older"],
+				},
+			});
+			for (let i = 0; i < 2; i++)
+				await replaceLiveRunStepLogSnapshot(tenant, f.channel.id, f.run.id, [
+					remaining,
+				]);
+			const run = await tenant.liveChannelRun.findUniqueOrThrow({
+				where: { id: f.run.id },
+			});
+			expect(run.stepLog).toEqual([remaining]);
+			expect(run.previousProviderEncodingIds).toEqual(["older", "C", "D"]);
+		});
 		it("retains a run-only late success and every later revision through stale snapshot mirrors", async () => {
 			const f = await fixture();
 			const prior = await accepted(f);

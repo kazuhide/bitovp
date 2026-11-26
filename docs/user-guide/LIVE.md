@@ -18,6 +18,10 @@ region. Review the selected account and any saved or copied region settings.
    Pseudo-live is a feeder that sends stored files to an input, not a separate
    encoder input type.
 3. In **Ladder**, configure video/audio renditions and their codec settings.
+   Open **Input conditions** on a rendition to apply an AND/OR rule to the source.
+   For example, require a minimum input height or match an audio language. Frame
+   rate accepts a decimal or a fraction such as `30000/1001`. Duration and input
+   bitrate are available for VOD only.
 4. In **Output**, choose storage or a delivery service, paths, and optional mirrors.
 5. In **Packaging**, choose each track's container, bundled audio, file settings,
    shared segment length, optional encryption, and MP4 archive.
@@ -56,6 +60,13 @@ starting position. Blank uses the provider default, which can add latency.
 DASH suggested presentation delay and minimum update period use milliseconds in
 the form and are converted to API seconds. DVR retains a playback window; its
 manifest-element budget is checked rather than silently clamped.
+
+With Encoder `2.294.0` or later, Live HLS multivariant playlists derive
+`BANDWIDTH` and `AVERAGE-BANDWIDTH` from produced bitrate, with the configured
+bitrate as a floor. The encoder supplies this correction; bitovp does not rewrite
+the values. VOD manifests are unchanged. See the [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
+
+Ordinary Live supports HE-AAC v1 (up to 128,000 bps) and v2 (up to 64,000 bps) with segmented fMP4 for HLS/DASH, or TS for HLS. The Live HD encoding option, dedicated CMAF muxings, MP4 archive and MoQ retain their existing codec requirements. A saved template keeps each track’s profile, optional sample rate, channel layout and signaling. [Bitmovin Live muxing support](https://bitmovin.com/wp-content/uploads/2023/09/Product-Support-Matrix-ENCODING-Live-Muxings.pdf)
 
 ## Experimental MoQ delivery
 
@@ -252,6 +263,12 @@ provider sample time; delayed or duplicate delivery is not a new input sample.
 Polling history is kept for seven days while a channel is polled; ended runs
 retain a summary. See [Operations](../OPERATIONS.md#heartbeat-history).
 
+Encoder `2.294.0` (Beta) adds populated input aspect ratio, audio channel count,
+and channel layout to the stream table. These describe the **first input
+connection**, not a new measurement at every heartbeat. Missing, malformed, or
+unrecognized values remain unavailable (`—`); a displayed format does not
+establish current input health. See the [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
+
 If provider monitoring stops responding, a configured `HEARTBEAT_STALE` rule
 opens once after its freshness grace and resolves when fresh polling recovers.
 This indicates missing monitoring data; it does not confirm an input disconnect
@@ -313,6 +330,58 @@ each broadcast and confirm that no previous publisher is active.
 Stop the feeder, stop the channel, and confirm provider termination and output
 progression ending. Deleting a local row does not by itself establish cloud cleanup.
 
+During the original stop request, a transport failure can cause up to three
+send attempts. After an uncertain response or rate limit, the periodic check
+reads encoder status for every previously attempted STOP. If the worker died before sending to an encoder, a positive send journal and an active provider readback allow the replacement to finish that original request. Each worker starts a pass about once a minute and
+examines up to four stop records per organization per pass, rotating through longer lists.
+
+For ordinary Live, automatic confirmation requires terminal provider evidence
+for the broadcast's encoder and an end to all feeder activity on the channel.
+Several pending stops for the same encoder can be confirmed together when
+their recorded targets and broadcast history agree. If the worker exited
+during shutdown, its replacement can read the encoder after the old worker's
+claim expires. If the stopped broadcast already has a terminal provider
+receipt, the replacement can finish recording the outcome from that receipt.
+An older broadcast without a stored encoder ID needs its own encoder-creation
+receipt. A change to the account's RTMP input can replace the encoder within
+one broadcast. The worker retains the current encoder until its account reports termination or reports CREATED while its startup record proves START was never attempted. A running encoder with a completed start stays on its original input. If startup is uncertain, use Stop on the retained encoder before rebuilding. Older recorded encoders with a missing primary ID can also be stopped from the channel actions. If a rebuild predates this recording and the original ID is
+missing, automatic confirmation stays pending. Check the account's active
+encodings with the operator before re-air.
+
+After an upgrade, a broadcast can show STOPPED or ERROR while a replaced RTMP encoder still needs confirmation. Start and scheduled Start check earlier broadcasts on this channel as well as the current one. Use **Stop** to recover an encoder on the current broadcast. If an older broadcast is missing retirement evidence, a signed-in administrator can request a provider check with `POST /api/admin/reset/reconcile`. Retry Start after the affected encoder appears in the `confirmed` results. A scheduled start waits within its grace window.
+
+If an encoder still reports `RUNNING` or `QUEUED`, check its ID in the
+provider dashboard. Pressing **Stop** again cannot force another send for the
+same ambiguous manual stop. The periodic check also reads any additional encoders recorded for this broadcast.
+It can reuse a terminal receipt recorded on the same provider account. On an older broadcast with a confirmed stop, the worker can stop a still-active archived encoder when it can establish that the earlier stop excluded that encoder. A missing or inconsistent record keeps the broadcast unconfirmed. For managed AISA, the Analysis and Encoding each have their own stop record. After a feeder
+stop could not be queued, check that the feeder has actually exited. For AISA,
+retry finalization from the console to refresh the Analysis status and final
+result for that broadcast.
+
+A scheduled Start records the selected broadcast and its admission generation before dispatch. Retries use that same broadcast. A later manual Start or a revival has its own generation and leaves the earlier schedule's delivery result intact. If a pre-upgrade Start cannot be tied to its original broadcast, its schedule shows an unknown outcome. Check the channel before scheduling another start.
+
+If an upgraded worker cannot identify the broadcast for a pending legacy Stop, it saves the missed-stop alert with the schedule outcome. A restarted worker can deliver that alert to the configured destinations. If several old Stop schedules refer to the same broadcast, the worker preserves a queued Stop even when an older schedule has an unknown outcome. If every delivery is lost and the encoder or feeder is still active, check the broadcast and choose **Stop channel**.
+
+If an upgrade finds a scheduled Stop that fired immediately before the old worker exited, it can finish admitting the Stop when the broadcast still owns its original encoder and no other admission has advanced its generation. Heartbeat polls do not affect that decision. If the old worker did not save a generation and another admission was possible, the schedule records an unknown outcome and raises a missed-schedule alert. Open the linked broadcast, confirm it is the one you intend to end, and choose Stop.
+
+An upgraded worker can reconcile an exhausted scheduled Stop from an older version by checking the recorded broadcast and encoder. If a job expires from the queue, the worker checks each recorded encoder. It can requeue the Stop under a new queue job ID when its exact handoff survives and the worker had yet to claim it. If an older handoff lacks that evidence and a stop cannot be confirmed, the channel can show **ERROR**. Open the affected airing and choose **Stop channel** to retry.
+
+If Bitmovin rejects creation of a stream, muxing or DRM resource with HTTP 401 or 403, correct the account credentials or permissions and retry Start for the same broadcast. For an explicit HTTP 429 on the create request, wait at least one minute before retrying. If DNS lookup for the original Bitmovin host failed before connecting, retry after name resolution recovers. If a request may already have reached Bitmovin, the worker looks for the resource under its original encoder or muxing before resuming. An empty lookup leaves that step unresolved.
+
+Clearing schedules keeps startup and shutdown records that the Worker still needs. If a current scheduled Stop exhausts delivery before the Worker claims it, the channel shows **ERROR** and the schedule shows **Unknown**. Use **Stop** again on that broadcast. The Worker also checks the database for startup admissions whose queue entry has disappeared, including a newly created channel. It resumes the same broadcast and generation. After an upgrade, an ambiguous earlier schedule keeps an unknown result. An AISA broadcast whose original startup cannot be attributed requires an operator to check the channel. If an old scheduled Start has no provable airing, check the channel before scheduling another start. An expired queue entry alone cannot confirm whether startup succeeded.
+
+A scheduled Stop keeps its admitted broadcast and encoder through queue retries. Its schedule-fired notification records queue handoff. A terminal status check confirms the broadcast ended. The schedule shows **Delivered** when the worker also has an acknowledgment for that schedule's own Stop request. Without that acknowledgment, observed termination leaves delivery **Unknown**.
+For new stops, confirmation records one notification per broadcast. The worker
+can finish delivery after the channel is deleted. A network or HTTP failure is
+retried up to five attempts. A refused host or invalid destination configuration
+ends delivery with a failure. If no rule matched, delivery history has no entry. A destination can receive the event again after a retry or worker restart.
+For stops already in progress during upgrade, prior delivery can be unknown.
+In that case recovery records the uncertainty and skips a replacement notification.
+
+If a managed AISA channel stays in **Stopping** after the worker that accepted a manual stop exits, reopen the channel. **Stop channel** becomes available to its preview owner when the 20-minute dispatch lease expires and the current airing has a per-target stop record. Confirming it retries that airing. The worker checks the Analysis and encoder IDs and reads back any previously reserved send. If a legacy stop has no per-target record, check both resources in the provider account before attempting further action.
+
+If managed AISA already has a final result and a terminal encoder, the worker can finish stop confirmation after the last feeder exits. A RESTART that loses its worker returns an error after its ownership period expires. Check the provider or use Stop on the same encoder.
+
 A START error can leave the provider state uncertain. Startup cancellation
 prevents further START retries once the worker observes it. If a request is
 already in flight, the worker waits for its outcome, then checks and stops that
@@ -333,3 +402,10 @@ A terminal provider encoding cannot restart. Broadcasting the channel again
 creates a new run and encoding; insertable content is registered for that run.
 Copy settings opens the wizard without starting work. See
 [Troubleshooting](./TROUBLESHOOTING.md) if state or cleanup remains uncertain.
+
+
+## Inspect a run’s provider resources
+
+Open the channel’s run history and expand **Inspect provider resources** for the airing you want. Select a recorded step to read its details or, where supported, the provider collection under the same parent. Recorded resources on Live runs are read-only. Adopted channels and AISA runs support inspection according to their access rules.
+
+Select a recorded muxing in the airing to view its DRM systems, or the ID3 tags of a Progressive TS muxing. The list is scoped to its original encoding, muxing and provider account. Open a row to verify the type, timestamps and available metadata stamp.

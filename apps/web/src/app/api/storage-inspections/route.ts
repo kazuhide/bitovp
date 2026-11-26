@@ -74,6 +74,7 @@ const bodySchema = z.strictObject({
 	 * JSON numbers are exact to 2^53-1, far past any real object.
 	 */
 	objectSize: z.number().int().nonnegative().optional(),
+	verifyAudioCopy: z.boolean().optional(),
 });
 
 const querySchema = z.strictObject({
@@ -168,6 +169,7 @@ export async function POST(req: Request) {
 				bucket,
 				objectKey,
 				status: "PENDING",
+				...(parsed.data.verifyAudioCopy && { verifyAudioCopy: true }),
 				objectSize: objectSize === undefined ? null : BigInt(objectSize),
 			},
 			select: INSPECTION_SELECT,

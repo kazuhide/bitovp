@@ -31,10 +31,12 @@ const DOLBY_CHANNEL_LAYOUTS = [
 ] as const;
 
 export const AUDIO_CHANNEL_LAYOUTS: Record<
-	"AAC" | "OPUS" | "DD" | "DDPLUS" | "AC3" | "EAC3",
+	"HE_AAC_V1" | "HE_AAC_V2" | "AAC" | "OPUS" | "DD" | "DDPLUS" | "AC3" | "EAC3",
 	readonly string[]
 > = {
 	AAC: AAC_CHANNEL_LAYOUTS,
+	HE_AAC_V1: AAC_CHANNEL_LAYOUTS,
+	HE_AAC_V2: AAC_CHANNEL_LAYOUTS,
 	AC3: CODEC_OPTIONS.Ac3ChannelLayout,
 	EAC3: CODEC_OPTIONS.Ac3ChannelLayout,
 	OPUS: OPUS_CHANNEL_LAYOUTS,

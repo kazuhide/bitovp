@@ -5,7 +5,12 @@ import {
 	type SecretCipher,
 	USAGE_BACKFILL_SETTING_PREFIX,
 } from "@bitovp/core";
-import type { AppPrismaClient, AppTransactionClient } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	type AppTransactionClient,
+	type Prisma,
+	retainLibraryInputsBeforeJobDeletion,
+} from "@bitovp/db";
 import {
 	RESET_CATALOG,
 	RESET_PROTECTED_EDITING_MODELS,
@@ -23,8 +28,13 @@ import {
 	type MoqArchiveCleanupSnapshot,
 	snapshotMoqArchiveCleanup,
 } from "./moq-archive-cleanup";
-import { collectEncoderPointers, type ResetOutcome } from "./reset";
+import {
+	collectEncoderPointers,
+	type ResetOutcome,
+	resetBlockingFeederWhere,
+} from "./reset";
 import { snapshotResetCleanup } from "./reset-cleanup-snapshot";
+import { assertResetLiveAnalyses } from "./reset-live-analyses";
 
 type ResetClient = AppPrismaClient | AppTransactionClient;
 type Count = {
@@ -42,6 +52,14 @@ function delegate(prisma: ResetClient, model: ResetTable) {
 	};
 }
 
+export class SelectedResetPublisherActive extends Error {
+	constructor() {
+		super(
+			"Confirm that the pseudo-live publisher has stopped before clearing its operating history",
+		);
+	}
+}
+
 export class SelectedResetBlocked extends Error {
 	constructor() {
 		super("Reset selection is missing required categories");
@@ -57,6 +75,25 @@ export class SelectedResetLibraryEditingBlocked extends Error {
 	}
 }
 
+// These rows still authorize a queued START or a STOP recovery pass. Count
+// and delete against the same predicate so the confirmation matches the reset.
+const operativeSchedule: Prisma.LiveScheduleWhereInput = {
+	status: "FIRED",
+	OR: [
+		{ action: "STOP", outcome: "PENDING" },
+		{
+			action: "STOP",
+			outcome: "UNKNOWN",
+			liveChannel: { status: "STOPPING" },
+		},
+		{
+			action: "START",
+			outcome: { in: ["PENDING", "UNKNOWN"] },
+			liveChannel: { status: { in: ["CREATED", "PROVISIONING"] } },
+		},
+	],
+};
+
 async function countProtectedEditing(prisma: ResetClient): Promise<number> {
 	return (
 		await Promise.all(
@@ -70,6 +107,7 @@ async function countProtectedEditing(prisma: ResetClient): Promise<number> {
 /** All choices are counted, including choices currently left unchecked. */
 export async function countResetCategories(
 	prisma: ResetClient,
+	categories?: ReadonlySet<ResetCategory>,
 ): Promise<Count[]> {
 	return Promise.all(
 		RESET_CATALOG.map(async (entry) => {
@@ -77,13 +115,17 @@ export async function countResetCategories(
 				entry.models.map((model) =>
 					delegate(prisma, model)
 						.count(
-							model === "vmafComputeCredential"
-								? { where: { disabledAt: null } }
-								: model === "vmafExecutionProfile"
-									? { where: { resetAt: null } }
-									: "where" in entry
-										? { where: entry.where }
-										: {},
+							model === "liveSchedule" &&
+								categories &&
+								!categories.has("liveChannels")
+								? { where: { NOT: operativeSchedule } }
+								: model === "vmafComputeCredential"
+									? { where: { disabledAt: null } }
+									: model === "vmafExecutionProfile"
+										? { where: { resetAt: null } }
+										: "where" in entry
+											? { where: entry.where }
+											: {},
 						)
 						.then((count) => ({ model, count })),
 				),
@@ -155,10 +197,23 @@ export async function deleteSelectedData(
 					// Same lock order as capture: job, then source. A late capture cannot
 					// resurrect erased library data from retained FINISHED history.
 					await tx.$queryRaw`SELECT id FROM "EncodingJob" ORDER BY id FOR UPDATE`;
-					if (selected.has("liveChannels")) {
+					if (
+						selected.has("liveChannels") ||
+						selected.has("verificationHistory")
+					) {
 						// Snapshot ownership and delete children under the same channel-first
 						// order as owned finalizers, including delayed provider responses.
 						await tx.$queryRaw`SELECT id FROM "LiveChannel" ORDER BY id FOR UPDATE`;
+						if (selected.has("liveChannels")) await assertResetLiveAnalyses(tx);
+					}
+					if (selected.has("pseudoLiveFeeds")) {
+						await tx.$queryRaw`SELECT id FROM "FeederSession" ORDER BY id FOR UPDATE`;
+						if (
+							await tx.feederSession.count({
+								where: resetBlockingFeederWhere(),
+							})
+						)
+							throw new SelectedResetPublisherActive();
 					}
 					if (selected.has("contentLibrary")) {
 						await tx.$queryRaw`SELECT id FROM "LibrarySource" ORDER BY id FOR UPDATE`;
@@ -167,6 +222,8 @@ export async function deleteSelectedData(
 							throw new SelectedResetLibraryEditingBlocked(protectedCount);
 					}
 					if (selected.has("vodJobs")) await assertNoJobEvidenceReferences(tx);
+					if (selected.has("vodJobs") && !selected.has("contentLibrary"))
+						await retainLibraryInputsBeforeJobDeletion(tx);
 					if (clearsUsage) {
 						await tx.appSetting.deleteMany({
 							where: { key: { startsWith: USAGE_BACKFILL_SETTING_PREFIX } },
@@ -231,23 +288,27 @@ export async function deleteSelectedData(
 							// Erase the selectable credential immediately; immutable material
 							// remains private so task snapshots can still tear down cloud resources.
 							const deleted =
-								model === "vmafComputeCredential"
-									? await delegate(tx, model).updateMany({
-											where: { disabledAt: null },
-											data: { disabledAt: new Date() },
+								model === "liveSchedule" && !selected.has("liveChannels")
+									? await tx.liveSchedule.deleteMany({
+											where: { NOT: operativeSchedule },
 										})
-									: model === "vmafExecutionProfile"
+									: model === "vmafComputeCredential"
 										? await delegate(tx, model).updateMany({
-												where: { resetAt: null },
-												data: {
-													enabled: false,
-													resetAt: new Date(),
-													version: { increment: 1 },
-												},
+												where: { disabledAt: null },
+												data: { disabledAt: new Date() },
 											})
-										: await delegate(tx, model).deleteMany(
-												"where" in entry ? { where: entry.where } : {},
-											);
+										: model === "vmafExecutionProfile"
+											? await delegate(tx, model).updateMany({
+													where: { resetAt: null },
+													data: {
+														enabled: false,
+														resetAt: new Date(),
+														version: { increment: 1 },
+													},
+												})
+											: await delegate(tx, model).deleteMany(
+													"where" in entry ? { where: entry.where } : {},
+												);
 							// Disjoint halves of alertRule must retain separate audit counts.
 							counts[model === "alertRule" ? entry.category : model] =
 								deleted.count;

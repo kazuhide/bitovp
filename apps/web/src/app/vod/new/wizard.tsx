@@ -14,7 +14,7 @@ import {
 	vodInputTimelineNeedsPreparation,
 } from "@bitovp/core/vod-input-timeline";
 import { applyVodInputFavorite } from "@bitovp/core/wizard";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,6 +24,10 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldRowAction } from "@/components/ui/field";
 import { HelpOverlay } from "@/components/ui/help-overlay";
 import { Input, SelectNative } from "@/components/ui/input";
+import {
+	useWithheldSourceInputs,
+	WithheldSourceInputs,
+} from "@/components/withheld-source-inputs";
 import { WizardDraftOffer } from "@/components/wizard-draft-offer";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useCreationSubmission } from "@/lib/creation-submission-hook";
@@ -34,9 +38,18 @@ import {
 	renameOutputBase,
 	splitOutputFolder,
 } from "@/lib/output-path";
+import {
+	type ProtectedVodCopyReplacements,
+	protectedVodCopyLayout,
+} from "@/lib/protected-vod-copy";
 import type { VodFlow } from "@/lib/vod-flow";
-import { draftFingerprint, mergeWizardDraft } from "@/lib/wizard-draft";
+import {
+	draftFingerprint,
+	legacyVodMetadataOnly,
+	restoreVodWizardDraft,
+} from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
+import { useWizardSubmission } from "@/lib/wizard-submission-hook";
 import {
 	followRenamedAudioKeys,
 	reconcileAutomaticAudioPackaging,
@@ -103,6 +116,7 @@ import {
 	outputKindHasAcl,
 	outputKindIsBrowsable,
 	outputNameForKind,
+	reconcileHdr10PlusSidecars,
 } from "./stream-model";
 import { ThumbnailsSection } from "./thumbnails-section";
 import { useVmafExecutionValidation } from "./vmaf-execution-settings";
@@ -172,6 +186,7 @@ type PickerTarget =
 	| { file: number }
 	| { mirror: number }
 	| { timelineAdd: true }
+	| { hdr10PlusMetadata: string }
 	| null;
 
 export function VodWizard({
@@ -211,6 +226,11 @@ export function VodWizard({
 	const fresh = fileFlow ? FILE_OUTPUT_DEFAULT_STATE : DEFAULT_WIZARD_STATE;
 	const [step, setStep] = useState(0);
 	const [state, setState] = useState<WizardState>(fresh);
+	const timelineConflictMessage = state.sources?.hdr10PlusStreams?.length
+		? "wizard.hdr10PlusTimelineConflict"
+		: state.sources?.captionStreams?.length
+			? "wizard.embeddedCaptionTimelineConflict"
+			: undefined;
 	const timelineSourcesSignature = JSON.stringify(
 		state.inputFiles
 			.filter((file) => file.purpose !== "FILTER_IMAGE")
@@ -264,7 +284,7 @@ export function VodWizard({
 			? timelinePreparation.task
 			: null;
 	const submissionState =
-		prepared && state.inputTimeline
+		prepared && state.inputTimeline && !timelineConflictMessage
 			? applyPreparedVodInputTimeline(state, prepared)
 			: state;
 	const timelineBlocked = Boolean(
@@ -277,10 +297,17 @@ export function VodWizard({
 				}).length > 0),
 	);
 	const draftBase = useRef(fresh);
+	const draftReplacements = useRef<ProtectedVodCopyReplacements | undefined>(
+		undefined,
+	);
 	// The file flow opens on its short view; every step stays one click away.
 	const [expanded, setExpanded] = useState(false);
 	const simple = fileFlow && !expanded;
-	const visibleSteps = simple ? FILE_STEPS : ALL_STEPS;
+	const visibleSteps = state.audioFile
+		? FILE_STEPS.filter((s) => s.step !== 5)
+		: simple
+			? FILE_STEPS
+			: ALL_STEPS;
 	const position = Math.max(
 		0,
 		visibleSteps.findIndex((item) => item.step === step),
@@ -461,13 +488,20 @@ export function VodWizard({
 			selectedPresetQuery.isFetchedAfterMount &&
 			selectedPresetQuery.fetchStatus === "idle");
 	const presetUpdatedAt = loadPresetId ? userPreset.data?.updatedAt : undefined;
-	const presetBody: Record<string, unknown> | undefined = copiedJob
+	const publicPresetBody: Record<string, unknown> | undefined = copiedJob
 		? copiedJob.plan
 		: deliveryPresetId
 			? deliveryPreset.data?.spec.plan
 			: loadPresetId
 				? userPreset.data?.body
 				: preset.data;
+	const replacementVersion = `${presetKey ?? ""}:${presetUpdatedAt ?? ""}`;
+	const replacement = useWithheldSourceInputs(
+		publicPresetBody,
+		replacementVersion,
+	);
+	const presetBody = replacement.body;
+	const hasProtectedInputs = replacement.resolvedPaths !== undefined;
 	const presetLabel = deliveryPresetId
 		? deliveryPreset.data?.spec.name
 		: loadPresetId
@@ -504,6 +538,7 @@ export function VodWizard({
 			return;
 		}
 		const mapping = tryImportPresetIntoWizard(presetBody);
+		draftReplacements.current = undefined;
 		setAppliedPreset(presetKey);
 		// Keep the CAS token with the body actually applied to this edit session.
 		// Another reader refreshing React Query must not silently advance it.
@@ -528,14 +563,21 @@ export function VodWizard({
 			setImported(null);
 			setShowImport(false);
 			setFallbackReason(null);
-			setState(mapping.state);
-			draftBase.current = mapping.state;
+			const protectedLayout = hasProtectedInputs
+				? protectedVodCopyLayout(publicPresetBody, presetBody, mapping.state)
+				: null;
+			const appliedState = protectedLayout?.state ?? mapping.state;
+			setState(appliedState);
+			draftBase.current = appliedState;
+			draftReplacements.current = protectedLayout?.replacements;
 			setAppliedDraftContext(
-				editPresetId
-					? presetUpdatedAt
-						? `edit:${editPresetId}:${presetUpdatedAt}`
-						: null
-					: `${presetKey}:${presetUpdatedAt ?? draftFingerprint(presetBody)}`,
+				hasProtectedInputs && !protectedLayout
+					? null
+					: editPresetId
+						? presetUpdatedAt
+							? `edit:${editPresetId}:${presetUpdatedAt}`
+							: null
+						: `${presetKey}:${presetUpdatedAt ?? draftFingerprint(publicPresetBody)}`,
 			);
 			setStep(0);
 			setMappedPresetName(presetLabel ?? null);
@@ -554,6 +596,8 @@ export function VodWizard({
 		presetReady,
 		presetUpdatedAt,
 		presetBody,
+		publicPresetBody,
+		hasProtectedInputs,
 		appliedPreset,
 		presetKey,
 		editPresetId,
@@ -602,8 +646,12 @@ export function VodWizard({
 	const pendingPlaceholders = imported
 		? countPendingPlaceholders(imported.raw)
 		: 0;
+	const draftSource = presetKey === undefined ? fresh : draftBase.current;
+	const replacements =
+		presetKey === undefined ? undefined : draftReplacements.current;
 	const draft = useWizardDraft({
 		kind: "vod",
+		legacyCopiedJobId: replacements ? copiedJob?.id : undefined,
 		context:
 			imported || jsonLoadedForEditing
 				? null
@@ -618,11 +666,7 @@ export function VodWizard({
 		value: state,
 		step,
 		onRestore: (saved) => {
-			const restored = mergeWizardDraft(
-				presetKey === undefined ? fresh : draftBase.current,
-				saved.value,
-				"vod",
-			);
+			const restored = restoreVodWizardDraft(draftSource, saved, replacements);
 			// Source facts and preview tasks are deliberately absent from the draft.
 			// Mount their preparation before resuming a later wizard step.
 			openState(restored, restored.inputTimeline ? 1 : saved.step);
@@ -658,44 +702,40 @@ export function VodWizard({
 				: "wizard:new"
 			: `wizard:${presetKey}:${presetUpdatedAt ?? ""}`,
 	);
-	const submit = useMutation({
-		mutationFn: () => {
+	const submit = useWizardSubmission(
+		() => {
 			if (internalBlocked) throw new Error(t("hevcV2.unavailable"));
 			if (timelineBlocked) throw new Error(t("vodTimeline.notReady"));
 			if (qcExecutionValidation.invalid) throw new Error(qcExecutionMessage);
-			return creation.submit<{ id: string }>({
-				plan: imported
-					? buildSubmissionPlan(imported, state.accountId)
-					: buildPlan(submissionState),
-			});
+			const plan = imported
+				? buildSubmissionPlan(imported, state.accountId)
+				: buildPlan(submissionState);
+			return () => creation.submit<{ id: string }>({ plan });
 		},
-		onSuccess: (job) => {
-			if (!imported && !jsonLoadedForEditing) draft.clear();
-			router.push(`/vod/jobs/${job.id}`);
-		},
-	});
+		() =>
+			!imported && !jsonLoadedForEditing ? draft.afterSubmission() : undefined,
+		(job) => router.push(`/vod/jobs/${job.id}`),
+	);
 
 	// Template re-edit : PATCH with the LOADED updatedAt as
 	// the CAS token — a template edited elsewhere since this page loaded is a
 	// 409, surfaced as "reload", never silently overwritten.
-	const updateTemplate = useMutation({
-		mutationFn: () => {
+	const updateTemplate = useWizardSubmission(
+		() => {
 			if (internalBlocked) throw new Error(t("hevcV2.unavailable"));
-			return apiFetch<{ id: string }>(`/api/presets/${editPresetId}`, {
-				method: "PATCH",
-				body: JSON.stringify({
-					plan: imported
-						? buildSubmissionPlan(imported, state.accountId)
-						: buildPlan(submissionState),
-					expectedUpdatedAt: appliedTemplateUpdatedAt,
-				}),
+			const path = `/api/presets/${editPresetId}`;
+			const body = JSON.stringify({
+				plan: imported
+					? buildSubmissionPlan(imported, state.accountId)
+					: buildPlan(submissionState),
+				expectedUpdatedAt: appliedTemplateUpdatedAt,
 			});
+			return () => apiFetch<{ id: string }>(path, { method: "PATCH", body });
 		},
-		onSuccess: () => {
-			if (!imported && !jsonLoadedForEditing) draft.clear();
-			router.push("/templates");
-		},
-	});
+		() =>
+			!imported && !jsonLoadedForEditing ? draft.afterSubmission() : undefined,
+		() => router.push("/templates"),
+	);
 
 	const patch = (partial: Partial<WizardState>) =>
 		setState((prev) => {
@@ -733,9 +773,20 @@ export function VodWizard({
 			) {
 				next.startOptions = { ...next.startOptions, encodingMode: undefined };
 			}
+			if (partial.inputFiles && next.audioFile?.mode === "COPY") {
+				const before = prev.inputFiles[0],
+					after = next.inputFiles[0];
+				if (
+					before?.credentialId !== after?.credentialId ||
+					before?.kind !== after?.kind ||
+					before?.bucket !== after?.bucket ||
+					before?.path !== after?.path
+				)
+					next.audioFile = { ...next.audioFile, inspectionId: "" };
+			}
 			Object.assign(next, followRenamedAudioKeys(prev, next));
 			next.audios = reconcileAutomaticAudioPackaging(next);
-			return next;
+			return reconcileHdr10PlusSidecars(prev, next);
 		});
 
 	const collapse = () => {
@@ -782,7 +833,15 @@ export function VodWizard({
 					? state.additionalOutputs[picker.mirror]
 					: "file" in picker
 						? state.inputFiles[picker.file]
-						: state.inputFiles.at(-1);
+						: "hdr10PlusMetadata" in picker
+							? state.inputFiles.find(
+									(file) =>
+										file.key ===
+										state.sources?.hdr10PlusStreams?.find(
+											(stream) => stream.key === picker.hdr10PlusMetadata,
+										)?.videoInputFile,
+								)
+							: state.inputFiles.at(-1);
 
 	const allCredentials = credentials.data ?? [];
 	const outputSelectable = (provider: string) =>
@@ -821,6 +880,25 @@ export function VodWizard({
 
 	// A selected template owns the initial form. Keep edits unavailable until
 	// its plan is applied so a late response cannot replace user input.
+	if (presetReady && presetKey !== appliedPreset && replacement.malformed)
+		return (
+			<p role="alert" className="text-rose-400 text-sm">
+				{t("templates.notAPlan")}
+			</p>
+		);
+	if (
+		presetReady &&
+		presetKey !== undefined &&
+		presetKey !== appliedPreset &&
+		replacement.pending
+	)
+		return (
+			<WithheldSourceInputs
+				key={replacementVersion}
+				sources={replacement.pending}
+				onResolve={replacement.resolve}
+			/>
+		);
 	if (presetKey !== undefined && presetKey !== appliedPreset) {
 		const requestedName =
 			presetLabel ?? deliveryPresetId ?? loadPresetId ?? presetName ?? "";
@@ -905,7 +983,19 @@ export function VodWizard({
 				!jsonLoadedForEditing ? (
 					<VodFlowSwitch flow={flow} />
 				) : null}
-				<WizardDraftOffer {...draft} />
+				<WizardDraftOffer
+					{...draft}
+					restore={() =>
+						draft.restore(legacyVodMetadataOnly(draftSource, draft.pending))
+					}
+					retainedSettings={draft.retained?.value}
+					legacyVersion={draft.pending?.legacyVodFilters}
+					legacySettings={
+						legacyVodMetadataOnly(draftSource, draft.pending)
+							? draft.pending?.value
+							: undefined
+					}
+				/>
 				{[
 					{ query: accounts, message: t("wizard.accountsLoadFailed") },
 					{ query: credentials, message: t("wizard.credentialsLoadFailed") },
@@ -1252,7 +1342,7 @@ export function VodWizard({
 							</button>
 						))}
 					</nav>
-					{simple ? (
+					{state.audioFile ? null : simple ? (
 						<Button
 							variant="ghost"
 							size="sm"
@@ -1365,8 +1455,8 @@ export function VodWizard({
 									label={t("wizard.encoderVersion")}
 									htmlFor="wz-version"
 									help={
-										state.encoderVersion === "2.292.0"
-											? t("wizard.encoderVersion2292Help")
+										state.encoderVersion === "2.294.0"
+											? t("wizard.encoderVersion2294Help")
 											: pinnedVersion
 												? t("wizard.pinnedVersionEG22660")
 												: undefined
@@ -1470,7 +1560,15 @@ export function VodWizard({
 						</>
 					) : null}
 
-					{step === 1 ? (
+					{step === 1 && state.audioFile ? (
+						<InputFilesEditor
+							state={state}
+							credentials={allCredentials}
+							onPatch={patch}
+							onBrowse={(index) => setPicker({ file: index })}
+						/>
+					) : null}
+					{step === 1 && !state.audioFile ? (
 						<>
 							<div className="flex flex-wrap items-center justify-between gap-3">
 								<div className="flex items-center gap-2">
@@ -1490,7 +1588,8 @@ export function VodWizard({
 									size="sm"
 									disabled={
 										!state.inputTimeline &&
-										(state.sources?.encodings?.length ?? 0) > 0
+										((state.sources?.encodings?.length ?? 0) > 0 ||
+											Boolean(timelineConflictMessage))
 									}
 									onClick={() =>
 										patch(
@@ -1516,7 +1615,15 @@ export function VodWizard({
 									)}
 								</Button>
 							</div>
-							{state.inputTimeline ? (
+							{timelineConflictMessage ? (
+								<p
+									className="text-xs text-amber-300"
+									role={state.inputTimeline ? "alert" : undefined}
+								>
+									{t(timelineConflictMessage)}
+								</p>
+							) : null}
+							{state.inputTimeline && !timelineConflictMessage ? (
 								<>
 									<VodInputTimelineEditor
 										document={state.inputTimeline}
@@ -1594,13 +1701,16 @@ export function VodWizard({
 										state={state}
 										onPatch={patch}
 										fileView={simple}
+										onBrowseHdr10PlusMetadata={(key) =>
+											setPicker({ hdr10PlusMetadata: key })
+										}
 									/>
 								</>
 							)}
 						</>
 					) : null}
 
-					{step === 2 && simple ? (
+					{step === 2 && (simple || state.audioFile) ? (
 						<>
 							{/* The files stay editable: their height, bitrate and codec
 							    are what gets measured. */}
@@ -1619,7 +1729,7 @@ export function VodWizard({
 						</>
 					) : null}
 
-					{step === 2 && !simple ? (
+					{step === 2 && !simple && !state.audioFile ? (
 						<>
 							<LadderSection
 								hevcV2Available={internalAllowed}
@@ -2052,7 +2162,7 @@ export function VodWizard({
 				</div>
 			</div>
 
-			{state.inputTimeline && step === 1 ? null : (
+			{state.inputTimeline && step === 1 && !timelineConflictMessage ? null : (
 				<PlanPreview evaluation={evaluation} />
 			)}
 
@@ -2070,6 +2180,19 @@ export function VodWizard({
 				providers={[...BROWSABLE_STORAGE_PROVIDERS]}
 				initialCredentialId={pickerSeed?.credentialId}
 				initialBucket={pickerSeed?.bucket}
+				fixedLocation={
+					picker !== null &&
+					typeof picker === "object" &&
+					"hdr10PlusMetadata" in picker &&
+					pickerSeed
+						? {
+								credentialId: pickerSeed.credentialId,
+								bucket: pickerSeed.bucket,
+								excludeObject:
+									"path" in pickerSeed ? pickerSeed.path : undefined,
+							}
+						: undefined
+				}
 				onClose={() => setPicker(null)}
 				onSelect={({ credentialId, bucket, path }) => {
 					// Derive the storage kind from the SELECTED credential's provider —
@@ -2123,6 +2246,34 @@ export function VodWizard({
 								bucket,
 							};
 							return { ...prev, additionalOutputs: mirrors };
+						});
+					} else if (picker !== null && "hdr10PlusMetadata" in picker) {
+						setState((prev) => {
+							const stream = prev.sources?.hdr10PlusStreams?.find(
+								(row) => row.key === picker.hdr10PlusMetadata,
+							);
+							const video = prev.inputFiles.find(
+								(file) => file.key === stream?.videoInputFile,
+							);
+							if (
+								!stream ||
+								!video ||
+								video.credentialId !== credentialId ||
+								video.bucket !== bucket
+							)
+								return prev;
+							return {
+								...prev,
+								sources: {
+									...prev.sources,
+									hdr10PlusStreams: prev.sources?.hdr10PlusStreams?.map(
+										(row) =>
+											row.key === stream.key
+												? { ...row, metadataInputPath: path }
+												: row,
+									),
+								},
+							};
 						});
 					} else if (picker !== null && "timelineAdd" in picker) {
 						const kind = inputKindForProvider(provider);
@@ -2189,7 +2340,19 @@ export function VodWizard({
 								// Keep the row's kind in sync with the picked credential.
 								...(kind !== null ? { kind } : {}),
 							};
-							return { ...prev, inputFiles: files };
+							const sourceChanged =
+								current.credentialId !== credentialId ||
+								current.bucket !== bucket ||
+								current.path !== path ||
+								(kind && kind !== current.kind);
+							return reconcileHdr10PlusSidecars(prev, {
+								...prev,
+								inputFiles: files,
+								...(sourceChanged &&
+									prev.audioFile?.mode === "COPY" && {
+										audioFile: { ...prev.audioFile, inspectionId: "" },
+									}),
+							});
 						});
 					}
 				}}

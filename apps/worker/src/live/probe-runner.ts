@@ -7,14 +7,19 @@ import {
 	probeBatchJobSchema,
 	probeOutputPrefix,
 } from "@bitovp/core";
-import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	bindArchivedStopTargetInTransaction,
+	LIVE_EFFECT_OPEN_STATES,
+	liveStopRunOwnsEncoding,
+	type Prisma,
+} from "@bitovp/db";
 import {
 	assertSafeProbePrefix,
 	type BrowserCredential,
 	probeReaperForCredential,
 	storageErrorText,
 } from "@bitovp/storage";
-import { createRunMirror } from "../orchestrator/run-mirror";
 
 /**
  * Startup-probe batch runner .
@@ -137,11 +142,106 @@ type ProbeOutcome = {
 	cleanupError?: string;
 };
 
+const probeStatusSelect = {
+	status: true,
+	error: true,
+	bitmovinEncodingId: true,
+	runs: {
+		orderBy: { seq: "desc" },
+		take: 1,
+		select: {
+			id: true,
+			bitmovinEncodingId: true,
+			previousProviderEncodingIds: true,
+			stepLog: true,
+		},
+	},
+} as const;
+
+/** Both producers use the scheduled STOP's durable, run-bound queue handoff. */
+export async function requestProbeStop(
+	prisma: AppPrismaClient,
+	channelId: string,
+	expectedRunId: string | undefined,
+	now: Date,
+) {
+	if (!expectedRunId) return "unconfirmed";
+	return prisma.$transaction(async (tx) => {
+		await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${channelId}::uuid FOR UPDATE`;
+		const channel = await tx.liveChannel.findUnique({
+			where: { id: channelId },
+			select: {
+				...probeStatusSelect,
+				purpose: true,
+				liveEffectFenceVersion: true,
+			},
+		});
+		const run = channel?.runs[0];
+		if (
+			channel?.purpose !== "PROBE" ||
+			run?.id !== expectedRunId ||
+			!["RUNNING", "ERROR", "STOPPING"].includes(channel.status)
+		)
+			return "unconfirmed";
+		const archived =
+			!run.bitmovinEncodingId && !channel.bitmovinEncodingId
+				? await bindArchivedStopTargetInTransaction(tx, channelId, run.id)
+				: null;
+		const target = archived ?? channel.bitmovinEncodingId;
+		if (!target || (!archived && !liveStopRunOwnsEncoding(run, target)))
+			return "unconfirmed";
+		const open = await tx.liveEffectClaim.findFirst({
+			where: {
+				liveChannelId: channelId,
+				liveChannelRunId: run.id,
+				action: "STOP",
+				state: { in: [...LIVE_EFFECT_OPEN_STATES] },
+			},
+			select: { id: true },
+		});
+		if (open) return "pending";
+		const pending = await tx.liveSchedule.findFirst({
+			where: {
+				liveChannelId: channelId,
+				liveChannelRunId: run.id,
+				action: "STOP",
+				OR: [
+					{ status: "ARMED", fireAt: { lte: now } },
+					{ status: "FIRED", outcome: "PENDING" },
+				],
+			},
+			select: { id: true },
+		});
+		if (pending) return "pending";
+		// A retained pre-upgrade bare probe STOP already marked STOPPING without
+		// creating an effect/outbox. The scheduler's stranded-FIRED dispatcher
+		// recovers it. New requests follow its ordinary ARMED admission.
+		const stranded = channel.status === "STOPPING";
+		await tx.liveSchedule.create({
+			data: {
+				liveChannelId: channelId,
+				liveChannelRunId: run.id,
+				action: "STOP",
+				fireAt: now,
+				...(stranded
+					? {
+							status: "FIRED",
+							firedAt: now,
+							stopProviderEncodingId: target,
+							stopAdmissionFenceVersion: channel.liveEffectFenceVersion,
+						}
+					: { status: "ARMED" }),
+				note: "startup-probe-stop",
+			},
+		});
+		return "scheduled";
+	});
+}
+
 export function createProbeBatchProcessor(deps: ProbeRunnerDeps) {
 	const now = deps.now ?? (() => new Date());
 	const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
 	const pollMs = deps.pollIntervalMs ?? 5_000;
-	const runs = createRunMirror(deps.prisma);
 
 	async function latestRunId(channelId: string): Promise<string | null> {
 		const run = await deps.prisma.liveChannelRun.findFirst({
@@ -213,8 +313,12 @@ export function createProbeBatchProcessor(deps: ProbeRunnerDeps) {
 		channelId: string,
 		region: string,
 		message: string,
+		observedRunId?: string | null,
 	): Promise<void> {
-		const runId = await latestRunId(channelId);
+		const runId =
+			observedRunId === undefined
+				? await latestRunId(channelId)
+				: observedRunId;
 		if (!runId) {
 			await recordNoRunCensored(channelId, region, message);
 			return;
@@ -272,20 +376,6 @@ export function createProbeBatchProcessor(deps: ProbeRunnerDeps) {
 		}
 	}
 
-	async function stopProbe(channelId: string): Promise<void> {
-		const { count } = await deps.prisma.liveChannel.updateMany({
-			where: { id: channelId, status: "RUNNING" },
-			data: { status: "STOPPING" },
-		});
-		if (count === 1) {
-			await runs.mirror(channelId, { status: "STOPPING" }).catch(() => {});
-			await deps.enqueueLiveJob(
-				{ liveChannelId: channelId, action: "stop" },
-				`probe-stop-${channelId}`,
-			);
-		}
-	}
-
 	async function runOneProbe(
 		region: string,
 		name: string,
@@ -294,11 +384,23 @@ export function createProbeBatchProcessor(deps: ProbeRunnerDeps) {
 	): Promise<ProbeOutcome> {
 		const existing = await deps.prisma.liveChannel.findFirst({
 			where: { name, purpose: "PROBE" },
-			select: { id: true, status: true },
+			select: { id: true, ...probeStatusSelect },
 		});
 		let channelId: string;
 		if (existing) {
-			if (existing.status === "STOPPED" || existing.status === "ERROR") {
+			if (
+				(existing.status === "STOPPED" && !existing.error) ||
+				(existing.status === "ERROR" &&
+					!existing.bitmovinEncodingId &&
+					!existing.runs[0]?.bitmovinEncodingId &&
+					!existing.runs[0]?.previousProviderEncodingIds.length &&
+					(await requestProbeStop(
+						deps.prisma,
+						existing.id,
+						existing.runs[0]?.id,
+						now(),
+					)) === "unconfirmed")
+			) {
 				// Resume: this probe already ran to a terminal state.
 				return { region, channelId: existing.id, outcome: "SKIPPED" };
 			}
@@ -361,45 +463,66 @@ export function createProbeBatchProcessor(deps: ProbeRunnerDeps) {
 		for (;;) {
 			const row = await deps.prisma.liveChannel.findUnique({
 				where: { id: channelId },
-				select: { status: true },
+				select: probeStatusSelect,
 			});
-			if (!row) {
-				return { region, channelId, outcome: "FAILED" };
-			}
-			if (row.status === "RUNNING" || row.status === "STOPPING") {
-				// review-pr34 m6: STOPPING is the resume shape after a crash
-				// between the stop claim and the terminal state — the probe
-				// demonstrably REACHED RUNNING (the claim only fires from
-				// RUNNING), so it must land as a RUNNING outcome with its
-				// reap, never ride the deadline into a false CENSORED.
-				if (row.status === "RUNNING") {
-					await stopProbe(channelId);
-				}
-				// Wait (bounded) for the stop to confirm; the sample landed at
-				// finalize either way, and #130 C1's retry-stop exit is the
-				// escape if confirmation never comes.
-				const stopDeadline = now().getTime() + STOP_WAIT_MS;
-				while (now().getTime() < stopDeadline) {
-					const after = await deps.prisma.liveChannel.findUnique({
-						where: { id: channelId },
-						select: { status: true },
-					});
-					if (after?.status === "STOPPED" || after?.status === "ERROR") {
-						break;
+			if (!row) return { region, channelId, outcome: "FAILED" };
+			const run = row.runs[0];
+			const erroredWithEncoder =
+				row.status === "ERROR" &&
+				(row.bitmovinEncodingId ||
+					run?.bitmovinEncodingId ||
+					run?.previousProviderEncodingIds.length ||
+					(await requestProbeStop(deps.prisma, channelId, run?.id, now())) !==
+						"unconfirmed");
+			if (
+				row.status === "RUNNING" ||
+				row.status === "STOPPING" ||
+				erroredWithEncoder ||
+				(row.status === "STOPPED" && row.error)
+			) {
+				const outcome =
+					erroredWithEncoder || row.status === "STOPPED" ? "FAILED" : "RUNNING";
+				const requested = await requestProbeStop(
+					deps.prisma,
+					channelId,
+					run?.id,
+					now(),
+				);
+				if (requested !== "unconfirmed") {
+					const stopDeadline = now().getTime() + STOP_WAIT_MS;
+					while (now().getTime() < stopDeadline) {
+						const after = await deps.prisma.liveChannel.findUnique({
+							where: { id: channelId },
+							select: probeStatusSelect,
+						});
+						if (!after || after.runs[0]?.id !== run?.id) break;
+						if (after.status === "STOPPED" && after.error === null)
+							return {
+								region,
+								channelId,
+								outcome,
+								cleanupError: await reap(channelId, region, designation),
+							};
+						await sleep(pollMs);
 					}
-					await sleep(pollMs);
 				}
-				const cleanupError = await reap(channelId, region, designation);
-				return { region, channelId, outcome: "RUNNING", cleanupError };
+				const cleanupError =
+					"Encoder stop was not confirmed; probe output was retained";
+				await recordCleanupError(
+					channelId,
+					region,
+					cleanupError,
+					run?.id ?? null,
+				);
+				return { region, channelId, outcome, cleanupError };
 			}
 			if (row.status === "ERROR" || row.status === "STOPPED") {
-				// The failure writers (source PROBE) already recorded it; a
-				// reconciler- or operator-driven stop can also land STOPPED
-				// before we ever saw RUNNING. (The encoder-side fuse no longer
-				// fires inside this window — it is 30 min, past the runner's
-				// PROBE_MAX_ABANDON_MINUTES deadline; , review-288 N3.)
-				const cleanupError = await reap(channelId, region, designation);
-				return { region, channelId, outcome: "FAILED", cleanupError };
+				return {
+					region,
+					channelId,
+					outcome: "FAILED",
+					cleanupError: await reap(channelId, region, designation),
+				};
 			}
 			if (now().getTime() > deadlineMs) {
 				await recordCensored(channelId, region).catch(() => {});
@@ -447,61 +570,57 @@ export function createProbeBatchProcessor(deps: ProbeRunnerDeps) {
  * SIGKILLed runner watches nothing. Every sweep tick, stop RUNNING probes
  * older than the fuse-plus-slack window. Best-effort by contract.
  */
-export async function reconcileAbandonedProbes(
-	prisma: AppPrismaClient,
-	enqueueLiveJob: ProbeRunnerDeps["enqueueLiveJob"],
-	now: Date,
-	olderThanMinutes = 3,
-): Promise<number> {
-	const cutoff = new Date(now.getTime() - olderThanMinutes * 60_000);
-	const stuck = await prisma.liveChannel.findMany({
-		where: {
-			purpose: "PROBE",
-			status: "RUNNING",
-			// review-pr34 B2: NOT updatedAt — the heartbeat sweep polls every
-			// RUNNING channel (probes included) and bumps updatedAt every 30s,
-			// so an updatedAt cutoff NEVER fires: the out-of-process teardown
-			// was dead code while the ledger row claimed it worked.
-			// runningSince is an EVENT time (the enforceCaps anchor) — it is
-			// stamped once at RUNNING and never refreshed by observers.
-			runningSince: { not: null, lt: cutoff },
-		},
-		select: { id: true },
-		take: 20,
-	});
-	// review-pr34 Q3: a heartbeat error path can move a probe RUNNING→ERROR
-	// with nobody enqueuing a stop — the encoder keeps its pointer and only
-	// the plan fuses cover it. ERROR rows are OUTSIDE the heartbeat sweep's
-	// population (it polls RUNNING only), so updatedAt is a valid anchor
-	// here, unlike the RUNNING arm above.
-	const errored = await prisma.liveChannel.findMany({
-		where: {
-			purpose: "PROBE",
-			status: "ERROR",
-			bitmovinEncodingId: { not: null },
-			updatedAt: { lt: cutoff },
-		},
-		select: { id: true },
-		take: 20,
-	});
-	let stopped = 0;
-	const runs = createRunMirror(prisma);
-	for (const probe of [
-		...stuck.map((row) => ({ id: row.id, from: "RUNNING" as const })),
-		...errored.map((row) => ({ id: row.id, from: "ERROR" as const })),
-	]) {
-		const { count } = await prisma.liveChannel.updateMany({
-			where: { id: probe.id, status: probe.from },
-			data: { status: "STOPPING" },
+export function createAbandonedProbeSweep(prisma: AppPrismaClient) {
+	let runningAfter: string | undefined;
+	let strandedAfter: string | undefined;
+	return async (now: Date, olderThanMinutes = 3): Promise<number> => {
+		const cutoff = new Date(now.getTime() - olderThanMinutes * 60_000);
+		const stuck = await prisma.liveChannel.findMany({
+			where: {
+				purpose: "PROBE",
+				...(runningAfter ? { id: { gt: runningAfter } } : {}),
+				status: "RUNNING",
+				// review-pr34 B2: NOT updatedAt — the heartbeat sweep polls every
+				// RUNNING channel (probes included) and bumps updatedAt every 30s,
+				// so an updatedAt cutoff NEVER fires: the out-of-process teardown
+				// was dead code while the ledger row claimed it worked.
+				// runningSince is an EVENT time (the enforceCaps anchor) — it is
+				// stamped once at RUNNING and never refreshed by observers.
+				runningSince: { not: null, lt: cutoff },
+			},
+			select: { id: true, runs: probeStatusSelect.runs },
+			orderBy: { id: "asc" },
+			take: 20,
 		});
-		if (count === 1) {
-			await runs.mirror(probe.id, { status: "STOPPING" }).catch(() => {});
-			await enqueueLiveJob(
-				{ liveChannelId: probe.id, action: "stop" },
-				`probe-reconcile-stop-${probe.id}`,
-			);
-			stopped += 1;
+		// review-pr34 Q3: a heartbeat error path can move a probe RUNNING→ERROR
+		// with nobody enqueuing a stop — the encoder keeps its pointer and only
+		// the plan fuses cover it. ERROR rows are OUTSIDE the heartbeat sweep's
+		// population (it polls RUNNING only), so updatedAt is a valid anchor
+		// here, unlike the RUNNING arm above.
+		const errored = await prisma.liveChannel.findMany({
+			where: {
+				purpose: "PROBE",
+				...(strandedAfter ? { id: { gt: strandedAfter } } : {}),
+				status: { in: ["ERROR", "STOPPING"] },
+				// Legacy rows can retain their only encoder in a run log or a
+				// closed claim. The bounded cursor and exact run check also cover them.
+				updatedAt: { lt: cutoff },
+			},
+			select: { id: true, runs: probeStatusSelect.runs },
+			orderBy: { id: "asc" },
+			take: 20,
+		});
+		let scheduled = 0;
+		for (const probe of [...stuck, ...errored]) {
+			if (
+				(await requestProbeStop(prisma, probe.id, probe.runs[0]?.id, now)) ===
+				"scheduled"
+			)
+				scheduled++;
 		}
-	}
-	return stopped;
+		// Pending confirmations can remain visible for days. Continue beyond them next tick.
+		runningAfter = stuck.length === 20 ? stuck.at(-1)?.id : undefined;
+		strandedAfter = errored.length === 20 ? errored.at(-1)?.id : undefined;
+		return scheduled;
+	};
 }

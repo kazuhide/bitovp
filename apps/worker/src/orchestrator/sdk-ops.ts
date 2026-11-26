@@ -13,6 +13,7 @@ import type {
 	ScannedMuxing,
 	ScannedStream,
 	ScanPage,
+	StreamCondition,
 	VerificationEncodingIdentity,
 	VP9DetailControls,
 } from "@bitovp/core";
@@ -526,7 +527,10 @@ export type Scte35CueParams = {
 
 export type SdkOps = {
 	createAisaLiveAnalysis(request: AisaLiveCreateRequest): Promise<string>;
-	getAisaLiveAnalysis(analysisId: string): Promise<AisaLiveAnalysis>;
+	getAisaLiveAnalysis(
+		analysisId: string,
+		includeFinalResult?: boolean,
+	): Promise<AisaLiveAnalysis>;
 	startAisaLiveAnalysis(
 		analysisId: string,
 		encodingId: string,
@@ -754,6 +758,33 @@ export type SdkOps = {
 			metadataInputPath?: string;
 		},
 	): Promise<string>;
+	createCea608InputStream(
+		encodingId: string,
+		p: { inputId: string; inputPath: string; channel: "CC1" | "CC3" },
+	): Promise<string>;
+	createCea708InputStream(
+		encodingId: string,
+		p: { inputId: string; inputPath: string; channel?: number },
+	): Promise<string>;
+	createDvbSubtitleInputStream(
+		encodingId: string,
+		p: {
+			inputId: string;
+			inputPath: string;
+			selectionMode: "AUTO" | "POSITION_ABSOLUTE" | "SUBTITLE_RELATIVE";
+			position?: number;
+		},
+	): Promise<string>;
+	createHdr10PlusInputStream(
+		encodingId: string,
+		p: {
+			inputId: string;
+			videoInputPath: string;
+			metadataInputPath: string;
+			selectionMode: "AUTO" | "POSITION_ABSOLUTE" | "VIDEO_RELATIVE";
+			position?: number;
+		},
+	): Promise<string>;
 	createDolbyVisionMetadataInputStream(
 		encodingId: string,
 		p: { inputId: string; inputPath: string },
@@ -798,6 +829,8 @@ export type SdkOps = {
 	createH265Config(p: H265ConfigParams): Promise<string>;
 	createVp9Config(p: Vp9ConfigParams): Promise<string>;
 	createAv1Config(p: Av1ConfigParams): Promise<string>;
+	createHeAacV1Config(p: import("@bitovp/core").HeAacV1Config): Promise<string>;
+	createHeAacV2Config(p: import("@bitovp/core").HeAacV2Config): Promise<string>;
 	createAacConfig(p: {
 		cutoffFrequency?: number;
 		name?: string;
@@ -841,6 +874,24 @@ export type SdkOps = {
 		rate: number;
 		channelLayout: string;
 	}): Promise<string>;
+	createPcmConfig(p: {
+		name: string;
+		bitrate: number;
+		rate?: number;
+		sampleFormat?: string;
+		channelLayout?: string;
+		presetConfiguration?: string;
+	}): Promise<string>;
+	createPassthroughAudioConfig(p: { name: string }): Promise<string>;
+	createProgressiveWavMuxing(
+		encodingId: string,
+		p: {
+			streamId: string;
+			filename: string;
+			destination?: Destination;
+			name?: string;
+		},
+	): Promise<string>;
 	createOpusConfig(p: {
 		name?: string;
 		bitrate: number;
@@ -866,7 +917,7 @@ export type SdkOps = {
 			position?: number;
 			name: string;
 			mode: string;
-			conditions?: { attribute: string; operator: string; value: string };
+			conditions?: StreamCondition;
 			/** SDK-shaped StreamPerTitleSettings (plain object; SDK maps it). */
 			perTitleSettings?: Record<string, unknown>;
 		},
@@ -1644,7 +1695,7 @@ export type SdkOps = {
 	listMuxingDrm(
 		encodingId: string,
 		muxingId: string,
-		muxingKind: AvMuxingKind,
+		muxingKind: AvMuxingKind | "PROGRESSIVE_TS" | "PROGRESSIVE_WEBM",
 		drmKind: "CENC" | "FAIRPLAY" | "SPEKE",
 	): Promise<{ id: string; outputPath?: string }[]>;
 	// --- live (P3-PR2) ---
@@ -1861,7 +1912,14 @@ export function createBitmovinSdkOps(
 		? createOrphanStopFetch()
 		: options.monitoringSignal
 			? createMonitoringFetch(options.monitoringSignal)
-			: createRetryingFetch();
+			: createRetryingFetch({
+					// A later denial cannot settle an earlier lost POST. Journaled Live
+					// children reconcile that first attempt through their exact stamp.
+					retryMutations: () =>
+						!options.stamp?.beforeMutation &&
+						!options.stamp?.childCreateJournal?.(),
+					childCreateJournal: options.stamp?.childCreateJournal,
+				});
 	const liveStartFetch = createLiveStartFetch(
 		options.stamp ? createStampingFetch(retrying, options.stamp) : retrying,
 	);

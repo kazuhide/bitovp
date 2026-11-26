@@ -6,7 +6,11 @@
  * monolithic one did. The default is unreachable by construction.
  */
 import type { CompiledOperation } from "@bitovp/core";
-import { filterParameters, mediaFilterSchema } from "@bitovp/core";
+import {
+	filterParameters,
+	mediaFilterSchema,
+	streamConditionSchema,
+} from "@bitovp/core";
 import type { StepResult } from "../executor";
 import type { ExecStepContext } from "./exec-shared";
 import {
@@ -36,6 +40,8 @@ export async function executeMediaStep(
 				operation: op,
 				encodingId,
 			});
+			if (p.requireAudioCapture === true && !captured)
+				throw new Error("AUDIO_COPY_INPUT_UNVERIFIED");
 			const resourceId = await ctx.sdk.createIngestInputStream(encodingId, {
 				inputId: captured?.inputId ?? refId(op, ctx, "inputId"),
 				inputPath: captured?.inputPath ?? str(p.inputPath),
@@ -44,7 +50,16 @@ export async function executeMediaStep(
 			});
 			return {
 				resourceId,
-				request,
+				request:
+					p.requireAudioCapture && captured
+						? {
+								inputPath: captured.inputPath,
+								inputId: captured.inputId,
+								selectionMode: p.selectionMode,
+								position: p.position,
+								refs: { encodingId },
+							}
+						: request,
 				response: {
 					id: resourceId,
 					...(captured
@@ -100,6 +115,85 @@ export async function executeMediaStep(
 					inputId: refId(op, ctx, "inputId"),
 					videoInputPath: str(p.videoInputPath),
 					metadataInputPath: optStr(p.metadataInputPath),
+				},
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+
+		case "CREATE_CEA608_INPUT_STREAM":
+		case "CREATE_CEA708_INPUT_STREAM":
+		case "CREATE_DVB_SUBTITLE_INPUT_STREAM": {
+			const encodingId = refId(op, ctx, "encodingId");
+			const source = {
+				inputId: refId(op, ctx, "inputId"),
+				inputPath: str(p.inputPath),
+			};
+			let resourceId: string;
+			if (op.kind === "CREATE_CEA608_INPUT_STREAM") {
+				if (p.channel !== "CC1" && p.channel !== "CC3")
+					throw new Error("CEA-608 requires channel CC1 or CC3");
+				resourceId = await ctx.sdk.createCea608InputStream(encodingId, {
+					...source,
+					channel: p.channel,
+				});
+			} else if (op.kind === "CREATE_CEA708_INPUT_STREAM") {
+				const channel = p.channel;
+				if (
+					channel !== undefined &&
+					(typeof channel !== "number" ||
+						!Number.isInteger(channel) ||
+						channel < 1 ||
+						channel > 63)
+				)
+					throw new Error("CEA-708 service must be between 1 and 63");
+				resourceId = await ctx.sdk.createCea708InputStream(encodingId, {
+					...source,
+					...(channel !== undefined ? { channel } : {}),
+				});
+			} else {
+				const { selectionMode, position } = p;
+				if (
+					selectionMode !== "AUTO" &&
+					selectionMode !== "POSITION_ABSOLUTE" &&
+					selectionMode !== "SUBTITLE_RELATIVE"
+				)
+					throw new Error("Invalid DVB subtitle selection mode");
+				if (
+					position !== undefined &&
+					(selectionMode === "AUTO" ||
+						typeof position !== "number" ||
+						!Number.isInteger(position) ||
+						position < 0 ||
+						position > 2147483647)
+				)
+					throw new Error("Invalid DVB subtitle position");
+				resourceId = await ctx.sdk.createDvbSubtitleInputStream(encodingId, {
+					...source,
+					selectionMode,
+					...(position !== undefined ? { position } : {}),
+				});
+			}
+			return { resourceId, request, response: { id: resourceId } };
+		}
+		case "CREATE_HDR10_PLUS_INPUT_STREAM": {
+			const selectionMode = str(p.selectionMode);
+			if (
+				selectionMode !== "AUTO" &&
+				selectionMode !== "POSITION_ABSOLUTE" &&
+				selectionMode !== "VIDEO_RELATIVE"
+			) {
+				throw new Error(`Invalid HDR10+ selection mode: ${selectionMode}`);
+			}
+			const resourceId = await ctx.sdk.createHdr10PlusInputStream(
+				refId(op, ctx, "encodingId"),
+				{
+					inputId: refId(op, ctx, "inputId"),
+					videoInputPath: str(p.videoInputPath),
+					metadataInputPath: str(p.metadataInputPath),
+					selectionMode,
+					...(selectionMode !== "AUTO" && p.position !== undefined
+						? { position: num(p.position, 0) }
+						: {}),
 				},
 			);
 			return { resourceId, request, response: { id: resourceId } };
@@ -234,9 +328,10 @@ export async function executeMediaStep(
 					position: typeof p.position === "number" ? p.position : undefined,
 					name: str(p.name),
 					mode: str(p.mode),
-					conditions: p.conditions as
-						| { attribute: string; operator: string; value: string }
-						| undefined,
+					conditions:
+						p.conditions === undefined
+							? undefined
+							: streamConditionSchema.parse(p.conditions),
 					perTitleSettings: p.perTitleSettings as
 						| Record<string, unknown>
 						| undefined,
@@ -258,6 +353,12 @@ export async function executeMediaStep(
 			return { resourceId, request, response: { id: resourceId } };
 		}
 
+		case "CREATE_FILTER_ENHANCED_DEINTERLACE":
+		case "CREATE_FILTER_CONFORM":
+		case "CREATE_FILTER_INTERLACE":
+		case "CREATE_FILTER_ENHANCED_WATERMARK":
+		case "CREATE_FILTER_DOLBY_LOUDNESS":
+		case "CREATE_FILTER_AUDIO_MIX":
 		case "CREATE_FILTER_DENOISE_HQDN3D":
 		case "CREATE_FILTER_UNSHARP":
 		case "CREATE_FILTER_CROP":
@@ -274,7 +375,7 @@ export async function executeMediaStep(
 				kind: op.kind.replace("CREATE_FILTER_", ""),
 			});
 			const payload = filterParameters(filter);
-			if (filter.kind === "WATERMARK") {
+			if (filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK") {
 				delete payload.inputKey;
 				delete payload.imagePath;
 				payload.image = await signWatermarkImage(
@@ -450,6 +551,19 @@ export async function executeMediaStep(
 				{
 					streamId: refId(op, ctx, "streamId"),
 					additionalStreamIds: refIdList(op, ctx, "additionalStreamIds"),
+					filename: str(p.filename),
+					destination: destinationOf(op, ctx),
+					name: optStr(p.name),
+				},
+			);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+
+		case "CREATE_MUXING_PROGRESSIVE_WAV": {
+			const resourceId = await ctx.sdk.createProgressiveWavMuxing(
+				refId(op, ctx, "encodingId"),
+				{
+					streamId: refId(op, ctx, "streamId"),
 					filename: str(p.filename),
 					destination: destinationOf(op, ctx),
 					name: optStr(p.name),

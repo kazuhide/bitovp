@@ -209,6 +209,14 @@ describe("selected reset", () => {
 				stepLog: [{ kind: "CREATE_ENCODING", resourceId: "sibling" }],
 			},
 		]);
+		f.tables.liveChannelRun?.findMany.mockResolvedValue([
+			{
+				id: "retained-run",
+				previousProviderEncodingIds: ["rtmp-older"],
+				liveChannel: { bitmovinAccountId: "account" },
+				stepLog: [],
+			},
+		]);
 		const intent = (id: string, providerIds: string[], extra = {}) => ({
 			id,
 			kind: "VOD_JOB",
@@ -225,7 +233,7 @@ describe("selected reset", () => {
 			intent("canonical", ["canonical-owned"], {
 				possiblyCreatedKeys: ["local:VOD_JOB:by-canonical"],
 			}),
-			intent("direct", ["direct", "sibling"]),
+			intent("direct", ["direct", "sibling", "rtmp-older"]),
 			intent("orphan", [], {
 				possiblyCreatedKeys: ["provider:BITMOVIN_ENCODING:orphan-canonical"],
 			}),
@@ -241,6 +249,7 @@ describe("selected reset", () => {
 				entityKey: "encodingJob:verification-intent:orphan",
 				accountId: "account",
 				encodingId: "orphan-canonical",
+				verificationOwnerCheck: true,
 			},
 		]);
 		expect(saved.verificationIntents).toHaveLength(4);
@@ -252,6 +261,7 @@ describe("selected reset", () => {
 		f.tables.verificationResourceIntent?.findMany.mockResolvedValue([
 			{
 				id: "intent-retained",
+				verificationKey: "fixture:retained",
 				kind: "VOD_JOB",
 				localId: "retained",
 				providerId: "retained-provider",
@@ -260,6 +270,7 @@ describe("selected reset", () => {
 			},
 			{
 				id: "intent-orphan",
+				verificationKey: "fixture:orphan",
 				kind: "VOD_JOB",
 				localId: "orphan",
 				providerId: "orphan-provider",
@@ -268,6 +279,7 @@ describe("selected reset", () => {
 			},
 			{
 				id: "intent-ambiguous",
+				verificationKey: "fixture:ambiguous",
 				kind: "VOD_JOB",
 				localId: null,
 				providerId: "unbound-provider",
@@ -540,7 +552,7 @@ describe("selected reset", () => {
 		["verificationHistory", "verificationRun"],
 		["storageChecks", "storageInspection"],
 		["liveSchedules", "slateNormalization"],
-		["liveSchedules", "liveEffectClaim"],
+		["liveSchedules", "liveSchedule"],
 	] as const)("deletes selected %s even when work remains", async (category, model) => {
 		const f = fixture();
 		f.tables[model]?.count.mockResolvedValue(1);

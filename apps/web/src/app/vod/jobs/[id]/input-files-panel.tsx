@@ -60,6 +60,15 @@ function formatSegment(
 				kind: segment.dolbyKind,
 				detail: segment.detail ?? "",
 			});
+		case "hdr10-plus":
+			return segment.detail === "metadata"
+				? t("jobDetail.chainHdr10PlusMetadata")
+				: segment.selectionMode === "AUTO"
+					? t("jobDetail.chainHdr10PlusVideoAuto")
+					: t("jobDetail.chainHdr10PlusVideo", {
+							mode: segment.selectionMode,
+							position: segment.position ?? 0,
+						});
 		case "trim":
 			return t("jobDetail.chainTrim", { kind: segment.trimKind });
 		case "concat":
@@ -130,7 +139,9 @@ function InspectChips({ target }: { target: InspectTarget }) {
 export function InputFilesPanel({
 	files,
 	credentialRefs,
+	privatePaths,
 }: {
+	privatePaths?: ReadonlySet<string>;
 	files: InputFileSummary[];
 	credentialRefs: Record<string, { label: string; provider: string }>;
 }) {
@@ -150,6 +161,7 @@ export function InputFilesPanel({
 			</h2>
 			<ul className="mt-2 space-y-2">
 				{files.map((file) => {
+					const hidden = privatePaths?.has(file.inputPath) ?? false;
 					const ref =
 						file.credentialId !== undefined
 							? credentialRefs[file.credentialId]
@@ -158,7 +170,7 @@ export function InputFilesPanel({
 					// to sign a storage read with, so no Inspect and no chips (the
 					// design's own carve-out, same reason it has no credential row).
 					const target: InspectTarget | null =
-						file.credentialId !== undefined
+						!hidden && file.credentialId !== undefined
 							? {
 									credentialId: file.credentialId,
 									bucket: file.location,
@@ -199,13 +211,19 @@ export function InputFilesPanel({
 							{/* The full addressable path, copyable — an operator checking a
 							    source pastes this into a CLI, so it must be one string. */}
 							<div className="mt-1">
-								<CopyableId
-									value={
-										file.location
-											? `${file.location}/${file.inputPath}`
-											: file.inputPath
-									}
-								/>
+								{hidden ? (
+									<span className="text-xs text-zinc-400">
+										{t("jobDetail.withheldInputPath")}
+									</span>
+								) : (
+									<CopyableId
+										value={
+											file.location
+												? `${file.location}/${file.inputPath}`
+												: file.inputPath
+										}
+									/>
+								)}
 							</div>
 							<ul className="mt-1 space-y-0.5">
 								{file.consumers.map((consumer) => (

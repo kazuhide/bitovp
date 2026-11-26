@@ -13,9 +13,10 @@ vi.mock("@bitovp/storage", async (orig) => ({
 }));
 
 import {
+	createAbandonedProbeSweep,
 	createProbeBatchProcessor,
 	PROBE_SETTING_KEY,
-	reconcileAbandonedProbes,
+	requestProbeStop,
 } from "./probe-runner";
 
 /**
@@ -62,10 +63,52 @@ function makeWorld(
 	}> = [];
 	const events: string[] = [];
 	const runsByChannel = new Map<string, { id: string }>();
+	for (const c of channels) {
+		if (c.status !== "CREATED") runsByChannel.set(c.id, { id: `run-${c.id}` });
+	}
+	function project(c: FakeChannel | undefined) {
+		if (!c) return null;
+		const run = runsByChannel.get(c.id);
+		return {
+			...c,
+			error: null,
+			runs: run
+				? [
+						{
+							...run,
+							bitmovinEncodingId: c.bitmovinEncodingId ?? null,
+							previousProviderEncodingIds: [],
+						},
+					]
+				: [],
+		};
+	}
+	const schedules: Array<Record<string, unknown>> = [];
 	const script = opts.script ?? [];
 	let scriptIndex = 0;
 
 	const prisma = {
+		$transaction: async <T>(work: (db: unknown) => Promise<T>) => work(prisma),
+		$queryRaw: vi.fn(async () => []),
+		liveEffectClaim: { findFirst: vi.fn(async () => null) },
+		liveSchedule: {
+			findFirst: vi.fn(
+				async ({
+					where,
+				}: {
+					where: { liveChannelId: string; liveChannelRunId: string };
+				}) =>
+					schedules.find(
+						(r) =>
+							r.liveChannelId === where.liveChannelId &&
+							r.liveChannelRunId === where.liveChannelRunId,
+					) ?? null,
+			),
+			create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+				schedules.push(data);
+				return data;
+			}),
+		},
 		appSetting: {
 			findUnique: vi.fn(async ({ where }: { where: { key: string } }) =>
 				where.key === PROBE_SETTING_KEY && opts.designation !== null
@@ -74,20 +117,21 @@ function makeWorld(
 			),
 		},
 		liveChannel: {
-			findFirst: vi.fn(
-				async ({ where }: { where: { name: string } }) =>
-					channels.find((c) => c.name === where.name) ?? null,
+			findFirst: vi.fn(async ({ where }: { where: { name: string } }) =>
+				project(channels.find((c) => c.name === where.name)),
 			),
 			findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
 				const hit = channels.find((c) => c.id === where.id);
-				return hit ? { status: hit.status } : null;
+				return project(hit);
 			}),
 			findMany: vi.fn(
 				async ({
 					where,
 				}: {
 					where: {
-						status?: string;
+						id?: { gt: string };
+						status?: string | { in: string[] };
+						OR?: unknown[];
 						runningSince?: { not: null; lt: Date };
 						bitmovinEncodingId?: { not: null };
 						updatedAt?: { lt: Date };
@@ -97,7 +141,12 @@ function makeWorld(
 						.filter(
 							(c) =>
 								c.purpose === "PROBE" &&
-								(!where.status || c.status === where.status) &&
+								(!where.id || c.id > where.id.gt) &&
+								(!where.status ||
+									(typeof where.status === "string"
+										? c.status === where.status
+										: where.status.in.includes(c.status))) &&
+								(!where.OR || !!c.bitmovinEncodingId) &&
 								(!where.runningSince ||
 									(c.runningSinceMs != null &&
 										c.runningSinceMs < where.runningSince.lt.getTime())) &&
@@ -105,7 +154,9 @@ function makeWorld(
 								(!where.updatedAt ||
 									c.updatedAtMs < where.updatedAt.lt.getTime()),
 						)
-						.map((c) => ({ id: c.id })),
+						.sort((a, b) => a.id.localeCompare(b.id))
+						.slice(0, 20)
+						.map((c) => project(c)),
 			),
 			create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
 				const created: FakeChannel = {
@@ -207,6 +258,8 @@ function makeWorld(
 				scriptIndex += 1;
 				if (next && next !== "-") {
 					target.status = next;
+					if (next === "RUNNING")
+						target.bitmovinEncodingId = `encoding-${target.id}`;
 					target.updatedAtMs = clock;
 					events.push(`worker:${target.name}:${next}`);
 				}
@@ -221,6 +274,7 @@ function makeWorld(
 		samples,
 		enqueued,
 		events,
+		schedules,
 		clockMs: () => clock,
 		advance: (ms: number) => {
 			clock += ms;
@@ -245,10 +299,7 @@ describe("probe batch runner", () => {
 			outcomes: Array<Record<string, unknown>>;
 		};
 		expect(result.outcomes[0]).toMatchObject({ outcome: "RUNNING" });
-		expect(world.enqueued.map((e) => e.job.action)).toEqual([
-			"provision",
-			"stop",
-		]);
+		expect(world.enqueued.map((e) => e.job.action)).toEqual(["provision"]);
 		const channelId = world.channels[0]?.id as string;
 		// The reap scope is the designated area + THIS probe — never wider.
 		expect(deleteUnderPrefix).toHaveBeenCalledWith({
@@ -256,9 +307,14 @@ describe("probe batch runner", () => {
 			prefix: `probes/startup/${channelId}/`,
 		});
 		// The stop rode a claim, not a bare enqueue.
-		expect(world.events).toContain(
-			`claim:probe-11111111-AWS_AP_NORTHEAST_1-1:STOPPING`,
-		);
+		expect(world.schedules).toEqual([
+			expect.objectContaining({
+				liveChannelId: channelId,
+				liveChannelRunId: `run-${channelId.slice(0, 4)}`,
+				action: "STOP",
+				status: "ARMED",
+			}),
+		]);
 	});
 
 	it("abandon deadline: still PROVISIONING past the deadline records CENSORED and moves on", async () => {
@@ -389,7 +445,63 @@ describe("probe batch runner", () => {
 	});
 });
 
-describe("reconcileAbandonedProbes", () => {
+describe("abandoned probe recovery", () => {
+	it("reaches a later probe beyond a page of pending stops", async () => {
+		const channels = Array.from({ length: 21 }, (_, n) => ({
+			id: `probe-${String(n).padStart(2, "0")}`,
+			name: `probe-${n}`,
+			status: "RUNNING",
+			purpose: "PROBE",
+			runningSinceMs: 0,
+			createdAtMs: 0,
+			updatedAtMs: 0,
+			bitmovinEncodingId: `encoder-${n}`,
+		}));
+		const world = makeWorld({ channels });
+		const sweep = createAbandonedProbeSweep(
+			world.prisma as unknown as AppPrismaClient,
+		);
+		expect(await sweep(new Date(600_000))).toBe(20);
+		expect(await sweep(new Date(600_000))).toBe(1);
+		expect(world.schedules.at(-1)?.liveChannelId).toBe("probe-20");
+	});
+	it("reconstructs an open fired handoff for an old STOPPING probe and never schedules its successor", async () => {
+		const channel = {
+			id: "old-probe",
+			purpose: "PROBE",
+			name: "old",
+			status: "STOPPING",
+			bitmovinEncodingId: "enc",
+			createdAtMs: 0,
+			updatedAtMs: 0,
+		};
+		const world = makeWorld({ channels: [channel] });
+		const db = world.prisma as unknown as AppPrismaClient;
+		expect(await requestProbeStop(db, channel.id, "old-run", new Date())).toBe(
+			"unconfirmed",
+		);
+		expect(
+			await requestProbeStop(db, channel.id, "run-old-probe", new Date()),
+		).toBe("scheduled");
+		expect(
+			await requestProbeStop(db, channel.id, "run-old-probe", new Date()),
+		).toBe("pending");
+		expect(world.schedules).toEqual([
+			expect.objectContaining({
+				liveChannelRunId: "run-old-probe",
+				action: "STOP",
+				status: "FIRED",
+				firedAt: expect.any(Date),
+			}),
+		]);
+	});
+	it("reports an unconfirmed stop after the deadline and retains output while a queued action is refused", async () => {
+		const world = makeWorld({ script: ["RUNNING"] });
+		const result = await world.processor(BATCH);
+		expect(result.outcomes[0]?.cleanupError).toMatch(/stop was not confirmed/);
+		expect(deleteUnderPrefix).not.toHaveBeenCalled();
+	});
+
 	it("also stops an ERROR probe still holding an encoding pointer (review-pr34 Q3) — and leaves pointer-less ERROR rows alone", async () => {
 		const world = makeWorld({
 			channels: [
@@ -414,17 +526,18 @@ describe("reconcileAbandonedProbes", () => {
 				},
 			],
 		});
-		const enqueued: Array<{ action: string }> = [];
-		const stopped = await reconcileAbandonedProbes(
+		const stopped = await createAbandonedProbeSweep(
 			world.prisma as unknown as AppPrismaClient,
-			async (job) => {
-				enqueued.push({ action: job.action });
-			},
-			new Date(10 * 60_000),
-		);
+		)(new Date(10 * 60_000));
 		expect(stopped).toBe(1);
-		expect(enqueued).toEqual([{ action: "stop" }]);
-		expect(world.channels[0]?.status).toBe("STOPPING");
+		expect(world.schedules).toEqual([
+			expect.objectContaining({
+				action: "STOP",
+				status: "ARMED",
+				liveChannelRunId: `run-${world.channels[0]?.id}`,
+			}),
+		]);
+		expect(world.channels[0]?.status).toBe("ERROR");
 		expect(world.channels[1]?.status).toBe("ERROR");
 	});
 
@@ -438,6 +551,7 @@ describe("reconcileAbandonedProbes", () => {
 				{
 					id: "zombie-1",
 					name: "probe-dead-runner-1",
+					bitmovinEncodingId: "encoder",
 					purpose: "PROBE",
 					status: "RUNNING",
 					createdAtMs: 0,
@@ -458,17 +572,18 @@ describe("reconcileAbandonedProbes", () => {
 				},
 			],
 		});
-		const enqueued: Array<{ action: string }> = [];
-		const stopped = await reconcileAbandonedProbes(
+		const stopped = await createAbandonedProbeSweep(
 			world.prisma as unknown as AppPrismaClient,
-			async (job) => {
-				enqueued.push({ action: job.action });
-			},
-			new Date(10 * 60_000),
-		);
+		)(new Date(10 * 60_000));
 		expect(stopped).toBe(1);
-		expect(enqueued).toEqual([{ action: "stop" }]);
-		expect(world.channels[0]?.status).toBe("STOPPING");
+		expect(world.schedules).toEqual([
+			expect.objectContaining({
+				action: "STOP",
+				status: "ARMED",
+				liveChannelRunId: `run-${world.channels[0]?.id}`,
+			}),
+		]);
+		expect(world.channels[0]?.status).toBe("RUNNING");
 		expect(world.channels[1]?.status).toBe("RUNNING");
 	});
 });

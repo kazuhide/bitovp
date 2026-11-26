@@ -16,6 +16,118 @@ afterEach(() => {
 });
 
 describe("makeWorkerSdk — the production seam, to the wire", () => {
+	it("keeps signed status response bodies out of both SDK failure projections", async () => {
+		const wire = vi.fn(async () =>
+			Response.json(
+				{
+					requestId: "support-reference",
+					data: {
+						message: "Source unreadable",
+						code: 403,
+						developerMessage: "Read media.mxf?token=PRIVATE_FIXTURE",
+					},
+				},
+				{ status: 403 },
+			),
+		);
+		vi.stubGlobal("fetch", wire);
+		const ops = makeWorkerSdk({
+			auditLog: { create: vi.fn() },
+		} as unknown as AppPrismaClient)({
+			apiKey: "fixture",
+			tenantOrgId: null,
+			bitmovinAccountId: "account",
+		});
+		for (const read of [ops.getEncodingStatus, ops.getEncodingMessages]) {
+			const failure = await read("enc-1").catch((err: Error) => err);
+			expect(failure).toMatchObject({
+				httpStatusCode: 403,
+				developerMessage: "[withheld]",
+				requestId: "support-reference",
+				message: expect.stringContaining("Source unreadable"),
+			});
+			expect((failure as Error).stack).not.toContain("PRIVATE_FIXTURE");
+			expect((failure as Error).message).not.toContain("PRIVATE_FIXTURE");
+		}
+		expect(wire).toHaveBeenCalledTimes(2);
+	});
+	it("sends Dolby Vision source paths to the local transport while keeping an unsuccessful provider audit public-safe", async () => {
+		const bodies: unknown[] = [];
+		const videoInputPath = "///reels:day@night/take.mxf";
+		const network = "meta.xml?ticket=PRIVATE_SAMPLE";
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (_url: unknown, init?: { body?: string }) => {
+				bodies.push(JSON.parse(init?.body ?? "{}"));
+				return Response.json(
+					{ data: { code: 403, message: "Input unavailable" } },
+					{ status: 403 },
+				);
+			}),
+		);
+		const create = vi.fn(async (_args: unknown) => ({}));
+		const ops = makeWorkerSdk({
+			auditLog: { create },
+		} as unknown as AppPrismaClient)({
+			apiKey: "fixture",
+			tenantOrgId: null,
+			bitmovinAccountId: "account",
+		});
+		await expect(
+			ops.createDolbyVisionInputStream("enc", {
+				inputId: "input",
+				videoInputPath,
+				metadataInputPath: network,
+			}),
+		).rejects.toThrow();
+		expect(bodies).toEqual([
+			expect.objectContaining({
+				inputId: "input",
+				videoInputPath,
+				metadataInputPath: network,
+			}),
+		]);
+		expect(create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					request: {
+						videoInputPath: "[REDACTED]",
+						metadataInputPath: "[REDACTED]",
+					},
+				}),
+			}),
+		);
+		expect(JSON.stringify(create.mock.calls)).not.toContain("PRIVATE_SAMPLE");
+	});
+	it("keeps relative HTTPS query strings out of ordinary ingest SDK audits", async () => {
+		const create = vi.fn(async (_args: unknown) => ({})),
+			inputPath = "src/take.mov?ticket=INGEST_SAMPLE";
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (_url: unknown, init?: { body?: string }) => {
+				expect(JSON.parse(init?.body ?? "{}")).toHaveProperty(
+					"inputPath",
+					inputPath,
+				);
+				return Response.json({ data: { result: { id: "ingest" } } });
+			}),
+		);
+		const sdk = makeWorkerSdk({
+			auditLog: { create },
+		} as unknown as AppPrismaClient)({
+			apiKey: "fixture",
+			tenantOrgId: null,
+			bitmovinAccountId: "account",
+		});
+		await sdk.createIngestInputStream("enc", {
+			inputId: "https",
+			inputPath,
+			selectionMode: "AUTO",
+			position: 0,
+		});
+		expect(create).toHaveBeenCalledTimes(1);
+		expect(JSON.stringify(create.mock.calls)).not.toContain("INGEST_SAMPLE");
+	});
 	it("forwards the monitoring deadline through status and heartbeat to native fetch", async () => {
 		const controller = new AbortController();
 		const signals: (AbortSignal | null | undefined)[] = [];

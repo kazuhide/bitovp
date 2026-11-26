@@ -48,7 +48,7 @@ dev SDK `1.289.0-develop.4d2bbf1d` には `StartLiveEncodingRequest.aiSceneAnaly
 
 ## 実装方針
 
-- 本流は公開 `@bitmovin/api-sdk@1.288.0` を維持する。
+- 通常の Web と Worker には公開版の `@bitmovin/api-sdk@1.289.0` を使用する。
 - Preview は `@bitmovin-internal/api-sdk@1.289.0-develop.4d2bbf1d` の専用クライアントを使う。private registry 依存を通常 install に追加せず、管理者が別途インストールしたパッケージを server の `BITOVP_AISA_LIVE_SDK_PATH` で指定する。未指定時は通常の Node 解決を試す。版の不一致または未インストールは明示的な 503 とする。
 - `BITOVP_AISA_LIVE_PREVIEW=true` のときだけ UI/API を公開する。既定は無効。API 側でも gate を評価する。
 - AICA の organization-scoped Analysis resource と provider の Encoding 状態を読み、bitovp の LiveChannel/LiveChannelRun に実行単位の Analysis identity・最終状態・最後の有効 snapshot を関連付ける。再放送で結果を混ぜない。API key は server の account store からだけ取得する。

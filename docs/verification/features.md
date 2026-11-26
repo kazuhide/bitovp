@@ -23,7 +23,7 @@ credentials and use a fixed test list, two Vitest workers, and a 120-second limi
 | Feature | User path represented | Contract checked | Not established |
 |---|---|---|---|
 | `access-isolation` | Submit a protected request as a user or token | Role admission and authenticated tenant context | Live cookies, PostgreSQL row-level security |
-| `submission-idempotency` | Submit or repeat a VOD or Live creation request | Request identity, route validation and persistence-adapter behavior | Concurrent database writes, actual encoding |
+| `submission-idempotency` | Submit or repeat a VOD, Live or single-pass feeder creation request | Request identity, route validation and persistence-adapter behavior | Concurrent database writes, actual encoding |
 | `vod-timeline` | Overwrite an audio or video track, snap an edit and retain packaging | Independent tracks, snapping and HLS/DASH plan compilation | Browser pointer fidelity, actual media playback |
 | `live-lifecycle` | Start, cancel, poll or re-air a Live channel | Run ownership, stale provider observations and cancellation recovery | Actual provider state or billing, PostgreSQL locking |
 | `library-render-recovery` | Resume a composition or derivative after cancellation or lease loss | Source identity, render ownership and adoption of recovered output | Real storage, render fidelity, PostgreSQL locking |

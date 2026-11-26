@@ -12,6 +12,7 @@ import {
 	loadEnv,
 	ociCompatHost,
 	parseSecretEgressAllowlist,
+	publicStorageDiagnostic,
 	relativeSegmentPath,
 } from "@bitovp/core";
 import type { ExecutorContext } from "../executor";
@@ -24,6 +25,8 @@ import type {
 	MuxingSummary,
 	TaskStatusResult,
 } from "../sdk-ops";
+
+import { BitmovinCallError, isMissingInputMessage } from "./shared";
 
 export type ExecStepContext = {
 	ctx: ExecutorContext;
@@ -89,8 +92,11 @@ export async function diagnoseLiveStartFailure(
 	const base = err instanceof Error ? err : new Error(String(err));
 	// Input-not-found only (Bitmovin 2025): require BOTH an input mention and a
 	// not-found phrase so benign "invalid input parameter" errors pass through.
-	const msg = base.message;
-	if (!/input/i.test(msg) || !/could not be found|not found/i.test(msg)) {
+	const missingInput =
+		base instanceof BitmovinCallError
+			? base.inputNotFound
+			: isMissingInputMessage(base.message);
+	if (!missingInput) {
 		return base;
 	}
 	// GROUND TRUTH: the inputId frozen into the encoding's ingest input streams
@@ -123,7 +129,7 @@ export async function diagnoseLiveStartFailure(
 			.map(([, id]) => id)
 			.join(", ") || "unknown";
 	return new Error(
-		`${base.message} | live-start input diagnosis — encoding's ingest streams reference [${baked}]; account RTMP inputs currently resolvable [${resolvable}]; this run resolved [${resolvedNow}]. If the baked id is not in the resolvable set, the account's RTMP input id changed/was replaced between provisioning and start (an unstable or MULTIPLE default RTMP input) — recreating the channel won't help until the account has exactly one stable RTMP input. If account shows >1 RTMP input, resolve-by-list is ambiguous and must be disambiguated.`,
+		`${publicStorageDiagnostic(base.message)} | live-start input diagnosis — encoding's ingest streams reference [${baked}]; account RTMP inputs currently resolvable [${resolvable}]; this run resolved [${resolvedNow}]. If the baked id is not in the resolvable set, the account's RTMP input id changed/was replaced between provisioning and start (an unstable or MULTIPLE default RTMP input) — recreating the channel won't help until the account has exactly one stable RTMP input. If account shows >1 RTMP input, resolve-by-list is ambiguous and must be disambiguated.`,
 	);
 }
 
@@ -584,7 +590,7 @@ export async function awaitTask(
 			task.status === "TRANSFER_ERROR"
 		) {
 			const detail = task.messages?.length
-				? `: ${task.messages.join("; ")}`
+				? `: ${task.messages.map(publicStorageDiagnostic).join("; ")}`
 				: "";
 			throw new Error(`${op.step} ended ${task.status}${detail}`);
 		}
@@ -631,7 +637,7 @@ export async function awaitLiveRunning(
 		}
 		if (task.status !== "CREATED" && task.status !== "QUEUED") {
 			const detail = task.messages?.length
-				? `: ${task.messages.join("; ")}`
+				? `: ${task.messages.map(publicStorageDiagnostic).join("; ")}`
 				: "";
 			const message = `${op.step} ended ${task.status} before reaching RUNNING${detail}`;
 			if (task.status === "CANCELED") {

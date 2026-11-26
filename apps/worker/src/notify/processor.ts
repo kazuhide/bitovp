@@ -65,10 +65,31 @@ export type DeliveryResult = {
 	detail?: string;
 };
 
+/** Hide destination names, network errors and URLs from operator delivery history. */
+export class NotificationDeliveryError extends Error {
+	readonly publicReason: string;
+	constructor(failed: DeliveryResult[]) {
+		super(
+			`notify delivery failed for ${failed.map((f) => `${f.channelName} (${f.detail ?? "unknown"})`).join(", ")}`,
+		);
+		const statuses = [
+			...new Set(
+				failed.flatMap((f) =>
+					/^HTTP [1-5]\d\d$/.test(f.detail ?? "") ? [f.detail] : [],
+				),
+			),
+		];
+		this.publicReason = statuses.length
+			? `Notification delivery failed (${statuses.join(", ")})`
+			: "Notification destination request failed";
+	}
+}
+
 export function createNotifyProcessor(deps: NotifyDeps) {
 	const doFetch = deps.fetchImpl ?? fetch;
 	return async function processNotifyJob(job: {
 		data: unknown;
+		beforeSend?: () => Promise<void>;
 	}): Promise<DeliveryResult[]> {
 		// Re-parse at the consumer end: a queue writer cannot smuggle fields
 		// past the strict payload contract (the emitter validated too).
@@ -149,6 +170,7 @@ export function createNotifyProcessor(deps: NotifyDeps) {
 				});
 				continue;
 			}
+			await job.beforeSend?.();
 			try {
 				// PR2: Slack rows get compact blocks; generic rows the event
 				// verbatim. Both bodies derive from the strict union only.
@@ -196,11 +218,7 @@ export function createNotifyProcessor(deps: NotifyDeps) {
 		// duplicate on retry — recorded as the at-least-once ledger row.
 		const failed = results.filter((r) => r.outcome === "FAILED");
 		if (failed.length > 0) {
-			throw new Error(
-				`notify delivery failed for ${failed
-					.map((f) => `${f.channelName} (${f.detail ?? "unknown"})`)
-					.join(", ")}`,
-			);
+			throw new NotificationDeliveryError(failed);
 		}
 		return results;
 	};

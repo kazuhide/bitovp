@@ -1,4 +1,13 @@
-import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+	type Prisma,
+} from "@bitovp/db";
+
+import {
+	type ScheduledStopAdmission,
+	scheduledStopAdmissionWhere,
+} from "./stop-handoff";
 
 /**
  *  — the ONE writer of `LiveSchedule.outcome`.
@@ -15,6 +24,35 @@ import type { AppPrismaClient, Prisma } from "@bitovp/db";
  * confirmation, the dead-job handler), so "who wins" cannot live in any one
  * of them.
  */
+/** ID assigned by the scheduler to a retained pre-effect job. */
+export function legacyScheduleId(
+	queueJobId: string | undefined,
+): string | undefined {
+	return /^sched-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(
+		queueJobId ?? "",
+	)?.[1];
+}
+
+export function scheduledStartJobId(
+	scheduleId: string,
+	generation?: number | null,
+): string {
+	return generation == null
+		? `sched-${scheduleId}`
+		: `sched-${scheduleId}-start-${generation}`;
+}
+
+/** A generation-qualified key must match the generation in the delivery. */
+export function scheduledStartScheduleId(
+	queueJobId: string | undefined,
+	generation?: number,
+): string | undefined {
+	const suffix = `-start-${generation}`;
+	return generation !== undefined && queueJobId?.endsWith(suffix)
+		? legacyScheduleId(queueJobId.slice(0, -suffix.length))
+		: legacyScheduleId(queueJobId);
+}
+
 export type ScheduleOutcome =
 	| "PENDING"
 	| "PROCESS_PUSHING"
@@ -24,7 +62,7 @@ export type ScheduleOutcome =
 	| "FAILED"
 	| "UNKNOWN";
 
-export const CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION = 1;
+export { CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION };
 
 export type ScheduleOutcomeEvidenceKind =
 	| "PROVIDER_RUNNING"
@@ -112,48 +150,39 @@ const MAY_REPLACE: Record<
  * `status`, so the dead-job handler can flip a row to ERROR and record its
  * outcome in either order without one write silently disqualifying the other.
  *
- * `channelStart` and `channelStop` are different: they identify rows by
- * CHANNEL and ACTION, so they would otherwise sweep up rows armed for
- * tomorrow. Both require FIRED. Neither path carries a schedule id — the
- * sweep enqueues `{liveChannelId, action: "provision"}` and
- * `{liveChannelId, action: "stop"}` with no params at all
- * (`apps/worker/src/scheduler/sweep.ts`), and threading one through would
- * mean editing those enqueues, which a parallel change owns.
- *
- * WHAT MAKES "any FIRED row of that action" precise enough to be a row
- * IDENTIFIER — the invariant, stated because the lookup is not obviously one:
- *
- * · the sweep claims a row ARMED → FIRED with a CAS before it enqueues, and
- * only fires a START/STOP once the channel is in the matching state, so at
- * most one start and one stop are in flight per channel at a time;
- * · every way that in-flight job can end now closes its row — the processor
- * on success/failure, and `live/dead-job-outcome.ts` when the job dies
- * outside the processor. Before that second half existed, a dangling
- * FIRED/PENDING row could sit here forever and be "resolved" much later by
- * an unrelated start or stop, which is exactly the defect this note guards.
- *
- * The residual this note once NAMED is now CLOSED:
- * a scheduled start that failed for good is left UNKNOWN, and `MAY_REPLACE` no
- * longer lets a positive replace UNKNOWN, so a manual start hours afterwards
- * reverse-looks-up that FIRED row, finds its UNKNOWN outranks the DELIVERED it
- * would write, and leaves it — the old row keeps its honest "we never found
- * out", and the manual start colours only its OWN row. The case the old rule
- * protected (a job's in-flight retry recording success) is untouched, because
- * that retry climbs from PENDING, never from UNKNOWN: UNKNOWN is written only
- * once the dead-job handler has declared the job terminally dead, and the only
- * writer after that is a NEW action — precisely the one that must not upgrade.
- *
- * A manual start or stop on a channel with NO fired row writes nothing: zero
- * rows match, `recordScheduleOutcome` returns 0, and that is not an error.
+ * A START or STOP is correlated by schedule ID even if its queue job changes.
+ * Scheduled STOPs carry their exact row, channel and airing in the durable intent.
+ * A manual STOP never owns a schedule.
  */
 export type ScheduleOutcomeTarget =
 	| { scheduleId: string }
 	| { feederSessionId: string }
-	| { channelStart: string }
 	| {
-			canceledChannelStart: { liveChannelId: string; liveChannelRunId: string };
+			requireDispatchReceipt?: true;
+			requireFailedAiring?: true;
+			scheduledStart: {
+				id: string;
+				liveChannelId: string;
+				liveChannelRunId?: string;
+				startAdmissionFenceVersion?: number | null;
+				dispatchJobId?: string;
+			};
 	  }
-	| { channelStop: string };
+	| {
+			canceledChannelStart: {
+				liveChannelId: string;
+				liveChannelRunId: string;
+				startAdmissionFenceVersion: number;
+			};
+	  }
+	| {
+			scheduledStop: {
+				id: string;
+				liveChannelId: string;
+				liveChannelRunId?: string;
+				admission?: ScheduledStopAdmission;
+			};
+	  };
 
 function whereOf(target: ScheduleOutcomeTarget): Prisma.LiveScheduleWhereInput {
 	if ("scheduleId" in target) {
@@ -162,18 +191,37 @@ function whereOf(target: ScheduleOutcomeTarget): Prisma.LiveScheduleWhereInput {
 	if ("feederSessionId" in target) {
 		return { feederSessionId: target.feederSessionId };
 	}
-	if ("channelStart" in target) {
+	if ("scheduledStart" in target) {
+		const { dispatchJobId, ...start } = target.scheduledStart;
 		return {
-			liveChannelId: target.channelStart,
+			...start,
 			action: "START",
 			status: "FIRED",
+			...(target.requireDispatchReceipt
+				? { dispatchJobId, dispatchedAt: { not: null } }
+				: dispatchJobId && {
+						OR: [{ dispatchJobId: null }, { dispatchJobId }],
+					}),
+			...(target.requireFailedAiring
+				? {
+						liveChannel: {
+							status: "ERROR",
+							...(typeof start.startAdmissionFenceVersion === "number"
+								? { liveEffectFenceVersion: start.startAdmissionFenceVersion }
+								: {}),
+							runs: { some: { id: start.liveChannelRunId, status: "ERROR" } },
+						},
+					}
+				: {}),
 		};
 	}
 	if ("canceledChannelStart" in target) {
 		return { ...target.canceledChannelStart, action: "START", status: "FIRED" };
 	}
+	const { admission, ...stop } = target.scheduledStop;
 	return {
-		liveChannelId: target.channelStop,
+		...stop,
+		...scheduledStopAdmissionWhere(admission),
 		action: "STOP",
 		status: "FIRED",
 	};
@@ -189,7 +237,7 @@ function whereOf(target: ScheduleOutcomeTarget): Prisma.LiveScheduleWhereInput {
  * so callers must hand it already redacted.
  */
 export async function recordScheduleOutcome(
-	prisma: AppPrismaClient,
+	prisma: Pick<AppPrismaClient, "liveSchedule">,
 	target: ScheduleOutcomeTarget,
 	outcome: Exclude<ScheduleOutcome, "PENDING">,
 	note: string | null,
@@ -197,6 +245,7 @@ export async function recordScheduleOutcome(
 	evidenceKind: ScheduleOutcomeEvidenceKind,
 ): Promise<number> {
 	const canceledStart = "canceledChannelStart" in target;
+	const scheduledStop = "scheduledStop" in target;
 	if (canceledStart && outcome !== "FAILED") {
 		throw new Error("a canceled startup can only record FAILED");
 	}
@@ -205,7 +254,12 @@ export async function recordScheduleOutcome(
 			...whereOf(target),
 			// Cancellation proves only this pending startup failed, not that a
 			// previously delivered/unknown START (or another run) failed.
-			outcome: { in: canceledStart ? ["PENDING"] : [...MAY_REPLACE[outcome]] },
+			outcome: {
+				in:
+					canceledStart || scheduledStop || "scheduledStart" in target
+						? ["PENDING"]
+						: [...MAY_REPLACE[outcome]],
+			},
 		},
 		data: {
 			outcome,
@@ -229,23 +283,30 @@ export async function recordScheduleOutcome(
  */
 export async function transitionScheduleToStale(
 	prisma: AppPrismaClient,
-	input: (
-		| { scheduleId: string; channelStop?: never }
-		| { scheduleId?: never; channelStop: string }
-	) & { note: string; at: Date },
+	input: {
+		scheduleId: string;
+		fromStatus?: "FIRED";
+		stop?: {
+			liveChannelId: string;
+			liveChannelRunId: string;
+			admission?: ScheduledStopAdmission;
+		};
+		note: string;
+		at: Date;
+	},
 ): Promise<boolean> {
-	const target =
-		input.scheduleId !== undefined
-			? ({ scheduleId: input.scheduleId } as const)
-			: ({ channelStop: input.channelStop } as const);
+	const { admission, ...stop } = input.stop ?? {};
 	const { count } = await prisma.liveSchedule.updateMany({
 		where: {
-			...whereOf(target),
-			// An exact row may still be ARMED when a pre-fire stale check wins.
-			// The channelStop fallback is intentionally FIRED-only (from whereOf):
-			// overriding it here would retire tomorrow's unrelated armed STOP too.
-			...(input.scheduleId !== undefined
-				? { status: { in: ["ARMED", "FIRED"] as const } }
+			id: input.scheduleId,
+			status: input.fromStatus ?? { in: ["ARMED", "FIRED"] },
+			...(input.stop
+				? {
+						...stop,
+						...scheduledStopAdmissionWhere(admission),
+						action: "STOP",
+						outcome: { in: ["PENDING"] },
+					}
 				: {}),
 		},
 		data: {

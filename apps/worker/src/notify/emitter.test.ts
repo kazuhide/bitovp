@@ -46,6 +46,62 @@ describe("createEventEmitter", () => {
 		expect(data).not.toHaveProperty("path");
 	});
 
+	it("keeps a stored occurrence time when a failure notification is delayed", async () => {
+		const add = vi.fn(
+			async (
+				_name: string,
+				_data: unknown,
+				_opts?: Record<string, unknown>,
+			) => {},
+		);
+		const emit = createEventEmitter({
+			queue: { add },
+			now: () => new Date("2026-08-15T00:00:00Z"),
+		});
+		const at = new Date("2026-08-12T00:00:00Z");
+		await emit(
+			{
+				kind: "CHANNEL_ERROR",
+				liveChannelId: JOB,
+				name: "test",
+				error: "lost stop response",
+				path: `/live/${JOB}`,
+			},
+			at,
+		);
+		expect(add.mock.calls[0]?.[1]).toMatchObject({
+			occurredAt: at.toISOString(),
+		});
+		expect(add.mock.calls[0]?.[2]).not.toHaveProperty("jobId");
+	});
+
+	it("uses the same tenant-scoped queue key for repeat schedule firing receipts", async () => {
+		const add = vi.fn().mockResolvedValue(undefined);
+		const tenantOne = "00000000-0000-4000-8000-000000000001";
+		const tenantTwo = "00000000-0000-4000-8000-000000000002";
+		const event = {
+			kind: "SCHEDULE_FIRED" as const,
+			scheduleId: JOB,
+			liveChannelId: JOB,
+			path: `/live/${JOB}`,
+		};
+		const emitFirst = createEventEmitter({
+			queue: { add },
+			organizationId: tenantOne,
+		});
+		await emitFirst(event);
+		await emitFirst(event);
+		await createEventEmitter({
+			queue: { add },
+			organizationId: tenantTwo,
+		})(event);
+		expect(add.mock.calls.map(([, , options]) => options.jobId)).toEqual([
+			`schedule-fired-${tenantOne}-${JOB}`,
+			`schedule-fired-${tenantOne}-${JOB}`,
+			`schedule-fired-${tenantTwo}-${JOB}`,
+		]);
+	});
+
 	it("NEVER throws when the queue is down (the job survives)", async () => {
 		const add = vi.fn().mockRejectedValue(new Error("redis down"));
 		const error = vi.spyOn(console, "error").mockImplementation(() => {});

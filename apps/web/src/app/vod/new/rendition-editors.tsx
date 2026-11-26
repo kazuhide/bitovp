@@ -1503,6 +1503,7 @@ export function ExtrasEditor({
 					</div>
 				))}
 				<Button
+					disabled={family === "subtitle" || filterKeys.length === 0}
 					variant="secondary"
 					size="sm"
 					onClick={() =>

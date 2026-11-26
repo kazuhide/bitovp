@@ -169,6 +169,8 @@ export async function verifyInputTimelinePreparation(input: {
 		plan.concatenationStreams.length ||
 		plan.fileStreams.length ||
 		plan.dolbyStreams.length ||
+		plan.captionStreams.length ||
+		plan.hdr10PlusStreams.length ||
 		plan.audioMixStreams.length
 	)
 		return fail();

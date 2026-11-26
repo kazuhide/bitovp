@@ -279,9 +279,28 @@ export const liveEffectIntentSchema = z.object({
 	admissionFenceVersion: z.number().int().nonnegative(),
 	action: liveEffectActionSchema,
 	scheduleId: z.uuid().optional(),
+	stopDeliveryToken: z.uuid().optional(),
 	targetId: z.string().min(1).optional(),
 });
 export type LiveEffectIntent = z.infer<typeof liveEffectIntentSchema>;
+
+/** Keep the original outbox ID for tokenless scheduled STOPs. */
+export function scheduledStopJobId(
+	scheduleId: string,
+	stopDeliveryToken?: string | null,
+): string {
+	return stopDeliveryToken
+		? `sched-${scheduleId}-stop-${stopDeliveryToken}`
+		: `sched-${scheduleId}`;
+}
+
+export function scheduledStopScheduleId(
+	jobId: string | undefined,
+): string | undefined {
+	return /^sched-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:-stop-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/i.exec(
+		jobId ?? "",
+	)?.[1];
+}
 
 export const liveChannelJobSchema = z
 	.object({
@@ -302,6 +321,8 @@ export const liveChannelJobSchema = z
 		 * claimed again immediately before the external boundary.
 		 */
 		plannedLiveChannelRunId: z.uuid().nullish(),
+		/** Exact admission of a scheduled START (retained pre-upgrade jobs omit it). */
+		provisionFenceVersion: z.number().int().nonnegative().optional(),
 		/** Required for every newly-admitted irreversible provider/ingest effect. */
 		effect: liveEffectIntentSchema.optional(),
 	})

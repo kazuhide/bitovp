@@ -4,6 +4,7 @@ import type { LiveChannelStatus } from "@bitovp/core";
 import { useQuery } from "@tanstack/react-query";
 import { LIVE_STATUS_TONE } from "@/app/live/live-shared";
 import { CopyableId } from "@/components/copyable-id";
+import { ProviderResources } from "@/components/provider-resources";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
@@ -119,6 +120,9 @@ export function RunsPanel({
 							<span>{t("runs.queueSeconds", { s: run.queueSeconds })}</span>
 						) : null}
 					</div>
+					<ProviderResources
+						endpoint={`/api/live-channels/${channelId}/runs/${run.id}/resources`}
+					/>
 					{run.outputPrefix ? (
 						// #155: where THIS run's segments/manifests live — the
 						// per-run subtree a re-air writes under. Empty means the

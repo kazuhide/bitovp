@@ -143,7 +143,12 @@ function recordScheduleOutcomeBestEffort(
 
 describe("recordScheduleOutcome precedence (ledger #238)", () => {
 	it("canceled START fails only its exact run's pending FIRED START", async () => {
-		const current = { ...ROW, action: "START", liveChannelRunId: "run-2" };
+		const current = {
+			...ROW,
+			action: "START",
+			liveChannelRunId: "run-2",
+			startAdmissionFenceVersion: 3,
+		};
 		const rows: Row[] = [
 			{ ...current },
 			{ ...current, liveChannelRunId: "run-1" },
@@ -162,6 +167,7 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 					canceledChannelStart: {
 						liveChannelId: "chan-1",
 						liveChannelRunId: "run-2",
+						startAdmissionFenceVersion: 3,
 					},
 				},
 				"FAILED",
@@ -190,6 +196,7 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 					canceledChannelStart: {
 						liveChannelId: "chan-1",
 						liveChannelRunId: "run-2",
+						startAdmissionFenceVersion: 3,
 					},
 				},
 				"DELIVERED",
@@ -240,7 +247,29 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 		});
 	});
 
-	it("a channel-level stale STOP fallback never retires a future ARMED stop", async () => {
+	it("keeps the recorded STOP evidence when its old job is delivered after re-air", async () => {
+		const old = {
+			...ROW,
+			action: "STOP",
+			liveChannelRunId: "old-run",
+			outcome: "UNKNOWN" as const,
+			outcomeNote: "Lost STOP response",
+		};
+		const rows = [{ ...old }];
+		const { prisma } = fakePrisma(rows);
+		await transitionScheduleToStale(prisma, {
+			scheduleId: old.id,
+			stop: {
+				liveChannelId: old.liveChannelId,
+				liveChannelRunId: old.liveChannelRunId,
+			},
+			note: "new airing",
+			at: AT,
+		});
+		expect(rows).toEqual([old]);
+	});
+
+	it("an exact stale STOP never retires another fired or armed schedule", async () => {
 		const rows = [
 			{ ...ROW, id: "fired-stop", action: "STOP", status: "FIRED" },
 			{ ...ROW, id: "future-stop", action: "STOP", status: "ARMED" },
@@ -248,7 +277,7 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 		const { prisma } = fakePrisma(rows);
 		await expect(
 			transitionScheduleToStale(prisma, {
-				channelStop: "chan-1",
+				scheduleId: "fired-stop",
 				note: "run changed",
 				at: AT,
 			}),
@@ -388,7 +417,7 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 		await expect(
 			recordScheduleOutcome(
 				prisma,
-				{ channelStart: "chan-1" },
+				{ scheduledStart: { liveChannelId: "chan-1", id: "sched-1" } },
 				"DELIVERED",
 				"the channel reached RUNNING",
 				AT,
@@ -562,7 +591,7 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 		]);
 	});
 
-	it("the channelStart target touches only FIRED START rows on that channel", async () => {
+	it("a scheduled START touches only its own fired row even on the same channel", async () => {
 		/**
 		 * review-350 HIGH-2. The scheduled START had no writer at all, so every
 		 * successful start rendered permanently amber. Its lookup is the STOP
@@ -573,6 +602,7 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 		const rows = [
 			{ ...ROW, id: "fired-start", action: "START", status: "FIRED" },
 			{ ...ROW, id: "armed-start", action: "START", status: "ARMED" },
+			{ ...ROW, id: "same-channel-future", action: "START", status: "FIRED" },
 			{ ...ROW, id: "fired-stop", action: "STOP", status: "FIRED" },
 			{
 				...ROW,
@@ -586,7 +616,7 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 		await expect(
 			recordScheduleOutcome(
 				prisma,
-				{ channelStart: "chan-1" },
+				{ scheduledStart: { liveChannelId: "chan-1", id: "fired-start" } },
 				"DELIVERED",
 				"the channel reached RUNNING",
 				AT,
@@ -605,7 +635,7 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 		await expect(
 			recordScheduleOutcome(
 				prisma,
-				{ channelStart: "chan-1" },
+				{ scheduledStart: { liveChannelId: "chan-1", id: "fired-start" } },
 				"DELIVERED",
 				null,
 				AT,
@@ -614,12 +644,7 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 		expect(rows.map((r) => r.outcome)).toEqual(["PENDING"]);
 	});
 
-	it("the channelStop target touches only FIRED STOP rows on that channel", async () => {
-		/**
-		 * This target identifies rows by channel + action rather than by id (the
-		 * stop enqueue carries no schedule id), so the FIRED fence is the only
-		 * thing standing between it and tomorrow's armed stop.
-		 */
+	it("the exact scheduled STOP target touches only its FIRED row", async () => {
 		const rows = [
 			{ ...ROW, id: "fired-stop", action: "STOP", status: "FIRED" },
 			{ ...ROW, id: "armed-stop", action: "STOP", status: "ARMED" },
@@ -636,7 +661,7 @@ describe("recordScheduleOutcome precedence (ledger #238)", () => {
 		await expect(
 			recordScheduleOutcome(
 				prisma,
-				{ channelStop: "chan-1" },
+				{ scheduledStop: { id: "fired-stop", liveChannelId: "chan-1" } },
 				"DELIVERED",
 				null,
 				AT,

@@ -40,7 +40,10 @@ const twoFileState: WizardState = {
 const noop = () => {};
 
 describe("InputFilesEditor", () => {
-	it("updates the region for every file sharing one GCS input resource", () => {
+	it.each([
+		false,
+		true,
+	])("updates the region for files in the same GCS bucket only (separate %s)", (separate) => {
 		const onPatch = vi.fn();
 		const state: WizardState = {
 			...twoFileState,
@@ -48,6 +51,7 @@ describe("InputFilesEditor", () => {
 				...file,
 				kind: "GCS",
 				inputKey: "shared",
+				bucket: separate ? file.bucket : "shared-bucket",
 				region: "ASIA_EAST_1",
 			})),
 		};
@@ -71,7 +75,7 @@ describe("InputFilesEditor", () => {
 			onPatch.mock.calls[0]?.[0].inputFiles.map(
 				(file: { region?: string }) => file.region,
 			),
-		).toEqual(["EUROPE_WEST_1", "EUROPE_WEST_1"]);
+		).toEqual([separate ? "ASIA_EAST_1" : "EUROPE_WEST_1", "EUROPE_WEST_1"]);
 	});
 	it("makes the first input file the required primary — no remove control", () => {
 		render(

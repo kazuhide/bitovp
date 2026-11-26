@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { loadEnv } from "./env";
 
 describe("loadEnv", () => {
+	it("defaults QC queue ownership to the main worker and validates the shared selector", () => {
+		expect(loadEnv({}).VMAF_QUEUE_OWNER).toBe("worker");
+		expect(loadEnv({ VMAF_QUEUE_OWNER: "dedicated" }).VMAF_QUEUE_OWNER).toBe(
+			"dedicated",
+		);
+		expect(() => loadEnv({ VMAF_QUEUE_OWNER: "both" })).toThrow(
+			/VMAF_QUEUE_OWNER/,
+		);
+	});
+
 	it("leaves GPU decoding opt-in and validates its device", () => {
 		expect(loadEnv({}).VMAF_DECODE_BACKEND).toBe("cpu");
 		expect(loadEnv({}).VMAF_SCORING_BACKEND).toBe("cpu");

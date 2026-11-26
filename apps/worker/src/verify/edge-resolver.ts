@@ -48,6 +48,7 @@ import {
 	type HlsVideoReferences,
 } from "./hls-video-reference-binding";
 import {
+	bindDashDvbSubtitles,
 	dashExternalSubtitleChecks,
 	externalVttReferenceChecks,
 	hlsAudioGroupChecks,
@@ -630,19 +631,24 @@ export async function observeEdgeLeg(
 	const referenceMissing: string[] = [];
 
 	if (manifest.kind === "DASH") {
-		if (manifest.dashExternalSubtitles?.length) {
+		if (
+			manifest.dashExternalSubtitles?.length ||
+			manifest.dashDvbSubtitles?.length
+		) {
 			const { parseDashText } = await import("./adapters");
-			const observed = await parseDashText(master.read.text).catch(
-				() => undefined,
-			);
+			const observed = await parseDashText(
+				master.read.text,
+				masterUrl.href,
+				at,
+			).catch(() => undefined);
 			const checks = observed
 				? dashExternalSubtitleChecks(
 						"external",
-						manifest.dashExternalSubtitles,
+						manifest.dashExternalSubtitles ?? [],
 						observed,
 					)
 				: [];
-			for (const [index] of manifest.dashExternalSubtitles.entries()) {
+			for (const [index] of (manifest.dashExternalSubtitles ?? []).entries()) {
 				const valid = checks.some(
 					(check) =>
 						check.id === `external:external-subtitle:${index}:reference` &&
@@ -660,9 +666,44 @@ export async function observeEdgeLeg(
 						: ["configured external subtitle URL or language was absent"],
 				});
 			}
+			for (const binding of bindDashDvbSubtitles(
+				"edge",
+				manifest.dashDvbSubtitles ?? [],
+				observed ?? { representations: [], periods: 0 },
+				masterUrl.href,
+			)) {
+				if (binding.check.verdict !== "PASS") {
+					referenceMissing.push(binding.check.detail);
+					continue;
+				}
+				const evidenceRef =
+					binding.objects.find((object) => object.init) ?? binding.objects[0];
+				const evidence =
+					evidenceRef &&
+					resolveEdgeReference(evidenceRef.reference, masterUrl, mediaPolicy);
+				children.push(
+					await walkChild(
+						readEdge,
+						mediaPolicy,
+						{
+							id: `dvb:${binding.track.key}`,
+							url: masterUrl,
+							...(evidence?.ok ? { evidenceUrl: evidence.url } : {}),
+							requiresInit: binding.track.initSegment !== undefined,
+							mediaRefs: binding.objects
+								.filter((object) => !object.init)
+								.map((object) => object.reference),
+							resources: binding.objects,
+						},
+						rejected,
+					),
+				);
+			}
 			if (
 				observed?.representations.filter((row) => row.kind === "text")
-					.length !== manifest.dashExternalSubtitles.length
+					.length !==
+				(manifest.dashExternalSubtitles?.length ?? 0) +
+					(manifest.dashDvbSubtitles?.length ?? 0)
 			)
 				referenceMissing.push(
 					"DASH external subtitle count differs from the configured tracks",
@@ -861,7 +902,10 @@ export async function observeEdgeLeg(
 			const mediaSequence = mediaSequenceOf(child.read.text);
 			let videoResources: HlsVideoReferences["objects"] | undefined;
 			const video = manifest.hlsAdditionalMedia?.find(
-				(media) => media.type === "VIDEO" && media.uri === id,
+				(media) =>
+					(media.type === "VIDEO" ||
+						media.resource?.container === "CHUNKED_TEXT") &&
+					media.uri === id,
 			);
 			if (video) {
 				const binding = bindHlsVideoReferences(

@@ -27,6 +27,93 @@ const PROVISIONS_AT_CREATE =
 	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
+	streamConditions: {
+		title: "Input conditions",
+		enabled: "Input conditions set",
+		add: "Add condition",
+		remove: "Remove rule",
+		rule: "Rule",
+		attribute: "Input attribute",
+		comparison: "Comparison",
+		value: "Value",
+		group: "Match",
+		all: "All conditions (AND)",
+		any: "Any condition (OR)",
+		and: "Require another condition (AND)",
+		or: "Allow an alternative (OR)",
+		yes: "Yes",
+		no: "No",
+		attributes: {
+			INPUTSTREAM: "Selected input stream exists",
+			STREAMCOUNT: "Stream count",
+			VIDEOSTREAMCOUNT: "Video track count",
+			AUDIOSTREAMCOUNT: "Audio track count",
+			DURATION: "Duration (seconds)",
+			WIDTH: "Width (pixels)",
+			HEIGHT: "Height (pixels)",
+			BITRATE: "Bitrate (bps)",
+			FPS: "Frame rate (fps)",
+			ASPECTRATIO: "Aspect ratio",
+			ROTATION: "Rotation (degrees)",
+			SAMPLERATE: "Sample rate (Hz)",
+			LANGUAGE: "Language",
+			CHANNELFORMAT: "Channel count",
+			CHANNELLAYOUT: "Channel layout",
+			HEARINGIMPAIRED: "Hearing-impaired flag",
+			STREAMID: "Stream ID / packet identifier",
+		},
+	},
+	liveDvb: {
+		title: "DVB subtitles",
+		add: "Add DVB subtitle track",
+		help: "Extract bitmap subtitles from an MPEG transport stream using OCR. Set the zero-based track position in the live input.",
+		position: "Input stream position",
+		language: "Language tag",
+		label: "Subtitle name",
+		packaging: "WebVTT delivery",
+		chunked: "Segmented WebVTT (HLS and DASH)",
+		fmp4: "WebVTT in fMP4 (DASH)",
+		remove: "Remove subtitle track",
+		transport:
+			"Use an SRT, Zixi or HLS transport-stream input for DVB subtitles.",
+	},
+	providerResources: {
+		muxingChildren: "DRM and ID3 on this muxing",
+		chooseType: "Select a resource type",
+		allDrm: "All DRM systems",
+		allId3: "All ID3 tags",
+		drmPrefix:
+			"The provider returned the first {count} entries. Choose a DRM system to browse its pages.",
+		childChanged: "The selected child could not be verified. Reload the list.",
+		linked: "Linked resource in the provider list",
+		metadata: "Ownership metadata",
+		remove: "Remove from provider",
+		confirm:
+			"This permanently removes the provider resource. A VOD retry may require a new job. Enter {id} to confirm.",
+		verify: "Check removal",
+		unconfirmed: "Removal is unconfirmed.",
+		present: "The provider still reports this resource.",
+		removed: "The resource has been removed or confirmed absent.",
+		removeBlocked:
+			"Removal is blocked. Refresh the execution and check its status and references.",
+		removeFailed:
+			"The removal could not be confirmed. Check the recorded outcome.",
+
+		title: "Inspect provider resources",
+		resource: "Resource",
+		choose: "Select a recorded resource",
+		detail: "Resource details",
+		siblings: "Resources under the same parent",
+		loading: "Loading resources…",
+		missing: "This resource is unavailable.",
+		changed: "The resource or its original account could not be verified.",
+		failed: "Could not read the provider resource.",
+		empty: "No supported resources were recorded for this execution.",
+		emptyPage: "No resources on this page.",
+		range: "{from}–{to} of {total}",
+		previous: "Previous page",
+		next: "Next page",
+	},
 	outputCompare: {
 		title: "Compare outputs",
 		pickTwo:
@@ -734,11 +821,13 @@ export const en = {
 		pathHelp:
 			"Folder within the selected destination where the manifest file is written.",
 		referenced:
-			"Change or remove the archive or manifest destination before removing this storage mirror.",
+			"This mirror is in use. Reassign any archives or manifests that use it, and remove any DVB subtitle tracks that write to it.",
 	},
 	creationSubmission: {
 		responseUnavailable:
 			"The creation response was incomplete. Retry without changing the form to recover the same job or channel.",
+		legacyReceiptUnavailable:
+			"Check VOD jobs for the result of the previous launch before retrying.",
 		sessionUnavailable:
 			"Your session could not be confirmed. Reload this page before creating a job or channel.",
 		storageUnavailable:
@@ -828,6 +917,25 @@ export const en = {
 		hint: "Saved in this browser.",
 	},
 	vodFlow: {
+		audioTemplateUnavailable:
+			"Export Plan JSON to retain the verified source and selected audio track.",
+		exportAudio: "Export audio only",
+		returnVideo: "Return to video files",
+		audioFileFormat: "Audio file format",
+		convertPcm: "Convert to PCM WAV",
+		copyAudio: "Copy original audio",
+		audioTrack: "Audio track",
+		audioRate: "Sample rate (Hz)",
+		audioChannels: "Channels",
+		sampleFormat: "Sample format",
+		audioContainer: "Audio container",
+		audioFilename: "Audio filename",
+		inspectAudio: "Inspect source tracks",
+		chooseAudioTrack: "Select an audio track",
+		audioNeedsStorage: "Select a versioned S3 or GCS source in Sources.",
+		audioInspectionFailed:
+			"Could not verify this source. Check its version and inspect it again.",
+		audioNoTracks: "The inspection found no supported AAC or PCM tracks.",
 		label: "What to create",
 		streaming: "Package for streaming",
 		file: "Export files",
@@ -2482,6 +2590,9 @@ export const en = {
 		chainIngest: "ingest {mode} pos {position}",
 		chainFile: "file {type}",
 		chainDolby: "Dolby {kind} {detail}",
+		chainHdr10PlusVideoAuto: "HDR10+ video (AUTO)",
+		chainHdr10PlusVideo: "HDR10+ video ({mode} pos {position})",
+		chainHdr10PlusMetadata: "HDR10+ JSON metadata",
 		chainTrim: "clip {kind}",
 		chainConcat: "concat pos {position}",
 		chainConcatMain: "concat pos {position} (main)",
@@ -2563,6 +2674,7 @@ export const en = {
 		collapseRowNamed: "Hide details for {rendition}",
 		collapseRow: "Hide details",
 		inputFiles: "Input files",
+		withheldInputPath: "Source path withheld",
 		deletedCredential: "deleted credential",
 		storageIo: "Storage I/O",
 		storageInputs: "Read from",
@@ -3032,6 +3144,7 @@ export const en = {
 		frameRangeOutOfBounds: "Choose frames between {min} and {max}.",
 	},
 	notif: {
+		unconfirmed: "Delivery unconfirmed",
 		deleteConfirm: "Delete notification channel “{name}”?",
 
 		// Page-level heading (E2E 2026-08-14: the one screen without an h1).
@@ -3685,6 +3798,11 @@ export const en = {
 	},
 	heartbeat: {
 		stream: "Stream",
+		aspectRatio: "Aspect ratio",
+		audioChannels: "Audio channels",
+		audioChannelFormat: "Channel layout",
+		initialMetadata:
+			"Aspect ratio and audio channel metadata are captured at first connection.",
 		type: "Type",
 		codec: "Codec",
 		resolution: "Resolution",
@@ -4666,6 +4784,8 @@ export const en = {
 			"This resets only the current organization. User accounts, memberships, other organizations, and platform settings are kept.",
 		resetSelectionKept:
 			"Unchecked categories are kept, along with stored media and environment files (.env). Information needed to stop delivery is retained temporarily until cleanup finishes.",
+		resetLiveOwnershipPending:
+			"Confirm Live encoder and Analysis shutdown or stop the listed publishers before clearing this data.",
 		resetEditingDataProtected:
 			"{count} editing media and history records are protected. Content Library and its related credentials cannot be reset while these records exist. Clear Content Library from the selection to reset other data.",
 		resetDependenciesAdded: "Related categories also selected: {categories}.",
@@ -5167,6 +5287,8 @@ export const en = {
 			"Individual video playlist filenames are unavailable for Per-Title. Clear this override and use the manifest's bitrate-derived names.",
 		onDemandDrmTemplateUnavailable:
 			"YAML export is unavailable for OnDemand MP4 DRM. Use Plan JSON or run this plan in the app to preserve DRM.",
+		dolbyLoudnessTemplateUnavailable:
+			"Use Plan JSON for Dolby Loudness. The Encoding Template schema does not include this filter.",
 		spekeTemplateUnavailable: "SPEKE settings are available as Plan JSON.",
 		spekeOtherSystems: "Other system IDs (optional)",
 		spekeProvider: "SPEKE key provider",
@@ -5317,8 +5439,16 @@ export const en = {
 			"AUTO and ON require Encoder 2.291.0 or later. Select a supported encoder version or leave detail preservation OFF.",
 		av1DetailPreservationVersionUnresolved:
 			"AUTO and ON require Encoder 2.291.0 or later. This version alias has not been resolved; pin a supported numeric version to confirm compatibility.",
-		encoderVersion2292Help:
-			"Encoder 2.292.0 is a Beta release. Select STABLE to use the current stable release.",
+		encoderVersion2294Help:
+			"Encoder 2.294.0 is a Beta release. Select STABLE to use the current stable release.",
+		addHdr10PlusStream: "Add HDR10+ video",
+		hdr10PlusMetadataPath: "HDR10+ metadata JSON path",
+		hdr10PlusMetadataHelp:
+			"Choose the HDR10+ JSON sidecar on the same input storage and bucket as the video. Use this stream as the source of an H.265 rendition.",
+		embeddedCaptionTimelineConflict:
+			"Embedded captions use the source timestamps. Remove the embedded caption sources to edit the timeline.",
+		hdr10PlusTimelineConflict:
+			"HDR10+ uses its video source directly. This app cannot combine it with an input timeline yet; switch to ordinary sources or remove the HDR10+ stream.",
 		av1DetailPreservationOff: "OFF — Standard encoding",
 		av1DetailPreservationAuto: "AUTO — Apply by resolution",
 		av1DetailPreservationOn: "ON — Apply to all renditions",
@@ -5365,6 +5495,9 @@ export const en = {
 		change: "Change",
 		channelLayout: "Channel layout",
 		channelName: "Channel name",
+		heAacSignaling: "Signaling",
+		heAacBitrateLimit: "Maximum {bps} bps",
+		heAacConfigName: "Codec configuration name",
 		clEnumEmptyClStereo: "CL_* enum — empty = CL_STEREO",
 		clientManifest: "Client manifest",
 		closedCaptions: "Closed captions",
@@ -5762,7 +5895,7 @@ export const en = {
 			"Selecting an S3 credential opens the browser",
 		selectionMode: "Selection mode",
 		separateDolbyVisionMetadataSidecarEmptyEmbed:
-			"Separate Dolby Vision metadata sidecar; empty = embedded",
+			"Select a Dolby Vision XML file on the same input storage as the video. Leave blank for embedded metadata.",
 		serverManifest: "Server manifest",
 		serverUrl: "Server URL",
 		set: "set",
@@ -6014,6 +6147,8 @@ export const en = {
 		removeKeyframeN: "Remove keyframe {n}",
 		removeManifestN: "Remove manifest {n}",
 		removeSourceN: "Remove source {n}",
+		sourceUsedBeforeRemoval:
+			"Choose another source before removing this stream.",
 		removeStreamKey: "Remove stream {key}",
 		removeSubtitleN: "Remove subtitle {n}",
 		removeTrimmingStreamN: "Remove input clip {n}",
@@ -6163,12 +6298,22 @@ export const en = {
 		you: "you",
 	},
 	wizardDraft: {
+		retainedSettings: "Your older draft settings are still available.",
+		legacyWatermarks:
+			"This older draft saved ordinary video watermarks only. Review any other filter edits before starting the encode.",
+		legacyRenditions:
+			"This older draft did not record all filter or rendition settings. Restore its name and labels on the original configuration. Download the saved settings to recover other edits.",
+		restoreMetadata: "Restore name and labels",
+		downloadSettings: "Download saved settings",
 		available: "Saved draft available",
 		restore: "Restore",
 		discard: "Discard",
-		help: "Saved for 7 days on this browser. Secrets, URLs, DRM, filter settings and imported JSON are excluded. Review these before starting.",
+		help: "Saved for 7 days on this browser. VOD drafts keep filter settings, including image object paths and channel gains. Secrets, URLs, DRM, text-overlay contents and imported JSON are omitted.",
 	},
 	templates: {
+		protectedInputHint:
+			"The original source path is private. Enter a replacement to reuse these settings.",
+		useReplacementInputs: "Use replacement paths",
 		savedDeliveryHeading: "Saved delivery presets",
 		emptyDelivery:
 			"No saved delivery presets yet. Import a delivery specification below to save one.",
@@ -6203,6 +6348,8 @@ export const en = {
 		launchTitle: "Launch \u201C{name}\u201D",
 		notAPlan: "This template's body is not a valid encoding plan.",
 		sources: "Sources",
+		hdrPairRequired:
+			"Select both the replacement HDR10+ picture and its matching JSON metadata.",
 		sourceOriginal: "Template's own path — leave as-is to re-run it.",
 		sourceMoved: "Overridden for this launch.",
 		browse: "Browse",
@@ -6711,7 +6858,7 @@ export const en = {
 		trimASourceInputStreamToA:
 			"Clip a source input stream to a sub-range (the modern input-stream path, independent of the start request's `trimming` field). A rendition reads the clip by selecting it under Placement & extras.",
 		ts: "TS",
-		tsHlsOnlyAacOnly: "TS = HLS-only, AAC-only",
+		tsHlsOnlyAacOnly: "TS carries AAC-LC or HE-AAC audio in HLS.",
 		tsHlsOnlyH264Only: "TS = HLS-only, H264-only",
 		type: "Type",
 		unsetApiDefaultsToTheSegmentDuration:

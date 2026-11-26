@@ -9,7 +9,9 @@ export const RESET_GLOBAL_MODELS = [
 
 /** Recovery ownership must outlive deleted customer rows. */
 export const RESET_INTERNAL_MODELS = [
+	"encodingResourceRemoval",
 	"createRequest",
+	"liveStopNotification",
 	"resetCleanupTask",
 	"vmafComputeTask",
 ] as const;
@@ -71,7 +73,7 @@ export const RESET_CATALOG = [
 	},
 	{
 		category: "liveSchedules",
-		models: ["slateNormalization", "liveSchedule", "liveEffectClaim"],
+		models: ["slateNormalization", "liveSchedule"],
 	},
 	{ category: "pseudoLiveFeeds", models: ["feederSession"] },
 	{ category: "vmafMeasurements", models: ["vmafResult", "vmafJob"] },
@@ -88,7 +90,13 @@ export const RESET_CATALOG = [
 	},
 	{
 		category: "liveChannels",
-		models: ["liveHeartbeat", "startupSample", "liveChannelRun", "liveChannel"],
+		models: [
+			"liveEffectClaim",
+			"liveHeartbeat",
+			"startupSample",
+			"liveChannelRun",
+			"liveChannel",
+		],
 	},
 	{ category: "vodJobs", models: ["manifestJob", "encodingJob"] },
 	{ category: "watchFolders", models: ["watchRule"] },

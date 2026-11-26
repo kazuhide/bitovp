@@ -14,6 +14,12 @@ vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
 		tenant: owner,
 		prisma: {
+			$transaction: async (run: (tx: unknown) => Promise<unknown>) =>
+				run({
+					$queryRaw: vi.fn(),
+					liveChannel: { findUnique: mocks.channel },
+					liveSchedule: { updateMany: mocks.scheduleWrite },
+				}),
 			liveChannel: { findUnique: mocks.channel },
 			liveChannelRun: { findFirst: mocks.run, findUnique: mocks.run },
 			liveEffectClaim: { findUnique: mocks.claim },

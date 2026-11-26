@@ -36,6 +36,11 @@ export function applyPreparedVodInputTimeline(
 	task: VodInputPreviewTask,
 ): WizardState {
 	if (
+		state.sources?.hdr10PlusStreams?.length ||
+		state.sources?.captionStreams?.length
+	)
+		throw new WizardInputTimelineError("TIMELINE_GRAPH_CONFLICT");
+	if (
 		!["S3", "GENERIC_S3", "GCS"].includes(state.output.kind) ||
 		state.output.kind === "SFTP"
 	)
@@ -95,6 +100,13 @@ export function applyPreparedVodInputTimeline(
 /** Derive the native graph from the same independent program the preview resolves. */
 export function applyVodInputTimeline(state: WizardState): WizardState {
 	if (!state.inputTimeline) return state;
+	// This editor derives a new video sequence and cannot preserve the sidecar's
+	// source/frame relationship. Keep the selected HDR10+ source explicit.
+	if (
+		state.sources?.hdr10PlusStreams?.length ||
+		state.sources?.captionStreams?.length
+	)
+		throw new WizardInputTimelineError("TIMELINE_GRAPH_CONFLICT");
 	const parsed = vodInputTimelineDocumentSchema.safeParse(state.inputTimeline);
 	if (!parsed.success) throw new WizardInputTimelineError("TIMELINE_INVALID");
 	const document = normalizeVodInputTimelineDocument(parsed.data);

@@ -1,9 +1,7 @@
 # Supported features and technical limits
 
-bitovp is a graphical application for Bitmovin video on demand (VOD) and Live
-encoding. Complete Encoding API coverage is the goal; the current application
-supports a subset of operations and parameters. Available features also depend
-on account permissions, encoder version, input, and output capabilities.
+bitovp configures Bitmovin VOD and Live encoding. Available operations and
+parameters depend on account permissions, encoder version, input and output.
 
 Follow the [VOD](user-guide/VOD.md), [Live](user-guide/LIVE.md), and
 [Quality and monitoring](user-guide/QUALITY-AND-MONITORING.md) guides for steps;
@@ -13,7 +11,7 @@ use the [glossary](user-guide/GLOSSARY.md) for encoding terms.
 
 | Workflow | Available features |
 |---|---|
-| VOD | Fixed and Per-Title ladders; H.264, H.265, VP9, and AV1 video; audio, subtitles, filters, input-stream selection, packaging, file export as MP4, Progressive TS, Progressive MOV, or Progressive WebM, manifests, encryption, and quality gates |
+| VOD | Fixed and Per-Title ladders; H.264, H.265, VP9, and AV1 video; audio, subtitles, filters, input-stream selection, packaging, file export as MP4, Progressive TS, Progressive MOV, Progressive WebM, or audio-only WAV, manifests, encryption, and quality gates |
 | Live | RTMP, redundant RTMP, SRT, Zixi, and HLS pull inputs; reusable channels and broadcast history; scheduling, slate insertion, advertising markers, heartbeat monitoring, storage mirrors, Live-to-VOD, and optional H.264/AAC MP4 archives |
 | Storage | AWS S3 and compatible providers, Google Cloud Storage, Azure, and other supported input/output credentials; encoding destinations can support more operations than the storage browser or output inspection |
 | Quality | Local or configured cloud quality measurement, comparisons, and quality gates; VMAF is calculated with FFmpeg/libvmaf, separately from the Bitmovin Encoding API |
@@ -88,7 +86,7 @@ plan is rejected or a result is unclear.
 | C2 | Start-request trimming cannot be combined with InputStream resources. Use the input-stream trimming controls rather than adding trimming to an imported start request. |
 | C3 | Plans use Manifest Generator V2. Live-to-VOD uses `LEGACY` because V2 cannot enumerate live muxings. Choose a supported recording container for Live-to-VOD. |
 | C4 | Per-Title creates multiple results, so paths must include `{uuid}` or `{bitrate}` and use a supported output: S3, GenericS3, Google Cloud Storage, Akamai NetStorage, or Azure. `{width}`, `{height}`, or a unique literal path alone is not enough. |
-| C5 | HE-AAC v1/v2 are not currently selectable in plans or forms. The existing AAC configuration does not expose a HE-AAC profile; dedicated provider configurations require a future implementation. |
+| C5 | HE-AAC v1/v2 use dedicated audio configurations. VOD supports segmented fMP4, and ordinary Live supports segmented fMP4 and HLS TS. Select v1 for up to 128 kbps or v2 for up to 64 kbps. |
 | C9 | Common Encryption (CENC) counter mode (CTR) needs an 8-byte initialization vector (IV); cipher block chaining (CBC) needs 16 bytes. Standalone FairPlay uses AES-CBC with an IV and key URI. Match encryption mode and container. |
 | C17 | Audio/video synchronization adjustments conflict with Dolby audio. Preview manifests are just-in-time (JIT), generated during encoding; preview-only manifests are not finalized. Smooth has no preview list. Use final manifests for completed delivery. |
 | C21 | Kantar watermarking is one encoding-wide setting and requires audio. A new configuration replaces the previous value rather than adding another. |
@@ -200,10 +198,11 @@ details. It searches the selected account's generic error catalogue; it is not
 a failure-history viewer and never restarts a job.
 
 The [functional gap audit](ENCODING-FUNCTIONAL-GAPS.md) prioritizes actual encoding
-capabilities: HE-AAC, Stream Conditions authoring and conjunctions, PCM/WAV and
-bounded audio passthrough, followed by embedded-caption extraction. It traces
+capabilities, including embedded caption extraction. The VOD [audio file workflow](user-guide/VOD.md#audio-only-files) supports PCM/WAV and bounded audio copying. The audit traces
 closed plan unions and execution paths instead of treating unconfirmed SDK
-calls as missing features. Source support is not provider qualification.
+calls as missing features. Per-rendition Stream Conditions and AND/OR groups are
+available in the VOD and Live editors on the existing stream-create operation.
+Source support is not provider qualification.
 
 Native Templates, Native Watch Folders and resource CRUD remain a separate
 management lane. Current Watch folders use application watch rules and a storage

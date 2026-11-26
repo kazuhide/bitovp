@@ -82,6 +82,7 @@ const FULL_PAGE_WRITE_SOURCES = {
 	},
 	"app/storage/inspect-dialog.tsx": { writeCalls: 1, page: "/storage" },
 	"app/storage/storage-client.tsx": { writeCalls: 2, page: "/storage" },
+	"app/vod/new/audio-file-editor.tsx": { writeCalls: 1, page: "/vod/new" },
 	"app/vod/new/plan-presets-panel.tsx": {
 		writeCalls: 1,
 		page: "/vod/new",
@@ -274,6 +275,17 @@ function creationTransportEndpoints(
 						property.name.getText(client.file) === "method",
 				)
 			: undefined;
+	const verb =
+		method && ts.isPropertyAssignment(method) ? method.initializer : undefined;
+	const replayOrCreate =
+		verb &&
+		ts.isConditionalExpression(verb) &&
+		ts.isIdentifier(verb.condition) &&
+		verb.condition.text === "replayOnly" &&
+		ts.isStringLiteral(verb.whenTrue) &&
+		verb.whenTrue.text === "GET" &&
+		ts.isStringLiteral(verb.whenFalse) &&
+		verb.whenFalse.text === "POST";
 	const defaultSend = nodes.find(
 		(node) =>
 			ts.isBindingElement(node) &&
@@ -286,16 +298,13 @@ function creationTransportEndpoints(
 	if (
 		!defaultSend ||
 		sends.length !== 1 ||
-		!method ||
-		!ts.isPropertyAssignment(method) ||
-		!ts.isStringLiteral(method.initializer) ||
-		method.initializer.text !== "POST" ||
+		!replayOrCreate ||
 		sends[0]?.arguments[0]?.getText(client.file) !== "endpoint" ||
 		!conditional ||
 		!ts.isConditionalExpression(conditional)
 	) {
 		throw new Error(
-			"Creation transport must expose one classified POST through its apiFetch-backed send",
+			"Creation transport must expose one classified POST with an optional read-only receipt lookup through its apiFetch-backed send",
 		);
 	}
 	if (
@@ -1283,6 +1292,17 @@ describe("mixed-page mutation control contract", () => {
 				),
 			),
 		).toThrow(/classified POST/);
+		expect(() =>
+			creationTransportEndpoints(
+				parseSourceText(
+					"lib/creation-submission.ts",
+					transport.replace(
+						'replayOnly ? "GET" : "POST"',
+						'replayOnly ? "PATCH" : "POST"',
+					),
+				),
+			),
+		).toThrow(/read-only receipt lookup/);
 		expect(() =>
 			creationTransportEndpoints(
 				parseSourceText(

@@ -1,11 +1,14 @@
 import {
 	type CompiledOperation,
+	checkHdr10PlusPlan,
 	checkInternalHevcV2Plan,
 	classifyProviderStatusWord,
 	encodingPlanSchema,
 	orchestratorJobSchema,
+	publicStorageDiagnostic,
 	type QcVerdict,
 	redactSecrets,
+	redactStepRequest,
 	type StepLogEntry,
 	soleEncodingStepId,
 	stepLogSchema,
@@ -69,6 +72,7 @@ export type OrchestratorDeps = {
 	) => Promise<void>;
 	prisma: AppPrismaClient;
 	revealBitmovinAccount(accountId: string): Promise<{
+		resourceScopeVersion?: string;
 		apiKey: string;
 		tenantOrgId: string | null;
 	}>;
@@ -460,174 +464,220 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		let activeEntry: StepLogEntry | undefined;
 		let isVerificationRun = false;
 		let accountId: string;
-		try {
-			plan = encodingPlanSchema.parse(row.plan);
-			if (!row.cancelRequested && plan.inputTimelinePreparation) {
-				if (!deps.validateInputPreparation)
-					throw new Error("INPUT_PREPARATION_VALIDATOR_REQUIRED");
-				await deps.validateInputPreparation(plan);
-			}
-			entries = stepLogSchema.parse(row.stepLog);
-			resetOwner.entries = entries;
-			const verification = verificationCreateIdentity(
-				row.verificationKey,
-				row.verificationRequestSha256,
-			);
-			isVerificationRun = verification !== undefined;
-			const resolvedAccountId =
-				row.cancelRequested && plan.internal?.hevcV2 && row.bitmovinAccountId
-					? row.bitmovinAccountId
-					: (plan.bitmovin.accountId ?? row.bitmovinAccountId);
-			if (!resolvedAccountId) {
-				throw new Error("Plan carries no Bitmovin account id");
-			}
-			if (!row.cancelRequested) {
-				if (checkInternalHevcV2Plan(plan).length)
-					throw new Error("Invalid internal HEVCv2 persisted plan");
-				if (plan.internal?.hevcV2) {
-					assertInternalHevcV2Access(resolvedAccountId, plan.internal.hevcV2);
-					if (
-						row.bitmovinAccountId &&
-						row.bitmovinAccountId !== resolvedAccountId
-					)
-						throw new Error("Invalid internal HEVCv2 persisted plan/account");
-					if (!internalHevcV2StepsMatch(plan, entries))
-						throw new Error(
-							"Internal HEVCv2 persisted steps do not match the plan",
-						);
-				} else if (
-					entries.some(
-						(entry) =>
-							entry.payload.internalHevcV2 !== undefined ||
-							entry.payload.bcfVersion !== undefined ||
-							entry.payload.encodingMode === "SMART_PASS",
-					)
+		let resourceAccount: StepLogEntry["resourceAccount"];
+		let cancelAtSetup = row.cancelRequested === true;
+		for (;;) {
+			try {
+				// Stopping an admitted job uses its recorded provider IDs. Historical
+				// HDR source declarations are never executed on this cancellation path.
+				const stored = row.plan;
+				plan = encodingPlanSchema.parse(
+					cancelAtSetup &&
+						stored &&
+						typeof stored === "object" &&
+						!Array.isArray(stored)
+						? { ...stored, hdr10PlusStreams: [] }
+						: stored,
+				);
+				if (
+					!cancelAtSetup &&
+					(plan.inputTimelinePreparation ||
+						(!row.bitmovinEncodingId &&
+							plan.renditions.some((r) => r.codec === "AUDIO_PASSTHROUGH")))
 				) {
-					throw new Error(
-						"Internal HEVCv2 step requires the enabled plan profile",
+					if (!deps.validateInputPreparation)
+						throw new Error("INPUT_PREPARATION_VALIDATOR_REQUIRED");
+					await deps.validateInputPreparation(plan);
+				}
+				entries = stepLogSchema.parse(row.stepLog);
+				resetOwner.entries = entries;
+				const verification = verificationCreateIdentity(
+					row.verificationKey,
+					row.verificationRequestSha256,
+				);
+				isVerificationRun = verification !== undefined;
+				const resolvedAccountId =
+					cancelAtSetup && plan.internal?.hevcV2 && row.bitmovinAccountId
+						? row.bitmovinAccountId
+						: (plan.bitmovin.accountId ?? row.bitmovinAccountId);
+				if (!resolvedAccountId) {
+					throw new Error("Plan carries no Bitmovin account id");
+				}
+				if (!cancelAtSetup) {
+					const invalidHdr = checkHdr10PlusPlan(plan).find(
+						(i) => i.level === "error",
 					);
+					if (invalidHdr) throw new Error(invalidHdr.message);
+					if (checkInternalHevcV2Plan(plan).length)
+						throw new Error("Invalid internal HEVCv2 persisted plan");
+					if (plan.internal?.hevcV2) {
+						assertInternalHevcV2Access(resolvedAccountId, plan.internal.hevcV2);
+						if (
+							row.bitmovinAccountId &&
+							row.bitmovinAccountId !== resolvedAccountId
+						)
+							throw new Error("Invalid internal HEVCv2 persisted plan/account");
+						if (!internalHevcV2StepsMatch(plan, entries))
+							throw new Error(
+								"Internal HEVCv2 persisted steps do not match the plan",
+							);
+					} else if (
+						entries.some(
+							(entry) =>
+								entry.payload.internalHevcV2 !== undefined ||
+								entry.payload.bcfVersion !== undefined ||
+								entry.payload.encodingMode === "SMART_PASS",
+						)
+					) {
+						throw new Error(
+							"Internal HEVCv2 step requires the enabled plan profile",
+						);
+					}
 				}
-			}
-			accountId = resolvedAccountId;
-			resetOwner.accountId = accountId;
-			/**
-			 * Refuse an unusable VMAF model HERE — before the first Bitmovin
-			 * resource exists, so the refusal costs nothing.
-			 *
-			 * review-234 I1: the same check was added to `validatePlan` as an
-			 * option and then never wired, so the protection existed only in
-			 * its own tests. This site needs no plumbing: the worker IS the
-			 * process that will score, `deps.vmafModelAvailable` is its real
-			 * capability, and a plan whose model resolves to neither a
-			 * built-in nor a bundled file would otherwise fail after the
-			 * encode had finished and every QC mirror had been downloaded.
-			 * Undefined capability ⇒ no refusal (the same rule as the
-			 * validator: an unknown must not manufacture one).
-			 */
-			if (
-				(plan.qc?.vmaf || plan.qc?.psnr) &&
-				deps.vmafModelAvailable !== null
-			) {
-				const model = plan.qc.model;
-				if (!deps.vmafModelAvailable(model)) {
-					throw new Error(unresolvableModelMessage(model, undefined));
+				accountId = resolvedAccountId;
+				resetOwner.accountId = accountId;
+				/**
+				 * Refuse an unusable VMAF model HERE — before the first Bitmovin
+				 * resource exists, so the refusal costs nothing.
+				 *
+				 * review-234 I1: the same check was added to `validatePlan` as an
+				 * option and then never wired, so the protection existed only in
+				 * its own tests. This site needs no plumbing: the worker IS the
+				 * process that will score, `deps.vmafModelAvailable` is its real
+				 * capability, and a plan whose model resolves to neither a
+				 * built-in nor a bundled file would otherwise fail after the
+				 * encode had finished and every QC mirror had been downloaded.
+				 * Undefined capability ⇒ no refusal (the same rule as the
+				 * validator: an unknown must not manufacture one).
+				 */
+				if (
+					!cancelAtSetup &&
+					(plan.qc?.vmaf || plan.qc?.psnr) &&
+					deps.vmafModelAvailable !== null
+				) {
+					const model = plan.qc.model;
+					if (!deps.vmafModelAvailable(model)) {
+						throw new Error(unresolvableModelMessage(model, undefined));
+					}
 				}
-			}
-			const account = await deps.revealBitmovinAccount(accountId);
-			sdk = deps.makeSdk({
-				...(!row.cancelRequested && plan.internal?.hevcV2
-					? { internalHevcV2: plan.internal.hevcV2 }
-					: {}),
-				startControl: {
-					check: async (attempted) => {
-						if (!(await renewLease()))
-							throw new AttemptLeaseLostError(encodingJobId);
-						if (await checkCancel())
-							throw new CancelRequested(stampStep ?? "start", !attempted);
+				const account = await deps.revealBitmovinAccount(accountId);
+				resourceAccount = account.resourceScopeVersion
+					? { id: accountId, version: account.resourceScopeVersion }
+					: undefined;
+				sdk = deps.makeSdk({
+					...(!cancelAtSetup && plan.internal?.hevcV2
+						? { internalHevcV2: plan.internal.hevcV2 }
+						: {}),
+					startControl: {
+						check: async (attempted) => {
+							if (!(await renewLease()))
+								throw new AttemptLeaseLostError(encodingJobId);
+							if (await checkCancel())
+								throw new CancelRequested(stampStep ?? "start", !attempted);
+						},
+						sleep: deps.sleep,
 					},
-					sleep: deps.sleep,
-				},
-				apiKey: account.apiKey,
-				tenantOrgId: account.tenantOrgId,
-				bitmovinAccountId: accountId,
-				// The step slot the stamping fetch reads at call time .
-				// Set around executeStep below; per-job instance, so no cross-job race.
-				stamp: {
-					jobId: encodingJobId,
-					currentStep: () => stampStep,
-					adoptWindow: () => stampAdopt,
-					...(verification
-						? {
-								verification,
-								onEncodingCreated: async (
-									providerId: string,
-									source: "created" | "adopted",
-								) => {
-									if (
-										activeEntry?.kind !== "CREATE_ENCODING" ||
-										activeEntry.status !== "RUNNING"
-									) {
-										throw new Error(
-											"VERIFICATION_PROVIDER_ID_WITHOUT_ACTIVE_CREATE_STEP",
-										);
-									}
-									activeEntry.resourceId = providerId;
-									activeEntry.response = redactSecrets({
-										providerId,
-										source,
-										durability: "PROVIDER_ID_PERSISTED",
-									});
-									try {
-										await persist(encodingJobId, entries, {
-											...(activeEntry.step === soleEncodingStepId(entries)
-												? {
-														bitmovinEncodingId: providerId,
-														// rev431: the pointer is (re)written for an encoding
-														// about to run — no confirmation can stand for it.
-														encoderStoppedConfirmedFor: null,
-													}
-												: {}),
-										});
-									} catch (err) {
-										if (err instanceof AttemptLeaseLostError) {
-											return "OWNERSHIP_LOST" as const;
-										}
-										if ((err as { code?: unknown })?.code === "P1001") {
-											throw new VerificationProviderIdDefinitelyNotPersistedError(
-												err,
+					apiKey: account.apiKey,
+					tenantOrgId: account.tenantOrgId,
+					bitmovinAccountId: accountId,
+					// The step slot the stamping fetch reads at call time .
+					// Set around executeStep below; per-job instance, so no cross-job race.
+					stamp: {
+						jobId: encodingJobId,
+						currentStep: () => stampStep,
+						adoptWindow: () => stampAdopt,
+						...(verification
+							? {
+									verification,
+									onEncodingCreated: async (
+										providerId: string,
+										source: "created" | "adopted",
+									) => {
+										if (
+											activeEntry?.kind !== "CREATE_ENCODING" ||
+											activeEntry.status !== "RUNNING"
+										) {
+											throw new Error(
+												"VERIFICATION_PROVIDER_ID_WITHOUT_ACTIVE_CREATE_STEP",
 											);
 										}
-										throw err;
-									}
-									return "PERSISTED" as const;
-								},
-							}
-						: {}),
-				},
-			});
-			resetOwner.sdk = sdk;
-		} catch (err) {
-			const message = err instanceof Error ? err.message : "setup failed";
-			// Fenced and RELEASED like every other leaving write: a retry after
-			// this ERROR must be able to claim immediately.
-			await deps.prisma.encodingJob.updateMany({
-				where: { id: encodingJobId, attemptClaimedAt: heldAt },
-				data: {
-					status: "ERROR",
-					error: redactSecrets(message),
-					attemptClaimedAt: null,
-				},
-			});
-			heldAt = null;
-			await deps.emitEvent?.({
-				kind: "JOB_ERROR",
-				jobId: encodingJobId,
-				name: row.name,
-				labels: row.labels,
-				error: redactSecrets(message),
-				path: `/vod/jobs/${encodingJobId}`,
-			});
-			throw err;
+										activeEntry.resourceId = providerId;
+										activeEntry.response = redactSecrets({
+											providerId,
+											source,
+											durability: "PROVIDER_ID_PERSISTED",
+										});
+										try {
+											await persist(encodingJobId, entries, {
+												...(activeEntry.step === soleEncodingStepId(entries)
+													? {
+															bitmovinEncodingId: providerId,
+															// rev431: the pointer is (re)written for an encoding
+															// about to run — no confirmation can stand for it.
+															encoderStoppedConfirmedFor: null,
+														}
+													: {}),
+											});
+										} catch (err) {
+											if (err instanceof AttemptLeaseLostError) {
+												return "OWNERSHIP_LOST" as const;
+											}
+											if ((err as { code?: unknown })?.code === "P1001") {
+												throw new VerificationProviderIdDefinitelyNotPersistedError(
+													err,
+												);
+											}
+											throw err;
+										}
+										return "PERSISTED" as const;
+									},
+								}
+							: {}),
+					},
+				});
+				resetOwner.sdk = sdk;
+				break;
+			} catch (err) {
+				const message = publicStorageDiagnostic(
+					redactSecrets(err instanceof Error ? err.message : "setup failed"),
+				);
+				// Fenced and RELEASED like every other leaving write: a retry after
+				// this ERROR must be able to claim immediately.
+				const failed = await deps.prisma.encodingJob.updateMany({
+					where: {
+						id: encodingJobId,
+						attemptClaimedAt: heldAt,
+						cancelRequested: cancelAtSetup,
+					},
+					data: {
+						status: "ERROR",
+						error: message,
+						attemptClaimedAt: null,
+					},
+				});
+				if (!failed.count) {
+					// A successful cancel and a setup failure compete for the same
+					// row. Retain this lease and make one cancellation-only pass when
+					// the operator won. A displaced worker must perform no provider I/O.
+					if (!cancelAtSetup && (await renewLease())) {
+						cancelAtSetup = true;
+						continue;
+					}
+					throw new AttemptLeaseLostError(encodingJobId);
+				}
+				heldAt = null;
+				await deps.emitEvent?.({
+					kind: "JOB_ERROR",
+					jobId: encodingJobId,
+					name: row.name,
+					labels: row.labels,
+					error: message,
+					path: `/vod/jobs/${encodingJobId}`,
+				});
+				if (err instanceof Error && message !== err.message)
+					throw new Error(message);
+				throw err;
+			}
 		}
 
 		// Resolve already-created resource ids from DONE entries up front: the
@@ -698,7 +748,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		// Loop-top check: a cancel requested before any step runs (e.g. a QUEUED
 		// job canceled before the worker picked it) → CANCELED immediately, before
 		// the RUNNING flip, stopping nothing (no encoding created yet).
-		if (await checkCancel()) {
+		if (cancelAtSetup || (await checkCancel())) {
 			return await finalizeCancel();
 		}
 
@@ -1052,7 +1102,9 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					entry.status = "DONE";
 					entry.finishedAt = deps.now();
 					entry.resourceId = result.resourceId;
-					entry.request = redactSecrets(result.request);
+					if (result.resourceId && resourceAccount)
+						entry.resourceAccount = resourceAccount;
+					entry.request = redactStepRequest(entry, result.request, entries);
 					entry.response = redactSecrets(result.response);
 					/**
 					 * A downgrade recorded by an EARLIER attempt must survive this
@@ -1140,7 +1192,9 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 						entry.error = undefined;
 						return await finalizeCancel();
 					}
-					const message = err instanceof Error ? err.message : "step failed";
+					const message = publicStorageDiagnostic(
+						redactSecrets(err instanceof Error ? err.message : "step failed"),
+					);
 					if (err instanceof VerificationProviderIdPersistenceError) {
 						// The callback learned this id directly from the CREATE response.
 						// Its first durable write failed, but the failure-path write below
@@ -1158,7 +1212,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					}
 					entry.status = "FAILED";
 					entry.finishedAt = deps.now();
-					entry.error = redactSecrets(message);
+					entry.error = message;
 					// ORCHESTRATOR CONTRACT (compiler await-emission site): when one
 					// AWAIT_ENCODING fails, sibling encodings of the same plan are
 					// still RUNNING (and billing) — stop them before failing the
@@ -1177,16 +1231,18 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					}
 					await persist(encodingJobId, entries, {
 						status: "ERROR",
-						error: redactSecrets(message),
+						error: message,
 					});
 					await deps.emitEvent?.({
 						kind: "JOB_ERROR",
 						jobId: encodingJobId,
 						name: row.name,
 						labels: row.labels,
-						error: redactSecrets(message),
+						error: message,
 						path: `/vod/jobs/${encodingJobId}`,
 					});
+					if (err instanceof Error && message !== err.message)
+						throw new Error(message);
 					throw err;
 				}
 			}

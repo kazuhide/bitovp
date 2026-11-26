@@ -10,6 +10,7 @@ import {
 	H264VideoConfiguration,
 	KantarWatermark,
 	LiveDashManifest,
+	LiveEncodingHeartbeatIngestStream,
 	LiveHlsManifest,
 	PoisEndpointCredentials,
 	ProgramDateTimeSettings,
@@ -61,7 +62,12 @@ const api = vi.hoisted(() => {
 		})),
 		heartbeatGet: vi.fn(async (_id: string) => ({
 			timestamp: new Date("2026-06-12T01:02:03.000Z"),
-			ingest: { status: "CONNECTED", healthy: true, droppedPacketsVideo: 3 },
+			ingest: {
+				status: "CONNECTED",
+				healthy: true,
+				droppedPacketsVideo: 3,
+				streams: [] as unknown[],
+			},
 			events: [],
 		})),
 		resetTimeshiftCreate: resource(),
@@ -900,6 +906,40 @@ describe("live sdk-ops facade", () => {
 		expect(heartbeat.timestamp).toBe("2026-06-12T01:02:03.000Z");
 		expect(heartbeat.ingest?.droppedPacketsVideo).toBe(3);
 		expect(audits).toHaveLength(0);
+	});
+
+	it("preserves the SDK's populated first-connection heartbeat metadata in plain JSON", async () => {
+		api.heartbeatGet.mockResolvedValueOnce({
+			timestamp: new Date("2026-11-18T01:02:03.000Z"),
+			ingest: {
+				status: "CONNECTED",
+				healthy: true,
+				droppedPacketsVideo: 0,
+				streams: [
+					new LiveEncodingHeartbeatIngestStream({
+						mediaType: "video",
+						aspectRatio: "16:9",
+					}),
+					new LiveEncodingHeartbeatIngestStream({
+						mediaType: "audio",
+						numberOfAudioChannels: 2,
+						audioChannelFormat: "stereo",
+					}),
+				],
+			},
+			events: [],
+		});
+		const { ops } = setup();
+		const heartbeat = await ops.getLiveHeartbeat("enc-1");
+		expect(heartbeat.ingest?.streams).toEqual([
+			{ mediaType: "video", aspectRatio: "16:9" },
+			{
+				mediaType: "audio",
+				numberOfAudioChannels: 2,
+				audioChannelFormat: "stereo",
+			},
+		]);
+		expect(heartbeat.timestamp).toBe("2026-11-18T01:02:03.000Z");
 	});
 
 	it("sends reset-timeshift and SCTE-35 cues with their full surfaces", async () => {

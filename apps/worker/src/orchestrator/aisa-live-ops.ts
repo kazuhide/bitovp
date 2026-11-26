@@ -47,6 +47,13 @@ export type AisaLiveControl = {
 	startMayExist?(): boolean;
 	beforeStart?(): Promise<void>;
 	allowCreate?(): boolean;
+	/** Reserve exactly one concrete STOP immediately before its provider call. */
+	reserveStop?(
+		service: "analysis" | "encoding",
+		targetId: string,
+	): Promise<boolean>;
+	/** The exact primary Encoding STOP received a successful provider response. */
+	onEncodingStopAccepted?(encodingId: string): void;
 	onObservation?(observation: AisaLiveObservation): Promise<void>;
 	/** Runtime stop waits for Analysis drain before using the Encoding stop fallback. */
 	sleep?(ms: number): Promise<void>;
@@ -64,7 +71,7 @@ export class AisaLiveFinalizationPendingError extends Error {
 }
 
 export function createAisaLiveOps(
-	ctx: OpsContext,
+	ctx: Pick<OpsContext, "options" | "audited">,
 	liveOps: Pick<SdkOps, "stopLiveEncoding" | "restartLiveEncoding">,
 	encodingOps: Pick<SdkOps, "getEncodingStatus">,
 ): Pick<
@@ -218,13 +225,17 @@ export function createAisaLiveOps(
 			)
 		) {
 			await check(false);
-			await audited(
-				"POST",
-				`/ai-scene-analysis/live-analyses/${id}/stop`,
-				{ analysisId: id, encodingId },
-				() => load().stop(id),
-				() => ({ stopRequested: true }),
-			);
+			if (
+				!options.aisaLive?.reserveStop ||
+				(await options.aisaLive.reserveStop("analysis", id))
+			)
+				await audited(
+					"POST",
+					`/ai-scene-analysis/live-analyses/${id}/stop`,
+					{ analysisId: id, encodingId },
+					() => load().stop(id),
+					() => ({ stopRequested: true }),
+				);
 		}
 		const deadline = Date.now() + 24_000;
 		for (let attempt = 0; attempt < 12 && Date.now() < deadline; attempt++) {
@@ -287,7 +298,17 @@ export function createAisaLiveOps(
 				throw new Error("AISA_LIVE_CREATE_OUTCOME_UNKNOWN");
 			}
 		},
-		getAisaLiveAnalysis: get,
+		getAisaLiveAnalysis: async (id, includeFinalResult) => {
+			const analysis = await get(id);
+			if (
+				includeFinalResult &&
+				["FINISHED", "ERROR", "CANCELED", "TRANSFER_ERROR"].includes(
+					analysis.status,
+				)
+			)
+				await observeFinal(analysis);
+			return analysis;
+		},
 		startAisaLiveAnalysis: async (
 			id: string,
 			encodingId: string,
@@ -362,7 +383,13 @@ export function createAisaLiveOps(
 			const task = await encodingOps.getEncodingStatus(encodingId);
 			if (classifyProviderStatusWord(task.status) !== "TERMINAL") {
 				await check(false);
-				await liveOps.stopLiveEncoding(encodingId);
+				if (
+					!options.aisaLive?.reserveStop ||
+					(await options.aisaLive.reserveStop("encoding", encodingId))
+				) {
+					await liveOps.stopLiveEncoding(encodingId);
+					options.aisaLive?.onEncodingStopAccepted?.(encodingId);
+				}
 			}
 			if (finalizationError) throw new AisaLiveFinalizationPendingError();
 		},

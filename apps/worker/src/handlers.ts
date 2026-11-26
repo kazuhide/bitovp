@@ -1,14 +1,20 @@
 import type { QueueKey } from "@bitovp/core";
-import { DelayedError, type Job } from "bullmq";
+import { DelayedError, type Job, UnrecoverableError } from "bullmq";
+import {
+	type DeliveryResult,
+	NotificationDeliveryError,
+} from "./notify/processor";
 import type { LiveChannelResult } from "./orchestrator/live-processor";
 import { ATTEMPT_LEASE_MS } from "./orchestrator/processor";
 import { systemSweeps } from "./system-sweeps";
+import { createVmafRunnerHandler } from "./vmaf/job-capacity";
 import { VOD_INPUT_PREVIEW_LEASE_MS } from "./vod-input-preview/processor";
 
 export type HandlerResult =
 	| {
 			acknowledged: true;
 			queue: QueueKey;
+			delivery?: "DELIVERED" | "NO_DESTINATION";
 	  }
 	| LiveChannelResult;
 
@@ -22,7 +28,13 @@ export type HandlerDeps = {
 	/** Runs one orchestrator job to completion (resume-aware). */
 	orchestrate(jobData: unknown): Promise<{ status: string }>;
 	/** Provision/action dispatcher for one live channel. */
-	liveChannel(jobData: unknown): Promise<LiveChannelResult>;
+	liveChannel(
+		jobData: unknown,
+		queueJobId?: string,
+		firstQueueDelivery?: boolean,
+		activeTargets?: ReadonlySet<string>,
+		queuedAt?: number,
+	): Promise<LiveChannelResult>;
 	/** Polls heartbeats for every RUNNING channel (repeatable job). */
 	liveHeartbeatSweep(): Promise<unknown>;
 	/**
@@ -37,7 +49,7 @@ export type HandlerDeps = {
 	storageInspect(jobData: unknown): Promise<unknown>;
 	vodInputPreview(jobData: unknown): Promise<{ status: string }>;
 	/** Outbound notification delivery : one event, fan-out. */
-	notify(jobData: unknown): Promise<unknown>;
+	notify(jobData: unknown): Promise<Pick<DeliveryResult, "outcome">[]>;
 	startupProbe: (data: unknown) => Promise<unknown>;
 	/**
 	 * Slate normalization : the whole job, because the queue carries
@@ -68,15 +80,38 @@ export function createHandlers(deps: HandlerDeps): Record<QueueKey, Handler> {
 			return { acknowledged: true, queue: "orchestrator" };
 		},
 		notify: async (job: Job) => {
-			await deps.notify(job.data);
-			return { acknowledged: true, queue: "notify" };
+			let destinations: Pick<DeliveryResult, "outcome">[];
+			try {
+				destinations = await deps.notify(job.data);
+			} catch (error) {
+				if (error instanceof NotificationDeliveryError)
+					throw new Error(error.publicReason);
+				throw error;
+			}
+			if (destinations.some((item) => item.outcome !== "DELIVERED"))
+				throw new UnrecoverableError(
+					"A notification destination refused delivery",
+				);
+			return {
+				acknowledged: true,
+				queue: "notify",
+				delivery: destinations.length ? "DELIVERED" : "NO_DESTINATION",
+			};
 		},
 		liveChannel: async (job: Job) => {
 			if (job.name === HEARTBEAT_SWEEP_JOB) {
 				await deps.liveHeartbeatSweep();
 				return { acknowledged: true, queue: "liveChannel" };
 			}
-			return deps.liveChannel(job.data);
+			return deps.liveChannel(
+				job.data,
+				job.id,
+				job.attemptsStarted === 1 &&
+					job.attemptsMade === 0 &&
+					job.stalledCounter === 0,
+				undefined,
+				job.timestamp,
+			);
 		},
 		storageInspect: async (job: Job) => {
 			await deps.storageInspect(job.data);
@@ -97,10 +132,7 @@ export function createHandlers(deps: HandlerDeps): Record<QueueKey, Handler> {
 			await deps.slateNormalize(job);
 			return { acknowledged: true, queue: "slateNormalize" };
 		},
-		vmafRunner: async (job: Job) => {
-			await deps.vmaf(job.data);
-			return { acknowledged: true, queue: "vmafRunner" };
-		},
+		vmafRunner: createVmafRunnerHandler((data) => deps.vmaf(data)),
 		feederManager: async (job: Job) => {
 			await deps.feeder(job.data);
 			return { acknowledged: true, queue: "feederManager" };

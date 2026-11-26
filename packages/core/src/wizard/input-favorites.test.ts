@@ -145,7 +145,7 @@ describe("VOD fixed source snapshots", () => {
 			{
 				key: "fav_filter_key_1",
 				kind: "WATERMARK",
-				inputKey: "input",
+				inputKey: result.sourceKey,
 				imagePath: "logo.png",
 				left: 0,
 				top: 0,
@@ -171,6 +171,27 @@ describe("VOD fixed source snapshots", () => {
 		expect(again.state.videos[0]?.extras?.filters).toEqual(
 			result.state.videos[0]?.extras?.filters,
 		);
+	});
+	it.each([
+		"current",
+		"legacy",
+	])("retains a %s favorite logo's storage after moving only its video", (mode) => {
+		const result = wizard.applyVodInputFavorite(
+			structuredClone(state),
+			{ ...favorite, kind: "IMAGE", objectKey: "logo.png" },
+			keys(),
+		);
+		const primary = result.state.inputFiles[0];
+		const filter = result.state.filters?.[0];
+		if (!primary || filter?.kind !== "WATERMARK")
+			throw new Error("missing favorite or video");
+		if (mode === "legacy") filter.inputKey = primary.inputKey;
+		primary.bucket = "new-video-bucket";
+		const plan = encodingPlanSchema.parse(wizard.buildPlan(result.state));
+		const logo = plan.filters.find((f) => f.kind === "WATERMARK");
+		expect(plan.inputs.find((i) => i.key === logo?.inputKey)).toMatchObject({
+			bucket: "input",
+		});
 	});
 	it("preserves existing filter order when applying the logo to every video rendition", () => {
 		const video = state.videos[0];

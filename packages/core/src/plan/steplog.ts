@@ -34,6 +34,10 @@ export const OPERATION_KINDS = [
 	"CREATE_FILE_INPUT_STREAM",
 	"CREATE_DOLBY_ATMOS_INPUT_STREAM",
 	"CREATE_DOLBY_VISION_INPUT_STREAM",
+	"CREATE_CEA608_INPUT_STREAM",
+	"CREATE_CEA708_INPUT_STREAM",
+	"CREATE_DVB_SUBTITLE_INPUT_STREAM",
+	"CREATE_HDR10_PLUS_INPUT_STREAM",
 	"CREATE_DOLBY_VISION_METADATA_INPUT_STREAM",
 	"CREATE_TRIMMING_TIME_BASED",
 	"CREATE_TRIMMING_TIMECODE_TRACK",
@@ -45,7 +49,11 @@ export const OPERATION_KINDS = [
 	"CREATE_CODEC_VP9",
 	"CREATE_CODEC_AV1",
 	"CREATE_CODEC_AAC",
+	"CREATE_CODEC_HE_AAC_V1",
+	"CREATE_CODEC_HE_AAC_V2",
 	"CREATE_CODEC_OPUS",
+	"CREATE_CODEC_PCM",
+	"CREATE_CODEC_AUDIO_PASSTHROUGH",
 	"CREATE_CODEC_IMSC",
 
 	"CREATE_CODEC_DOLBY_ATMOS",
@@ -69,6 +77,12 @@ export const OPERATION_KINDS = [
 	"CREATE_FILTER_ROTATE",
 	"CREATE_FILTER_CROP",
 	"CREATE_FILTER_SCALE",
+	"CREATE_FILTER_ENHANCED_DEINTERLACE",
+	"CREATE_FILTER_CONFORM",
+	"CREATE_FILTER_INTERLACE",
+	"CREATE_FILTER_ENHANCED_WATERMARK",
+	"CREATE_FILTER_DOLBY_LOUDNESS",
+	"CREATE_FILTER_AUDIO_MIX",
 	"CREATE_FILTER_DENOISE_HQDN3D",
 	"CREATE_FILTER_UNSHARP",
 
@@ -84,6 +98,7 @@ export const OPERATION_KINDS = [
 	"CREATE_MUXING_WEBM",
 	"CREATE_MUXING_PROGRESSIVE_TS",
 	"CREATE_MUXING_PROGRESSIVE_MOV",
+	"CREATE_MUXING_PROGRESSIVE_WAV",
 	"CREATE_DRM_CENC",
 	"CREATE_DRM_FAIRPLAY",
 	"CREATE_DRM_SPEKE",
@@ -274,6 +289,10 @@ const OPERATION_KIND_EXECUTION = {
 	CREATE_FILE_INPUT_STREAM: "executable",
 	CREATE_DOLBY_ATMOS_INPUT_STREAM: "executable",
 	CREATE_DOLBY_VISION_INPUT_STREAM: "executable",
+	CREATE_CEA608_INPUT_STREAM: "executable",
+	CREATE_CEA708_INPUT_STREAM: "executable",
+	CREATE_DVB_SUBTITLE_INPUT_STREAM: "executable",
+	CREATE_HDR10_PLUS_INPUT_STREAM: "executable",
 	CREATE_DOLBY_VISION_METADATA_INPUT_STREAM: "executable",
 	CREATE_TRIMMING_TIME_BASED: "executable",
 	CREATE_TRIMMING_TIMECODE_TRACK: "executable",
@@ -285,7 +304,11 @@ const OPERATION_KIND_EXECUTION = {
 	CREATE_CODEC_VP9: "executable",
 	CREATE_CODEC_AV1: "executable",
 	CREATE_CODEC_AAC: "executable",
+	CREATE_CODEC_HE_AAC_V1: "executable",
+	CREATE_CODEC_HE_AAC_V2: "executable",
 	CREATE_CODEC_OPUS: "executable",
+	CREATE_CODEC_PCM: "executable",
+	CREATE_CODEC_AUDIO_PASSTHROUGH: "executable",
 	CREATE_CODEC_IMSC: "executable",
 
 	CREATE_CODEC_DOLBY_ATMOS: "executable",
@@ -309,6 +332,12 @@ const OPERATION_KIND_EXECUTION = {
 	CREATE_FILTER_ROTATE: "executable",
 	CREATE_FILTER_CROP: "executable",
 	CREATE_FILTER_SCALE: "executable",
+	CREATE_FILTER_ENHANCED_DEINTERLACE: "executable",
+	CREATE_FILTER_CONFORM: "executable",
+	CREATE_FILTER_INTERLACE: "executable",
+	CREATE_FILTER_ENHANCED_WATERMARK: "executable",
+	CREATE_FILTER_DOLBY_LOUDNESS: "executable",
+	CREATE_FILTER_AUDIO_MIX: "executable",
 	CREATE_FILTER_DENOISE_HQDN3D: "executable",
 	CREATE_FILTER_UNSHARP: "executable",
 
@@ -324,6 +353,7 @@ const OPERATION_KIND_EXECUTION = {
 	CREATE_MUXING_WEBM: "executable",
 	CREATE_MUXING_PROGRESSIVE_TS: "executable",
 	CREATE_MUXING_PROGRESSIVE_MOV: "executable",
+	CREATE_MUXING_PROGRESSIVE_WAV: "executable",
 	CREATE_DRM_CENC: "executable",
 	CREATE_DRM_FAIRPLAY: "executable",
 	CREATE_DRM_SPEKE: "executable",
@@ -437,6 +467,10 @@ export const stepLogEntrySchema = z.strictObject({
 	status: stepStatusSchema,
 	/** Bitmovin resource id created by this step (create ops only). */
 	resourceId: z.string().optional(),
+	/** The local account and upstream scope used by the successful provider call. */
+	resourceAccount: z
+		.strictObject({ id: z.uuid(), version: z.uuid() })
+		.optional(),
 	/**
 	 * Rebuild generation . The live stale-RTMP guard
 	 * re-seeds steps to PENDING and re-executes them — the ONE path that
@@ -447,6 +481,10 @@ export const stepLogEntrySchema = z.strictObject({
 	 * and for never-re-seeded live steps.
 	 */
 	attempt: z.number().int().positive().optional(),
+	/** This generation's stamped child CREATE may have reached the provider.
+	 * Recover it by exact marker until a positive result is available. */
+	adoptExistingOnly: z.literal(true).optional(),
+	childCreateDispatch: z.enum(["PREPARING", "DISPATCHING"]).optional(),
 	/** Redacted request/response snapshots (C7). */
 	request: z.unknown().optional(),
 	response: z.unknown().optional(),
@@ -566,7 +604,8 @@ export function soleEncodingStepId(stepLog: unknown): string | null {
  */
 export function reseedFailedSteps(entries: StepLogEntry[]): StepLogEntry[] {
 	return entries.map((entry) =>
-		entry.status === "FAILED" || entry.status === "RUNNING"
+		!isRuntimeRecordKind(entry.kind) &&
+		(entry.status === "FAILED" || entry.status === "RUNNING")
 			? { ...entry, status: "PENDING" as const, error: undefined }
 			: entry,
 	);

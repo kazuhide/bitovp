@@ -8,7 +8,14 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
-import type { WizardFilter, WizardInputFile } from "./build-plan";
+import { AudioMixFilterEditor } from "./audio-mix-filter-editor";
+import {
+	isWizardWatermarkFilter,
+	type WizardFilter,
+	type WizardInputFile,
+	wizardInputStorage,
+	wizardWatermarkFile,
+} from "./build-plan";
 
 export const FILTER_KINDS = [
 	"DEINTERLACE",
@@ -16,9 +23,15 @@ export const FILTER_KINDS = [
 	"CROP",
 	"ROTATE",
 	"WATERMARK",
+	"ENHANCED_WATERMARK",
+	"DOLBY_LOUDNESS",
+	"AUDIO_MIX",
 	"TEXT",
 	"AUDIO_VOLUME",
 	"EBU_R128_SINGLE_PASS",
+	"ENHANCED_DEINTERLACE",
+	"CONFORM",
+	"INTERLACE",
 	"DENOISE_HQDN3D",
 	"UNSHARP",
 ] as const;
@@ -34,6 +47,7 @@ export function newFilter(
 			return { key, kind, left: 0, top: 0 };
 		case "ROTATE":
 			return { key, kind, rotation: 90 };
+		case "ENHANCED_WATERMARK":
 		case "WATERMARK":
 			return { key, kind, inputKey, imagePath: "", left: 0, top: 0 };
 		case "TEXT":
@@ -46,10 +60,31 @@ export function newFilter(
 				font: "DEJAVUSANS",
 				fontSize: 24,
 			};
+		case "AUDIO_MIX":
+			return {
+				key,
+				kind,
+				channelLayout: "STEREO",
+				audioMixChannels: [
+					{
+						channelNumber: 0,
+						sourceChannels: [{ type: "CHANNEL_NUMBER", channelNumber: 0 }],
+					},
+					{
+						channelNumber: 1,
+						sourceChannels: [{ type: "CHANNEL_NUMBER", channelNumber: 1 }],
+					},
+				],
+			};
 		case "AUDIO_VOLUME":
 			return { key, kind, volume: 100, unit: "PERCENT" };
+		case "CONFORM":
+			return { key, kind, targetFps: 25 };
+		case "INTERLACE":
+		case "ENHANCED_DEINTERLACE":
 		case "DENOISE_HQDN3D":
 		case "SCALE":
+		case "DOLBY_LOUDNESS":
 		case "UNSHARP":
 		case "EBU_R128_SINGLE_PASS":
 			return { key, kind };
@@ -85,6 +120,52 @@ const fields: Partial<Record<(typeof FILTER_KINDS)[number], Spec[]>> = {
 			"Pixel aspect ratio denominator",
 			"画素の縦横比（分母）",
 			"number",
+		],
+	],
+	ENHANCED_DEINTERLACE: [
+		["mode", "Output frames", "出力フレーム", ["FRAME", "FIELD"]],
+		[
+			"parity",
+			"Field order",
+			"フィールド順",
+			["TOP_FIELD_FIRST", "BOTTOM_FIELD_FIRST"],
+		],
+		[
+			"autoEnable",
+			"Apply filter",
+			"フィルターの適用条件",
+			["ALWAYS_ON", "META_DATA_BASED"],
+		],
+	],
+	CONFORM: [
+		[
+			"targetFps",
+			"Target frame rate (fps)",
+			"変換後のフレームレート（fps）",
+			"number",
+		],
+	],
+	INTERLACE: [
+		[
+			"mode",
+			"Interlace mode",
+			"インターレースモード",
+			[
+				"TOP",
+				"BOTTOM",
+				"DROP_EVEN",
+				"DROP_ODD",
+				"PAD",
+				"INTERLACE_X2",
+				"MERGE",
+				"MERGE_X2",
+			],
+		],
+		[
+			"verticalLowPassFilteringMode",
+			"Vertical low-pass filter",
+			"垂直ローパスフィルター",
+			["DISABLED", "LOW_PASS", "COMPLEX"],
 		],
 	],
 	DENOISE_HQDN3D: [
@@ -126,6 +207,45 @@ const fields: Partial<Record<(typeof FILTER_KINDS)[number], Spec[]>> = {
 	WATERMARK: [
 		["imagePath", "Image object path", "画像ファイルのパス", "text"],
 		...edges,
+	],
+	ENHANCED_WATERMARK: [
+		["imagePath", "Image object path", "画像ファイルのパス", "text"],
+		...edges,
+		["width", "Watermark width", "透かし画像の幅", "number"],
+		["height", "Watermark height", "透かし画像の高さ", "number"],
+		["opacity", "Opacity (0–1)", "不透明度（0〜1）", "number"],
+	],
+	DOLBY_LOUDNESS: [
+		[
+			"targetLoudness",
+			"Target loudness (LKFS)",
+			"目標ラウドネス（LKFS）",
+			"number",
+		],
+		[
+			"maximumTruePeakLevel",
+			"Maximum true peak (dBTP)",
+			"最大トゥルーピーク（dBTP）",
+			"number",
+		],
+		[
+			"dialogueIntelligence",
+			"Dialogue Intelligence",
+			"台詞の自動判定",
+			["ENABLED", "DISABLED"],
+		],
+		[
+			"speechDetectionThreshold",
+			"Speech detection threshold (%)",
+			"音声検出のしきい値（%）",
+			"number",
+		],
+		[
+			"contentForm",
+			"Content length",
+			"番組の長さ",
+			["AUTO_DETECT", "LONG", "SHORT"],
+		],
 	],
 	AUDIO_VOLUME: [
 		["volume", "Volume", "音量", "number"],
@@ -176,15 +296,22 @@ export function MediaFilterEditor({
 	idBase: string;
 	filter: WizardFilter;
 	inputFiles: WizardInputFile[];
-	onChange: (next: WizardFilter) => void;
+	onChange: (next: WizardFilter, storageSelected?: boolean) => void;
 }) {
 	const { locale, t } = useT();
 	const ja = locale === "ja";
-	const inputs = inputFiles.filter(
-		(f, i, all) =>
-			["S3", "GENERIC_S3", "GCS"].includes(f.kind) &&
-			all.findIndex((x) => x.inputKey === f.inputKey) === i,
-	);
+	const selected = isWizardWatermarkFilter(filter)
+		? wizardWatermarkFile(inputFiles, filter)
+		: undefined;
+	const inputs = inputFiles.filter((f, i, all) => {
+		if (!["S3", "GENERIC_S3", "GCS"].includes(f.kind)) return false;
+		const same = (other: WizardInputFile) =>
+			other.inputKey === f.inputKey &&
+			wizardInputStorage(other) === wizardInputStorage(f);
+		return selected && same(selected)
+			? selected.key === f.key
+			: all.findIndex(same) === i;
+	});
 	const patch = (key: string, value: unknown) =>
 		onChange({ ...filter, [key]: value } as WizardFilter);
 	return (
@@ -201,7 +328,7 @@ export function MediaFilterEditor({
 							newFilter(
 								filter.key,
 								e.target.value as (typeof FILTER_KINDS)[number],
-								inputs[0]?.inputKey,
+								inputs[0]?.key,
 							),
 						)
 					}
@@ -213,7 +340,7 @@ export function MediaFilterEditor({
 					))}
 				</SelectNative>
 			</Field>
-			{filter.kind === "WATERMARK" ? (
+			{isWizardWatermarkFilter(filter) ? (
 				<Field
 					label={ja ? "画像の入力ストレージ" : "Image input storage"}
 					htmlFor={`${idBase}-input`}
@@ -225,17 +352,18 @@ export function MediaFilterEditor({
 				>
 					<SelectNative
 						id={`${idBase}-input`}
-						value={filter.inputKey}
-						onChange={(e) => patch("inputKey", e.target.value)}
+						value={selected?.key ?? filter.inputKey}
+						onChange={(e) =>
+							onChange({ ...filter, inputKey: e.target.value }, true)
+						}
 					>
 						<option value="">{ja ? "入力を選択" : "Select input"}</option>
 						{inputs.map((f) => (
-							<option key={f.inputKey} value={f.inputKey}>
+							<option key={f.key} value={f.key}>
 								{f.name ?? f.inputKey} · {f.bucket}
 							</option>
 						))}
-						{filter.inputKey &&
-						!inputs.some((f) => f.inputKey === filter.inputKey) ? (
+						{filter.inputKey && !selected ? (
 							<option value={filter.inputKey}>
 								{filter.inputKey} ({ja ? "未設定" : "missing"})
 							</option>
@@ -243,9 +371,15 @@ export function MediaFilterEditor({
 					</SelectNative>
 				</Field>
 			) : null}
+			{filter.kind === "AUDIO_MIX" && (
+				<AudioMixFilterEditor id={idBase} filter={filter} onChange={onChange} />
+			)}
 			{(fields[filter.kind ?? "DEINTERLACE"] ?? []).map(
 				([key, en, jp, control]) => {
-					const value = (filter as unknown as Record<string, unknown>)[key];
+					const value =
+						key === "imagePath" && selected?.purpose === "FILTER_IMAGE"
+							? selected.path
+							: (filter as unknown as Record<string, unknown>)[key];
 					const id = `${idBase}-${key}`;
 					return (
 						<Field

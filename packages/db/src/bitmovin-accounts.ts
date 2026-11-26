@@ -3,7 +3,10 @@ import type { SecretCipher } from "@bitovp/core";
 import type { BitmovinAccount, Prisma } from "../generated/client";
 import type { AppPrismaClient } from "./client";
 
-export type BitmovinAccountSummary = Omit<BitmovinAccount, "encryptedApiKey">;
+export type BitmovinAccountSummary = Omit<
+	BitmovinAccount,
+	"encryptedApiKey" | "resetPriorTenantScopes"
+>;
 
 export type CreateBitmovinAccountInput = {
 	label: string;
@@ -59,6 +62,27 @@ export function createBitmovinAccountStore(
 				select: { encryptedApiKey: true },
 			});
 			return cipher.decrypt(row.encryptedApiKey, aadFor(id));
+		},
+
+		/** Capture upstream scope and decrypt from the same account row version. */
+		async revealForEncoding(id: string) {
+			const row = await prisma.bitmovinAccount.findUnique({
+				where: { id },
+				select: {
+					tenantOrgId: true,
+					encryptedApiKey: true,
+					resourceScopeVersion: true,
+					resourceScopeSince: true,
+					updatedAt: true,
+				},
+			});
+			if (!row) return null;
+			const { encryptedApiKey, updatedAt, resourceScopeSince, ...scope } = row;
+			return {
+				...scope,
+				resourceScopeSince: resourceScopeSince ?? updatedAt,
+				apiKey: await cipher.decrypt(encryptedApiKey, aadFor(id)),
+			};
 		},
 
 		async update(

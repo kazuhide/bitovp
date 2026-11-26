@@ -1,4 +1,4 @@
-import type { PlanMuxing, PlanRendition } from "./schema";
+import type { PlanDrm, PlanMuxing, PlanRendition } from "./schema";
 import { AUDIO_CODECS } from "./schema";
 
 /**
@@ -36,6 +36,22 @@ export function muxingStreamKeys(muxing: PlanMuxing): readonly string[] {
 		: [muxing.streamKey, ...extra];
 }
 
+/** VOD DRM resources available on each physical Bitmovin muxing. */
+export const VOD_DRM_MUXINGS: Record<PlanDrm["kind"], readonly string[]> = {
+	CENC: ["FMP4", "MP4", "WEBM", "PROGRESSIVE_WEBM"],
+	FAIRPLAY: ["FMP4", "TS", "PROGRESSIVE_TS"],
+	SPEKE: ["FMP4", "MP4", "TS", "PROGRESSIVE_TS", "WEBM", "PROGRESSIVE_WEBM"],
+};
+
+export function physicalMuxingKind(muxing: {
+	kind: string;
+	progressive?: boolean;
+}): string {
+	return muxing.kind === "WEBM" && muxing.progressive
+		? "PROGRESSIVE_WEBM"
+		: muxing.kind;
+}
+
 /** True when this container packages more than its primary stream. */
 export function isMuxedContainer(muxing: PlanMuxing): boolean {
 	return muxingStreamKeys(muxing).length > 1;
@@ -63,6 +79,7 @@ export function isMuxedContainer(muxing: PlanMuxing): boolean {
 export const FILE_ONLY_MUXING_KINDS = [
 	"PROGRESSIVE_TS",
 	"PROGRESSIVE_MOV",
+	"PROGRESSIVE_WAV",
 	"PROGRESSIVE_WEBM",
 ] as const satisfies readonly PlanMuxing["kind"][];
 
@@ -97,6 +114,7 @@ const CARRIES_AUDIO: Record<PlanMuxing["kind"], boolean> = {
 	CHUNKED_TEXT: false,
 	PROGRESSIVE_TS: true,
 	PROGRESSIVE_MOV: true,
+	PROGRESSIVE_WAV: false,
 	PROGRESSIVE_WEBM: true,
 };
 

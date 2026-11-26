@@ -97,6 +97,7 @@ export type ContainerKind =
 	| "MP4_FRAGMENTED"
 	| "PROGRESSIVE_TS"
 	| "PROGRESSIVE_MOV"
+	| "PROGRESSIVE_WAV"
 	| "PROGRESSIVE_WEBM";
 
 /** What one muxing must have written. */
@@ -140,11 +141,13 @@ export type ExpectedMuxing = {
 	};
 	audio?: {
 		codec: PlanRendition["codec"];
-		bitrate: number;
-		sampleRate: number;
+		bitrate?: number;
+		sampleRate?: number;
+		sampleFormat?: "S16LE" | "S24LE" | "S32LE";
+		singleTrackFile?: true;
 		channelLayout?: string;
 	};
-	text?: { language?: string };
+	text?: { language?: string; codec?: "IMSC" | "WEBVTT" };
 	/** True when a provider RESULT population must resolve this template. */
 	perTitle: boolean;
 	/**
@@ -598,6 +601,7 @@ function containerOf(muxing: PlanMuxing): ContainerKind {
 				? "MP4_PROGRESSIVE"
 				: "MP4_FRAGMENTED";
 		case "PROGRESSIVE_TS":
+		case "PROGRESSIVE_WAV":
 		case "PROGRESSIVE_MOV":
 		case "PROGRESSIVE_WEBM":
 			return muxing.kind;
@@ -765,19 +769,33 @@ export function compileExpectedArtefacts(
 					...(v.profile ? { profile: v.profile } : {}),
 					...(typeof v.rate === "number" ? { fps: v.rate } : {}),
 				};
+			} else if (packaged.codec === "AUDIO_PASSTHROUGH") {
+				expected.audio = { codec: packaged.sourceCodec, singleTrackFile: true };
+			} else if (packaged.codec === "PCM") {
+				expected.audio = {
+					codec: "PCM",
+					bitrate: packaged.bitrate,
+					sampleRate: packaged.rate,
+					channelLayout: packaged.channelLayout,
+					sampleFormat: packaged.sampleFormat,
+					singleTrackFile: true,
+				};
 			} else if (
 				packagedCodec !== undefined &&
 				AUDIO_CODECS.has(packagedCodec)
 			) {
-				const a = packaged as Extract<PlanRendition, { codec: "AAC" }>;
+				const a = packaged as Extract<
+					PlanRendition,
+					{ codec: "AAC" | "HE_AAC_V1" | "HE_AAC_V2" }
+				>;
 				expected.audio = {
 					codec: packagedCodec,
 					bitrate: a.bitrate,
-					sampleRate: a.rate,
+					...(a.rate === undefined ? {} : { sampleRate: a.rate }),
 					...(a.channelLayout ? { channelLayout: a.channelLayout } : {}),
 				};
 			} else if (packagedCodec === "WEBVTT" || packagedCodec === "IMSC") {
-				expected.text = {};
+				expected.text = muxing.kind === "TEXT" ? { codec: packagedCodec } : {};
 			} else {
 				// The arm that did not exist. A codec in no set produced an expectation with
 				// nothing to assert AND no note, so the muxing was silently unverified — the
@@ -927,7 +945,12 @@ export function compileExpectedArtefacts(
 				].sort();
 				const seenAudio = new Set<string>();
 				const audio = audioMuxes.flatMap((m) => {
-					if (!m.audio || seenAudio.has(m.renditionKey)) {
+					if (
+						!m.audio ||
+						m.audio.bitrate === undefined ||
+						m.audio.singleTrackFile ||
+						seenAudio.has(m.renditionKey)
+					) {
 						return [];
 					}
 					seenAudio.add(m.renditionKey);
@@ -1021,6 +1044,8 @@ export function compileExpectedArtefacts(
 						const uri = mediaUri.get(entry.renditionKey);
 						if (
 							!m?.audio ||
+							m.audio.bitrate === undefined ||
+							m.audio.singleTrackFile ||
 							uri === undefined ||
 							seen.has(entry.renditionKey)
 						) {

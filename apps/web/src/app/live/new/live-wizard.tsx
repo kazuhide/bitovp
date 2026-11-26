@@ -10,7 +10,7 @@ import {
 	moqDraftVersionSchema,
 } from "@bitovp/core";
 import { plansDeepEqual } from "@bitovp/core/wizard";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -44,8 +44,13 @@ import {
 	renameOutputBase,
 	splitOutputFolder,
 } from "@/lib/output-path";
-import { draftFingerprint, mergeWizardDraft } from "@/lib/wizard-draft";
+import {
+	draftFingerprint,
+	legacyLiveMetadataOnly,
+	restoreLiveWizardDraft,
+} from "@/lib/wizard-draft";
 import { useWizardDraft } from "@/lib/wizard-draft-hook";
+import { useWizardSubmission } from "@/lib/wizard-submission-hook";
 import {
 	MoqPreviewReadiness,
 	useMoqPreviewReadiness,
@@ -63,6 +68,7 @@ import {
 	type LiveWizardState,
 	withMslStreamFormat,
 } from "./build-live-plan";
+import { LiveDvbSubtitlesSection } from "./dvb-subtitles-section";
 import { LiveFallbackRegions } from "./fallback-regions-section";
 import { InputSection } from "./input-section";
 import { LiveLadderSection } from "./ladder-section";
@@ -371,10 +377,9 @@ export function LiveWizard({
 		value: { ...state, schedule: scheduleDraft },
 		step,
 		onRestore: (saved) => {
-			const { schedule, ...restored } = mergeWizardDraft(
+			const { schedule, ...restored } = restoreLiveWizardDraft(
 				{ ...draftBase.current, schedule: EMPTY_SCHEDULE_DRAFT },
-				saved.value,
-				"live",
+				saved,
 			);
 			if (!aisaPreviewEnabled && restored.aisaLive?.enabled) return;
 			setState(restored);
@@ -386,8 +391,8 @@ export function LiveWizard({
 		"live",
 		`wizard:${duplicateFrom ?? "new"}`,
 	);
-	const submit = useMutation({
-		mutationFn: () => {
+	const submit = useWizardSubmission(
+		() => {
 			if (aisaBlocked)
 				throw new LocalizedWizardError(
 					evaluation.ok ? t("ui.blocked") : evaluation.zodMessage,
@@ -416,16 +421,18 @@ export function LiveWizard({
 				if (parsed.success && plansDeepEqual(parsed.data, current.plan))
 					plan = original;
 			}
-			return creation.submit<{ id: string }>({
+			const request = {
 				plan,
 				...(verdict.schedule ? { schedule: verdict.schedule } : {}),
-			});
+			};
+			return () => creation.submit<{ id: string }>(request);
 		},
-		onSuccess: (channel) => {
-			if (!imported && !importLoadedForEditing) draft.clear();
-			router.push(`/live/${channel.id}`);
-		},
-	});
+		() =>
+			!imported && !importLoadedForEditing
+				? draft.afterSubmission()
+				: undefined,
+		(channel) => router.push(`/live/${channel.id}`),
+	);
 
 	const patch = (partial: Partial<LiveWizardState>) =>
 		setState((prev) => ({ ...prev, ...partial }));
@@ -629,7 +636,21 @@ export function LiveWizard({
 						</Button>
 					) : null}
 				</header>
-				<WizardDraftOffer {...draft} />
+				<WizardDraftOffer
+					{...draft}
+					kind="live"
+					restore={() =>
+						draft.restore(
+							legacyLiveMetadataOnly(draftBase.current, draft.pending),
+						)
+					}
+					legacySettings={
+						legacyLiveMetadataOnly(draftBase.current, draft.pending)
+							? draft.pending?.value
+							: undefined
+					}
+					retainedSettings={draft.retained?.value}
+				/>
 				{importLoadedForEditing && !imported ? (
 					<p role="status" className="mt-4 text-emerald-300 text-sm">
 						{t("wizardX.importLoadedForEditing")}
@@ -986,7 +1007,10 @@ export function LiveWizard({
 					) : null}
 
 					{step === 2 && !aisaEnabled ? (
-						<LiveLadderSection state={state} onPatch={patch} />
+						<>
+							<LiveLadderSection state={state} onPatch={patch} />
+							<LiveDvbSubtitlesSection state={state} onPatch={patch} />
+						</>
 					) : null}
 
 					{step === 3 && aisaEnabled ? (

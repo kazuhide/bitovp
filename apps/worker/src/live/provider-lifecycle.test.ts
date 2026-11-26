@@ -46,7 +46,16 @@ function harness(now: () => string = () => NOW) {
 		async (): Promise<Partial<RunLifecycleRow>[]> => [],
 	);
 	const channelUpdateMany = vi.fn(async (_args?: unknown) => ({ count: 1 }));
-	const feederFindMany = vi.fn(async () => [] as { id: string }[]);
+	const outboxCreate = vi.fn(async () => ({}));
+	const channelFindUnique = vi.fn(
+		async (_args?: unknown): Promise<{ id: string; name?: string } | null> => ({
+			id: CHANNEL,
+			name: "Test channel",
+		}),
+	);
+	const feederFindMany = vi.fn(
+		async (_args?: unknown) => [] as { id: string }[],
+	);
 	const executeRaw = vi.fn(async (..._args: unknown[]) => 1);
 	const queryRaw = vi.fn(async () => [{ id: CHANNEL }]);
 	let prisma: AppPrismaClient;
@@ -58,12 +67,38 @@ function harness(now: () => string = () => NOW) {
 		$queryRaw: queryRaw,
 		$executeRaw: executeRaw,
 		liveChannelRun: {
-			findFirst: runFindFirst,
+			findFirst: async (args: { select?: { liveChannel?: unknown } }) => {
+				const row = await runFindFirst();
+				if (!args.select?.liveChannel) return row;
+				return {
+					...run(),
+					stepLog: [],
+					...row,
+					liveChannel: {
+						name: "Test channel",
+						runs: [{ id: "run-1" }],
+						bitmovinEncodingId: "enc-1",
+						stepLog: [],
+						...(row as { liveChannel?: object } | null)?.liveChannel,
+					},
+				};
+			},
 			findMany: runFindMany,
 			updateMany: runUpdateMany,
 		},
-		liveChannel: { updateMany: channelUpdateMany },
-		feederSession: { findMany: feederFindMany },
+		liveChannel: {
+			findMany: vi.fn(async () => []),
+			updateMany: channelUpdateMany,
+			findUnique: channelFindUnique,
+		},
+		liveStopNotification: { create: outboxCreate },
+		liveEffectClaim: { findMany: async () => [] },
+		feederSession: {
+			findMany: (...args: [{ where: { liveChannelId?: string } }]) =>
+				args[0].where.liveChannelId
+					? Promise.resolve([])
+					: feederFindMany(...args),
+		},
 		$transaction: transaction,
 	} as unknown as AppPrismaClient;
 	const enqueueFeederJob = vi.fn(async () => {});
@@ -76,10 +111,12 @@ function harness(now: () => string = () => NOW) {
 	});
 	return {
 		reconciler,
+		outboxCreate,
 		runFindFirst,
 		runFindMany,
 		runUpdateMany,
 		channelUpdateMany,
+		channelFindUnique,
 		transaction,
 		executeRaw,
 		queryRaw,
@@ -94,6 +131,56 @@ beforeEach(() => {
 });
 
 describe("reconcile — identity guards", () => {
+	it.each([
+		false,
+		true,
+	])("emits the committed AISA failure when a canceled encoder is reconciled (persisted=%s)", async (persisted) => {
+		const h = harness();
+		const encodingId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+		const analysisId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+		const current = run({
+			bitmovinEncodingId: encodingId,
+			aisaAnalysisId: analysisId,
+			aisaStatus: "ERROR",
+			aisaFinalization: {
+				encodingId,
+				analysisId,
+				status: "ERROR",
+				result: "UNAVAILABLE_TERMINAL_FAILURE",
+				observedAt: NOW,
+			},
+			...(persisted
+				? { providerTerminalAt: new Date(NOW), providerStatus: "CANCELED" }
+				: {}),
+		});
+		h.runFindFirst.mockResolvedValue({
+			...current,
+			liveChannel: { bitmovinEncodingId: encodingId },
+		} as typeof current);
+		const result = await h.reconciler.reconcile({
+			channel: { id: CHANNEL },
+			run: current,
+			encodingId,
+			sdk: fakeSdk({
+				getEncodingStatus: vi.fn(async () => ({ status: "CANCELED" })),
+			}),
+		});
+		expect(result.channelLanded).toBe(true);
+		expect(h.channelUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "ERROR",
+					error: "AISA_LIVE_TERMINAL_FAILURE",
+				}),
+			}),
+		);
+		expect(h.emitChannel).toHaveBeenCalledWith(
+			CHANNEL,
+			"AISA_LIVE_TERMINAL_FAILURE",
+		);
+		expect(h.outboxCreate).not.toHaveBeenCalled();
+	});
+
 	it("records Encoder termination without completing an AISA run whose Analysis is still draining", async () => {
 		const h = harness();
 		const pending = run({
@@ -150,6 +237,45 @@ describe("reconcile — identity guards", () => {
 		expect(h.emitChannel).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		"RUNNING",
+		"FINISHED",
+	] as const)("checks every displaced encoder before completing a broadcast with archived status %s", async (archivedStatus) => {
+		const h = harness();
+		const getEncodingStatus = vi.fn(async (id: string) => ({
+			status: id === "previous" ? archivedStatus : ("FINISHED" as const),
+		}));
+		const current = {
+			...run(),
+			previousProviderEncodingIds: ["previous"],
+			archivedRtmpAttempt: 1,
+			stepLog: [],
+		};
+		h.runFindFirst.mockResolvedValue({
+			...current,
+			liveChannel: { bitmovinAccountId: "fixture-account", stepLog: [] },
+		} as RunLifecycleRow);
+		const result = await h.reconciler.reconcile({
+			channel: {
+				id: CHANNEL,
+				bitmovinAccountId: "fixture-account",
+				stepLog: [],
+			},
+			run: current,
+			encodingId: "enc-1",
+			sdk: fakeSdk({ getEncodingStatus }),
+			fence: { epoch: 3 },
+		});
+		expect(getEncodingStatus.mock.calls.map(([id]) => id)).toEqual([
+			"enc-1",
+			"previous",
+		]);
+		expect(result.terminalised).toBe(archivedStatus === "FINISHED");
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(
+			archivedStatus === "FINISHED" ? 1 : 0,
+		);
+	});
 	it("projects a completed RUNNING airing as STOPPED, not an encoding error", async () => {
 		const h = harness();
 		await h.reconciler.reconcile({
@@ -175,7 +301,8 @@ describe("reconcile — identity guards", () => {
 				data: expect.objectContaining({ status: "STOPPED", error: null }),
 			}),
 		);
-		expect(h.emitChannel).toHaveBeenCalledWith(CHANNEL, null);
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it("repairs a completed STOPPED airing projection without rewriting its retained run", async () => {
@@ -192,14 +319,28 @@ describe("reconcile — identity guards", () => {
 			encodingId: "enc-1",
 			sdk,
 		});
-		expect(h.runUpdateMany).not.toHaveBeenCalled();
+		expect(h.runUpdateMany).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				where: {
+					id: "run-1",
+					liveChannelId: CHANNEL,
+					stopNotificationAt: null,
+				},
+				data: {
+					stopNotificationAt: new Date(NOW),
+					stopNotificationKind: "CHANNEL_STOPPED",
+					stopNotificationState: "PENDING",
+				},
+			}),
+		);
 		expect(sdk.getEncodingStatus).not.toHaveBeenCalled();
 		expect(h.channelUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({ status: "STOPPED", error: null }),
 			}),
 		);
-		expect(h.emitChannel).toHaveBeenCalledWith(CHANNEL, null);
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it.each([
@@ -322,13 +463,27 @@ describe("reconcile — identity guards", () => {
 			}),
 		});
 		expect(sdk.getEncodingStatus).not.toHaveBeenCalled();
-		expect(h.runUpdateMany).not.toHaveBeenCalled();
+		expect(h.runUpdateMany).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({
+				where: {
+					id: "run-1",
+					liveChannelId: CHANNEL,
+					stopNotificationAt: null,
+				},
+				data: {
+					stopNotificationAt: new Date(NOW),
+					stopNotificationKind: "CHANNEL_STOPPED",
+					stopNotificationState: "PENDING",
+				},
+			}),
+		);
 		expect(h.channelUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({ status: "STOPPED", error: null }),
 			}),
 		);
-		expect(h.emitChannel).toHaveBeenCalledWith(CHANNEL, null);
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it("projects CANCELED as STOPPED while retaining its provider identity and stopping feeders", async () => {
@@ -371,7 +526,8 @@ describe("reconcile — identity guards", () => {
 			feederSessionId: "feed-1",
 			action: "stop",
 		});
-		expect(h.emitChannel).toHaveBeenCalledWith(CHANNEL, null);
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it("commits provider evidence, run RUNNING and channel RUNNING in one transaction while clearing absent coordinates", async () => {
@@ -665,7 +821,8 @@ describe("reconcile — UNKNOWN keeps everything", () => {
 		["timeout", "request timed out after 10000ms"],
 		["credential", "401 Unauthorized"],
 		["single 404", "404 Not Found"],
-	])("a failed readback (%s) opens the window first-writer-wins and touches nothing else", async (_label, error) => {
+		["signed source", "Read media.mxf?sig=PRIVATE_FIXTURE", "[withheld]"],
+	])("a failed readback (%s) opens the window first-writer-wins and touches nothing else", async (_label, error, expected?: string) => {
 		const h = harness();
 		const sdk = fakeSdk({
 			getEncodingStatus: vi.fn(async () => {
@@ -680,7 +837,7 @@ describe("reconcile — UNKNOWN keeps everything", () => {
 			fence: { epoch: 4 },
 		});
 		expect(out.lifecycle).toBe("UNKNOWN");
-		expect(out.reason).toBe(error);
+		expect(out.reason).toBe(expected ?? error);
 		expect(out.refusal).toMatch(/cannot be confirmed/);
 		expect(out.unknownSince).toEqual(new Date(NOW));
 		expect(h.runUpdateMany).toHaveBeenCalledTimes(1);
@@ -689,6 +846,7 @@ describe("reconcile — UNKNOWN keeps everything", () => {
 				id: "run-1",
 				bitmovinEncodingId: "enc-1",
 				heartbeatPollEpoch: 4,
+				providerTerminalAt: null,
 				providerUnknownSince: null,
 			},
 			data: {
@@ -717,7 +875,11 @@ describe("reconcile — UNKNOWN keeps everything", () => {
 		expect(out.unknownSince).toEqual(since);
 		expect(out.landed).toBe(true);
 		expect(h.runUpdateMany).toHaveBeenCalledWith({
-			where: { id: "run-1", bitmovinEncodingId: "enc-1" },
+			where: {
+				id: "run-1",
+				bitmovinEncodingId: "enc-1",
+				providerTerminalAt: null,
+			},
 			data: { providerUnknownSince: since },
 		});
 	});
@@ -794,6 +956,7 @@ describe("reconcile — RUNNING / TRANSITIONAL record the observation", () => {
 				id: "run-1",
 				bitmovinEncodingId: "enc-1",
 				heartbeatPollEpoch: 4,
+				providerTerminalAt: null,
 			},
 			data: {
 				providerStatus: "RUNNING",
@@ -823,6 +986,57 @@ describe("reconcile — RUNNING / TRANSITIONAL record the observation", () => {
 });
 
 describe("reconcile — TERMINAL is reconciled once, onto exactly this run", () => {
+	it.each([
+		false,
+		true,
+	])("a heartbeat yields terminal projection to an open STOP (cached=%s)", async (cached) => {
+		const h = harness();
+		h.runFindFirst.mockResolvedValue({ id: "run-1" });
+		h.channelFindUnique.mockResolvedValueOnce(null);
+		const sdk = fakeSdk({
+			getEncodingStatus: vi.fn(async () => ({ status: "CANCELED" })),
+		});
+		const out = await h.reconciler.reconcile({
+			channel: { id: CHANNEL },
+			run: run(
+				cached
+					? {
+							status: "STOPPED",
+							providerStatus: "CANCELED",
+							providerStatusObservedAt: new Date(NOW),
+							providerTerminalAt: new Date(NOW),
+							providerFeederStopsEnqueuedAt: new Date(NOW),
+						}
+					: {},
+			),
+			encodingId: "enc-1",
+			sdk,
+			fence: { epoch: 3 },
+		});
+		expect(h.channelFindUnique).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					status: "RUNNING",
+					effectClaims: {
+						none: {
+							liveChannelRunId: "run-1",
+							action: "STOP",
+							state: { in: ["CLAIMED", "DISPATCHING", "AMBIGUOUS"] },
+						},
+					},
+				}),
+			}),
+		);
+		expect(out).toMatchObject({
+			landed: false,
+			terminalised: false,
+			channelLanded: false,
+		});
+		expect(sdk.getEncodingStatus).toHaveBeenCalledTimes(cached ? 0 : 1);
+		expect(h.channelUpdateMany).not.toHaveBeenCalled();
+		expect(h.feederFindMany).not.toHaveBeenCalled();
+		expect(h.emitChannel).not.toHaveBeenCalled();
+	});
 	it("treats a persisted terminal stamp as sticky and never trusts a later RUNNING wire answer", async () => {
 		const h = harness();
 		h.channelUpdateMany.mockResolvedValueOnce({ count: 0 });
@@ -995,7 +1209,22 @@ describe("reconcile — TERMINAL is reconciled once, onto exactly this run", () 
 		expect(h.feederFindMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: {
-					liveChannelRunId: "run-1",
+					AND: [
+						{
+							OR: [
+								{ liveChannelRunId: "run-1" },
+								{
+									liveChannelRunId: null,
+									liveChannel: {
+										id: CHANNEL,
+										bitmovinEncodingId: "enc-1",
+										status: { in: ["STOPPED", "ERROR"] },
+										runs: { none: { seq: { gt: 1 } } },
+									},
+								},
+							],
+						},
+					],
 					OR: [
 						feederOccupancyWhere(),
 						{ status: { in: [...FEEDER_ACTIVE_STATUSES] } },
@@ -1008,8 +1237,8 @@ describe("reconcile — TERMINAL is reconciled once, onto exactly this run", () 
 			feederSessionId: "feed-1",
 			action: "stop",
 		});
-		expect(h.emitChannel).toHaveBeenCalledTimes(1);
-		expect(h.emitChannel).toHaveBeenCalledWith(CHANNEL, null);
+		expect(h.emitChannel).not.toHaveBeenCalled();
+		expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 	});
 
 	it("a fresh terminal observation whose run CAS loses writes no channel, stops no feeder and emits nothing", async () => {
@@ -1089,7 +1318,8 @@ describe("reconcile — TERMINAL is reconciled once, onto exactly this run", () 
 				expect.stringMatching(/failed to enqueue feeder stop for feed-1/),
 				"redis down",
 			);
-			expect(h.emitChannel).toHaveBeenCalledTimes(1);
+			expect(h.emitChannel).not.toHaveBeenCalled();
+			expect(h.outboxCreate).toHaveBeenCalledTimes(1);
 			expect(h.runUpdateMany).not.toHaveBeenCalledWith(
 				expect.objectContaining({
 					data: expect.objectContaining({

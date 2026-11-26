@@ -29,15 +29,24 @@ const REPO = join(__dirname, "../../../..");
  *   - `live-channels/[id]/actions/route.test.ts` — the web start action
  *   - `scheduler/sweep.test.ts` — both scheduler arms, asserted on the CHANNEL
  *     after a sweep rather than on payload text
- *   - `live/provision-lease.test.ts` — the EXIT door (review-336 I1): the
+ *   - `live/provision-lease.test.ts` — the abandoned lease exit, now committed through provision-outcome.ts: the
  *     abandoned-lease sweep matches `status: "PROVISIONING"` in a WHERE, never
  *     writes it, and moves the row OUT (→ ERROR, lease released, run retired)
  *     by an exact-token compare-and-swap; its arms assert the flip, the
  *     release, the retirement, and that a renewed token is left alone.
+ *   - `live/owned-transition-locking.integration.test.ts` — a final RESTART
+ *     queue failure moves its own run out of PROVISIONING when its lease is
+ *     null. With a provision token it preserves the channel and run and emits nothing.
+ *   - `live/owned-transition-locking.integration.test.ts` covers the scheduled
+ *     START lease in `live/provision-admission.ts`. When Redis loses the
+ *     enqueue reply, the consumer records its lease and exact queue receipt
+ *     before contacting the provider. A separate race transfers the receipt
+ *     while a legacy consumer is paused. The paused delivery exits before
+ *     acquiring a lease or contacting the provider.
  * A new file appearing here is a signal to add such an arm for it.
  */
-describe("the set of files that claim a channel into PROVISIONING", () => {
-	it("is exactly the four known ones", () => {
+describe("channel provisioning admission and exit paths", () => {
+	it("contains only the known admission and exit files", () => {
 		// `apps` and `packages` — every tracked TypeScript path today, checked,
 		// but the pathspec is those two rather than the repo, so a third
 		// top-level source directory would need adding here.
@@ -71,9 +80,10 @@ describe("the set of files that claim a channel into PROVISIONING", () => {
 			"a file started claiming channels into PROVISIONING — it has a provisioning lease to decide about, and it needs its own behavioural arm (see this file's docstring)",
 		).toEqual([
 			"apps/web/src/app/api/live-channels/[id]/actions/route.ts",
-			// The exit door, not a claim (see the docstring): matched by the
-			// same two regexes because its WHERE names PROVISIONING.
-			"apps/worker/src/live/provision-lease.ts",
+			// Dead-job and provision outcome writes match their PROVISIONING predicates.
+			"apps/worker/src/live/dead-job-outcome.ts",
+			"apps/worker/src/live/provision-admission.ts",
+			"apps/worker/src/live/provision-outcome.ts",
 			"apps/worker/src/orchestrator/live-processor.ts",
 			"apps/worker/src/scheduler/sweep.ts",
 		]);

@@ -3,6 +3,7 @@ import {
 	liveHlsEntryUris,
 	selectLiveManifestMuxings,
 } from "./compiler";
+import { dvbTracksForManifest, dvbUri } from "./dvb-subtitles";
 import {
 	LIVE_MANIFEST_ELEMENT_BUDGET,
 	type ManifestElementEstimate,
@@ -10,7 +11,10 @@ import {
 } from "./dvr";
 import type { LiveChannelPlan, LiveManifestPlan } from "./schema";
 
-type SegmentSource = Pick<LiveChannelPlan, "renditions" | "muxings">;
+type SegmentSource = Pick<
+	LiveChannelPlan,
+	"renditions" | "muxings" | "dvbSubtitles"
+>;
 
 export type LiveManifestSegmentList = {
 	identity: string;
@@ -45,6 +49,15 @@ export function liveManifestSegmentLists(
 				: `representation:${muxing.key}`,
 			muxing.key,
 			muxing.segmentLength,
+		);
+	}
+	for (const track of dvbTracksForManifest(plan, manifest)) {
+		add(
+			manifest.kind === "HLS"
+				? `playlist:${dvbUri(track)}`
+				: `representation:dvb:${track.key}`,
+			`dvb:${track.key}`,
+			track.segmentLength,
 		);
 	}
 	if (manifest.kind === "HLS")

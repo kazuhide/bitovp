@@ -1,3 +1,4 @@
+import { checkStreamConditions } from "../plan/stream-condition-validation";
 import { vmafSourceFor } from "../vmaf/streamable-io";
 import {
 	enumerateBandingQcTargets,
@@ -6,6 +7,7 @@ import {
 	enumerateQcTargets,
 } from "../vmaf/targets";
 import { checkAkamaiMslConstraints } from "./akamai-msl-constraint";
+import { checkAudioFileOutputs } from "./audio-file-output";
 import {
 	checkAv1CodecControls,
 	checkH26xCodecControls,
@@ -24,6 +26,7 @@ import {
 	type EgressSite,
 	type SecretEgressAllowlist,
 } from "./egress";
+import { checkHdr10PlusPlan } from "./hdr10-plus";
 import { hlsLegSelected, hlsVersionForLegs } from "./hls-legs";
 import {
 	hlsAudioMediaDefaults,
@@ -40,11 +43,13 @@ import {
 } from "./input-stream-graph";
 import { checkInternalHevcV2Plan } from "./internal-hevc-v2";
 import { validateManifestDetails } from "./manifest-detail-validation";
-import { filterFamily } from "./media-filters";
+import { filterFamily, supportsDolbyLoudness } from "./media-filters";
 import {
 	hasMuxedInAudio,
 	isFileOnlyMuxingKind,
 	muxingStreamKeys,
+	physicalMuxingKind,
+	VOD_DRM_MUXINGS,
 } from "./muxing-streams";
 import { outputFileCollisions } from "./output-file-collisions";
 import { isPerTitleRendition } from "./per-title-results";
@@ -54,6 +59,7 @@ import {
 	type PlanMuxing,
 	vmafModelNeedsFile,
 } from "./schema";
+import { validateBroadcastFilters } from "./validate-broadcast-filters";
 
 const VIDEO_CODECS_FOR_MODE = new Set(["H264", "H265", "VP9", "AV1"]);
 
@@ -71,7 +77,7 @@ const VIDEO_CODECS_FOR_MODE = new Set(["H264", "H265", "VP9", "AV1"]);
  * WHERE EACH ROW COMES FROM is not uniform, and the difference matters to
  * anyone widening it:
  *
- *  - FMP4, CMAF, TS, WEBM, TEXT and CHUNKED_TEXT are sample-derived — the
+ *  - FMP4, CMAF, TS, WEBM and CHUNKED_TEXT are sample-derived — the
  *    combinations Bitmovin's vendor samples build, each exercised by a golden.
  *  - MP4 and the three PROGRESSIVE_* rows are the whole-file containers. They
  *    hold what Bitmovin documents for them, looked up on 2026-11-13 in its
@@ -109,6 +115,8 @@ export const MUXING_CODEC_MATRIX: Record<
 > = {
 	// AV1 packages into fMP4 and WebM; dedicated CMAF is H264/AAC only.
 	FMP4: [
+		"HE_AAC_V1",
+		"HE_AAC_V2",
 		"H264",
 		"H265",
 		"AV1",
@@ -121,6 +129,7 @@ export const MUXING_CODEC_MATRIX: Record<
 	],
 	CMAF: ["H264", "AAC"],
 	MP4: [
+		"AUDIO_PASSTHROUGH",
 		"H264",
 		"H265",
 		"AV1",
@@ -134,10 +143,12 @@ export const MUXING_CODEC_MATRIX: Record<
 	],
 	TS: ["H264", "AAC", "AC3"],
 	WEBM: ["VP9", "AV1", "OPUS"],
-	TEXT: ["IMSC"],
+	// Encoder 2.22 documents sidecar WebVTT with a Text muxing.
+	TEXT: ["IMSC", "WEBVTT"],
 	CHUNKED_TEXT: ["WEBVTT"],
 	PROGRESSIVE_TS: ["H264", "H265", "AAC", "DDPLUS", "DD", "AC3", "EAC3"],
-	PROGRESSIVE_MOV: ["H264", "H265", "AAC", "DD", "AC3"],
+	PROGRESSIVE_MOV: ["H264", "H265", "AAC", "DD", "AC3", "AUDIO_PASSTHROUGH"],
+	PROGRESSIVE_WAV: ["PCM", "AUDIO_PASSTHROUGH"],
 	PROGRESSIVE_WEBM: ["VP9", "AV1", "OPUS"],
 };
 
@@ -387,11 +398,16 @@ export function validatePlan(
 	options: PlanValidationOptions = {},
 ): PlanIssue[] {
 	const issues: PlanIssue[] = checkInternalHevcV2Plan(plan);
+	issues.push(...checkAudioFileOutputs(plan));
 	issues.push(...checkH26xCodecControls(plan.renditions));
+	issues.push(...checkStreamConditions(plan.renditions, false));
 	issues.push(...checkAv1CodecControls(plan.renditions));
 	issues.push(...checkCodecDetailControls(plan.renditions));
 	issues.push(...checkConcatenationAvQualification(plan));
-	issues.push(...checkAv1DetailPreservationVersion(plan));
+	issues.push(
+		...checkAv1DetailPreservationVersion(plan),
+		...validateBroadcastFilters(plan),
+	);
 	issues.push(...checkHlsVideoUris(plan));
 	for (const [i, output] of plan.outputs.entries())
 		if (output.kind === "LIVE_MEDIA_INGEST" || output.kind === "MOQ")
@@ -437,8 +453,10 @@ export function validatePlan(
 	checkUniqueKeys(
 		[
 			...plan.ingest,
+			...plan.captionStreams,
 			...plan.fileStreams,
 			...plan.dolbyStreams,
+			...plan.hdr10PlusStreams,
 			...plan.trimmingStreams,
 			...plan.concatenationStreams,
 			...plan.audioMixStreams,
@@ -544,7 +562,9 @@ export function validatePlan(
 		}
 	}
 	const fileByKey = new Map(plan.fileStreams.map((f) => [f.key, f]));
+	const captionByKey = new Map(plan.captionStreams.map((s) => [s.key, s]));
 	const dolbyByKey = new Map(plan.dolbyStreams.map((d) => [d.key, d]));
+	const hdr10PlusByKey = new Map(plan.hdr10PlusStreams.map((s) => [s.key, s]));
 	const trimmingKeys = new Set(plan.trimmingStreams.map((t) => t.key));
 	const concatKeys = new Set(plan.concatenationStreams.map((c) => c.key));
 	// Every key a rendition's ingestKey OR a trim/concat sourceKey may resolve
@@ -552,7 +572,9 @@ export function validatePlan(
 	const inputStreamKeys = new Set<string>([
 		...ingestKeys,
 		...fileKeys,
+		...captionByKey.keys(),
 		...dolbyByKey.keys(),
+		...hdr10PlusByKey.keys(),
 		...trimmingKeys,
 		...concatKeys,
 		...plan.audioMixStreams.map((s) => s.key),
@@ -571,6 +593,15 @@ export function validatePlan(
 			});
 		}
 	}
+	for (const [index, source] of plan.captionStreams.entries()) {
+		if (!inputKeys.has(source.inputKey))
+			issues.push({
+				code: "PLAN_UNRESOLVED_REF",
+				level: "error",
+				message: `Caption source "${source.key}" references unknown input "${source.inputKey}"`,
+				path: `captionStreams[${index}].inputKey`,
+			});
+	}
 	for (const [index, file] of plan.fileStreams.entries()) {
 		if (!inputKeys.has(file.inputKey)) {
 			issues.push({
@@ -583,13 +614,18 @@ export function validatePlan(
 	}
 
 	if (
-		plan.ingest.length + plan.fileStreams.length + plan.dolbyStreams.length ===
+		plan.ingest.length +
+			plan.captionStreams.length +
+			plan.fileStreams.length +
+			plan.dolbyStreams.length +
+			plan.hdr10PlusStreams.length ===
 		0
 	) {
 		issues.push({
 			code: "PLAN_NO_INPUT_STREAMS",
 			level: "error",
-			message: "the plan defines no input streams (ingest/file/dolby)",
+			message:
+				"the plan defines no input streams (ingest/file/captions/dolby/HDR10+)",
 			path: "ingest",
 		});
 	}
@@ -603,9 +639,54 @@ export function validatePlan(
 			});
 		}
 	}
+	for (const [index, stream] of plan.hdr10PlusStreams.entries()) {
+		if (!inputKeys.has(stream.inputKey)) {
+			issues.push({
+				code: "PLAN_UNRESOLVED_REF",
+				level: "error",
+				message: `HDR10+ stream "${stream.key}" references unknown input "${stream.inputKey}"`,
+				path: `hdr10PlusStreams[${index}].inputKey`,
+			});
+		}
+	}
+	issues.push(...checkHdr10PlusPlan(plan));
 
+	const allInputStreams = [
+		...plan.ingest,
+		...plan.captionStreams,
+		...plan.fileStreams,
+		...plan.dolbyStreams,
+		...plan.hdr10PlusStreams,
+		...plan.trimmingStreams,
+		...plan.concatenationStreams,
+		...plan.audioMixStreams,
+	];
+	const owners = new Map(
+		allInputStreams.map((stream) => [stream.key, stream.encodingKey]),
+	);
+	function checkSourceOwner(
+		key: string,
+		encodingKey: string | undefined,
+		sourceKey: string,
+		path: string,
+	) {
+		const owner = owners.get(sourceKey);
+		if (owner && encodingKey && owner !== encodingKey)
+			issues.push({
+				code: "PLAN_ENCODING_SOURCE_MISMATCH",
+				level: "error",
+				path,
+				message: `input stream "${key}" (encoding "${encodingKey}") references "${sourceKey}" owned by encoding "${owner}"`,
+			});
+	}
 	// Trimming input streams wrap another declared input stream by sourceKey.
 	for (const [index, trim] of plan.trimmingStreams.entries()) {
+		checkSourceOwner(
+			trim.key,
+			trim.encodingKey,
+			trim.sourceKey,
+			`trimmingStreams[${index}].sourceKey`,
+		);
 		if (trim.sourceKey === trim.key || !inputStreamKeys.has(trim.sourceKey)) {
 			issues.push({
 				code: "PLAN_TRIMMING_UNRESOLVED_SOURCE",
@@ -621,6 +702,12 @@ export function validatePlan(
 		let mainCount = 0;
 		const seenPositions = new Set<number>();
 		for (const [sIndex, source] of concat.sources.entries()) {
+			checkSourceOwner(
+				concat.key,
+				concat.encodingKey,
+				source.sourceKey,
+				`concatenationStreams[${index}].sources[${sIndex}].sourceKey`,
+			);
 			if (
 				source.sourceKey === concat.key ||
 				!inputStreamKeys.has(source.sourceKey)
@@ -711,14 +798,6 @@ export function validatePlan(
 		}
 	}
 
-	const allInputStreams = [
-		...plan.ingest,
-		...plan.fileStreams,
-		...plan.dolbyStreams,
-		...plan.trimmingStreams,
-		...plan.concatenationStreams,
-		...plan.audioMixStreams,
-	];
 	for (const [index, mix] of plan.audioMixStreams.entries()) {
 		for (const [i, channel] of mix.audioMixChannels.entries()) {
 			const path = `audioMixStreams[${index}].audioMixChannels[${i}].sourceKey`;
@@ -740,7 +819,9 @@ export function validatePlan(
 			if (
 				inputStreamAncestry(plan, channel.sourceKey)?.some(
 					(key) =>
+						captionByKey.has(key) ||
 						fileByKey.has(key) ||
+						hdr10PlusByKey.has(key) ||
 						ingestByKey.get(key)?.selectionMode === "VIDEO_RELATIVE" ||
 						(dolbyByKey.has(key) && dolbyByKey.get(key)?.kind !== "ATMOS"),
 				)
@@ -821,6 +902,13 @@ export function validatePlan(
 			`ingest[${i}].encodingKey`,
 		);
 	});
+	for (const [i, s] of plan.captionStreams.entries()) {
+		checkEncodingKey(
+			`caption stream "${s.key}"`,
+			s.encodingKey,
+			`captionStreams[${i}].encodingKey`,
+		);
+	}
 	plan.fileStreams.forEach((s, i) => {
 		checkEncodingKey(
 			`fileStream "${s.key}"`,
@@ -833,6 +921,13 @@ export function validatePlan(
 			`dolbyStream "${s.key}"`,
 			s.encodingKey,
 			`dolbyStreams[${i}].encodingKey`,
+		);
+	});
+	plan.hdr10PlusStreams.forEach((s, i) => {
+		checkEncodingKey(
+			`HDR10+ stream "${s.key}"`,
+			s.encodingKey,
+			`hdr10PlusStreams[${i}].encodingKey`,
 		);
 	});
 	plan.trimmingStreams.forEach((s, i) => {
@@ -1053,6 +1148,19 @@ export function validatePlan(
 				path: `renditions[${index}].ingestKey`,
 			});
 		}
+		const captionSource = inputStreamAncestry(plan, rendition.ingestKey)?.find(
+			(key) => captionByKey.has(key),
+		);
+		if (
+			captionSource &&
+			(rendition.codec !== "WEBVTT" || rendition.ingestKey !== captionSource)
+		)
+			issues.push({
+				code: "PLAN_STREAM_SOURCE_MISMATCH",
+				level: "error",
+				message: `Embedded captions in "${captionSource}" require a direct WebVTT subtitle rendition`,
+				path: `renditions[${index}].ingestKey`,
+			});
 		// Subtitle tracks consume whole files; AV renditions consume tracks
 		// (an ingest track or a trimming/concat intermediate stream over one).
 		if (
@@ -1216,8 +1324,10 @@ export function validatePlan(
 				filter &&
 				(rendition.codec === "WEBVTT" ||
 					rendition.codec === "IMSC" ||
-					filterFamily(filter.kind) !==
-						(AUDIO_CODECS.has(rendition.codec) ? "audio" : "video"))
+					(filter.kind === "DOLBY_LOUDNESS" &&
+						!supportsDolbyLoudness(rendition.codec)) ||
+					filterFamily(filter.kind) ===
+						(AUDIO_CODECS.has(rendition.codec) ? "video" : "audio"))
 			)
 				issues.push({
 					code: "PLAN_FILTER_MEDIA_TYPE",
@@ -1671,15 +1781,10 @@ export function validatePlan(
 	// DRM: resolve refs, enforce the drm-kind × container matrix and C9
 	// (CENC ivSize: CTR→8 bytes, CBC→16 bytes).
 	const muxingByKey = new Map(plan.muxings.map((m) => [m.key, m]));
-	const DRM_ALLOWED: Record<string, string[]> = {
-		SPEKE: ["FMP4"],
-		CENC: ["FMP4", "MP4", "WEBM"],
-		FAIRPLAY: ["FMP4", "TS"],
-	};
 	for (const [index, drm] of plan.drm.entries()) {
 		const muxing = muxingByKey.get(drm.muxingKey);
 		if (
-			muxing?.kind === "TS" &&
+			(muxing?.kind === "TS" || muxing?.kind === "PROGRESSIVE_TS") &&
 			muxingStreamKeys(muxing).some((key) => {
 				const codec = renditionByKey.get(key)?.codec;
 				return codec === "AC3" || codec === "EAC3";
@@ -1700,11 +1805,13 @@ export function validatePlan(
 				message: `drm "${drm.key}" references unknown muxing "${drm.muxingKey}"`,
 				path: `drm[${index}].muxingKey`,
 			});
-		} else if (!(DRM_ALLOWED[drm.kind] ?? []).includes(muxing.kind)) {
+		} else if (
+			!VOD_DRM_MUXINGS[drm.kind].includes(physicalMuxingKind(muxing))
+		) {
 			issues.push({
 				code: "PLAN_DRM_MUXING_MISMATCH",
 				level: "error",
-				message: `drm "${drm.key}" (${drm.kind}) cannot encrypt the ${muxing.kind} muxing "${muxing.key}" — allowed: ${(DRM_ALLOWED[drm.kind] ?? []).join("/")}`,
+				message: `drm "${drm.key}" (${drm.kind}) cannot encrypt the ${muxing.kind} muxing "${muxing.key}" — allowed: ${VOD_DRM_MUXINGS[drm.kind].join("/")}`,
 				path: `drm[${index}].muxingKey`,
 			});
 		}
@@ -2626,7 +2733,7 @@ export function validatePlan(
 		plan.renditions.flatMap((r) => (r.filters ?? []).map((a) => a.filterKey)),
 	);
 	for (const filter of plan.filters) {
-		if (filter.kind === "WATERMARK") {
+		if (filter.kind === "WATERMARK" || filter.kind === "ENHANCED_WATERMARK") {
 			const input = plan.inputs.find((i) => i.key === filter.inputKey);
 			if (!input || !["S3", "GENERIC_S3", "GCS"].includes(input.kind))
 				issues.push({

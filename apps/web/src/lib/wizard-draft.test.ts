@@ -1,5 +1,14 @@
-import { liveChannelPlanSchema } from "@bitovp/core";
-import { applyVodInputFavorite } from "@bitovp/core/wizard";
+import {
+	encodingPlanSchema,
+	liveChannelPlanSchema,
+	markWithheldPlanSources,
+	withheldPlanSources,
+} from "@bitovp/core";
+import {
+	applyVodInputFavorite,
+	planToWizardState,
+	tryImportPresetIntoWizard,
+} from "@bitovp/core/wizard";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
 	buildLiveChannelPlan,
@@ -16,12 +25,15 @@ import {
 	addVodVideo,
 	updateVodVideoHeight,
 } from "@/app/vod/new/rendition-copy";
+import { protectedVodCopyLayout } from "./protected-vod-copy";
 import {
 	draftIdentity,
 	draftKey,
 	mergeWizardDraft,
 	projectWizardDraft,
 	readWizardDraft,
+	restoreLiveWizardDraft,
+	restoreVodWizardDraft,
 	WIZARD_DRAFT_MAX_SIZE,
 	WIZARD_DRAFT_TTL,
 	writeWizardDraft,
@@ -29,6 +41,170 @@ import {
 
 beforeEach(() => localStorage.clear());
 
+it.each([
+	["S3", "///reels/take.mxf", "///reels/take.mxf"],
+	["GCS", "////reels/take.mxf", "////reels/take.mxf"],
+	["HTTPS", "///reels/take.mxf", ""],
+	["S3", "///name@fixture.invalid/movie", ""],
+	["S3", "///name:pass@fixture.invalid/movie", ""],
+	["S3", "///reels/take.mxf?ticket=fixture", ""],
+] as const)("round-trips only unsigned repeated-slash object keys (%s %s)", (kind, path, expected) => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const media = base.inputFiles[0];
+	if (!media) throw new Error("missing input");
+	base.inputFiles = [
+		{ ...media, kind, path, bucket: "archive", credentialId: "storage" },
+	];
+	writeWizardDraft(
+		"unsigned",
+		"vod",
+		{ ...base, name: "edited" },
+		1,
+		localStorage,
+		100,
+	);
+	const draft = readWizardDraft("unsigned", "vod", localStorage, 101);
+	if (!draft) throw new Error("missing draft");
+	const restored = mergeWizardDraft(
+		base,
+		draft.value,
+		"vod",
+		draft.vodInputOrder,
+	);
+	expect(restored.inputFiles[0]?.path).toBe(expected);
+	expect(restored.name).toBe("edited");
+	expect(
+		buildPlan(restored).ingest?.find((track) => track.key === "video")
+			?.inputPath,
+	).toBe(expected);
+});
+
+it("never saves or restores a protocol-relative HDR credential, including an older draft envelope", () => {
+	const secret =
+		"//fixture:FIXTURE_DRAFT_CREDENTIAL@fixture.invalid/sidecar.json";
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				inputKey: "main",
+				videoInputPath: "dir/source.mxf",
+				metadataInputPath: secret,
+			},
+		],
+	};
+	writeWizardDraft("hdr-old", "vod", { ...state, sources }, 2);
+	const stored = localStorage.getItem("hdr-old");
+	if (!stored) throw new Error("Expected an autosaved draft");
+	expect(stored).not.toContain("FIXTURE_DRAFT_CREDENTIAL");
+	const legacy = JSON.parse(stored);
+	legacy.value.sources = sources;
+	localStorage.setItem("hdr-old", JSON.stringify(legacy));
+	expect(JSON.stringify(readWizardDraft("hdr-old", "vod"))).not.toContain(
+		"FIXTURE_DRAFT_CREDENTIAL",
+	);
+	expect(localStorage.getItem("hdr-old")).not.toContain(
+		"FIXTURE_DRAFT_CREDENTIAL",
+	);
+	expect(localStorage.getItem("hdr-old")).toContain("dir/source.mxf");
+});
+it.each([
+	"//account:TEST_ONLY@fixture.invalid/picture",
+	"https:/account:TEST_ONLY@fixture.invalid/picture",
+])("cleans legacy picture rows on read while preserving spaces in unrelated keys", (path) => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const first = state.inputFiles[0];
+	if (!first) throw new Error("missing file");
+	const picture = {
+		...first,
+		key: "picture",
+		path,
+	};
+	state.inputFiles = [
+		picture,
+		{ ...first, key: "other", path: "clips/Scene A.mxf" },
+	];
+	state.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: "picture",
+				metadataInputPath: " ",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	writeWizardDraft("current", "vod", state, 2);
+	expect(localStorage.getItem("current")).not.toContain("TEST_ONLY");
+	localStorage.setItem(
+		"retained",
+		JSON.stringify({
+			version: 1,
+			kind: "vod",
+			savedAt: Date.now(),
+			step: 2,
+			value: state,
+		}),
+	);
+	const restored = readWizardDraft("retained", "vod");
+	expect(restored?.value.inputFiles).toMatchObject([
+		{ path: "" },
+		{ path: "clips/Scene A.mxf" },
+	]);
+	expect(localStorage.getItem("retained")).not.toContain("TEST_ONLY");
+	expect(localStorage.getItem("retained")).toContain("clips/Scene A.mxf");
+});
+it.each([
+	"cut:",
+	"show:shot.mxf",
+	"s3:scene",
+	"s3:/media/scene",
+	"s3:/media/scene@take",
+	"s3:/media:take@v2",
+	"s3:/media&key=take",
+	"s3:take 2@",
+])("retains unrelated object paths and names containing a partial HDR path %s", (partial) => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const media = state.inputFiles[0];
+	if (!media) throw new Error("missing media");
+	const other = `archive/${partial}scene.mxf`;
+	state.name = partial;
+	state.inputFiles = [
+		{ ...media, key: "master", path: "source.mxf" },
+		{ ...media, key: "other", path: other },
+	];
+	state.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: "master",
+				metadataInputPath: partial,
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	writeWizardDraft("typed", "vod", state, 2);
+	expect(readWizardDraft("typed", "vod")?.value).toMatchObject({
+		name: partial,
+		inputFiles: [{ path: "source.mxf" }, { path: other }],
+		sources: { hdr10PlusStreams: [{ metadataInputPath: "" }] },
+	});
+	localStorage.setItem(
+		"old",
+		JSON.stringify({
+			version: 1,
+			kind: "vod",
+			savedAt: Date.now(),
+			step: 2,
+			value: state,
+		}),
+	);
+	expect(readWizardDraft("old", "vod")?.value.inputFiles).toMatchObject([
+		{ path: "source.mxf" },
+		{ path: other },
+	]);
+	expect(localStorage.getItem("old")).toContain(other);
+});
 it("restores an edited MoQ copy without erasing a namespace excluded from local storage", () => {
 	const source: LiveWizardState = {
 		...DEFAULT_LIVE_WIZARD_STATE,
@@ -94,7 +270,620 @@ it("restores a fixed output logo with its image-only source and rendition attach
 	);
 });
 
-it("does not persist image URLs, unknown filter JSON or dangling logo attachments", () => {
+it("restores authored broadcast filter parameters and their video and audio attachment positions", () => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	state.filters = [
+		{
+			key: "watermark",
+			kind: "ENHANCED_WATERMARK",
+			inputKey: "main",
+			imagePath: "logos/logo.png",
+			left: 0,
+			width: 4.5,
+			opacity: 0,
+		},
+		{ key: "field", kind: "ENHANCED_DEINTERLACE", mode: "FIELD" },
+		{ key: "rate", kind: "CONFORM", targetFps: 24000 / 1001 },
+		{
+			key: "interlace",
+			kind: "INTERLACE",
+			mode: "TOP",
+			verticalLowPassFilteringMode: "LOW_PASS",
+		},
+		{
+			key: "mix",
+			kind: "AUDIO_MIX",
+			channelLayout: "MONO",
+			audioMixChannels: [
+				{
+					channelNumber: 0,
+					sourceChannels: [
+						{ type: "FRONT_RIGHT", gain: -0.5 },
+						{ type: "FRONT_LEFT", gain: 0 },
+					],
+				},
+			],
+		},
+		{
+			key: "levels",
+			kind: "DOLBY_LOUDNESS",
+			speechDetectionThreshold: 0,
+			maximumTruePeakLevel: -2,
+			targetLoudness: -23,
+		},
+	];
+	const attachments = (keys: string[]) =>
+		keys.map((filterKey, position) => ({ filterKey, position }));
+	state.videos = state.videos.map((video) => ({
+		...video,
+		extras: {
+			filters: attachments(["field", "rate", "interlace", "watermark"]),
+		},
+	}));
+	state.audios = state.audios.map((audio) => ({
+		...audio,
+		extras: { filters: attachments(["mix", "levels"]) },
+	}));
+	const draft = projectWizardDraft("vod", state);
+	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, draft, "vod");
+	expect(restored.filters).toEqual(state.filters);
+	expect(buildPlan(restored).renditions.map((row) => row.filters)).toEqual(
+		buildPlan(state).renditions.map((row) => row.filters),
+	);
+});
+
+it("keeps partially edited mix and ordinary deinterlace settings without caching enhanced watermark credentials", () => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	state.filters = [
+		{
+			key: "secret",
+			kind: "ENHANCED_WATERMARK",
+			inputKey: "main",
+			imagePath: "user:password@host/logo.png",
+		},
+		{ key: "din" },
+		{
+			key: "mix",
+			kind: "AUDIO_MIX",
+			channelLayout: "STEREO",
+			audioMixChannels: [
+				{
+					channelNumber: 0,
+					sourceChannels: [
+						{ type: "CHANNEL_NUMBER", channelNumber: 0, gain: 0 },
+					],
+				},
+			],
+		},
+	];
+	const audio = state.audios[0];
+	if (!audio) throw new Error("Missing audio");
+	audio.extras = { filters: [{ filterKey: "mix", position: 1 }] };
+	const value = projectWizardDraft("vod", state);
+	expect(JSON.stringify(value)).not.toContain("password");
+	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, value, "vod");
+	expect(restored.filters).toEqual([
+		{ ...state.filters[0], imagePath: "" },
+		...state.filters.slice(1),
+	]);
+	expect(restored.audios[0]?.extras?.filters).toEqual(
+		state.audios[0]?.extras?.filters,
+	);
+});
+
+it("keeps an attached partial enhanced logo and excludes credentials after leading whitespace or slashes", () => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const video = state.videos[0];
+	if (!video) throw new Error("Missing video");
+	video.extras = { filters: [{ filterKey: "logo", position: 1 }] };
+	for (const imagePath of [
+		"/",
+		" alice:secret@host/logo",
+		"/alice:secret@host/logo",
+		"/ alice:secret@host/logo",
+		"//alice:secret@host/logo",
+		"/alice:secret phrase@host/logo",
+		" alice name:secret phrase@host/logo",
+		"letter".repeat(180),
+		`https://example.invalid/logo?secret=${"s".repeat(1100)}`,
+	]) {
+		state.filters = [
+			{
+				kind: "ENHANCED_WATERMARK",
+				key: "logo",
+				inputKey: "main",
+				imagePath,
+				left: 2,
+				top: 0,
+			},
+		];
+		writeWizardDraft("watermark-edit", "vod", state, 2);
+		expect(localStorage.getItem("watermark-edit")).not.toContain("secret");
+		const saved = readWizardDraft("watermark-edit", "vod");
+		if (!saved) throw new Error("Expected draft");
+		const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, saved.value, "vod");
+		expect(restored.filters).toMatchObject([
+			{
+				kind: "ENHANCED_WATERMARK",
+				key: "logo",
+				imagePath: imagePath === "/" ? "/" : "",
+				left: 2,
+			},
+		]);
+		expect(restored.videos[0]?.extras?.filters).toEqual(video.extras.filters);
+	}
+});
+it.each([
+	"WATERMARK",
+	"ENHANCED_WATERMARK",
+] as const)("keeps labeled object keys and the attachment requiring re-entry for unsafe %s image values", (kind) => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const video = base.videos[0];
+	if (!video) throw new Error("Missing video");
+	base.name = "Review: cut @ Studio";
+	const imageInput = DEFAULT_WIZARD_STATE.inputFiles[0];
+	if (!imageInput) throw new Error("Missing default image storage");
+	video.extras = { filters: [{ filterKey: "logo", position: 0 }] };
+	for (const [imagePath, expected] of [
+		["Promo 10:30 @ final.png", "Promo 10:30 @ final.png"],
+		[
+			"Artwork: July @ Opening Credits/logo.png",
+			"Artwork: July @ Opening Credits/logo.png",
+		],
+		[
+			"/Artwork: July @ Opening Credits/logo.png",
+			"/Artwork: July @ Opening Credits/logo.png",
+		],
+		[
+			"/ Artwork: July @ Opening Credits/logo.png",
+			"/ Artwork: July @ Opening Credits/logo.png",
+		],
+		["Logo: 2026 @2x.png", "Logo: 2026 @2x.png"],
+		["Logo: 2026 @2x.png-v2", "Logo: 2026 @2x.png-v2"],
+		["operator:PRIVATE FIXTURE @", ""],
+		["Logo: winter @thumbnail.webp", "Logo: winter @thumbnail.webp"],
+		["user: secret @host", ""],
+		["operator: example @cdn.png.invalid", ""],
+		["operator: PRIVATE_FIXTURE @cdn.png-v2", ""],
+		["operator: example @ cdn.png.invalid", ""],
+		["user: secret @ host/logo.png", ""],
+		["user: secret @ host", ""],
+		["user: secret @", ""],
+		[`operator: example @cdn.png${"-x".repeat(150)} `, ""],
+		["user:secret phrase@host/image.png", ""],
+		["/user: secret @host/logo.png", ""],
+		["//user:secret@host/key", ""],
+		["storage+://private.example/secret.png", ""],
+		["a".repeat(1025), ""],
+	] as const) {
+		base.filters = [
+			{ kind, key: "logo", inputKey: "main", imagePath, left: 0, top: 0 },
+		];
+		base.inputFiles = [
+			{
+				...imageInput,
+				key: "main",
+				purpose: "FILTER_IMAGE",
+				path: imagePath,
+			},
+		];
+		writeWizardDraft("image", "vod", base, 1);
+		expect(localStorage.getItem("image")).not.toContain("secret");
+		const saved = readWizardDraft("image", "vod");
+		if (!saved) throw new Error("Missing draft");
+		const restored = restoreVodWizardDraft(DEFAULT_WIZARD_STATE, saved);
+		expect(restored.name).toBe(base.name);
+		expect(restored.inputFiles[0]?.path).toBe(expected);
+		expect(restored.filters).toEqual([
+			{ ...base.filters[0], imagePath: expected },
+		]);
+		expect(restored.videos[0]?.extras?.filters).toEqual(video.extras.filters);
+	}
+});
+it("keeps sparse input rows and an artwork row selected as audio", () => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const [media] = state.inputFiles;
+	if (!media) throw new Error("Missing input");
+	state.inputFiles = [
+		{ ...media, path: "reels/full.mov" },
+		{
+			...media,
+			key: "music",
+			purpose: "FILTER_IMAGE",
+			path: "Review: cut @ Studio.mov",
+		},
+	];
+	state.audioInputFile = "music";
+	const draft = projectWizardDraft("vod", {
+		...state,
+		inputFiles: [...state.inputFiles, { key: "unused", kind: "S3" }],
+	});
+	expect(draft.inputFiles).toMatchObject([
+		{ key: media.key, path: "reels/full.mov" },
+		{ key: "music", path: "Review: cut @ Studio.mov" },
+		{ key: "unused" },
+	]);
+});
+
+it("discards pasted login text in Live source hosts while retaining job titles", () => {
+	const hostname = "operator:sample password @ edge.v2";
+	const state = {
+		...DEFAULT_LIVE_WIZARD_STATE,
+		name: "Review: cut @ Studio.v2",
+		srt: {
+			...DEFAULT_LIVE_WIZARD_STATE.srt,
+			host: hostname,
+			backups: [{ host: hostname, path: "source" }],
+		},
+		zixi: { ...DEFAULT_LIVE_WIZARD_STATE.zixi, host: hostname },
+	};
+	expect(projectWizardDraft("live", state)).toMatchObject({
+		name: state.name,
+		srt: { host: "", backups: [{ host: "", path: "source" }] },
+		zixi: { host: "" },
+	});
+});
+
+it("keeps the replacement entered on reopen when the draft omitted its prior URL", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const [primary] = base.inputFiles;
+	if (!primary) throw new Error("Missing input");
+	const input = {
+		...primary,
+		kind: "HTTPS" as const,
+		bucket: "media.invalid",
+		path: "media/new.mov?ticket=NEW_FIXTURE",
+	};
+	base.inputFiles = [input, { ...primary, key: "other", path: "file.mov" }];
+	const saved = {
+		step: 2,
+		value: projectWizardDraft("vod", {
+			...base,
+			name: "Keep the editorial change",
+			inputFiles: [
+				{ ...input, path: "media/old.mov?ticket=OLD_FIXTURE" },
+				{ ...primary, key: "other", path: "" },
+			],
+		}),
+	};
+	expect(JSON.stringify(saved.value)).not.toContain("OLD_FIXTURE");
+	const restored = restoreVodWizardDraft(base, saved, {
+		inputFiles: new Map([[input.key, input]]),
+		protectedInputKeys: new Set([input.inputKey]),
+		hdr10PlusMetadataKeys: new Set(),
+	});
+	expect(restored.name).toBe("Keep the editorial change");
+	expect(restored.inputFiles.map((row) => row.path)).toEqual([input.path, ""]);
+});
+
+it("repairs a blank subtitle only when its original storage identity remains unchanged", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const primary = base.inputFiles[0];
+	const video = base.videos[0];
+	if (!primary || !video) throw new Error("Missing video fixture");
+	const source = {
+		kind: "HTTPS" as const,
+		inputKey: "captions",
+		credentialId: "",
+		bucket: "media.invalid",
+	};
+	const first = { ...source, key: "captions", path: "subtitles/first.srt" };
+	const second = {
+		...source,
+		key: "captions-2",
+		path: "subtitles/old.srt?ticket=OLD_FIXTURE",
+	};
+	const third = { ...source, key: "captions-3", path: "subtitles/third.srt" };
+	const rendition = (
+		key: string,
+		inputFile: string,
+	): WizardState["videos"][number] => ({
+		...video,
+		extras: { key, burnInSrt: { inputFile, characterEncoding: "UTF_8" } },
+	});
+	const saved = projectWizardDraft("vod", {
+		...base,
+		inputFiles: [primary, first, second, third],
+		videos: [
+			rendition("first", first.key),
+			rendition("second", second.key),
+			rendition("third", third.key),
+		],
+	});
+	expect(saved.inputFiles).toMatchObject([
+		{},
+		{ path: first.path },
+		{ path: "" },
+		{ path: third.path },
+	]);
+	const replacement = { ...second, path: first.path };
+	base.inputFiles = [primary, first, replacement, third];
+	base.videos = [
+		rendition("first", first.key),
+		rendition("second", second.key),
+		rendition("third", third.key),
+	];
+	const restored = restoreVodWizardDraft(
+		base,
+		{ step: 2, value: saved },
+		{
+			inputFiles: new Map([[second.key, replacement]]),
+			protectedInputKeys: new Set([second.inputKey]),
+			hdr10PlusMetadataKeys: new Set(),
+		},
+	);
+	const restoredSecondFile = restored.videos[1]?.extras?.burnInSrt?.inputFile;
+	expect(
+		restored.inputFiles.find((file) => file.key === restoredSecondFile)?.path,
+	).toBe(first.path);
+	const mismatched = restoreVodWizardDraft(
+		base,
+		{ step: 2, value: saved },
+		{
+			inputFiles: new Map([
+				[second.key, { ...replacement, bucket: "different.example" }],
+			]),
+			protectedInputKeys: new Set([second.inputKey]),
+			hdr10PlusMetadataKeys: new Set(),
+		},
+	);
+	expect(
+		mismatched.inputFiles.find((file) => file.key === second.key)?.path,
+	).toBe("");
+});
+
+it.each([
+	["generated", ["v1080", "v720", "v540"]],
+	["same resolution", ["v1080_2000k_h264", "v1080_2000k_h265", "v1080_1000k"]],
+	["explicit", ["analysis", "preview", "program"]],
+] as const)("restores protected copy burn-in paths with %s rendition keys", (mode, keys) => {
+	const original = structuredClone(DEFAULT_WIZARD_STATE);
+	const [main] = original.inputFiles;
+	if (!main) throw new Error("Missing primary file");
+	const credentialId = "1f8edfe4-fc30-4a9a-89e3-a3e89d5245df";
+	original.name = "Caption copy";
+	original.accountId = "0f8edfe4-fc30-4a9a-89e3-a3e89d5245df";
+	original.output = { ...original.output, credentialId, bucket: "output" };
+	original.inputFiles = [
+		{ ...main, credentialId, bucket: "media", path: "picture.mp4" },
+		...keys.map((key, index) => ({
+			key: `captions-${index}`,
+			inputKey: "captions",
+			kind: "HTTPS" as const,
+			credentialId: "",
+			bucket: "media.example",
+			path: `subtitles/${key}.srt?ticket=PRIVATE_FIXTURE`,
+		})),
+	];
+	original.videos = [1080, 720, 540].map((height, index) => ({
+		height: mode === "same resolution" ? 1080 : height,
+		bitrate: index === 2 ? 1_000_000 : 2_000_000,
+		codec: index === 1 ? "H265" : "H264",
+		extras: {
+			...(mode === "explicit" && { key: keys[index] }),
+			burnInSrt: { inputFile: `captions-${index}`, characterEncoding: "UTF_8" },
+		},
+	}));
+	const plan = encodingPlanSchema.parse(buildPlan(original));
+	const previous = planToWizardState(
+		plan as unknown as Record<string, unknown>,
+	);
+	expect(previous.videos.map((row) => row.extras?.key)).toEqual(
+		mode === "explicit" ? keys : [undefined, undefined, undefined],
+	);
+	const savedOrder = [...keys].reverse();
+	writeWizardDraft(
+		"copied-captions",
+		"vod",
+		{
+			...previous,
+			name: "Edited caption copy",
+			videos: [...previous.videos].reverse(),
+		},
+		3,
+	);
+	const stored = localStorage.getItem("copied-captions");
+	if (!stored) throw new Error("Expected an autosaved draft");
+	expect(stored).not.toContain("PRIVATE_FIXTURE");
+	// Older saves already have the height, bitrate and codec, but no
+	// explicit key on renditions whose plan used the standard defaults.
+	const legacy = JSON.parse(stored);
+	legacy.version = 1;
+	delete legacy.vodInputOrder;
+	delete legacy.renditionSettings;
+	localStorage.setItem("copied-captions", JSON.stringify(legacy));
+	const draft = readWizardDraft("copied-captions", "vod");
+	if (!draft) throw new Error("Expected the older draft to open");
+
+	const protectedPlan = markWithheldPlanSources(plan, {
+		...plan,
+		renditions: plan.renditions.map((row) =>
+			"burnInSrt" in row && row.burnInSrt
+				? { ...row, burnInSrt: { ...row.burnInSrt, inputPath: "" } }
+				: row,
+		),
+	});
+	const sources = withheldPlanSources(protectedPlan);
+	expect(sources?.labels).toEqual(keys.map((key) => `${key}:burnInSrt`));
+	const shared = "subtitles/shared.srt";
+	const distinct = "subtitles/distinct.srt";
+	const replacementPlan = sources?.fill([shared, shared, distinct]);
+	if (!sources || !replacementPlan) throw new Error("Expected a resolved copy");
+	const base = planToWizardState(
+		encodingPlanSchema.parse(replacementPlan) as unknown as Record<
+			string,
+			unknown
+		>,
+	);
+	expect(
+		base.inputFiles
+			.filter((file) => file.inputKey === "captions")
+			.map((file) => file.path),
+	).toEqual([shared, distinct]);
+	const layout = protectedVodCopyLayout(protectedPlan, replacementPlan, base);
+	if (!layout) throw new Error("Could not recover the original file slots");
+	expect(
+		layout.state.inputFiles
+			.filter((file) => file.inputKey === "captions")
+			.map((file) => file.path),
+	).toEqual([shared, shared, distinct]);
+	const restored = restoreVodWizardDraft(
+		layout.state,
+		draft,
+		layout.replacements,
+	);
+	const built = encodingPlanSchema.parse(buildPlan(restored));
+	expect(restored.name).toBe("Edited caption copy");
+	expect(restored.videos.map((row) => row.extras?.key)).toEqual(
+		mode === "explicit" ? savedOrder : [undefined, undefined, undefined],
+	);
+	expect(
+		built.renditions.flatMap((row) =>
+			"burnInSrt" in row && row.burnInSrt
+				? [[row.key, row.burnInSrt.inputPath, row.burnInSrt.characterEncoding]]
+				: [],
+		),
+	).toEqual(
+		savedOrder.map((key) => [
+			key,
+			key === keys[2] ? distinct : shared,
+			"UTF_8",
+		]),
+	);
+	if (mode === "same resolution") {
+		const ambiguous = projectWizardDraft("vod", {
+			...previous,
+			videos: previous.videos.map((row, index) =>
+				index === 1 ? { ...row, codec: "H264" } : row,
+			),
+		});
+		const edited = restoreVodWizardDraft(
+			layout.state,
+			{ step: 3, value: ambiguous },
+			layout.replacements,
+		);
+		expect(
+			edited.videos.map(
+				(video) =>
+					edited.inputFiles.find(
+						(file) => file.key === video.extras?.burnInSrt?.inputFile,
+					)?.path,
+			),
+		).toEqual([shared, shared, distinct]);
+	}
+});
+
+it("retains both parts of the HDR10+ replacement when restoring a draft without its old picture", () => {
+	const earlier = structuredClone(DEFAULT_WIZARD_STATE);
+	earlier.name = "HDR10+ copy";
+	const [main] = earlier.inputFiles;
+	if (!main) throw new Error("Missing primary file");
+	const credentialId = "11111111-1111-4111-8111-111111111111";
+	const picture = {
+		...main,
+		credentialId,
+		bucket: "input",
+		path: "/clips:day@camera/take.mxf",
+	};
+	earlier.inputFiles = [picture];
+	earlier.output = { ...earlier.output, credentialId, bucket: "output" };
+	earlier.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "picture",
+				videoInputFile: main.key,
+				metadataInputPath: "earlier/take.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	earlier.videos = earlier.videos.map((video) => ({
+		...video,
+		codec: "H265",
+		h265: { dynamicRangeFormat: "HDR10", profile: "MAIN10" },
+		extras: { ...video.extras, source: "picture" },
+	}));
+	const plan = buildPlan(earlier);
+	encodingPlanSchema.parse(plan);
+	const old = tryImportPresetIntoWizard(plan);
+	if (!old.ok) throw new Error(old.reasonKey);
+	const value = projectWizardDraft("vod", old.state);
+	expect(value.inputFiles).toMatchObject([{ path: "" }]);
+	const projection = markWithheldPlanSources(plan, {
+		...plan,
+		ingest: plan.ingest?.map((track) =>
+			track.inputPath === picture.path ? { ...track, inputPath: "" } : track,
+		),
+		hdr10PlusStreams: plan.hdr10PlusStreams?.map((row) => ({
+			...row,
+			videoInputPath: "",
+		})),
+	});
+	const sources = withheldPlanSources(projection);
+	expect(sources?.labels).toMatchObject([
+		expect.any(String),
+		"picture:metadata",
+	]);
+	const filled = sources?.fill(["fresh/take.mxf", "fresh/take.json"]);
+	if (!filled) throw new Error("Missing replacement picture and metadata");
+	const fresh = tryImportPresetIntoWizard(filled);
+	if (!fresh.ok) throw new Error(fresh.reasonKey);
+	const layout = protectedVodCopyLayout(projection, filled, fresh.state);
+	if (!layout) throw new Error("Could not recover the original picture slot");
+	const restored = restoreVodWizardDraft(
+		layout.state,
+		{ step: 2, value },
+		layout.replacements,
+	);
+	expect(buildPlan(restored).hdr10PlusStreams).toMatchObject([
+		{ videoInputPath: "fresh/take.mxf", metadataInputPath: "fresh/take.json" },
+	]);
+});
+
+it("retains gains and attachment while a numbered Audio Mix source is awaiting its position", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const audio = base.audios[0];
+	if (!audio) throw new Error("Missing audio");
+	base.filters = [
+		{
+			key: "mix",
+			kind: "AUDIO_MIX",
+			channelLayout: "MONO",
+			audioMixChannels: [
+				{
+					channelNumber: 0,
+					sourceChannels: [{ type: "CHANNEL_NUMBER", gain: 0 }],
+				},
+			],
+		},
+	];
+	audio.extras = { filters: [{ filterKey: "mix", position: 1 }] };
+	const restored = mergeWizardDraft(
+		DEFAULT_WIZARD_STATE,
+		projectWizardDraft("vod", base),
+		"vod",
+	);
+	expect(restored.filters).toEqual(base.filters);
+	expect(restored.audios[0]?.extras?.filters).toEqual(audio.extras.filters);
+});
+it("restores filter definitions without inheriting suppressed properties from a different preset row", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	base.filters = [
+		{ key: "overlay", kind: "TEXT", text: "private title", x: "0", y: "0" },
+		{ key: "rate", kind: "CONFORM", targetFps: 24 },
+	];
+	const value = projectWizardDraft("vod", { ...base, name: "Edited" });
+	expect(JSON.stringify(value)).not.toContain("private title");
+	const restored = mergeWizardDraft(base, value, "vod");
+	expect(restored.filters?.find((item) => item.key === "overlay")).toEqual(
+		base.filters[0],
+	);
+	expect(restored.filters?.find((item) => item.key === "rate")).toEqual(
+		base.filters[1],
+	);
+});
+
+it("redacts image URLs and unknown filter JSON while keeping the logo attached for re-entry", () => {
 	const state = structuredClone(DEFAULT_WIZARD_STATE);
 	const value = projectWizardDraft("vod", {
 		...state,
@@ -118,9 +907,17 @@ it("does not persist image URLs, unknown filter JSON or dangling logo attachment
 	});
 	expect(JSON.stringify(value)).not.toMatch(/SECRET|token=|https:\/\//);
 	const restored = mergeWizardDraft(DEFAULT_WIZARD_STATE, value, "vod");
+	expect(restored.filters).toContainEqual({
+		key: "unsafe",
+		kind: "WATERMARK",
+		inputKey: "main",
+		imagePath: "",
+	});
 	expect(
-		restored.videos.flatMap((video) => video.extras?.filters ?? []),
-	).toEqual([]);
+		restored.videos.every(
+			(video) => video.extras?.filters?.[0]?.filterKey === "unsafe",
+		),
+	).toBe(true);
 });
 
 it("keeps a sparse legacy VOD draft on its implicit STABLE version", () => {
@@ -128,7 +925,7 @@ it("keeps a sparse legacy VOD draft on its implicit STABLE version", () => {
 		mergeWizardDraft(DEFAULT_WIZARD_STATE, { name: "Legacy draft" }, "vod")
 			.encoderVersion,
 	).toBe("STABLE");
-	expect(DEFAULT_WIZARD_STATE.encoderVersion).toBe("2.292.0");
+	expect(DEFAULT_WIZARD_STATE.encoderVersion).toBe("2.294.0");
 	expect(
 		mergeWizardDraft(DEFAULT_LIVE_WIZARD_STATE, { name: "Live draft" }, "live")
 			.encoderVersion,
@@ -140,6 +937,7 @@ it.each([
 	"BETA",
 	"2.287.0",
 	"2.291.0",
+	"2.292.0",
 	"custom-version",
 ])("retains explicit saved VOD encoder %s and per-encoding overrides", (encoderVersion) => {
 	const state = structuredClone(DEFAULT_WIZARD_STATE);
@@ -535,6 +1333,206 @@ it.each([
 		value,
 	});
 });
+it.each([
+	"vod",
+	"live",
+] as const)("restores pre-capability %s renditions by identity and honors an explicit clear from a current draft", (kind) => {
+	const base =
+		kind === "vod"
+			? structuredClone(DEFAULT_WIZARD_STATE)
+			: structuredClone(DEFAULT_LIVE_WIZARD_STATE);
+	const condition = {
+		attribute: "LANGUAGE",
+		operator: "EQUAL",
+		value: "jpn",
+	} as const;
+	const first = base.audios[0];
+	if (!first) throw Error("missing audio");
+	base.audios = [
+		{
+			...first,
+			codec: "HE_AAC_V2",
+			signaling: "EXPLICIT_PS",
+			conditions: condition,
+			extras: { key: "program" },
+		},
+		{ ...first, codec: "AAC", extras: { key: "ambience" } },
+	];
+	const changed = {
+		...base,
+		name: "Saved edit",
+		audios: [...base.audios].reverse(),
+	};
+	const value = projectWizardDraft(kind, changed);
+	for (const row of value.audios as Record<string, unknown>[]) {
+		delete row.conditions;
+		delete row.signaling;
+	}
+	localStorage.setItem(
+		"old-renditions",
+		JSON.stringify({
+			version: kind === "live" ? 2 : 1,
+			kind,
+			step: 1,
+			savedAt: 100,
+			value,
+		}),
+	);
+	const saved = readWizardDraft("old-renditions", kind, localStorage, 101);
+	if (!saved) throw Error("missing draft");
+	const restore = (draft: typeof saved) =>
+		kind === "vod"
+			? restoreVodWizardDraft(base as WizardState, draft)
+			: restoreLiveWizardDraft(base as LiveWizardState, draft);
+	const previous = restore(saved);
+	expect(previous.name).toBe("Saved edit");
+	expect(
+		previous.audios.map((row) => [
+			row.extras?.key,
+			row.conditions,
+			row.signaling,
+		]),
+	).toEqual([
+		["ambience", undefined, undefined],
+		["program", condition, "EXPLICIT_PS"],
+	]);
+	const compiled =
+		kind === "live"
+			? buildLiveChannelPlan(previous as LiveWizardState)
+			: buildPlan(previous as WizardState);
+	expect(
+		compiled.renditions.find((row) => row.key === "program"),
+	).toMatchObject({ conditions: condition, signaling: "EXPLICIT_PS" });
+	// A user could also have renamed or replaced the original row. Its conditions cannot be
+	// safely mapped to that different ID, so retain the original ladder and the metadata edit.
+	const renamed = (value.audios as { extras: { key: string } }[])[1];
+	if (!renamed) throw Error("missing saved row");
+	renamed.extras.key = "uncertain";
+	const ambiguous = restore({ ...saved, value });
+	expect(ambiguous.name).toBe("Saved edit");
+	expect(ambiguous.audios).toEqual(base.audios);
+	const cleared = structuredClone(changed);
+	for (const audio of cleared.audios) {
+		delete audio.conditions;
+		delete audio.signaling;
+	}
+	writeWizardDraft("new-renditions", kind, cleared, 1, localStorage, 100);
+	const modern = readWizardDraft("new-renditions", kind, localStorage, 101);
+	if (!modern) throw Error("missing saved draft");
+	expect(
+		restore(modern).audios.every((row) => !row.conditions && !row.signaling),
+	).toBe(true);
+});
+it("offers only metadata from v1 drafts of filtered presets and preserves the complete mux and filter graph", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const audio = base.audios[0];
+	const video = base.videos[0];
+	if (!audio || !video) throw new Error("Missing A/V ladder");
+	base.filters = [
+		{ kind: "AUDIO_VOLUME", key: "level", volume: 50, unit: "PERCENT" },
+		{ kind: "DENOISE_HQDN3D", key: "denoise" },
+		{
+			kind: "WATERMARK",
+			key: "logo",
+			inputKey: "main",
+			imagePath: "logo.png",
+			left: 0,
+			top: 0,
+		},
+	];
+	audio.extras = {
+		key: "sound",
+		filters: [{ filterKey: "level", position: 0 }],
+	};
+	video.extras = {
+		filters: [
+			{ filterKey: "denoise", position: 0 },
+			{ filterKey: "logo", position: 1 },
+		],
+	};
+	video.muxing = { kind: "MP4", muxedAudioKeys: ["sound"] };
+	for (const edit of [
+		"metadata",
+		"detach",
+		"replace",
+		"move",
+		"carry",
+	] as const) {
+		const original = structuredClone(base);
+		if (edit === "carry")
+			original.audios.push({ ...audio, extras: { key: "alternate" } });
+		const edited = structuredClone(original);
+		edited.name = "Edited title";
+		edited.labels = ["Local edit"];
+		edited.filters = (original.filters ?? []).filter(
+			(f) => f.kind === "WATERMARK",
+		);
+		const editedAudio = edited.audios[0];
+		const editedVideo = edited.videos[0];
+		if (!editedAudio || !editedVideo) throw new Error("Incomplete fixture");
+		editedAudio.extras = {
+			key: edit === "replace" || edit === "carry" ? "changed" : "sound",
+		};
+		editedVideo.extras = {
+			filters: [{ filterKey: "logo", position: edit === "move" ? 0 : 1 }],
+		};
+		if (edit === "carry")
+			editedVideo.muxing = { kind: "MP4", muxedAudioKeys: ["changed"] };
+		if (edit === "replace") editedAudio.bitrate *= 2;
+		localStorage.setItem(
+			"old",
+			JSON.stringify({
+				version: 1,
+				kind: "vod",
+				savedAt: 100,
+				step: 2,
+				value: projectWizardDraft("vod", edited),
+			}),
+		);
+		const saved = readWizardDraft("old", "vod", localStorage, 101);
+		if (!saved) throw new Error("Missing draft");
+		const restored = restoreVodWizardDraft(original, saved);
+		expect(restored, edit).toEqual({
+			...original,
+			name: edited.name,
+			labels: edited.labels,
+		});
+		const muxings = buildPlan(restored).muxings;
+		expect(muxings, edit).toEqual(buildPlan(original).muxings);
+		expect(muxings.find((mux) => mux.kind === "MP4")).toMatchObject({
+			additionalStreamKeys: ["sound"],
+		});
+		// Current writers can represent detaches, replacements, moves and carry edits.
+		writeWizardDraft("new", "vod", edited, 2, localStorage, 100);
+		const current = readWizardDraft("new", "vod", localStorage, 101);
+		if (!current) throw new Error("Missing new draft");
+		expect(restoreVodWizardDraft(original, current).filters).toEqual(
+			edited.filters,
+		);
+	}
+});
+it("restores all represented settings from an old draft when its source preset has only ordinary watermarks", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	base.filters = [
+		{
+			kind: "WATERMARK",
+			key: "logo",
+			inputKey: "main",
+			imagePath: "logo.png",
+			left: 0,
+			top: 0,
+		},
+	];
+	const changed = structuredClone(base);
+	if (!changed.audios[0]) throw new Error("Missing audio");
+	changed.audios[0].bitrate = 160000;
+	const restored = restoreVodWizardDraft(base, {
+		step: 2,
+		legacyVodFilters: true,
+		value: projectWizardDraft("vod", changed),
+	});
+	expect(restored.audios[0]?.bitrate).toBe(160000);
+});
 it("keeps the eight-step VOD draft format and rejects out-of-range steps", () => {
 	writeWizardDraft(
 		"vod-review",
@@ -549,7 +1547,7 @@ it("keeps the eight-step VOD draft format and rejects out-of-range steps", () =>
 		value: { name: "Saved job" },
 	});
 	expect(JSON.parse(localStorage.getItem("vod-review") ?? "null").version).toBe(
-		1,
+		3,
 	);
 	writeWizardDraft("invalid-vod-step", "vod", {}, 8, localStorage, 100);
 	expect(localStorage.getItem("invalid-vod-step")).toBeNull();
@@ -965,4 +1963,404 @@ it("preserves safe manifest details and drops malformed nested detail groups", (
 			}
 		).dashOptions,
 	).toMatchObject({ detailed: undefined, defaultPeriods: undefined });
+});
+
+it("restores a copied HDR picture and the original audio master from audio-first legacy rows", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const primary = base.inputFiles[0];
+	if (!primary) throw new Error("missing file");
+	base.inputFiles = [
+		{
+			...primary,
+			key: "picture",
+			path: "picture.mxf",
+			inputDeclarationIndex: 1,
+		},
+		{ ...primary, key: "sound", path: "program.wav", inputDeclarationIndex: 0 },
+	];
+	base.audioInputFile = "sound";
+	base.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: "picture",
+				metadataInputPath: "picture.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	const legacy = projectWizardDraft("vod", base);
+	legacy.inputFiles = [base.inputFiles[1], base.inputFiles[0]].map((file) => {
+		if (!file) throw new Error("missing");
+		const { inputDeclarationIndex: _index, ...rest } = file;
+		return rest;
+	});
+	delete legacy.audioInputFile;
+	const restored = mergeWizardDraft(base, legacy, "vod");
+	expect(
+		restored.inputFiles.map((f) => [f.path, f.inputDeclarationIndex]),
+	).toEqual([
+		["picture.mxf", 1],
+		["program.wav", 0],
+	]);
+	expect(restored.audioInputFile).toBe("sound");
+	const compiled = buildPlan(restored);
+	expect(compiled.ingest).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				selectionMode: "AUDIO_RELATIVE",
+				inputPath: "program.wav",
+			}),
+			expect.objectContaining({
+				selectionMode: "VIDEO_RELATIVE",
+				inputPath: "picture.mxf",
+			}),
+		]),
+	);
+});
+
+it.each([
+	"replaced-picture",
+	"recycled-key",
+	"recycled-key-first",
+	"same-object",
+	"authored-order",
+	"removed-hdr",
+] as const)("retains edited picture and audio semantics for a copied HDR draft (%s)", (edit) => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const input = base.inputFiles[0];
+	if (!input) throw new Error("missing input");
+	const file = (key: string, path: string) => ({ ...input, key, path });
+	const sound = file("sound", "program.wav"),
+		primary = file("picture", "master.mxf"),
+		alternate = file("alternate", "secondary.mxf");
+	base.inputFiles = [primary, sound, alternate];
+	base.audioInputFile = sound.key;
+	base.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: primary.key,
+				metadataInputPath: "meta.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	const saved = structuredClone(base);
+	const recycled = {
+		...primary,
+		credentialId: "new-storage",
+		bucket: "other-bucket",
+	};
+	const replaced =
+		edit === "replaced-picture" || edit.startsWith("recycled-key");
+	if (replaced) {
+		saved.inputFiles =
+			edit === "recycled-key-first"
+				? [recycled, sound, alternate]
+				: edit === "recycled-key"
+					? [sound, alternate, recycled]
+					: [sound, alternate];
+		const stream = saved.sources?.hdr10PlusStreams?.[0];
+		if (!stream) throw new Error("missing HDR stream");
+		stream.videoInputFile = alternate.key;
+	} else saved.inputFiles = [alternate, primary, sound];
+	if (edit === "removed-hdr") delete saved.sources;
+	delete saved.audioInputFile;
+	writeWizardDraft("copy-order", "vod", saved, 1, localStorage, 100);
+	if (edit === "same-object" || replaced) {
+		const value = projectWizardDraft("vod", saved);
+		localStorage.setItem(
+			"copy-order",
+			JSON.stringify({ kind: "vod", version: 1, savedAt: 100, step: 1, value }),
+		);
+	}
+	const draft = readWizardDraft("copy-order", "vod", localStorage, 101);
+	if (!draft) throw new Error("missing saved draft");
+	const restored = restoreVodWizardDraft(base, draft);
+	const picture = edit === "same-object" ? primary : alternate;
+	expect(restored.inputFiles[0]?.key).toBe(picture.key);
+	expect(restored.audioInputFile).toBe(
+		replaced && edit !== "recycled-key-first" ? sound.key : undefined,
+	);
+	const compiled = buildPlan(restored);
+	expect(
+		compiled.ingest?.find((row) => row.selectionMode === "VIDEO_RELATIVE")
+			?.inputPath,
+	).toBe(picture.path);
+	expect(
+		compiled.ingest?.find((row) => row.selectionMode === "AUDIO_RELATIVE")
+			?.inputPath,
+	).toBe(replaced && edit !== "recycled-key-first" ? sound.path : picture.path);
+});
+
+it.each([
+	"ordinary",
+	"audio",
+] as const)("keeps an edited %s master through Copy and restored legacy input rows", (editedRole) => {
+	const authored = structuredClone(DEFAULT_WIZARD_STATE);
+	const file = authored.inputFiles[0];
+	const rendition = authored.videos[0];
+	if (!file || !rendition)
+		throw new Error("missing default input or rendition");
+	const fileAt = (key: string, path: string) => ({
+		...file,
+		key,
+		inputKey: key,
+		path,
+	});
+	const ordinary = fileAt("footage", "camera.mxf");
+	const sound = fileAt("sound", "program.wav");
+	const hdr = fileAt("pair", "hdr.mxf");
+	authored.inputFiles = [ordinary, sound, hdr];
+	authored.audioInputFile = sound.key;
+	authored.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr10plus1",
+				videoInputFile: hdr.key,
+				metadataInputPath: "hdr.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	authored.videos = [
+		{ ...rendition, codec: "H265", extras: { source: "hdr10plus1" } },
+		{ ...rendition, height: 720 },
+	];
+	const native = buildPlan(authored);
+	// Older copies used the provider declarations: the WAV led the saved rows.
+	native.inputs = [...native.inputs].sort(
+		(a, b) => Number(b.key === "sound") - Number(a.key === "sound"),
+	);
+	const base = planToWizardState(native as unknown as Record<string, unknown>);
+	const fix = editedRole === "ordinary" ? "camera.mxf" : "program.wav";
+	const saved = projectWizardDraft("vod", base);
+	expect(saved).not.toHaveProperty("copiedPictureSource");
+	saved.inputFiles = [...base.inputFiles]
+		.sort(
+			(a, b) =>
+				Number(b.path === "program.wav") - Number(a.path === "program.wav"),
+		)
+		.map((f) => {
+			const { inputDeclarationIndex: _rank, ...rest } = f;
+			return { ...rest, path: f.path === fix ? `new/${f.path}` : f.path };
+		});
+	delete saved.audioInputFile;
+	const restored = buildPlan(mergeWizardDraft(base, saved, "vod"));
+	expect(restored.ingest?.find((x) => x.key === "video")?.inputPath).toBe(
+		editedRole === "ordinary" ? "new/camera.mxf" : "camera.mxf",
+	);
+	expect(restored.ingest?.find((x) => x.key === "audio")?.inputPath).toBe(
+		editedRole === "audio" ? "new/program.wav" : "program.wav",
+	);
+	expect(restored.hdr10PlusStreams?.[0]?.videoInputPath).toBe("hdr.mxf");
+});
+
+it.each([
+	"direct",
+	"wrapped",
+	"cleared-binding",
+	"kept-binding",
+] as const)("keeps the first saved audio object after adding an implicit AAC rendition to a named HDR copy (%s)", (mode) => {
+	const authored = structuredClone(DEFAULT_WIZARD_STATE);
+	const media = authored.inputFiles[0];
+	const video = authored.videos[0],
+		audio = authored.audios[0];
+	if (!media || !video || !audio) throw new Error("missing base files");
+	const picture = { ...media, key: "pic", inputKey: "pic", path: "master.mxf" };
+	const sound = {
+		...media,
+		key: "sound",
+		inputKey: "sound",
+		path: "program.wav",
+	};
+	authored.inputFiles = [sound, picture];
+	authored.sources = {
+		tracks: [
+			{
+				key: "narration",
+				inputFile: sound.key,
+				selectionMode: "AUDIO_RELATIVE",
+				position: 0,
+			},
+		],
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: picture.key,
+				metadataInputPath: "sidecar.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	authored.videos = [{ ...video, codec: "H265", extras: { source: "hdr" } }];
+	authored.audios = [{ ...audio, extras: { source: "narration" } }];
+	const previous = {
+		...media,
+		key: "previous-audio",
+		inputKey: "previous-audio",
+		path: "previous.wav",
+	};
+	const separate = mode === "cleared-binding" || mode === "kept-binding";
+	if (separate) {
+		authored.inputFiles.push(previous);
+		authored.audioInputFile = previous.key;
+		authored.audios.push({ ...audio, bitrate: 256000 });
+	}
+	const base = planToWizardState(
+		buildPlan(authored) as unknown as Record<string, unknown>,
+	);
+	const files = [...base.inputFiles].sort(
+		(a, b) => Number(b.path === sound.path) - Number(a.path === sound.path),
+	);
+	expect(files[0]?.path).toBe(sound.path);
+	expect(
+		base.inputFiles.find((row) => row.key === base.audioInputFile)?.path,
+	).toBe(separate ? previous.path : undefined);
+	const saved = projectWizardDraft("vod", {
+		...base,
+		audioInputFile: mode === "kept-binding" ? base.audioInputFile : undefined,
+		inputFiles: files,
+		sources: {
+			...base.sources,
+			...(mode === "wrapped" && {
+				trimmingStreams: [
+					{
+						kind: "TIME_BASED",
+						key: "trim-sound",
+						sourceKey: "audio",
+						offset: 0,
+						duration: 5,
+					},
+				],
+			}),
+		},
+		audios: [
+			...base.audios,
+			{
+				...audio,
+				bitrate: 320000,
+				...(mode === "wrapped" && { extras: { source: "trim-sound" } }),
+			},
+		],
+	});
+	const built = buildPlan(mergeWizardDraft(base, saved, "vod"));
+	expect(built.hdr10PlusStreams?.[0]?.videoInputPath).toBe(picture.path);
+	expect(built.ingest?.find((track) => track.key === "audio")?.inputPath).toBe(
+		mode === "kept-binding" ? previous.path : sound.path,
+	);
+});
+
+it.each([
+	"rebound",
+	"removed-and-recycled",
+	"removed-picture-retained",
+	"rebound-picture-retained",
+	"edited-picture",
+	"new-ordinary-row",
+	"wrapped-ordinary",
+] as const)("restores edited HDR Copy media bindings (%s)", (edit) => {
+	const authored = structuredClone(DEFAULT_WIZARD_STATE);
+	const file = authored.inputFiles[0];
+	const rendition = authored.videos[0];
+	if (!file || !rendition) throw new Error("missing source or rendition");
+	file.path = "original.mxf";
+	authored.videos = [
+		{ ...rendition, codec: "H265", extras: { source: "hdr" } },
+	];
+	authored.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: file.key,
+				metadataInputPath: "original.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	const base = planToWizardState(
+		buildPlan(authored) as unknown as Record<string, unknown>,
+	);
+	const original = base.inputFiles[0];
+	const hdr = base.sources?.hdr10PlusStreams?.[0];
+	if (!original || !hdr) throw new Error("missing copied HDR binding");
+	expect(base.audioInputFile).toBeUndefined();
+	const replacement = {
+		...original,
+		key: "replacement",
+		path: "replacement.mxf",
+	};
+	const recycled = edit === "removed-and-recycled";
+	const removed = recycled || edit === "removed-picture-retained";
+	const hasOrdinary = edit !== "rebound";
+	const ordinary =
+		edit === "edited-picture" || edit === "wrapped-ordinary"
+			? { ...original, path: "edited.mxf" }
+			: edit === "new-ordinary-row"
+				? { ...original, key: "ordinary", path: "ordinary.mxf" }
+				: original;
+	const wrapped = edit === "wrapped-ordinary";
+	const selected = wrapped
+		? { ...hdr, key: "video" }
+		: removed
+			? { ...hdr, key: "replacementHdr" }
+			: hdr;
+	const saved = projectWizardDraft("vod", {
+		...base,
+		inputFiles: recycled
+			? [replacement, { ...original, path: "unrelated.mxf" }]
+			: [ordinary, replacement],
+		sources: {
+			...base.sources,
+			...(wrapped
+				? {
+						trimmingStreams: [
+							{
+								key: "trim-primary",
+								kind: "TIME_BASED" as const,
+								sourceKey: "video-input-1",
+								offset: 0,
+								duration: 3,
+							},
+						],
+					}
+				: {}),
+			hdr10PlusStreams: [
+				{
+					...selected,
+					videoInputFile: replacement.key,
+					metadataInputPath: "replacement.json",
+				},
+			],
+		},
+		...(hasOrdinary
+			? {
+					videos: [
+						{ ...rendition, codec: "H265", extras: { source: selected.key } },
+						{
+							...rendition,
+							height: 720,
+							...(wrapped && { extras: { source: "trim-primary" } }),
+						},
+					],
+				}
+			: {}),
+	});
+	const plan = buildPlan(mergeWizardDraft(base, saved, "vod"));
+	expect(plan.hdr10PlusStreams?.[0]).toMatchObject({
+		videoInputPath: "replacement.mxf",
+		metadataInputPath: "replacement.json",
+	});
+	if (hasOrdinary) {
+		expect(
+			plan.ingest?.find(
+				(entry) => entry.key === (wrapped ? "video-input-1" : "video"),
+			)?.inputPath,
+		).toBe(recycled ? "replacement.mxf" : ordinary.path);
+	} else {
+		expect(plan.ingest?.find((entry) => entry.key === "audio")?.inputPath).toBe(
+			"original.mxf",
+		);
+	}
 });

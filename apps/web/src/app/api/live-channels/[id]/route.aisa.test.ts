@@ -316,6 +316,47 @@ describe("AISA publisher connection projection", () => {
 	});
 
 	it.each([
+		"owner",
+		"viewer",
+		"unexpired",
+		"wrong-run",
+		"other-generation",
+		"legacy",
+	] as const)("only the owner sees the interrupted AISA stop for the exact airing (%s)", async (kind) => {
+		const row = managedRow();
+		row.status = "STOPPING";
+		Object.assign(row, { liveEffectFenceVersion: 3 });
+		if (kind !== "viewer")
+			mocks.tenant = {
+				actor: `user:${ownerId}`,
+				actorUserId: ownerId,
+				effectiveUserId: ownerId,
+				role: "ADMIN",
+				actorRole: "ADMIN",
+				isImpersonating: false,
+			};
+		mocks.findUnique.mockResolvedValue(row);
+		mocks.stopClaim.mockResolvedValue({
+			action: "STOP",
+			state: "DISPATCHING",
+			liveChannelId: channelId,
+			liveChannelRunId: kind === "wrong-run" ? "different-run" : row.runs[0].id,
+			providerEncodingId: encodingId,
+			stopProtocolVersion: kind === "legacy" ? null : 1,
+			generation: kind === "other-generation" ? 1 : 3,
+			expiresAt:
+				kind === "unexpired" ? new Date(Date.now() + 60000) : new Date(0),
+			scheduleId: null,
+			targetId: null,
+			requestSha256: null,
+		});
+		const response = await GET(request(), params());
+		expect(response.status).toBe(200);
+		const body = await response.json();
+		expect(Boolean(body.canResumeAisaStop)).toBe(kind === "owner");
+		expect(body).not.toHaveProperty("liveEffectClaim");
+	});
+	it.each([
 		["pending", "ERROR", true, false],
 		["pending", "RUNNING", true, false],
 		["pending", "STOPPING", true, false],

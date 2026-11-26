@@ -23,6 +23,8 @@ const heartbeatEvents = vi.fn().mockResolvedValue([]);
 const latestRun = vi.fn().mockResolvedValue(null);
 const lockedChannel = vi.fn();
 const lockedRun = vi.fn();
+const archivedChannels = vi.fn();
+const openStop = vi.fn();
 const lockRows = vi.fn();
 
 // Interactive $transaction: invoke the callback with a tx exposing the model
@@ -32,9 +34,16 @@ const lockRows = vi.fn();
 // to destroy a PENDING report mid-write while DELETE /api/vmaf-jobs/{id}
 // answered 409 for the same row.
 const tx = {
+	feederSession: { findFirst: vi.fn(async () => null) },
 	vmafJob: { deleteMany: vmafDeleteMany, count: vmafCount },
-	liveChannel: { findUnique: lockedChannel, deleteMany: channelDeleteMany },
+	liveChannel: {
+		findUnique: lockedChannel,
+		update,
+		findMany: archivedChannels,
+		deleteMany: channelDeleteMany,
+	},
 	liveChannelRun: { findFirst: lockedRun },
+	liveEffectClaim: { findFirst: openStop, findMany: vi.fn(async () => []) },
 	$queryRaw: lockRows,
 };
 const $transaction = vi.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx));
@@ -55,6 +64,7 @@ vi.mock("@/lib/server/context", () => ({
 			appSetting: { findUnique: vi.fn().mockResolvedValue(null) },
 			liveChannel: { findUnique, update, deleteMany: channelDeleteMany },
 			liveChannelRun: { findFirst: latestRun },
+			liveEffectClaim: { findMany: vi.fn().mockResolvedValue([]) },
 			credential: { findMany: credentialFindMany },
 			vmafJob: {
 				deleteMany: vmafDeleteMany,
@@ -90,6 +100,8 @@ beforeEach(() => {
 	lockedChannel
 		.mockReset()
 		.mockImplementation(() => findUnique.mock.results.at(-1)?.value);
+	openStop.mockReset().mockResolvedValue(null);
+	archivedChannels.mockReset().mockResolvedValue([]);
 	lockedRun.mockReset().mockImplementation((args) => latestRun(args));
 	lockRows.mockResolvedValue([]);
 	// Ordering is cosmetic here, and my earlier comment claiming otherwise was
@@ -593,6 +605,115 @@ describe("DELETE /api/live-channels/[id] — the live VMAF guard", () => {
 });
 
 describe("DELETE /api/live-channels/[id]", () => {
+	it("retains an ERROR encoder after a pre-send STOP failure until its own terminal status is confirmed", async () => {
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "ERROR",
+			stepLog: [],
+			plan: {},
+			bitmovinEncodingId: "encoder-a",
+			encoderStoppedConfirmedFor: null,
+		});
+		lockedRun.mockResolvedValue({
+			id: "run",
+			status: "ERROR",
+			bitmovinEncodingId: "encoder-a",
+			encoderStoppedConfirmedFor: null,
+			stepLog: [],
+		});
+		expect((await DELETE(delReq(), ctx(CHANNEL_ID))).status).toBe(409);
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
+	it("uses a persisted Analysis binding without a plan marker for DELETE owner authorization", async () => {
+		vi.stubEnv(
+			"BITOVP_AISA_LIVE_PREVIEW_USER_ID",
+			"00000000-0000-4000-8000-000000000099",
+		);
+		const run = {
+			id: "run",
+			aisaAnalysisId: "analysis",
+			aisaStatus: "RUNNING",
+		};
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "STOPPED",
+			plan: {},
+			stepLog: [],
+			runs: [run],
+		});
+		lockedRun.mockResolvedValue(run);
+		expect((await DELETE(delReq(), ctx(CHANNEL_ID))).status).toBe(404);
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
+	it("retains an unresolved STOP on a locally stopped channel", async () => {
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "STOPPED",
+			error: "Unconfirmed",
+			plan: {},
+			stepLog: [],
+		});
+		openStop.mockResolvedValue({ id: "uncertain" });
+		const result = await DELETE(delReq(), ctx(CHANNEL_ID));
+		expect(result.status).toBe(409);
+		expect((await result.json()).error).toContain(
+			"stop for this broadcast is still unconfirmed",
+		);
+		expect(openStop).toHaveBeenCalledWith({
+			where: {
+				liveChannelId: CHANNEL_ID,
+				action: "STOP",
+				OR: [
+					{ liveChannelRunId: { in: [] } },
+					{ state: "CLAIMED" },
+					{ state: "DISPATCHING", expiresAt: { gt: expect.any(Date) } },
+					{ stopAnalysisSendId: { not: null } },
+				],
+				state: {
+					in: expect.arrayContaining(["CLAIMED", "DISPATCHING", "AMBIGUOUS"]),
+				},
+			},
+			select: { id: true },
+		});
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
+	it("retains a displaced encoder on an older airing even when the current airing is clean", async () => {
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "STOPPED",
+			plan: {},
+			stepLog: [],
+		});
+		archivedChannels.mockResolvedValue([
+			{
+				id: CHANNEL_ID,
+				name: "Channel",
+				status: "STOPPED",
+				bitmovinAccountId: "account",
+				stepLog: [],
+				effectClaims: [],
+				runs: [
+					{ id: "new-run", stepLog: [] },
+					{
+						id: "previous-run",
+						status: "ERROR",
+						previousProviderEncodingIds: ["old-encoder"],
+						stepLog: [],
+					},
+				],
+			},
+		]);
+		const result = await DELETE(delReq(), ctx(CHANNEL_ID));
+		expect(result.status).toBe(409);
+		expect((await result.json()).error).toContain("displaced encoders");
+		expect(archivedChannels).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: CHANNEL_ID }),
+			}),
+		);
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
+
 	const managedPlan = { start: { aiSceneAnalysisLive: {} } };
 	const analysisId = "a0000000-0000-4000-8000-000000000002";
 	const runId = "a0000000-0000-4000-8000-000000000001";
@@ -956,6 +1077,23 @@ describe("DELETE /api/live-channels/[id]", () => {
 		expect(channelDeleteMany).not.toHaveBeenCalled();
 	});
 
+	it("keeps an active run when the channel has already lost its primary", async () => {
+		findUnique.mockResolvedValue({
+			id: CHANNEL_ID,
+			status: "ERROR",
+			bitmovinEncodingId: null,
+			stepLog: [],
+			plan: {},
+		});
+		lockedRun.mockResolvedValue({
+			id: "run",
+			status: "RUNNING",
+			bitmovinEncodingId: "still-active",
+			stepLog: [],
+		});
+		expect((await DELETE(delReq(), ctx(CHANNEL_ID))).status).toBe(409);
+		expect(channelDeleteMany).not.toHaveBeenCalled();
+	});
 	it.each([
 		"PROVISIONING",
 		"RUNNING",
@@ -1065,6 +1203,7 @@ describe("PATCH /api/live-channels/[id] — the cap against the program window",
 	}
 
 	beforeEach(() => {
+		lockedChannel.mockImplementation((args) => findUnique(args));
 		update.mockImplementation(
 			async ({ data }: { data: { maxRunMinutes: number | null } }) => ({
 				id: CHANNEL_ID,
@@ -1073,6 +1212,26 @@ describe("PATCH /api/live-channels/[id] — the cap against the program window",
 		);
 	});
 
+	it("hides a runtime-cap edit when only the airing retains an Analysis binding", async () => {
+		const row = {
+			id: CHANNEL_ID,
+			origin: "MANAGED",
+			plan: {},
+			runs: [{ aisaStatus: "RUNNING" }],
+			programEndAt: null,
+		};
+		findUnique.mockResolvedValue(row);
+		lockedChannel.mockResolvedValue(row);
+		vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW", "false");
+		try {
+			expect(
+				(await PATCH(patchReq({ maxRunMinutes: 1 }), ctx(CHANNEL_ID))).status,
+			).toBe(404);
+			expect(update).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
 	it("refuses a cap that would stop the channel before its program ends", async () => {
 		findUnique.mockResolvedValueOnce({
 			id: CHANNEL_ID,
@@ -1199,4 +1358,39 @@ it("selects the durable cancellation flag for the detail UI", async () => {
 	expect(
 		findUnique.mock.calls[0]?.[0].include.runs.select.cancelRequested,
 	).toBe(true);
+});
+
+it("offers an actionable archive Stop revision for a running managed probe with no primary", async () => {
+	const accountId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+	const encoderId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+	findUnique.mockResolvedValueOnce({
+		id: CHANNEL_ID,
+		origin: "MANAGED",
+		purpose: "PROBE",
+		status: "RUNNING",
+		bitmovinAccountId: accountId,
+		bitmovinEncodingId: null,
+		liveEffectFenceVersion: 3,
+		plan: { bitmovin: { accountId } },
+		stepLog: [],
+		runs: [
+			{
+				id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+				seq: 1,
+				status: "RUNNING",
+				bitmovinEncodingId: null,
+				previousProviderEncodingIds: [encoderId],
+				stepLog: [],
+			},
+		],
+	});
+	const response = await GET(new Request("http://test"), ctx(CHANNEL_ID));
+	expect(
+		findUnique.mock.calls[0]?.[0].include.runs.select
+			.encoderStoppedConfirmedFor,
+	).toBe(true);
+	expect(response.status).toBe(200);
+	expect((await response.json()).archivedStopRevision).toMatch(
+		/^[0-9a-f]{64}$/,
+	);
 });

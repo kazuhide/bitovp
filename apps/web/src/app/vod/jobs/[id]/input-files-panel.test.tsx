@@ -77,6 +77,24 @@ beforeEach(() => {
 });
 
 describe("input files panel — inspect wiring", () => {
+	it("distinguishes HDR10+ video from JSON without inventing an AUTO track position", () => {
+		const files = (["video", "metadata"] as const).map((detail) =>
+			s3File({
+				inputPath: `sources/${detail === "video" ? "hdr10.mov" : "hdr10plus.json"}`,
+				consumers: [
+					{
+						renditionKeys: ["hevc"],
+						chain: [{ kind: "hdr10-plus", detail, selectionMode: "AUTO" }],
+					},
+				],
+			}),
+		);
+		renderQ(<InputFilesPanel files={files} credentialRefs={REFS} />);
+		expect(screen.getByText("HDR10+ video (AUTO)")).toBeTruthy();
+		expect(screen.getByText("HDR10+ JSON metadata")).toBeTruthy();
+		expect(screen.queryByText(/AUTO pos 0/)).toBeNull();
+	});
+
 	it("offers Inspect on a credentialed card, and opens the dialog with ITS object", async () => {
 		renderQ(<InputFilesPanel files={[s3File()]} credentialRefs={REFS} />);
 		await userEvent.click(screen.getByRole("button", { name: /inspect/i }));

@@ -3,6 +3,11 @@ import {
 	newProviderEvents,
 	type ProviderHeartbeatEvent,
 } from "@bitovp/core";
+import {
+	heartbeatAspectRatio,
+	heartbeatAudioChannelFormat,
+	heartbeatAudioChannels,
+} from "@/lib/live-heartbeat-metadata";
 
 /**
  * Defensive parsing of the persisted heartbeat column ({ at, raw, deltas }
@@ -17,6 +22,10 @@ export type HeartbeatStreamRow = {
 	mediaType: string;
 	codec: string;
 	resolution: string;
+	/** Provider metadata captured at initial input connection, not remeasured. */
+	aspectRatio: string;
+	audioChannels: string;
+	audioChannelFormat: string;
 	rate: string;
 	bitrate: string;
 	/** Raw measured bytes/sec; never substitute the nominal bitrate (bits/sec). */
@@ -144,6 +153,10 @@ export function streamRow(value: unknown, index: number): HeartbeatStreamRow {
 		codec: show(record.codec),
 		resolution:
 			width !== undefined && height !== undefined ? `${width}×${height}` : "—",
+		aspectRatio: heartbeatAspectRatio(record.aspectRatio) ?? "—",
+		audioChannels: show(heartbeatAudioChannels(record.numberOfAudioChannels)),
+		audioChannelFormat:
+			heartbeatAudioChannelFormat(record.audioChannelFormat) ?? "—",
 		rate: show(record.rate ?? record.sampleRate ?? record.samplingRate),
 		bitrate: show(record.bitrate),
 		incomingBitrate: asNumber(record.incomingBitrate) ?? null,

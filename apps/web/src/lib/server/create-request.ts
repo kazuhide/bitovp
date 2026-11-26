@@ -1,9 +1,19 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { AppPrismaClient } from "@bitovp/db";
+import type { AuthenticatedContext } from "../auth/tenancy";
+import {
+	CREATE_SESSION_CHANGED,
+	CREATE_SESSION_HEADER,
+	canonicalCreateRequestJson,
+} from "../creation-submission-contract";
 import { jsonError } from "./http";
 
-export type CreateRequestKind = "VOD_JOB" | "LIVE_CHANNEL" | "LIBRARY_EDIT";
+export type CreateRequestKind =
+	| "VOD_JOB"
+	| "LIVE_CHANNEL"
+	| "LIBRARY_EDIT"
+	| "FEEDER_ONCE";
 export type CreateRequestIdentity = {
 	requestKey: string;
 	requestSha256: string;
@@ -20,21 +30,41 @@ export class CreateRequestUniqueConflictError extends Error {
 	}
 }
 
-/** Object member order is not request identity; array order still is. */
-function canonicalJson(value: unknown): string {
-	if (value === null || typeof value !== "object") {
-		const encoded = JSON.stringify(value);
-		if (encoded === undefined)
-			throw new Error("Create requests must contain JSON values");
-		return encoded;
+/** Compare a browser's click-time binding with the authenticated request. */
+export function changedCreationSession(
+	req: Request,
+	tenant?: AuthenticatedContext,
+) {
+	const expected = req.headers.get(CREATE_SESSION_HEADER);
+	// Bearer credentials bind themselves to a fixed actor. A cookie session can
+	// change while an older browser bundle still has a pending click in memory.
+	const cookieSession =
+		tenant?.payload?.mode === "users" || tenant?.actor === "session";
+	if (expected === null && !cookieSession) return undefined;
+	if (
+		tenant &&
+		!tenant.isImpersonating &&
+		(tenant.role === "ADMIN" || tenant.role === "OPERATOR")
+	) {
+		const principal =
+			tenant.actor === "session"
+				? "main:password"
+				: tenant.actor === "none"
+					? "main:none"
+					: tenant.actorUserId &&
+							tenant.actorUserId === tenant.effectiveUserId &&
+							tenant.actor === `user:${tenant.actorUserId}`
+						? tenant.actorUserId
+						: null;
+		if (
+			principal &&
+			expected === JSON.stringify([tenant.organizationId, principal])
+		)
+			return undefined;
 	}
-	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-	const record = value as Record<string, unknown>;
-	return `{${Object.keys(record)
-		.sort()
-		.filter((key) => record[key] !== undefined)
-		.map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-		.join(",")}}`;
+	return jsonError(409, "Reload the page before creating this resource", {
+		code: CREATE_SESSION_CHANGED,
+	});
 }
 
 /** Hash the accepted request before account defaults or time-dependent derivation. */
@@ -61,7 +91,7 @@ export function createRequestIdentity(
 	return {
 		requestKey,
 		requestSha256: createHash("sha256")
-			.update(canonicalJson(acceptedBody))
+			.update(canonicalCreateRequestJson(acceptedBody))
 			.digest("hex"),
 	};
 }
@@ -71,18 +101,22 @@ export async function lookupCreateRequest(
 	prisma: ReceiptClient,
 	kind: CreateRequestKind,
 	identity: CreateRequestIdentity,
+	matchesHistoricalDigest?: (digest: string) => boolean,
 ) {
 	const receipt = await prisma.createRequest.findFirst({
 		where: { kind, requestKey: identity.requestKey },
 		select: { requestSha256: true, resourceId: true },
 	});
 	if (!receipt) return { kind: "none" } as const;
-	if (receipt.requestSha256 !== identity.requestSha256)
+	if (
+		receipt.requestSha256 !== identity.requestSha256 &&
+		!matchesHistoricalDigest?.(receipt.requestSha256)
+	)
 		return { kind: "conflict" } as const;
 	return { kind: "existing", resourceId: receipt.resourceId } as const;
 }
 
-/** Call only in the transaction that creates the resource and its schedules. */
+/** Call only in the transaction that creates the resource and its dependents. */
 export async function recordCreateRequest(
 	tx: ReceiptClient,
 	kind: CreateRequestKind,

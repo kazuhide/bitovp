@@ -11,6 +11,7 @@ import {
 	feederErrorEnglish,
 	feederJobSchema,
 	feederOccupancyWhere,
+	feederPlaybackModeSchema,
 	feederProcessMayBeAlive,
 	feederPublisherClaimHeld,
 	feederRtmpTargetSchema,
@@ -29,6 +30,9 @@ import {
 	type AppPrismaClient,
 	assertLiveEffectCurrent,
 	beginLiveEffect,
+	claimFeederSinglePassDispatch,
+	failUnstartedLoopFeederHandoff,
+	hasSupersedingFeederStop,
 	type LiveEffectClaimHandle,
 	loadLiveEffectTargetClaim,
 	markLiveEffectAcked,
@@ -68,6 +72,7 @@ import {
 } from "./fetch-source";
 import {
 	createKillLadder,
+	isProcessAbsent,
 	type KillPid,
 	looksLikeFeederFfmpeg,
 	type ReadProcessCommand,
@@ -77,8 +82,10 @@ import {
 	FEEDER_LEASE_TAKEOVER_MS,
 	feederLeaseStaleWhere,
 } from "./ownership";
+import { inspectSinglePassPackets } from "./packet-coverage";
 import {
 	createFeederSupervisor,
+	FeederStopError,
 	type FeederSupervisor,
 	type IngestBindStatus,
 	KILL_GRACE_MS,
@@ -432,6 +439,40 @@ function sealedIdentity(row: {
 }
 
 /**
+ * ONCE maps v:0 and a:0 only and keeps MP4 edit lists enabled. ffprobe's
+ * selected-stream timing therefore describes that playback, relative to the
+ * input's container start. Container duration can include ignored tracks or
+ * subtitles and cannot qualify EOF. Missing timing is refused rather than
+ * inferred from a nominal frame rate or an unrelated stream.
+ */
+function selectedPlaybackDurationSec(probe: ProbeResult): number | undefined {
+	const seconds = (value: string | undefined): number | undefined => {
+		if (typeof value !== "string" || value.trim() === "") return undefined;
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : undefined;
+	};
+	const origin = seconds(probe.format?.start_time);
+	if (origin === undefined) return undefined;
+	const streams = probe.streams ?? [];
+	const selected = [
+		streams.find((stream) => stream.codec_type === "video"),
+		streams.find((stream) => stream.codec_type === "audio"),
+	];
+	let end = 0;
+	for (const stream of selected) {
+		if (!stream) continue;
+		const start = seconds(stream.start_time);
+		const duration = seconds(stream.duration);
+		if (start === undefined || duration === undefined || duration <= 0)
+			return undefined;
+		const streamEnd = start + duration - origin;
+		if (!Number.isFinite(streamEnd) || streamEnd <= 0) return undefined;
+		end = Math.max(end, streamEnd);
+	}
+	return end > 0 ? end : undefined;
+}
+
+/**
  * the loop boundaries a previous owner already recorded.
  *
  * `appendBoundary` rewrites the WHOLE array (single writer, race-free), so a
@@ -452,14 +493,6 @@ function persistedBoundaries(value: unknown): LoopBoundary[] {
 			typeof (entry as LoopBoundary).wallClock === "string" &&
 			typeof (entry as LoopBoundary).streamTimeSec === "number",
 	);
-}
-
-/** Stop arrived between stages (before/while no ffmpeg was running). */
-class FeederStopError extends Error {
-	constructor() {
-		super("Feeder stop requested");
-		this.name = "FeederStopError";
-	}
 }
 
 /**
@@ -582,19 +615,6 @@ export function createFeederProcessor(deps: FeederDeps) {
 		| { kind: "unverified"; note: string }
 		| { kind: "not-ours"; note: string };
 
-	/** Existence probe (signal 0 throws ESRCH when the pid is gone). */
-	function pidIsAlive(pid: number): boolean {
-		if (!deps.killPid) {
-			return true;
-		}
-		try {
-			deps.killPid(pid, 0);
-			return true;
-		} catch {
-			return false;
-		}
-	}
-
 	async function reclaimRecordedProcess(
 		feederSessionId: string,
 		pid: number,
@@ -641,7 +661,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			// Absence is itself proof, and it is the common case after a host
 			// reboot — so probe BEFORE refusing, or every session whose owner
 			// died with its machine would be unresumable.
-			if (!pidIsAlive(pid)) {
+			if (isProcessAbsent(pid, deps.killPid)) {
 				return {
 					kind: "gone",
 					note: `ffmpeg pid ${pid} was already gone when this worker took the session over`,
@@ -649,7 +669,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			}
 			return {
 				kind: "unverified",
-				note: `pid ${pid} is alive but its command line could not be read — it was NOT signalled; stop the session to act on it`,
+				note: `pid ${pid} could still be active and its command line could not be read; stop the session to act on it`,
 			};
 		}
 		const verified = await terminateOrphanPid(pid);
@@ -691,19 +711,23 @@ export function createFeederProcessor(deps: FeederDeps) {
 	async function waitForChannelRunning(
 		liveChannelId: string,
 		controller: RunController,
-	): Promise<void> {
+	) {
 		const startedAt = Date.now();
 		for (;;) {
 			controller.throwIfStopped();
 			const channel = await deps.prisma.liveChannel.findUnique({
 				where: { id: liveChannelId },
-				select: { status: true },
+				select: {
+					status: true,
+					bitmovinEncodingId: true,
+					liveEffectFenceVersion: true,
+				},
 			});
 			if (!channel) {
 				throw new Error("Live channel no longer exists");
 			}
 			if (channel.status === "RUNNING") {
-				return;
+				return channel;
 			}
 			if (channel.status !== "CREATED" && channel.status !== "PROVISIONING") {
 				throw new Error(
@@ -1013,8 +1037,9 @@ export function createFeederProcessor(deps: FeederDeps) {
 			childReaped: boolean;
 			releaseClaim: boolean;
 			claimGeneration: number | null;
+			playbackReceipt?: Prisma.InputJsonValue;
 		},
-	): Promise<void> {
+	): Promise<boolean> {
 		const at = new Date(deps.now());
 		const releaseClaimGeneration =
 			evidence?.releaseClaim === true ? evidence.claimGeneration : null;
@@ -1030,6 +1055,9 @@ export function createFeederProcessor(deps: FeederDeps) {
 			},
 			data: {
 				status,
+				...(evidence?.playbackReceipt
+					? { playbackReceipt: evidence.playbackReceipt }
+					: {}),
 				// The supervisor has already reaped its child by the time this
 				// runs, so the pid reference goes with the row's active life —
 				// and the host identity goes with the pid (they are one fact).
@@ -1059,7 +1087,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			console.warn(
 				`[feeder] session ${fence.id}: not writing ${status} — the owner lease was taken by another worker (generation ${fence.ownerGeneration} is no longer ours)`,
 			);
-			return;
+			return false;
 		}
 		if (status === "ERROR") {
 			/**
@@ -1098,6 +1126,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 				path: `/live/${liveChannelId}`,
 			});
 		}
+		return true;
 	}
 
 	async function start(feederSessionId: string): Promise<string> {
@@ -1123,6 +1152,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			where: {
 				id: feederSessionId,
 				status: "CREATED",
+				...(row.playbackMode === "ONCE" ? { playbackDispatchedAt: null } : {}),
 				ownerGeneration: row.ownerGeneration,
 			},
 			data: {
@@ -1373,6 +1403,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 	): Promise<string> {
 		const feederSessionId = row.id;
 		const fence = ownerFence(feederSessionId, generation);
+		const spawnEffectKey = `feeder-spawn:${feederSessionId}:${fence.ownerGeneration}:`;
 		/**
 		 * The pid THIS run last spawned (rev367 I-4's residual fix): when the
 		 * run ends because the lease was lost, the supervisor has already
@@ -1616,14 +1647,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 		}, deps.leaseRenewalIntervalMs ?? FEEDER_LEASE_RENEWAL_MS);
 		leaseTicker.unref?.();
 
-		/**
-		 * Prove this owner generation still controls the session, then bind the
-		 * ingest effect to the session's exact run and that run's exact encoding.
-		 * Only a fresh provider RUNNING observation passes.
-		 */
-		async function assertProviderEffectBoundary(effect: string): Promise<void> {
+		async function assertFeederEffectOwner(): Promise<void> {
 			controller.throwIfStopped();
-			const checkedAt = new Date(deps.now());
 			const held = await deps.prisma.feederSession.findUnique({
 				where: { id: feederSessionId },
 				select: {
@@ -1642,7 +1667,32 @@ export function createFeederProcessor(deps: FeederDeps) {
 			) {
 				throw await lostFence(feederSessionId, controller);
 			}
+		}
 
+		async function throwIfSupersedingLiveStop(
+			admission: Parameters<typeof hasSupersedingFeederStop>[1],
+		): Promise<void> {
+			controller.throwIfStopped();
+			if (
+				await hasSupersedingFeederStop(deps.prisma, admission).catch(
+					() => false,
+				)
+			) {
+				await assertFeederEffectOwner();
+				throw new FeederStopError();
+			}
+		}
+
+		/**
+		 * Bind the current owner's ingest effect to its exact run and encoder.
+		 * A fresh RUNNING observation is required before proceeding.
+		 */
+		async function assertProviderEffectBoundary(
+			effect: string,
+			stopAdmission?: Parameters<typeof hasSupersedingFeederStop>[1] | null,
+		): Promise<void> {
+			const checkedAt = new Date(deps.now());
+			await assertFeederEffectOwner();
 			const [sessionRun, currentRun, channel] = await Promise.all([
 				row.liveChannelRunId === null
 					? Promise.resolve(null)
@@ -1684,12 +1734,14 @@ export function createFeederProcessor(deps: FeederDeps) {
 			);
 			const refusal = identityRefusal ?? channelRefusal ?? lifecycleRefusal;
 			if (refusal) {
+				if (stopAdmission) await throwIfSupersedingLiveStop(stopAdmission);
 				throw new Error(`${effect} refused: ${refusal}`);
 			}
 		}
 
 		let activeEffectClaim: LiveEffectClaimHandle | null = null;
 		let crossedEffectBoundary = false;
+		let acquiredSpawnClaim = false;
 		const effectNow = (): Date => {
 			const parsed = new Date(deps.now());
 			return Number.isFinite(parsed.getTime()) ? parsed : new Date();
@@ -1705,6 +1757,16 @@ export function createFeederProcessor(deps: FeederDeps) {
 				now: effectNow(),
 			});
 			if (handed.kind === "DISPATCHING") {
+				// Single passes are manual starts. They must own the spawn
+				// claim they acquired, never one left by a different owner.
+				if (row.playbackMode === "ONCE")
+					throw new Error("Single-pass spawn already has a durable claim");
+				// A staged switch may not own the publisher yet, but the
+				// exact feeder lease must still be current to use its handoff.
+				const owner = await deps.prisma.feederSession.count({
+					where: { ...fence, status: { in: ["DOWNLOADING", "PUSHING"] } },
+				});
+				if (owner !== 1) throw await lostFence(feederSessionId, controller);
 				activeEffectClaim = handed.claim;
 				return handed.claim;
 			}
@@ -1743,7 +1805,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 				);
 			}
 			const begun = await beginLiveEffect(deps.prisma, {
-				idempotencyKey: `feeder-spawn:${feederSessionId}:${fence.ownerGeneration}:${spawnOrdinal}`,
+				idempotencyKey: `${spawnEffectKey}${spawnOrdinal}`,
 				liveChannelId: row.liveChannelId,
 				liveChannelRunId: currentRun.id,
 				providerEncodingId,
@@ -1764,49 +1826,80 @@ export function createFeederProcessor(deps: FeederDeps) {
 			return begun.claim;
 		}
 
-		async function crossSpawnBoundary(
+		async function requireSpawnClaim(
 			spawnOrdinal: number,
 			label: string,
 		): Promise<void> {
 			const claim = await acquireSpawnClaim(spawnOrdinal);
+			acquiredSpawnClaim = true;
 			if (!(await assertLiveEffectCurrent(deps.prisma, claim, effectNow()))) {
-				await markLiveEffectFailed(
-					deps.prisma,
-					claim,
-					`${label} lost its exact run/generation fence before spawn`,
-				);
+				controller.throwIfStopped();
 				throw new Error(
 					`${label} refused: the exact run/generation fence is no longer current`,
 				);
 			}
-			// This is set immediately before predecessor-stop dispatch or spawn.
-			// From here a thrown response is uncertain and cannot be retried blind.
-			crossedEffectBoundary = true;
 		}
 
-		async function settleOpenEffectFailure(reason: string): Promise<void> {
-			let claim = activeEffectClaim;
-			if (!claim) {
-				const handed = await loadLiveEffectTargetClaim(deps.prisma, {
-					liveChannelId: row.liveChannelId,
-					targetId: feederSessionId,
-					now: effectNow(),
-				});
-				if (handed.kind === "DISPATCHING") claim = handed.claim;
-			}
-			if (!claim) return;
-			if (crossedEffectBoundary) {
+		async function settleOpenEffectFailure(
+			reason: string,
+			revoked: boolean,
+		): Promise<void> {
+			const claim = activeEffectClaim;
+			// After lease loss, settle only this run's exact claim with local
+			// proof that its single-pass process was never invoked.
+			if (
+				revoked &&
+				(row.playbackMode !== "ONCE" ||
+					claim?.action !== "FEEDER_SPAWN" ||
+					claim.idempotencyKey !== `${spawnEffectKey}0` ||
+					crossedEffectBoundary)
+			)
+				return;
+			if (!claim && (acquiredSpawnClaim || row.status !== "CREATED")) return;
+			if (claim && crossedEffectBoundary) {
 				await markLiveEffectAmbiguous(
 					deps.prisma,
 					claim,
 					`${reason}; the feeder effect crossed its stop/spawn boundary, so operator resolution is required`,
 				);
-			} else {
+			} else if ((row.playbackMode ?? "LOOP") === "LOOP") {
+				if (!row.liveChannelRunId) return;
+				// The same effect token can be adopted by the next LOOP owner.
+				await failUnstartedLoopFeederHandoff(
+					deps.prisma,
+					{
+						...fence,
+						liveChannelId: row.liveChannelId,
+						liveChannelRunId: row.liveChannelRunId,
+						leaseNotBefore: new Date(
+							effectNow().getTime() - FEEDER_LEASE_TAKEOVER_MS,
+						),
+					},
+					redactSecrets(reason),
+					claim ?? undefined,
+				);
+			} else if (claim) {
 				await markLiveEffectFailed(deps.prisma, claim, reason);
 			}
 		}
 		try {
-			await waitForChannelRunning(row.liveChannelId, controller);
+			const running = await waitForChannelRunning(
+				row.liveChannelId,
+				controller,
+			);
+			// A scheduled stop can supersede this airing while its source stages,
+			// before the publisher slot or a durable spawn claim exists.
+			const singlePassAdmission =
+				row.playbackMode === "ONCE" &&
+				row.liveChannelRunId &&
+				running.bitmovinEncodingId
+					? {
+							liveChannelId: row.liveChannelId,
+							liveChannelRunId: row.liveChannelRunId,
+							providerEncodingId: running.bitmovinEncodingId,
+							generation: running.liveEffectFenceVersion,
+						}
+					: null;
 
 			const credential = await deps.resolveCredential(row.sourceCredentialId);
 			const sealed = sealedIdentity(row);
@@ -1846,16 +1939,34 @@ export function createFeederProcessor(deps: FeederDeps) {
 					data: { sourceSha256: fetched.sha256 },
 				});
 
+				const playbackMode = feederPlaybackModeSchema.parse(
+					row.playbackMode ?? "LOOP",
+				);
+				const singlePass = playbackMode === "ONCE";
 				const probeRun = await deps.runner.run(
 					deps.ffprobePath,
 					probeArgs(fetched.path),
+					singlePass ? { signal: controller.signal } : undefined,
 				);
-				if (probeRun.code !== 0) {
+				controller.throwIfStopped();
+				if (probeRun.code !== 0 || (singlePass && probeRun.stderr.trim())) {
 					throw new Error(
 						`ffprobe failed (code ${probeRun.code}): ${probeRun.stderr.trim().split("\n").at(-1) ?? "no output"}`,
 					);
 				}
-				const probe = parseProbeJson(probeRun.stdout);
+				const sourceProbe = parseProbeJson(probeRun.stdout);
+				const video = sourceProbe.streams?.find(
+					(stream) => stream.codec_type === "video",
+				);
+				const audio = sourceProbe.streams?.find(
+					(stream) => stream.codec_type === "audio",
+				);
+				const probe = singlePass
+					? {
+							...sourceProbe,
+							streams: [...(video ? [video] : []), ...(audio ? [audio] : [])],
+						}
+					: sourceProbe;
 
 				// : refuse a source that cannot satisfy the channel's
 				// declared ingest BEFORE spawning ffmpeg. Pushing a video-only
@@ -1877,120 +1988,223 @@ export function createFeederProcessor(deps: FeederDeps) {
 				// so the target resolves first.
 				const { target, secrets } = await resolveTarget(row);
 				const reference = await loadIngestReference(row);
-				//  (PR-C): every pushed source is NORMALIZED first — one
-				// transcode into a CFR, pts-0, co-terminous loop that the encoder
-				// sees exactly as the VMAF side models it (`loopProfile`). The push
-				// itself then runs in copy mode against that loop. The normalizer is
-				// the transcode, so the reference targets are computed for it.
-				const normalise = reference
-					? normalisationTargets(reference.media, "transcode", target.protocol)
-					: undefined;
-				// The compatibility gate judges what the normalizer WILL push — the
-				// transcode's prediction pinned to the reference — before any
-				// transcoding is spent; an attribute the normalizer cannot pin (an
-				// unpinnable profile) is refused here exactly as before.
-				if (reference) {
-					const compatibility = compareSourceCompatibility(
-						reference.media,
-						pushedMediaAttributes(
-							sourceMediaAttributes(probe),
-							{ mode: "transcode", reasons: ["normalized loop"] },
-							target.protocol,
-							normalise,
-						),
-						"transcode",
-						normalise,
-					);
-					if (!compatibility.compatible) {
-						throw new Error(
-							feederError(
-								"sourceMismatch",
-								{ originKind: reference.originKind },
-								compatibility.differences,
+				// Repeating sources use the normalized, co-terminous loop modeled
+				// by VMAF. A single pass preserves the original full source instead.
+				const {
+					pushProbe,
+					pushPath,
+					decision,
+					durationSec,
+					sourcePackets,
+					normalise,
+				} = await (async () => {
+					if (playbackMode === "ONCE") {
+						if (row.commitAt !== null && row.commitAt !== undefined) {
+							throw new Error(
+								"single-pass playback does not support staged switches",
+							);
+						}
+						const decision = decideCodecMode(probe, target.protocol);
+						if (decision.mode !== "copy") {
+							throw new Error(
+								"single-pass playback requires a copy-compatible H.264/AAC source; the full source is never loop-normalized",
+							);
+						}
+						if (!video || video.disposition?.attached_pic === 1) {
+							throw new Error(
+								"single-pass playback requires the first video stream to contain the source video",
+							);
+						}
+						const durationSec = selectedPlaybackDurationSec(probe);
+						if (durationSec === undefined) {
+							throw new Error(
+								"single-pass playback requires known selected-stream duration and start times to qualify EOF",
+							);
+						}
+						if (
+							typeof video.index !== "number" ||
+							(audio && typeof audio.index !== "number")
+						) {
+							throw new Error(
+								"single-pass playback requires stream indexes from ffprobe",
+							);
+						}
+						if (reference) {
+							const compatibility = compareSourceCompatibility(
+								reference.media,
+								pushedMediaAttributes(
+									sourceMediaAttributes(probe),
+									decision,
+									target.protocol,
+								),
+								"copy",
+							);
+							if (!compatibility.compatible) {
+								throw new Error(
+									feederError(
+										"sourceMismatch",
+										{ originKind: reference.originKind },
+										compatibility.differences,
+									),
+								);
+							}
+						}
+						const sourcePackets = await inspectSinglePassPackets(
+							deps.runner,
+							deps.ffprobePath,
+							fetched.path,
+							{
+								video: video.index,
+								audio:
+									audio?.index === undefined
+										? undefined
+										: {
+												index: audio.index,
+												sampleRate: audio.sample_rate,
+												timeBase: audio.time_base,
+											},
+							},
+							controller.signal,
+						);
+						controller.throwIfStopped();
+						if ("error" in sourcePackets) throw new Error(sourcePackets.error);
+						return {
+							pushProbe: probe,
+							pushPath: fetched.path,
+							decision,
+							durationSec,
+							sourcePackets,
+							normalise: undefined,
+						};
+					}
+					const normalise = reference
+						? normalisationTargets(
+								reference.media,
+								"transcode",
+								target.protocol,
+							)
+						: undefined;
+					// The compatibility gate judges what the normalizer WILL push — the
+					// transcode's prediction pinned to the reference — before any
+					// transcoding is spent; an attribute the normalizer cannot pin (an
+					// unpinnable profile) is refused here exactly as before.
+					if (reference) {
+						const compatibility = compareSourceCompatibility(
+							reference.media,
+							pushedMediaAttributes(
+								sourceMediaAttributes(probe),
+								{ mode: "transcode", reasons: ["normalized loop"] },
+								target.protocol,
+								normalise,
 							),
+							"transcode",
+							normalise,
+						);
+						if (!compatibility.compatible) {
+							throw new Error(
+								feederError(
+									"sourceMismatch",
+									{ originKind: reference.originKind },
+									compatibility.differences,
+								),
+							);
+						}
+					}
+					const loopFps = normalise?.frameRate ?? DEFAULT_LOOP_FPS;
+					const span = sourceVideoSpan(probe);
+					const loopPath = normalizedSpoolPath(deps.spoolDir, feederSessionId);
+					// rev429 R1: the transcode can run for minutes on a long source;
+					// a STOP (or a lost lease) aborts it through the controller's
+					// signal instead of waiting for ffmpeg to finish, and the
+					// `throwIfStopped` below turns the aborted exit into a clean STOP.
+					const normalizeRun = await deps.runner.run(
+						deps.ffmpegPath,
+						buildNormalizeCommand({
+							sourcePath: fetched.path,
+							destPath: loopPath,
+							fps: loopFps,
+							protocol: target.protocol,
+							...(normalise ? { normalise } : {}),
+							videoStartSec: span.videoStartSec,
+							videoDurationSec: span.videoDurationSec,
+						}),
+						{ signal: controller.signal },
+					);
+					controller.throwIfStopped();
+					if (normalizeRun.code !== 0) {
+						throw new Error(
+							`normalizing the source loop failed (code ${normalizeRun.code}): ${normalizeRun.stderr.trim().split("\n").at(-1) ?? "no output"}`,
 						);
 					}
-				}
-				const loopFps = normalise?.frameRate ?? DEFAULT_LOOP_FPS;
-				const span = sourceVideoSpan(probe);
-				const loopPath = normalizedSpoolPath(deps.spoolDir, feederSessionId);
-				// rev429 R1: the transcode can run for minutes on a long source;
-				// a STOP (or a lost lease) aborts it through the controller's
-				// signal instead of waiting for ffmpeg to finish, and the
-				// `throwIfStopped` below turns the aborted exit into a clean STOP.
-				const normalizeRun = await deps.runner.run(
-					deps.ffmpegPath,
-					buildNormalizeCommand({
-						sourcePath: fetched.path,
-						destPath: loopPath,
-						fps: loopFps,
-						protocol: target.protocol,
-						...(normalise ? { normalise } : {}),
-						videoStartSec: span.videoStartSec,
-						videoDurationSec: span.videoDurationSec,
-					}),
-					{ signal: controller.signal },
-				);
-				controller.throwIfStopped();
-				if (normalizeRun.code !== 0) {
-					throw new Error(
-						`normalizing the source loop failed (code ${normalizeRun.code}): ${normalizeRun.stderr.trim().split("\n").at(-1) ?? "no output"}`,
+					const loopProbeRun = await deps.runner.run(
+						deps.ffprobePath,
+						probeArgs(loopPath),
 					);
-				}
-				const loopProbeRun = await deps.runner.run(
-					deps.ffprobePath,
-					probeArgs(loopPath),
-				);
-				if (loopProbeRun.code !== 0) {
-					throw new Error(
-						`ffprobe failed on the normalized loop (code ${loopProbeRun.code}): ${loopProbeRun.stderr.trim().split("\n").at(-1) ?? "no output"}`,
+					if (loopProbeRun.code !== 0) {
+						throw new Error(
+							`ffprobe failed on the normalized loop (code ${loopProbeRun.code}): ${loopProbeRun.stderr.trim().split("\n").at(-1) ?? "no output"}`,
+						);
+					}
+					const loopProbe = parseProbeJson(loopProbeRun.stdout);
+					const nowMs = Date.parse(deps.now());
+					const loopProfile = loopProfileFromProbe(
+						loopProbe,
+						loopFps,
+						fetched.sha256,
+						new Date(Number.isFinite(nowMs) ? nowMs : Date.now()).toISOString(),
+						normalise,
 					);
-				}
-				const loopProbe = parseProbeJson(loopProbeRun.stdout);
-				const nowMs = Date.parse(deps.now());
-				const loopProfile = loopProfileFromProbe(
-					loopProbe,
-					loopFps,
-					fetched.sha256,
-					new Date(Number.isFinite(nowMs) ? nowMs : Date.now()).toISOString(),
-					normalise,
-				);
-				// A takeover (#242) re-stages on another worker: the encoder is
-				// bound to the period the first owner pushed, so a loop that does
-				// not reproduce it is refused rather than pushed.
-				const priorProfile = loopProfileSchema.safeParse(row.loopProfile);
-				if (
-					priorProfile.success &&
-					(priorProfile.data.frames !== loopProfile.frames ||
-						priorProfile.data.fps !== loopProfile.fps)
-				) {
-					throw new Error(
-						`the normalized loop (${loopProfile.frames} frames at ${loopProfile.fps} fps) does not reproduce the profile this session already pushed (${priorProfile.data.frames} at ${priorProfile.data.fps})`,
-					);
-				}
-				await deps.prisma.feederSession.updateMany({
-					where: fence,
-					data: {
-						loopProfile: loopProfile as unknown as Prisma.InputJsonValue,
-					},
-				});
-				const decision = decideCodecMode(loopProbe, target.protocol);
-				if (decision.mode !== "copy") {
-					throw new Error(
-						`the normalized loop is not copy-compatible with the ${target.protocol} push: ${decision.reasons.join("; ")}`,
-					);
-				}
-				// What the encoder sees is the loop itself — recorded as the run's
-				// ingest reference from the loop's own probe.
-				const sourceAttributes = sourceMediaAttributes(loopProbe);
+					// A takeover (#242) re-stages on another worker: the encoder is
+					// bound to the period the first owner pushed, so a loop that does
+					// not reproduce it is refused rather than pushed.
+					const priorProfile = loopProfileSchema.safeParse(row.loopProfile);
+					if (
+						priorProfile.success &&
+						(priorProfile.data.frames !== loopProfile.frames ||
+							priorProfile.data.fps !== loopProfile.fps)
+					) {
+						throw new Error(
+							`the normalized loop (${loopProfile.frames} frames at ${loopProfile.fps} fps) does not reproduce the profile this session already pushed (${priorProfile.data.frames} at ${priorProfile.data.fps})`,
+						);
+					}
+					await deps.prisma.feederSession.updateMany({
+						where: fence,
+						data: {
+							loopProfile: loopProfile as unknown as Prisma.InputJsonValue,
+						},
+					});
+					const decision = decideCodecMode(loopProbe, target.protocol);
+					if (decision.mode !== "copy") {
+						throw new Error(
+							`the normalized loop is not copy-compatible with the ${target.protocol} push: ${decision.reasons.join("; ")}`,
+						);
+					}
+					// What the encoder sees is the loop itself — recorded as the run's
+					// ingest reference from the loop's own probe.
+					return {
+						pushProbe: loopProbe,
+						pushPath: loopPath,
+						decision,
+						durationSec: loopProfile.loopSeconds,
+						sourcePackets: undefined,
+						normalise,
+					};
+				})();
+				const sourceAttributes = sourceMediaAttributes(pushProbe);
 				const { argv, redactedArgv } = buildFeederCommand({
-					sourcePath: loopPath,
+					sourcePath: pushPath,
+					playbackMode,
 					decision,
 					target,
 				});
 
 				let seamBase: Date | null = null;
 				let attemptEvidenceNotBefore: Date | null = null;
+				if (singlePass)
+					await assertProviderEffectBoundary(
+						"Feeder publisher claim",
+						singlePassAdmission,
+					);
 				const commitAt = row.commitAt ?? null;
 				if (commitAt !== null) {
 					const readyAt = new Date(deps.now());
@@ -2017,7 +2231,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 					// before touching them unless this exact session generation is still
 					// attached to its exact fresh-RUNNING provider run.
 					await assertProviderEffectBoundary("Feeder switch commit");
-					await crossSpawnBoundary(0, "Feeder switch commit");
+					await requireSpawnClaim(0, "Feeder switch commit");
+					crossedEffectBoundary = true;
 					const gone = await awaitPredecessorsGone(row, controller);
 					seamBase = gone.predecessorGoneAt ?? commitRequestedAt;
 					// A stop or a lost lease that landed during the predecessor
@@ -2108,6 +2323,13 @@ export function createFeederProcessor(deps: FeederDeps) {
 					orderBy: { createdAt: "desc" },
 					select: { id: true },
 				});
+				async function rethrowSpawnFailure(error: unknown): Promise<never> {
+					if (singlePassAdmission)
+						await throwIfSupersedingLiveStop(
+							activeEffectClaim ?? singlePassAdmission,
+						);
+					throw error;
+				}
 				const supervisor = createFeederSupervisor({
 					runner: deps.runner,
 					ffmpegPath: deps.ffmpegPath,
@@ -2118,18 +2340,58 @@ export function createFeederProcessor(deps: FeederDeps) {
 						...redactedArgv,
 					],
 					redactLine: buildLineRedactor(secrets),
-					sourceDurationSec: loopProfile.loopSeconds,
+					sourceDurationSec: durationSec,
+					playbackMode,
+					sourcePackets,
 					now: deps.now,
 					sleep: deps.sleep,
 					...(attemptEvidenceNotBefore
 						? { bindEvidenceNotBefore: attemptEvidenceNotBefore.toISOString() }
 						: {}),
 					beforeSpawn: async (spawnOrdinal) => {
-						await assertProviderEffectBoundary("Feeder process spawn");
-						// Re-prove both the DB-enforced publisher slot and the exact
-						// run-bound effect immediately before every initial spawn/respawn.
-						await assertPublisherEffectBoundary();
-						await crossSpawnBoundary(spawnOrdinal, "Feeder process spawn");
+						try {
+							await assertProviderEffectBoundary("Feeder process spawn");
+							// Re-prove the publisher slot and the exact run-bound effect.
+							await assertPublisherEffectBoundary();
+							await requireSpawnClaim(spawnOrdinal, "Feeder process spawn");
+						} catch (error) {
+							await rethrowSpawnFailure(error);
+						}
+						if (playbackMode !== "ONCE") crossedEffectBoundary = true;
+					},
+					immediatelyBeforeProcessSpawn: async () => {
+						if (playbackMode !== "ONCE") return;
+						if (!activeEffectClaim || claimedPublisherGeneration === null)
+							throw new Error(
+								"Single-pass spawn has no exact effect and publisher claim",
+							);
+						try {
+							await assertProviderEffectBoundary("Single-pass process spawn");
+							await assertPublisherEffectBoundary();
+						} catch (error) {
+							await rethrowSpawnFailure(error);
+						}
+						const dispatched = await claimFeederSinglePassDispatch(
+							deps.prisma,
+							{ ...fence, publisherGeneration: claimedPublisherGeneration },
+							new Date(deps.now()),
+							activeEffectClaim,
+						).catch((error) => {
+							controller.throwIfStopped();
+							throw error;
+						});
+						controller.throwIfStopped();
+						// This marker is never cleared, including a lost acknowledgement.
+						// A crash after this CAS can abandon the pass, but cannot replay it.
+						if (dispatched === "STOPPED") throw new FeederStopError();
+						if (dispatched !== "DISPATCHED") {
+							throw new Error(
+								"single-pass dispatch refused: this source may already have been sent or its owner fence was lost",
+							);
+						}
+					},
+					onProcessSpawnInvoked: () => {
+						crossedEffectBoundary = true;
 					},
 					onSpawnError: async (error) => {
 						if (!activeEffectClaim) return;
@@ -2280,6 +2542,13 @@ export function createFeederProcessor(deps: FeederDeps) {
 							const attached = await deps.prisma.feederPushAttempt.updateMany({
 								where: {
 									id: attemptId,
+									...(playbackMode === "ONCE" && {
+										feederSessionId,
+										liveChannelRunId: row.liveChannelRunId,
+										ownerGeneration: generation,
+										publisherGeneration:
+											claimedPublisherGeneration ?? undefined,
+									}),
 									pid: null,
 									processSpawnedAt: null,
 									evidenceNotBefore: null,
@@ -2344,6 +2613,11 @@ export function createFeederProcessor(deps: FeederDeps) {
 						setPushing: async (pid) => {
 							publisherSpawnOccurred = true;
 							lastSpawnedPid = pid ?? null;
+							if (
+								playbackMode === "ONCE" &&
+								claimedPublisherGeneration === null
+							)
+								return false;
 							// Guarded transition (lost-stop race): a registry-miss
 							// stop can land STOPPED between the DOWNLOADING claim
 							// and this first PUSHING flip — an unguarded update
@@ -2361,6 +2635,12 @@ export function createFeederProcessor(deps: FeederDeps) {
 								where: {
 									...fence,
 									status: { in: ["DOWNLOADING", "PUSHING"] },
+									...(playbackMode === "ONCE" && {
+										liveChannelRunId: row.liveChannelRunId,
+										publisherGeneration:
+											claimedPublisherGeneration ?? undefined,
+										playbackDispatchedAt: { not: null },
+									}),
 									// LC-02: no pid is ever recorded on a row that holds
 									// no publisher claim. A spawn that somehow reached
 									// here unclaimed counts zero rows and is torn down
@@ -2551,7 +2831,19 @@ export function createFeederProcessor(deps: FeederDeps) {
 					row.liveChannelId,
 					result.outcome,
 					result.error,
-					terminalEvidence(),
+					{
+						...terminalEvidence(),
+						...(result.completion
+							? {
+									playbackReceipt: {
+										...result.completion,
+										sourceSha256: fetched.sha256,
+										sourceDurationSec: durationSec,
+										sourcePackets,
+									} as Prisma.InputJsonValue,
+								}
+							: {}),
+					},
 				);
 				return result.outcome;
 			} finally {
@@ -2568,29 +2860,33 @@ export function createFeederProcessor(deps: FeederDeps) {
 			// its final effect-boundary check failed before it ever spawned.
 			await releaseClaimAfterNoSpawn();
 			const message = err instanceof Error ? err.message : "feeder failed";
-			//  FIRST, because a takeover tears the push down THROUGH
-			// the stop path — `requestTakeover` calls `requestStop`, so what
-			// arrives here is usually a `FeederStopError`. Reading that as an
-			// operator stop would land STOPPED on a row another worker is
-			// actively pushing on.
-			if (controller.leaseLost) {
-				return TAKEN_OVER;
-			}
-			await settleOpenEffectFailure(message).catch((settleErr) => {
-				console.error(
-					`[feeder] session ${feederSessionId}: could not settle durable effect failure`,
-					settleErr instanceof Error ? settleErr.message : settleErr,
-				);
-			});
+			await settleOpenEffectFailure(message, controller.leaseLost).catch(
+				(settleErr) => {
+					console.error(
+						`[feeder] session ${feederSessionId}: could not settle durable effect failure`,
+						settleErr instanceof Error ? settleErr.message : settleErr,
+					);
+				},
+			);
+			// A revoked owner may settle its own never-spawned effect but cannot
+			// write terminal status to the session after the fence moved.
+			if (controller.leaseLost) return TAKEN_OVER;
 			if (err instanceof FeederStopError) {
 				// Stop during a pre-push stage is a clean stop, not a failure.
-				await markTerminal(
+				const stopped = await markTerminal(
 					fence,
 					row.liveChannelId,
 					"STOPPED",
 					undefined,
 					terminalEvidence(),
 				);
+				if (!stopped && row.playbackMode === "ONCE") {
+					const current = await deps.prisma.feederSession.findUnique({
+						where: { id: feederSessionId },
+						select: { status: true },
+					});
+					if (current?.status !== "STOPPED") return TAKEN_OVER;
+				}
 				return "STOPPED";
 			}
 			if (err instanceof FeederReleasedError) {
@@ -2724,6 +3020,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			| "ownerHost"
 			| "ownerId"
 			| "ownerGeneration"
+			| "ownerLeaseAt"
 			| "error"
 			| "liveChannelId"
 			| "processGoneAt"
@@ -2731,9 +3028,22 @@ export function createFeederProcessor(deps: FeederDeps) {
 			| "publisherClaimedAt"
 			| "publisherReleasedAt"
 			| "publisherGeneration"
+			| "playbackMode"
+			| "playbackDispatchedAt"
 		>,
 		now: Date,
 	): Promise<{ row: FeederSessionRow; generation: number } | null> {
+		if (row.playbackMode === "ONCE" && row.playbackDispatchedAt !== null) {
+			const refused = await refuseUnprovenPublisherTakeover(
+				row,
+				now,
+				"single-pass dispatch was already recorded; refusing to replay the source from its beginning",
+			);
+			if (refused) {
+				await stop(row.id, { requireIdentity: true });
+			}
+			return null;
+		}
 		const from = row.ownerId ?? "an unnamed owner";
 		let note: string;
 		let proven = false;
@@ -2756,7 +3066,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 						? `publisher claim generation ${row.publisherGeneration} was recorded`
 						: "a publisher start was recorded";
 				const note = `refusing to resume from ${from}: ${claim}, but its pid pointer is missing and no processGoneAt proof says the old publisher stopped — refusing to add a second push at the same ingest (dead air over overlap); confirm the process is gone on its former host, then retry`;
-				return await refuseUnprovenPublisherTakeover(row, now, note);
+				await refuseUnprovenPublisherTakeover(row, now, note);
+				return null;
 			}
 			// Safe to resume: it never spawned ffmpeg, or its previous owner tore
 			// down and PROVED the process gone. The revoked owner's lease-lost
@@ -2794,7 +3105,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 				// branch above. Reaching HERE with a live pid means no such proof,
 				// so mirror #240's switch barrier: refuse, do not spawn.
 				const note = `refusing to resume from ${from}: host ${row.ownerHost} recorded ffmpeg pid ${row.pid}, which ${deps.hostname} cannot prove has stopped — refusing to add a second push at the same ingest (dead air over overlap); stop the session from that host, or confirm the process is gone there`;
-				return await refuseUnprovenPublisherTakeover(row, now, note);
+				await refuseUnprovenPublisherTakeover(row, now, note);
+				return null;
 			}
 			// `gone`: the kill ladder verified the pid absent, or the number now
 			// wears an unrelated process. `not-ours` returns first for any
@@ -2817,8 +3129,10 @@ export function createFeederProcessor(deps: FeederDeps) {
 				// The exact token that was READ. A renewal by a live owner, or
 				// another worker's takeover, moves it and this matches nothing —
 				// #216's `reconcileAbandonedLeases` in one line.
+				...(row.playbackMode === "ONCE" ? { playbackDispatchedAt: null } : {}),
 				ownerId: row.ownerId,
 				ownerGeneration: row.ownerGeneration,
+				ownerLeaseAt: row.ownerLeaseAt,
 				publisherGeneration: row.publisherGeneration,
 				status: { in: [...ACTIVE_STATUSES] },
 			},
@@ -2893,7 +3207,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 	 * #88), and an operator whose push could not be safely resumed must be
 	 * told rather than left reading a green STOPPED.
 	 *
-	 * Returns null so `takeOverStale` records no takeover and spawns nothing.
+	 * The scan can lose its lease snapshot to a renewal. Only the winner may
+	 * reclaim a dispatched single pass, and its automatic stop verifies identity.
 	 */
 	async function refuseUnprovenPublisherTakeover(
 		row: { id: string; liveChannelId: string } & Pick<
@@ -2902,12 +3217,13 @@ export function createFeederProcessor(deps: FeederDeps) {
 			| "ownerHost"
 			| "ownerId"
 			| "ownerGeneration"
+			| "ownerLeaseAt"
 			| "publisherGeneration"
 			| "error"
 		>,
 		now: Date,
 		note: string,
-	): Promise<null> {
+	): Promise<boolean> {
 		const error = withReclaimNote(row.error, note);
 		const { count } = await deps.prisma.feederSession.updateMany({
 			where: {
@@ -2916,6 +3232,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 				// another worker's claim/stop, has moved it — theirs stands.
 				ownerId: row.ownerId,
 				ownerGeneration: row.ownerGeneration,
+				ownerLeaseAt: row.ownerLeaseAt,
 				publisherGeneration: row.publisherGeneration,
 				status: { in: [...ACTIVE_STATUSES] },
 			},
@@ -2930,7 +3247,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			},
 		});
 		if (count === 0) {
-			return null;
+			return false;
 		}
 		console.warn(`[feeder] session ${row.id}: ${note} — resuming refused`);
 		// : a feeder that ends in ERROR notifies, whichever writer
@@ -2942,10 +3259,13 @@ export function createFeederProcessor(deps: FeederDeps) {
 			error: redactSecrets(feederErrorEnglish(error)),
 			path: `/live/${row.liveChannelId}`,
 		});
-		return null;
+		return true;
 	}
 
-	async function stop(feederSessionId: string): Promise<string> {
+	async function stop(
+		feederSessionId: string,
+		options?: { requireIdentity?: boolean },
+	): Promise<string> {
 		const controller = registry.get(feederSessionId);
 		// review-365 S-4: a controller that has already LOST its lease is not
 		// this session's supervisor any more, it is a loser winding down. Its
@@ -3032,6 +3352,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			feederSessionId,
 			row.pid,
 			row.ownerHost,
+			options,
 		);
 		const goneAt = new Date(deps.now());
 		if (terminal) {

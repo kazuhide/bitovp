@@ -42,6 +42,7 @@ import { startWithRetry1004 } from "../start-1004-retry";
 import type { OpsContext } from "./context";
 import {
 	adoptOrCreateStamped,
+	BitmovinCallError,
 	findStampedResource,
 	findVerificationEncodingResources,
 	optEnum,
@@ -100,6 +101,17 @@ export function createEncodingLifecycleOps(
 	| "getEncodingMessages"
 > {
 	const { api, audited, stampAuditAdopt, id, options } = ctx;
+	async function readStatus(encodingId: string) {
+		try {
+			return await api.encoding.encodings.status(encodingId);
+		} catch (cause) {
+			throw new BitmovinCallError(
+				"GET",
+				`/encoding/encodings/${encodingId}/status`,
+				cause,
+			);
+		}
+	}
 	return {
 		findVerificationEncodings: (p) =>
 			findVerificationEncodingResources({
@@ -592,8 +604,7 @@ export function createEncodingLifecycleOps(
 				(r) => ({ id: r.id }),
 			).then(() => undefined),
 
-		getEncodingStatus: (encodingId) =>
-			api.encoding.encodings.status(encodingId).then(taskResult),
+		getEncodingStatus: (encodingId) => readStatus(encodingId).then(taskResult),
 
 		// Same endpoint as getEncodingStatus, different projection: severity
 		// and timestamp kept, so a message can be attributed to one insertion.
@@ -601,7 +612,7 @@ export function createEncodingLifecycleOps(
 		// answers the step log depends on; this one lands in the step log
 		// through the slate outcome entry instead).
 		getEncodingMessages: (encodingId) =>
-			api.encoding.encodings.status(encodingId).then((task) =>
+			readStatus(encodingId).then((task) =>
 				(task.messages ?? []).flatMap((m) => {
 					const text = typeof m.text === "string" ? m.text : "";
 					if (text.length === 0) {

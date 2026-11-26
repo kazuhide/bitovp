@@ -47,6 +47,45 @@ afterEach(() => {
 });
 
 describe("START control through the production SDK factory", () => {
+	it("records a failed VOD start without persisting a signed storage diagnostic", async () => {
+		const create = vi.fn(async (_arg: unknown) => ({}));
+		const sdk = makeWorkerSdk({
+			auditLog: { create },
+		} as unknown as AppPrismaClient)({
+			apiKey: "synthetic",
+			tenantOrgId: null,
+			bitmovinAccountId: "synthetic-account",
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							status: "ERROR",
+							data: {
+								code: 1001,
+								message:
+									"Cannot read https://fixture.invalid/object?signature=START_AUDIT_FIXTURE",
+							},
+						}),
+						{ status: 400, headers: { "content-type": "application/json" } },
+					),
+			),
+		);
+		await expect(sdk.startEncoding("owned-encoding", {})).rejects.toThrow();
+		expect(create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				path: "/encoding/encodings/owned-encoding/start",
+				statusCode: 400,
+				error: "[withheld] (code 1001)",
+				response: { errorCode: 1001 },
+			}),
+		});
+		expect(JSON.stringify(create.mock.calls)).not.toContain(
+			"START_AUDIT_FIXTURE",
+		);
+	});
 	it.each(
 		modes,
 	)("%s stops its first 1004 delay promptly without another send or success reconciliation", async (mode) => {

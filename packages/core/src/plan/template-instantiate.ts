@@ -1,4 +1,5 @@
 import { mapDestinationPaths } from "./destinations";
+import { hasPrivateStorageLocator } from "./hdr-source-paths";
 import { type EncodingPlan, encodingPlanSchema } from "./schema";
 
 /**
@@ -29,7 +30,12 @@ export type TemplateSourceSite = {
 	siteId: string;
 	/** The stream whose path this site substitutes. */
 	streamKey: string;
-	list: "ingest" | "fileStreams" | "dolbyStreams";
+	list:
+		| "ingest"
+		| "captionStreams"
+		| "fileStreams"
+		| "dolbyStreams"
+		| "hdr10PlusStreams";
 	/** Dolby discriminator when list === "dolbyStreams". */
 	dolbyKind?: "ATMOS" | "VISION" | "VISION_METADATA";
 	/** Which field on the stream holds this site's path. */
@@ -56,16 +62,16 @@ export function templateSourceSites(plan: EncodingPlan): TemplateSourceSite[] {
 			...(s.encodingKey ? { encodingKey: s.encodingKey } : {}),
 		});
 	}
-	for (const s of plan.fileStreams) {
-		sites.push({
-			siteId: s.key,
-			streamKey: s.key,
-			list: "fileStreams",
-			field: "inputPath",
-			inputKey: s.inputKey,
-			currentPath: s.inputPath,
-			...(s.encodingKey ? { encodingKey: s.encodingKey } : {}),
-		});
+	for (const list of ["fileStreams", "captionStreams"] as const) {
+		for (const s of plan[list])
+			sites.push({
+				siteId: s.key,
+				streamKey: s.key,
+				list,
+				field: "inputPath",
+				inputKey: s.inputKey,
+				currentPath: s.inputPath,
+			});
 	}
 	for (const s of plan.dolbyStreams) {
 		if (s.kind === "VISION") {
@@ -104,6 +110,20 @@ export function templateSourceSites(plan: EncodingPlan): TemplateSourceSite[] {
 			});
 		}
 	}
+	for (const stream of plan.hdr10PlusStreams) {
+		for (const field of ["videoInputPath", "metadataInputPath"] as const) {
+			sites.push({
+				siteId:
+					field === "metadataInputPath" ? `${stream.key}:metadata` : stream.key,
+				streamKey: stream.key,
+				list: "hdr10PlusStreams",
+				field,
+				inputKey: stream.inputKey,
+				currentPath: stream[field],
+				...(stream.encodingKey ? { encodingKey: stream.encodingKey } : {}),
+			});
+		}
+	}
 	return sites;
 }
 
@@ -134,6 +154,7 @@ export type TemplateInstantiateIssue = {
 		/** bucket XOR credentialId — the two move an input TOGETHER (review-109pr1 I2: previously misfiled under SHARED_INPUT_CONFLICT). */
 		| "INCOMPLETE_INPUT_MOVE"
 		/** The site's input kind carries no bucket+credentialId pair (HTTPS, AZURE's container, …) — a move cannot apply (review-109pr1 I1: previously refused only by incidental strict-zod re-parse). */
+		| "HDR10PLUS_PAIR_REQUIRED"
 		| "INPUT_KIND_NOT_MOVABLE"
 		| "EMPTY_OUTPUT_PREFIX"
 		| "REPARSE_FAILED";
@@ -155,12 +176,31 @@ export function renderTemplateOutputPrefix(
 	template: string,
 	ctx: {
 		objectKey: string;
+		inputKind?: string;
 		templateName: string;
 		now: Date;
 		uuid: string;
 	},
 ): string {
-	const file = ctx.objectKey.split("/").pop() ?? ctx.objectKey;
+	let sourcePath = ctx.objectKey;
+	if (
+		ctx.inputKind === "HTTPS" ||
+		hasPrivateStorageLocator(sourcePath, "OBJECT_KEY")
+	) {
+		// Only the URL path belongs in a public destination token.
+		try {
+			const source = /^[\s\p{Cc}]*[a-z][a-z\d+.-]*:/iu.test(sourcePath)
+				? new URL(sourcePath)
+				: new URL(sourcePath, "https://template.invalid");
+			sourcePath =
+				source.protocol === "https:" || source.protocol === "http:"
+					? source.pathname
+					: "";
+		} catch {
+			sourcePath = "";
+		}
+	}
+	const file = sourcePath.split("/").pop() ?? sourcePath;
 	const dot = file.lastIndexOf(".");
 	const basename = dot > 0 ? file.slice(0, dot) : file;
 	const ext = dot > 0 ? file.slice(dot + 1).toLowerCase() : "";
@@ -225,10 +265,10 @@ export function instantiateTemplatePlan(
 	const template = parsed.data;
 	const sites = templateSourceSites(template);
 	const byId = new Map(sites.map((s) => [s.siteId, s]));
-	const sources = input.sources ?? {};
+	const sources = new Map(Object.entries(input.sources ?? {}));
 
 	const issues: TemplateInstantiateIssue[] = [];
-	for (const siteId of Object.keys(sources)) {
+	for (const siteId of sources.keys()) {
 		if (!byId.has(siteId)) {
 			issues.push({
 				code: "UNKNOWN_SITE",
@@ -245,7 +285,7 @@ export function instantiateTemplatePlan(
 		string,
 		{ bucket: string; credentialId: string; bySite: string }
 	>();
-	for (const [siteId, param] of Object.entries(sources)) {
+	for (const [siteId, param] of sources) {
 		const site = byId.get(siteId);
 		if (!site) {
 			continue;
@@ -296,6 +336,32 @@ export function instantiateTemplatePlan(
 		}
 		inputMoves.set(site.inputKey, existing ?? want);
 	}
+	// An input move changes the meaning of every relative path on that
+	// resource, even when another ingest site initiated the move.
+	for (const stream of template.hdr10PlusStreams) {
+		const video = sources.get(stream.key);
+		const metadata = sources.get(`${stream.key}:metadata`);
+		const move = inputMoves.get(stream.inputKey);
+		const original = template.inputs.find(
+			(entry) => entry.key === stream.inputKey,
+		);
+		const moved =
+			move &&
+			original &&
+			"bucket" in original &&
+			"credentialId" in original &&
+			(move.bucket !== original.bucket ||
+				move.credentialId !== original.credentialId);
+		if (
+			(moved || (video && video.objectKey !== stream.videoInputPath)) &&
+			(!video?.objectKey.trim() || !metadata?.objectKey.trim())
+		) {
+			issues.push({
+				code: "HDR10PLUS_PAIR_REQUIRED",
+				message: `Select both the HDR10+ picture and its matching JSON metadata for "${stream.key}".`,
+			});
+		}
+	}
 	if (issues.length > 0) {
 		return { ok: false, issues };
 	}
@@ -303,10 +369,13 @@ export function instantiateTemplatePlan(
 	/** The prefix tokens read the FIRST site's effective path. */
 	const firstSite = sites[0];
 	const firstEffective = firstSite
-		? (sources[firstSite.siteId]?.objectKey ?? firstSite.currentPath)
+		? (sources.get(firstSite.siteId)?.objectKey ?? firstSite.currentPath)
 		: "";
 	const outputPrefix = renderTemplateOutputPrefix(input.outputPrefixTemplate, {
 		objectKey: firstEffective,
+		inputKind: template.inputs.find(
+			(resource) => resource.key === firstSite?.inputKey,
+		)?.kind,
 		templateName: input.templateName,
 		now: input.now,
 		uuid: input.uuid,
@@ -331,7 +400,7 @@ export function instantiateTemplatePlan(
 	): string => {
 		const siteId =
 			field === "metadataInputPath" ? `${streamKey}:metadata` : streamKey;
-		return sources[siteId]?.objectKey ?? current;
+		return sources.get(siteId)?.objectKey ?? current;
 	};
 
 	const rebased = rebaseDestinations(
@@ -351,9 +420,26 @@ export function instantiateTemplatePlan(
 			...s,
 			inputPath: substitutePath(s.key, "inputPath", s.inputPath),
 		})),
+		captionStreams: rebased.captionStreams.map((s) => ({
+			...s,
+			inputPath: substitutePath(s.key, "inputPath", s.inputPath),
+		})),
 		fileStreams: rebased.fileStreams.map((s) => ({
 			...s,
 			inputPath: substitutePath(s.key, "inputPath", s.inputPath),
+		})),
+		hdr10PlusStreams: rebased.hdr10PlusStreams.map((stream) => ({
+			...stream,
+			videoInputPath: substitutePath(
+				stream.key,
+				"videoInputPath",
+				stream.videoInputPath,
+			),
+			metadataInputPath: substitutePath(
+				stream.key,
+				"metadataInputPath",
+				stream.metadataInputPath,
+			),
 		})),
 		dolbyStreams: rebased.dolbyStreams.map((s) =>
 			s.kind === "VISION"

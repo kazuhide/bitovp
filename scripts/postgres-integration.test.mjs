@@ -121,13 +121,13 @@ test("accepts exactly the required files and all passed assertions", () => {
 	for (const group of GROUPS) {
 		assert.doesNotThrow(() => validateReport(report(group), group, root));
 	}
-	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 37);
+	assert.equal(GROUPS.flatMap((group) => Object.keys(group.files)).length, 42);
 	assert.equal(
 		GROUPS.flatMap((group) => Object.values(group.files)).reduce(
 			(a, b) => a + b,
 			0,
 		),
-		243,
+		686,
 	);
 });
 
@@ -280,7 +280,7 @@ for (const [name, wroteReport, failed, expected] of [
 			"Reason: PostgreSQL tests must have no failures, skips or unfinished cases",
 			"  - Vitest reported a failed run",
 			"  - failed tests: 1, required 0",
-			"  - tests passed: 72, required 73",
+			"  - tests passed: 88, required 89",
 			'  - src/runtime-role.integration.test.ts: 0 of 1 tests passed, 1 required; file status "failed"',
 			'  - "failed": runtime role > cannot create tables',
 			"    | Error: permission was granted",

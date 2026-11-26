@@ -1,4 +1,4 @@
-import { redactSecrets } from "@bitovp/core";
+import { publicHdrSourceProjection, redactSecrets } from "@bitovp/core";
 import type { Prisma } from "../generated/client";
 import type { AppPrismaClient } from "./client";
 
@@ -37,6 +37,7 @@ export async function writeAuditLog(
 	entry: AuditEntry,
 ): Promise<void> {
 	try {
+		entry = publicHdrSourceProjection(entry);
 		await prisma.auditLog.create({
 			data: {
 				...(entry.actor ? { actor: entry.actor } : {}),

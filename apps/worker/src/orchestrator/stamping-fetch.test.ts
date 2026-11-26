@@ -287,3 +287,27 @@ describe("createStampingFetch", () => {
 		expect(bodies).toEqual(["step-a", "step-b"]);
 	});
 });
+
+it.each([
+	"POST",
+	"DELETE",
+	"PATCH",
+	"PUT",
+])("checks authorization immediately before a %s, including actions without customData", async (method) => {
+	const inner = vi.fn(async () => new Response("{}"));
+	const beforeMutation = vi.fn(async () => {
+		throw new Error("Recording is protected");
+	});
+	const send = createStampingFetch(inner, {
+		jobId: "recording",
+		currentStep: () => undefined,
+		beforeMutation,
+	});
+	await expect(send(CREATE_URL + "/start", { method })).rejects.toThrow(
+		"Recording is protected",
+	);
+	expect(inner).not.toHaveBeenCalled();
+	await send(CREATE_URL, { method: "GET" });
+	expect(beforeMutation).toHaveBeenCalledTimes(1);
+	expect(inner).toHaveBeenCalledTimes(1);
+});

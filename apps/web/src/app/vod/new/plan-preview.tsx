@@ -50,7 +50,15 @@ export function evaluateWizardState(
 			return {
 				ok: false,
 				zodMessage: translate
-					? translate("vodTimeline.invalid")
+					? translate(
+							error.code === "TIMELINE_GRAPH_CONFLICT" &&
+								state.sources?.hdr10PlusStreams?.length
+								? "wizard.hdr10PlusTimelineConflict"
+								: error.code === "TIMELINE_GRAPH_CONFLICT" &&
+										state.sources?.captionStreams?.length
+									? "wizard.embeddedCaptionTimelineConflict"
+									: "vodTimeline.invalid",
+						)
 					: error.message,
 			};
 		if (error instanceof WizardCodecError)
@@ -167,13 +175,17 @@ export function PlanPreview({ evaluation }: { evaluation: PlanEvaluation }) {
 		? encodingTemplateExportUnavailableReason(evaluation.plan)
 		: undefined;
 	const templateUnavailableMessage =
-		templateUnavailable === "SPEKE"
-			? t("wizard.spekeTemplateUnavailable")
-			: templateUnavailable === "DASH_ON_DEMAND_MP4_DRM"
-				? t("wizard.onDemandDrmTemplateUnavailable")
-				: templateUnavailable === "MANIFEST_DETAILS"
-					? t("manifestDetail.templateUnavailable")
-					: undefined;
+		templateUnavailable === "PINNED_AUDIO_INPUT"
+			? t("vodFlow.audioTemplateUnavailable")
+			: templateUnavailable === "DOLBY_LOUDNESS"
+				? t("wizard.dolbyLoudnessTemplateUnavailable")
+				: templateUnavailable === "SPEKE"
+					? t("wizard.spekeTemplateUnavailable")
+					: templateUnavailable === "DASH_ON_DEMAND_MP4_DRM"
+						? t("wizard.onDemandDrmTemplateUnavailable")
+						: templateUnavailable === "MANIFEST_DETAILS"
+							? t("manifestDetail.templateUnavailable")
+							: undefined;
 	const currentTab = templateUnavailable && tab === "yaml" ? "json" : tab;
 	const blocked =
 		evaluation.ok && evaluation.issues.some((i) => i.level === "error");

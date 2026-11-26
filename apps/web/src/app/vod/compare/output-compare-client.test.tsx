@@ -144,5 +144,25 @@ it("uses exact app job IDs and describes DV as output settings rather than verif
 	rendition.dynamicRangeFormat = "DOLBY_VISION_PROFILE_10_1";
 	rendition.encodingMode = "THREE_PASS";
 	expect(outputFormats(plan)).toContain("AV1 · Dolby Vision 10.1 · THREE_PASS");
+	expect(
+		outputFormats({
+			...plan,
+			ingest: [{ ...plan.ingest[0], inputPath: "" }],
+			withheldSourcePaths: [
+				[{ collection: "ingest", index: 0, field: "inputPath" }],
+			],
+		}),
+	).toContain("AV1 · Dolby Vision 10.1 · THREE_PASS");
+	expect(
+		outputFormats({
+			renditions: [
+				{
+					codec: "H264",
+					dynamicRangeFormat: "private-fixture",
+					encodingMode: "private-fixture",
+				},
+			],
+		}),
+	).toBe("H.264");
 	expect(outputFormats({})).toBe("");
 });

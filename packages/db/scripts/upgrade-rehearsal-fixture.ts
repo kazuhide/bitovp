@@ -430,13 +430,39 @@ async function main() {
 		]);
 		await prepareRuntimeRole(current, fixtureRuntime.username);
 		const upgraded = await snapshotModule.snapshotDatabase(compose, database);
+		// These migrations add defaulted fields and a resource-removal lock row.
+		// Compare every original column and row,
+		// then independently verify the new values assigned to historical rows.
+		const legacyHashes = await current.$queryRaw<
+			{ name: string; rows: number; sha256: string }[]
+		>`
+			WITH legacy(name, content) AS (
+				SELECT 'BitmovinAccount', to_jsonb(a) - 'resourceScopeVersion' - 'resourceScopeSince' - 'resetPriorTenantScopes' FROM "BitmovinAccount" a
+				UNION ALL SELECT 'StorageInspection', to_jsonb(i) - 'verifyAudioCopy' - 'sourceIdentity' FROM "StorageInspection" i
+				UNION ALL SELECT 'PlatformSetting', to_jsonb(p) FROM "PlatformSetting" p WHERE p.key <> 'internal.encoding_resource_removal_epoch'
+			)
+			SELECT t.name, count(l.content)::int AS rows,
+				encode(sha256(convert_to(coalesce(jsonb_agg(l.content ORDER BY l.content::text) FILTER (WHERE l.content IS NOT NULL),'[]'::jsonb)::text,'UTF8')),'hex') AS sha256
+			FROM (VALUES ('BitmovinAccount'),('StorageInspection'),('PlatformSetting')) AS t(name)
+			LEFT JOIN legacy l ON l.name=t.name GROUP BY t.name`;
+		const malformedDefaults = await current.$queryRaw<{ bad: boolean }[]>`
+			SELECT EXISTS(SELECT 1 FROM "BitmovinAccount"
+				WHERE "resourceScopeVersion" IS NULL OR "resourceScopeSince" IS NOT NULL
+					OR "resetPriorTenantScopes" IS DISTINCT FROM ARRAY['']::text[])
+				OR EXISTS(SELECT 1 FROM "StorageInspection" WHERE "verifyAudioCopy" OR "sourceIdentity" IS NOT NULL)
+				OR NOT EXISTS(SELECT 1 FROM "PlatformSetting" WHERE key='internal.encoding_resource_removal_epoch' AND value='null'::jsonb) AS bad`;
+		stage = "checking historical account and storage defaults";
+		assert.equal(malformedDefaults[0]?.bad, false);
 		for (const table of before.tables)
-			if (table.name !== "_prisma_migrations")
+			if (table.name !== "_prisma_migrations") {
+				stage = `checking preserved columns of ${table.name}`;
 				assert.deepEqual(
-					upgraded.tables.find((row) => row.name === table.name),
+					legacyHashes.find((row) => row.name === table.name) ??
+						upgraded.tables.find((row) => row.name === table.name),
 					table,
 					`Changed preserved table ${table.name}`,
 				);
+			}
 		stage = "reading upgraded data with current code and the original key";
 		assert.equal(
 			await currentAuth.verifyPassword(

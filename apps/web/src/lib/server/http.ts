@@ -30,8 +30,29 @@ export function invalidIdResponse(id: string) {
 	return uuidSchema.safeParse(id).success ? null : jsonError(400, "Invalid id");
 }
 
+/** The runtime Prisma driver reports the deferred owner constraint at commit. */
+export function isPendingResourceRemovalConflict(err: unknown) {
+	const failure = err as {
+		code?: string;
+		meta?: { constraint?: string; field_name?: string };
+	} | null;
+	const constraint = failure?.meta?.constraint ?? failure?.meta?.field_name;
+	return (
+		failure?.code === "P2003" &&
+		(constraint === "EncodingResourceRemoval_pendingJob_fkey" ||
+			constraint === "EncodingResourceRemoval_pendingRun_fkey")
+	);
+}
+
 /** Maps store/crypto/config failures to safe HTTP responses. */
 export function routeError(err: unknown) {
+	if (isPendingResourceRemovalConflict(err)) {
+		return jsonError(
+			409,
+			"A provider resource removal is pending. Open Resources for the affected execution and check its removal status.",
+			{ code: "RESOURCE_REMOVAL_PENDING" },
+		);
+	}
 	if (err instanceof AuthContextError) {
 		const response = publicContextError(err);
 		return jsonError(err.status, response.error, { code: response.code });

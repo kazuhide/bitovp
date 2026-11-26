@@ -5,6 +5,7 @@ import { Field, FieldRowAction } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
 import { useT } from "@/lib/i18n/context";
 import { AUDIO_CHANNEL_LAYOUTS } from "./audio-channel-layouts";
+import { AudioFileEditor } from "./audio-file-editor";
 import type {
 	WizardAudioCodec,
 	WizardAudioRendition,
@@ -13,12 +14,14 @@ import type {
 	WizardVideoCodec,
 	WizardVideoRendition,
 } from "./build-plan";
+import { defaultWizardAudioFile } from "./build-plan";
 import { AudioCutoffEditor } from "./codec-detail-editor";
 import {
 	addFile,
 	editFile,
 	editFileAudio,
 	FILE_CONTAINERS,
+	FILE_OUTPUT_DEFAULT_STATE,
 	type FileAudioEdit,
 	type FileEdit,
 	fileAudios,
@@ -30,6 +33,7 @@ import {
 	lacksAtmosSource,
 	misreadDolbyStream,
 	removeFile,
+	renameFileJob,
 	sameStreamFiles,
 	sequenceLeavesOutAudio,
 	setFileAudio,
@@ -45,6 +49,7 @@ import {
 	Vp9AdvancedEditor,
 } from "./rendition-editors";
 import { renditionSourceOptions } from "./rendition-sources";
+import { StreamConditionEditor } from "./stream-condition-editor";
 
 const ENCODING_MODES = [
 	"STANDARD",
@@ -98,12 +103,59 @@ export function FileOutputSection({
 	const sequence = state.inputTimeline !== undefined;
 	const sequenceWithoutAudio = sequenceLeavesOutAudio(state);
 
+	if (state.audioFile)
+		return (
+			<section className="space-y-3">
+				<AudioFileEditor
+					value={state.audioFile}
+					file={state.inputFiles[0]}
+					onChange={(audioFile) => onPatch({ audioFile })}
+				/>
+				<Button
+					variant="secondary"
+					size="sm"
+					onClick={() =>
+						onPatch({
+							audioFile: undefined,
+							...(!state.videos.length && {
+								videos: renameFileJob(FILE_OUTPUT_DEFAULT_STATE, state.name)
+									.videos,
+								audios: FILE_OUTPUT_DEFAULT_STATE.audios,
+							}),
+						})
+					}
+				>
+					{t("vodFlow.returnVideo")}
+				</Button>
+			</section>
+		);
+	const canExportAudio =
+		state.inputFiles.length === 1 &&
+		!state.inputTimeline &&
+		!state.qc &&
+		!state.kantar &&
+		!state.startOptions &&
+		!state.internal &&
+		!Object.values(state.sources ?? {}).some(
+			(v) => Array.isArray(v) && v.length > 0,
+		);
 	return (
 		<section aria-labelledby="wz-files-heading">
 			<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
 				<h2 id="wz-files-heading" className="font-medium text-sm text-zinc-200">
 					{t("vodFlow.files")}
 				</h2>
+				{canExportAudio && (
+					<Button
+						variant="secondary"
+						size="sm"
+						onClick={() =>
+							onPatch({ audioFile: { ...defaultWizardAudioFile } })
+						}
+					>
+						{t("vodFlow.exportAudio")}
+					</Button>
+				)}
 				<Button
 					variant="secondary"
 					size="sm"
@@ -482,6 +534,12 @@ function FileEditor({
 				hint={sourcesUnused ? t("vodFlow.sourceUnusedWithSequence") : undefined}
 				onChange={(source) => onEdit({ source })}
 			/>
+			<StreamConditionEditor
+				idBase={`${id}-condition`}
+				media="video"
+				value={video.conditions}
+				onChange={(conditions) => onEdit({ conditions })}
+			/>
 			{codec === "H264" ? (
 				<H264AdvancedEditor
 					idBase={`${id}-h264`}
@@ -720,6 +778,12 @@ function FileAudioEditor({
 							sourcesUnused ? t("vodFlow.sourceUnusedWithSequence") : undefined
 						}
 						onChange={(source) => onEdit({ source })}
+					/>
+					<StreamConditionEditor
+						idBase={`${id}-condition`}
+						media="audio"
+						value={audio.conditions}
+						onChange={(conditions) => onEdit({ conditions })}
 					/>
 					{codec === "DOLBY_ATMOS" ? (
 						<LoudnessEditor

@@ -1,6 +1,7 @@
 import { outputStorageKeys } from "../plan/output-files";
 import { AUDIO_CODECS, type PlanDrm } from "../plan/schema";
 import type { PlanIssue, PlanValidationOptions } from "../plan/validate";
+import { dvbSegmentNaming } from "./dvb-subtitles";
 import {
 	type FilenameLanguage,
 	type FilenameTokens,
@@ -89,6 +90,66 @@ export function liveOutputFilenames(
 					},
 				]),
 	];
+}
+
+/** Every physical file writer, regardless of whether the source is video, audio or OCR. */
+export function liveOutputWriters(plan: LiveChannelPlan) {
+	const writers = plan.muxings.flatMap((muxing, index) => {
+		const files = liveOutputFilenames(muxing);
+		const source = `muxings[${index}]`;
+		return [
+			...(muxing.destination
+				? [
+						{
+							destination: muxing.destination,
+							owner: `muxing:${muxing.key}`,
+							path: source,
+							source,
+							files,
+						},
+					]
+				: []),
+			...(plan.drm ?? []).flatMap((d, di) =>
+				d.muxingKey === muxing.key
+					? [
+							{
+								destination: d.destination,
+								owner: `drm:${d.key}`,
+								path: `drm[${di}]`,
+								source,
+								files,
+							},
+						]
+					: [],
+			),
+		];
+	});
+	for (const [index, track] of (plan.dvbSubtitles ?? []).entries()) {
+		const path = `dvbSubtitles[${index}]`;
+		const files = [
+			{
+				pattern: dvbSegmentNaming(track),
+				field: "destination",
+				policyTokens: true,
+				randomTokens: false,
+			},
+		];
+		if (track.packaging === "FMP4")
+			files.push({
+				pattern: "init.mp4",
+				field: "destination",
+				policyTokens: false,
+				randomTokens: false,
+			});
+		writers.push({
+			destination: track.destination,
+			owner: `DVB subtitles:${track.key}`,
+			path,
+			source: path,
+			files,
+		});
+	}
+	return writers;
 }
 
 export function liveDrmIssues(
@@ -185,50 +246,42 @@ export function liveDrmIssues(
 		{ owner: string; language: FilenameLanguage | undefined }[]
 	>();
 	const conflicts = new Set<string>();
-	for (const [index, muxing] of plan.muxings.entries()) {
-		const destinations = [
-			...(muxing.destination
-				? [{ destination: muxing.destination, owner: `muxing:${muxing.key}` }]
-				: []),
-			...(plan.drm ?? [])
-				.filter((d) => d.muxingKey === muxing.key)
-				.map((d) => ({ destination: d.destination, owner: `drm:${d.key}` })),
-		];
-		for (const { destination, owner } of destinations) {
-			for (const filename of liveOutputFilenames(muxing)) {
-				const language = outputFilenameLanguage(
-					destination.path,
-					filename.pattern,
-					filename,
+	for (const { destination, owner, source, files } of liveOutputWriters(plan)) {
+		for (const filename of files) {
+			const language = outputFilenameLanguage(
+				destination.path,
+				filename.pattern,
+				filename,
+			);
+			if (!language) {
+				add(
+					"LIVE_OUTPUT_PATTERN_UNVERIFIED",
+					source,
+					"The output filename pattern exceeds bounded validation or contains an unsupported random-token length. Choose a shorter, valid filename pattern.",
 				);
-				if (!language) {
-					add(
-						"LIVE_OUTPUT_PATTERN_UNVERIFIED",
-						`muxings[${index}]`,
-						"The output filename pattern exceeds bounded validation or contains an unsupported random-token length. Choose a shorter, valid filename pattern.",
-					);
-					continue;
-				}
-				for (const storage of outputStorageKeys(plan, destination.outputKey)) {
-					const previous = reservations.get(storage) ?? [];
-					for (const writer of previous) {
-						const pair = [writer.owner, owner].sort().join("\0");
-						if (
-							writer.owner !== owner &&
-							!conflicts.has(pair) &&
-							filenameLanguagesOverlap(writer.language, language)
-						) {
-							add(
-								"LIVE_DRM_OUTPUT_COLLISION",
-								"drm",
-								`Output writers ${writer.owner} and ${owner} may write the same physical filename after token expansion. Choose separate folders or segment names.`,
-							);
-							conflicts.add(pair);
-						}
+				continue;
+			}
+			for (const storage of outputStorageKeys(plan, destination.outputKey)) {
+				const previous = reservations.get(storage) ?? [];
+				for (const writer of previous) {
+					const pair = [writer.owner, owner].sort().join("\0");
+					if (
+						writer.owner !== owner &&
+						!conflicts.has(pair) &&
+						filenameLanguagesOverlap(writer.language, language)
+					) {
+						add(
+							"LIVE_DRM_OUTPUT_COLLISION",
+							source.startsWith("dvbSubtitles[")
+								? `${source}.destination`
+								: "drm",
+							`Output writers ${writer.owner} and ${owner} may write the same physical filename after token expansion. Choose separate folders or segment names.`,
+						);
+						conflicts.add(pair);
 					}
-					previous.push({ owner, language });
-					reservations.set(storage, previous);
 				}
+				previous.push({ owner, language });
+				reservations.set(storage, previous);
 			}
 		}
 	}

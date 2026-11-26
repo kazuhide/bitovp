@@ -437,6 +437,10 @@ export function sourcesOf(plan: EncodingPlan): string[] {
 			}
 		}
 	}
+	for (const stream of plan.hdr10PlusStreams ?? []) {
+		paths.add(stream.videoInputPath);
+		paths.add(stream.metadataInputPath);
+	}
 	return [...paths].sort();
 }
 
@@ -771,6 +775,12 @@ export function capabilitiesFor(
 	 */
 	if ((plan.dolbyStreams ?? []).length > 0) {
 		needs.add("DOLBY_ASSETS");
+	}
+	// HDR10 video and its matching JSON cannot be replaced by the generic SDR
+	// mezzanine staged by the verification runner.
+	if ((plan.hdr10PlusStreams ?? []).length > 0) {
+		needs.add("HDR10_ASSET");
+		needs.add("TYPED_SOURCE_ASSETS");
 	}
 	/**
 	 * A VOD plan pinned to a Cloud Connect infrastructure needs one to exist (C18).

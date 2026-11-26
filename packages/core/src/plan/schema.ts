@@ -9,6 +9,8 @@ import {
 	vp9DetailControlsSchema,
 } from "./codec-detail-controls";
 import { codecEnumSchema } from "./codec-enums";
+import { isHdr10PlusObjectPath } from "./hdr-source-paths";
+import { HE_AAC_CODECS, heAacV1Fields, heAacV2Fields } from "./he-aac";
 import { isHlsVideoUriPattern } from "./hls-video-uri";
 import { internalHevcV2Schema } from "./internal-hevc-v2";
 import {
@@ -17,18 +19,12 @@ import {
 	defaultDashPeriodSchema,
 	hlsDetailedOptionsSchema,
 } from "./manifest-options";
-import {
-	audioVolumeFilterSchema,
-	cropFilterSchema,
-	denoiseHqdn3dFilterSchema,
-	ebuR128FilterSchema,
-	rotateFilterSchema,
-	scaleFilterSchema,
-	textFilterSchema,
-	unsharpFilterSchema,
-	watermarkFilterSchema,
-} from "./media-filters";
+import { mediaFilterSchema } from "./media-filters";
 import { qcGateSchema } from "./qc-gate";
+import { streamConditionSchema } from "./stream-conditions";
+
+export { streamConditionSchema } from "./stream-conditions";
+
 import { SRT_CHARACTER_ENCODINGS } from "./srt-character-encodings";
 
 /**
@@ -57,7 +53,10 @@ export const PLAN_VERSION = 1;
  */
 export const AUDIO_CODECS = new Set([
 	"AAC",
+	...HE_AAC_CODECS,
 	"OPUS",
+	"PCM",
+	"AUDIO_PASSTHROUGH",
 	"DOLBY_ATMOS",
 	"DDPLUS",
 	"DD",
@@ -391,6 +390,47 @@ export const fileStreamSchema = z.strictObject({
 	encodingKey: refKey.optional(),
 });
 
+const captionSource = {
+	key: refKey,
+	inputKey: refKey,
+	inputPath: z.string().min(1),
+	encodingKey: refKey.optional(),
+};
+
+/** A subtitle track extracted from a media container. */
+export const captionStreamSchema = z
+	.discriminatedUnion("kind", [
+		z.strictObject({
+			...captionSource,
+			kind: z.literal("CEA608"),
+			channel: z.enum(["CC1", "CC3"]),
+		}),
+		z.strictObject({
+			...captionSource,
+			kind: z.literal("CEA708"),
+			channel: z.number().int().min(1).max(63).optional(),
+		}),
+		z.strictObject({
+			...captionSource,
+			kind: z.literal("DVB"),
+			selectionMode: z.enum(["AUTO", "POSITION_ABSOLUTE", "SUBTITLE_RELATIVE"]),
+			position: z.number().int().min(0).max(2147483647).optional(),
+		}),
+	])
+	.superRefine((stream, ctx) => {
+		if (
+			stream.kind === "DVB" &&
+			stream.selectionMode === "AUTO" &&
+			stream.position !== undefined
+		)
+			ctx.addIssue({
+				code: "custom",
+				path: ["position"],
+				message: "DVB position requires positional selection",
+			});
+	});
+export type CaptionStream = z.infer<typeof captionStreamSchema>;
+
 /**
  * Dolby input streams (ATMOS masters, VISION video+metadata, standalone
  * VISION_METADATA sidecars for the separated-metadata flow). Keys share
@@ -411,7 +451,13 @@ export const dolbyStreamSchema = z.discriminatedUnion("kind", [
 		inputKey: refKey,
 		videoInputPath: z.string().min(1),
 		/** Absent = metadata embedded in the container. */
-		metadataInputPath: z.string().min(1).optional(),
+		metadataInputPath: z
+			.string()
+			.min(
+				1,
+				"Select a Dolby Vision XML file on the same storage input as its video",
+			)
+			.optional(),
 		encodingKey: refKey.optional(),
 	}),
 	z.strictObject({
@@ -422,6 +468,50 @@ export const dolbyStreamSchema = z.discriminatedUnion("kind", [
 		encodingKey: refKey.optional(),
 	}),
 ]);
+
+// HDR10+ addresses two objects beneath the plan's declared storage input.
+// Keep URL authority, credentials, queries and fragments out of persisted plans.
+const hdrObjectPath = z
+	.string()
+	.refine(
+		isHdr10PlusObjectPath,
+		"Use a storage object path without a URL, embedded login, query or fragment",
+	);
+
+/** VOD HDR10+ video and JSON metadata share one input storage resource. */
+export const hdr10PlusStreamSchema = z
+	.strictObject({
+		key: refKey,
+		inputKey: refKey,
+		videoInputPath: hdrObjectPath,
+		metadataInputPath: hdrObjectPath,
+		selectionMode: z
+			.enum(["AUTO", "POSITION_ABSOLUTE", "VIDEO_RELATIVE"])
+			.default("AUTO"),
+		// The provider defaults non-AUTO positions to zero. Do not materialize
+		// that default here: AUTO explicitly forbids sending a position.
+		position: z.number().int().min(0).max(2_147_483_647).optional(),
+		encodingKey: refKey.optional(),
+	})
+	.superRefine((stream, ctx) => {
+		if (
+			stream.videoInputPath.replace(/^\//, "") ===
+			stream.metadataInputPath.replace(/^\//, "")
+		)
+			ctx.addIssue({
+				code: "custom",
+				path: ["metadataInputPath"],
+				message: "Choose a separate HDR10+ JSON metadata object for this video",
+			});
+		if (stream.selectionMode === "AUTO" && stream.position !== undefined) {
+			ctx.addIssue({
+				code: "custom",
+				path: ["position"],
+				message: "HDR10+ selectionMode AUTO must not set position",
+			});
+		}
+	});
+export type Hdr10PlusStream = z.infer<typeof hdr10PlusStreamSchema>;
 
 /**
  * Input-stream TRIMMING (the modern, resource-based path — independent of
@@ -507,20 +597,6 @@ export type TrimmingStream = z.infer<typeof trimmingStreamSchema>;
 export type PaddingSequence = z.infer<typeof paddingSequenceSchema>;
 export type ConcatenationSource = z.infer<typeof concatenationSourceSchema>;
 export type ConcatenationStream = z.infer<typeof concatenationStreamSchema>;
-
-/** Single condition in P1; becomes an AND/OR tree union in P2. */
-export const streamConditionSchema = z.strictObject({
-	attribute: z.string().min(1),
-	operator: z.enum([
-		"EQUAL",
-		"NOT_EQUAL",
-		"LESS_THAN",
-		"LESS_THAN_OR_EQUAL",
-		"GREATER_THAN",
-		"GREATER_THAN_OR_EQUAL",
-	]),
-	value: z.string(),
-});
 
 /** Per-stream filter attachment (streams.filters.create order matters). */
 export const streamFilterRefSchema = z.strictObject({
@@ -960,6 +1036,24 @@ export const OPUS_CHANNEL_LAYOUTS = [
 	"CL_6_1",
 	"CL_7_1",
 ] as const;
+export const pcmRenditionSchema = z.strictObject({
+	...renditionBase,
+	codec: z.literal("PCM"),
+	name: z.string().min(1),
+	bitrate: z.number().int().positive(),
+	rate: z.number().positive().optional(),
+	channelLayout: z.enum(["MONO", "STEREO"]).optional(),
+	sampleFormat: z.enum(["S16LE", "S24LE", "S32LE"]).optional(),
+	presetConfiguration: z.literal("XDCAM").optional(),
+});
+export const passthroughAudioRenditionSchema = z.strictObject({
+	...renditionBase,
+	codec: z.literal("AUDIO_PASSTHROUGH"),
+	name: z.string().min(1),
+	/** Expected format of the selected source track, checked by the worker. */
+	sourceCodec: z.enum(["AAC", "PCM"]),
+	inspectionId: z.uuid(),
+});
 export const opusRenditionSchema = z.strictObject({
 	...renditionBase,
 	codec: z.literal("OPUS"),
@@ -1010,7 +1104,11 @@ export const renditionSchema = z.discriminatedUnion("codec", [
 	vp9RenditionSchema,
 	av1RenditionSchema,
 	aacRenditionSchema,
+	z.strictObject({ ...renditionBase, ...heAacV1Fields }),
+	z.strictObject({ ...renditionBase, ...heAacV2Fields }),
 	opusRenditionSchema,
+	pcmRenditionSchema,
+	passthroughAudioRenditionSchema,
 	imscRenditionSchema,
 	atmosRenditionSchema,
 	ddPlusRenditionSchema,
@@ -1220,11 +1318,8 @@ export const webmMuxingSchema = z.strictObject({
  * Progressive MOV, MP4 and TS Outputs" builds it: its sample hands one H.264
  * video stream and one AAC audio stream to a single ProgressiveTsMuxing.
  *
- * `destination` is REQUIRED, unlike `TS`/`MP4`: those may omit it because a
- * DRM resource can own the encrypted output, and this app builds no DRM path
- * for a progressive file. No manifest references this kind either:
- * `isFileOnlyMuxingKind` (muxing-streams.ts) keeps it out of every leg
- * selection, including the open ones an unpinned HLS manifest makes.
+ * The clear file and its DRM resources have independent destinations.
+ * A plan with an encrypted-only file gives the DRM resource its destination.
  *
  * `segmentLength` and `startOffset` are the SDK model's two optional fields
  * (ProgressiveTsMuxing.d.ts). Neither has a default here: an absent field is
@@ -1251,13 +1346,12 @@ export const progressiveTsMuxingSchema = z.strictObject({
 	 * against that schema.
 	 */
 	startOffset: z.number().int().min(0).optional(),
-	destination: destinationSchema,
+	destination: destinationSchema.optional(),
 	name: z.string().optional(),
 });
 
 /**
- * One QuickTime `.mov` FILE per container. Same shape and the same rules as
- * `PROGRESSIVE_TS` above; the SDK model carries a filename and nothing else.
+ * One QuickTime `.mov` FILE per container. A MOV file requires a clear destination.
  */
 export const progressiveMovMuxingSchema = z.strictObject({
 	key: refKey,
@@ -1296,7 +1390,7 @@ export const progressiveWebmMuxingSchema = z.strictObject({
 	streamKey: refKey,
 	additionalStreamKeys: additionalStreamKeysSchema,
 	filename: outputFilenameSchema,
-	destination: destinationSchema,
+	destination: destinationSchema.optional(),
 	name: z.string().optional(),
 });
 
@@ -1310,6 +1404,9 @@ export const planMuxingSchema = z.discriminatedUnion("kind", [
 	webmMuxingSchema,
 	progressiveTsMuxingSchema,
 	progressiveMovMuxingSchema,
+	progressiveMovMuxingSchema
+		.omit({ additionalStreamKeys: true })
+		.extend({ kind: z.literal("PROGRESSIVE_WAV") }),
 	progressiveWebmMuxingSchema,
 ]);
 
@@ -1346,15 +1443,7 @@ export const deinterlaceFilterSchema = z.strictObject({
 
 export const planFilterSchema = z.discriminatedUnion("kind", [
 	deinterlaceFilterSchema,
-	scaleFilterSchema,
-	cropFilterSchema,
-	rotateFilterSchema,
-	watermarkFilterSchema,
-	textFilterSchema,
-	audioVolumeFilterSchema,
-	ebuR128FilterSchema,
-	denoiseHqdn3dFilterSchema,
-	unsharpFilterSchema,
+	...mediaFilterSchema.options,
 ]);
 
 /**
@@ -1934,7 +2023,9 @@ export const encodingPlanSchema = z.strictObject({
 	encodings: z.array(planEncodingSchema).optional(),
 	ingest: z.array(ingestStreamSchema).default([]),
 	fileStreams: z.array(fileStreamSchema).default([]),
+	captionStreams: z.array(captionStreamSchema).default([]),
 	dolbyStreams: z.array(dolbyStreamSchema).default([]),
+	hdr10PlusStreams: z.array(hdr10PlusStreamSchema).default([]),
 	/**
 	 * Input-stream trimming/concatenation (the modern path). Both `.default([])`
 	 * so plans without them parse to the same shape as before — the 56 goldens

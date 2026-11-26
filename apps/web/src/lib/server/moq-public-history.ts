@@ -1,15 +1,39 @@
 import "server-only";
-import { MOQ_TASK_HISTORY_ERROR, projectMoqTaskHistory } from "@bitovp/core";
+import {
+	MOQ_TASK_HISTORY_ERROR,
+	projectMoqTaskHistory,
+	publicHdrSourceProjection,
+	publicSlateRegistrationNote,
+	publicStorageDiagnostic,
+} from "@bitovp/core";
 import type { ServerContext } from "./context";
 
-/** Old MoQ Task prose must not become public again before a Worker retry. */
-export function publicMoqHistory<
+/** Project retained Task snapshots before any channel or run detail is returned. */
+export function publicLiveHistory<
 	T extends { stepLog: unknown; error: string | null },
 >(row: T): T {
 	const history = projectMoqTaskHistory(row.stepLog, row.error);
-	return history.moq
-		? { ...row, stepLog: history.stepLog, error: history.error }
-		: row;
+	return {
+		...row,
+		stepLog: publicHdrSourceProjection(history.stepLog),
+		error: publicStorageDiagnostic(history.moq ? history.error : row.error),
+	};
+}
+
+/** Old slate failures may quote a signed source in their retained schedule note. */
+export function publicScheduleOutcome<
+	T extends {
+		outcomeNote: string | null;
+		note?: string | null;
+		error?: string | null;
+	},
+>(row: T): T {
+	return {
+		...row,
+		outcomeNote: publicStorageDiagnostic(row.outcomeNote),
+		...("note" in row && { note: publicSlateRegistrationNote(row) }),
+		...("error" in row && { error: publicStorageDiagnostic(row.error) }),
+	};
 }
 
 /** Project the text and its MoQ classification in the same database read. */
@@ -61,7 +85,8 @@ export async function publicMoqListErrors<
 		return {
 			...row,
 			error:
-				publicErrors.get(row.id) ?? "Live encoding error details unavailable",
+				publicStorageDiagnostic(publicErrors.get(row.id)) ??
+				"Live encoding error details unavailable",
 		};
 	});
 }

@@ -1,13 +1,19 @@
 import { audioMixStreamSchema } from "../plan/audio-mix";
 import { CODEC_DETAIL_SCHEMAS } from "../plan/codec-detail-controls";
+import { isHeAac } from "../plan/he-aac";
 import { mediaFilterSchema } from "../plan/media-filters";
 import { qcGateSchema } from "../plan/qc-gate";
 import {
+	captionStreamSchema,
 	DEFAULT_VMAF_MODEL,
 	type EncodingPlan,
 	encodingPlanSchema,
 	H264_DEFAULT_CONFIG_NAME,
 } from "../plan/schema";
+import {
+	isAudioStreamGuard,
+	streamConditionSchema,
+} from "../plan/stream-conditions";
 import { vmafExecutionSchema } from "../vmaf/cloud";
 import {
 	audioKeys,
@@ -15,6 +21,7 @@ import {
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
 	hlsDefaultVersion,
+	isWizardWatermarkFilter,
 	subtitleKeys,
 	videoKeys,
 	videoMuxingRelPath,
@@ -29,6 +36,7 @@ import {
 	type WizardEncodingRow,
 	type WizardExtraManifest,
 	type WizardFileStream,
+	type WizardHdr10PlusStream,
 	type WizardHlsOptions,
 	type WizardIngestTrack,
 	type WizardInputFile,
@@ -393,12 +401,22 @@ export function readH26xCodecOptions(
 	return {};
 }
 
+function readCondition(r: Record<string, unknown>) {
+	if (r.conditions === undefined) return {};
+	const parsed = streamConditionSchema.safeParse(r.conditions);
+	return parsed.success ? { conditions: parsed.data } : {};
+}
 function readVideo(r: Record<string, unknown>): WizardVideoRendition {
 	const codec = (asString(r.codec) ?? "H264") as WizardVideoCodec;
 	const height = r.height === null ? null : (asNumber(r.height) ?? null);
 	const bitrate = r.bitrate === null ? null : (asNumber(r.bitrate) ?? null);
 	const extras = readExtras(r, "video");
-	const video: WizardVideoRendition = { height, bitrate, codec };
+	const video: WizardVideoRendition = {
+		height,
+		bitrate,
+		codec,
+		...readCondition(r),
+	};
 	if (typeof r.width === "number") video.width = r.width;
 	if (typeof r.encodingMode === "string")
 		video.encodingMode = r.encodingMode as WizardVideoRendition["encodingMode"];
@@ -422,8 +440,12 @@ function readVideo(r: Record<string, unknown>): WizardVideoRendition {
 function readAudio(r: Record<string, unknown>): WizardAudioRendition {
 	const codec = (asString(r.codec) ?? "AAC") as WizardAudioCodec;
 	const audio: WizardAudioRendition = {
+		...readCondition(r),
 		bitrate: asNumber(r.bitrate) ?? 0,
-		rate: asNumber(r.rate) ?? 0,
+		rate: asNumber(r.rate) ?? (isHeAac(codec) ? undefined : 0),
+		...(isHeAac(codec) && typeof r.signaling === "string"
+			? { signaling: r.signaling as WizardAudioRendition["signaling"] }
+			: {}),
 		codec,
 	};
 	if (typeof r.cutoffFrequency === "number")
@@ -434,7 +456,10 @@ function readAudio(r: Record<string, unknown>): WizardAudioRendition {
 	}
 	// CL_STEREO is the schema default for AAC/DD/DDPLUS — carry only overrides.
 	const channelLayout = asString(r.channelLayout);
-	if (channelLayout !== undefined && channelLayout !== "CL_STEREO") {
+	if (
+		channelLayout !== undefined &&
+		(isHeAac(codec) || channelLayout !== "CL_STEREO")
+	) {
 		audio.channelLayout = channelLayout;
 	}
 	if (codec === "DOLBY_ATMOS" && isRecord(r.loudnessControl)) {
@@ -1644,12 +1669,12 @@ function outputKindOf(kind: string | undefined): WizardState["output"]["kind"] {
 	}
 }
 
-/** Resolves the base output path from the manifests, else the first muxing. */
+/** Manifests carry the base path. Clear and protected outputs both carry ACLs. */
 function readBasePath(
 	manifests: Record<string, unknown>[],
-	muxings: Record<string, unknown>[],
+	outputOwners: Record<string, unknown>[],
 ): { base: string; publicRead: boolean } {
-	const destinations = [...manifests, ...muxings]
+	const destinations = [...manifests, ...outputOwners]
 		.map((entry) => (isRecord(entry.destination) ? entry.destination : null))
 		.filter((dest): dest is Record<string, unknown> => dest !== null);
 	const publicRead = destinations.some(
@@ -1681,6 +1706,8 @@ function collectInputFiles(
 	ingest: Record<string, unknown>[],
 	fileStreams: Record<string, unknown>[],
 	dolbyStreams: Record<string, unknown>[],
+	hdr10PlusStreams: Record<string, unknown>[],
+	watermarks: Record<string, unknown>[],
 ): { inputFiles: WizardInputFile[]; fileKeyFor: FileKeyFor } {
 	// Canonical (inputKey, path) order: implicit video, implicit audio, other
 	// ingest, fileStreams, dolby (vision: video then metadata).
@@ -1712,9 +1739,21 @@ function collectInputFiles(
 			push(ik, asString(d.inputPath));
 		}
 	}
+	for (const stream of hdr10PlusStreams) {
+		// JSON metadata is a same-input path, never a media source in the timeline.
+		push(asString(stream.inputKey), asString(stream.videoInputPath));
+	}
 
+	const mediaPairs = new Set(
+		pairs.map((p) => JSON.stringify([p.inputKey, p.path])),
+	);
+	for (const filter of watermarks)
+		push(asString(filter.inputKey), asString(filter.imagePath));
 	const inputFiles: WizardInputFile[] = [];
 	const keyMap = new Map<string, string>();
+	const reservedFileKeys = new Set(
+		inputs.map((input) => asString(input.key) ?? "main"),
+	);
 	const mapKey = (ik: string, p: string) => `${ik}\u0000${p}`;
 	// Process inputs[] in order so inputFiles' inputKey first-occurrence order
 	// matches inputs[] — buildPlan re-derives the same Bitmovin input order.
@@ -1751,9 +1790,19 @@ function collectInputFiles(
 				continue;
 			}
 			seen.add(pair.path);
-			const fileKey = n === 0 ? ik : `${ik}-${n + 1}`;
-			n += 1;
-			inputFiles.push(make(fileKey, pair.path));
+			let fileKey = ik;
+			if (n > 0) {
+				do {
+					fileKey = `${ik}-${++n}`;
+				} while (reservedFileKeys.has(fileKey));
+				reservedFileKeys.add(fileKey);
+			} else {
+				n = 1;
+			}
+			const file = make(fileKey, pair.path);
+			if (!mediaPairs.has(JSON.stringify([ik, pair.path])))
+				file.purpose = "FILTER_IMAGE";
+			inputFiles.push(file);
 			keyMap.set(mapKey(ik, pair.path), fileKey);
 		}
 		// Input declared but read at no path (rare) — keep a path-less file so
@@ -1790,6 +1839,34 @@ function sharedOutputFolder(plan: Record<string, unknown>): string | undefined {
 	return paths.size === 1 && folder?.endsWith("/") ? folder : undefined;
 }
 
+/** Resolve the picture that anchors a trim or main concat in native plans and saved forms. */
+export function mainPictureSourceKey(
+	key: unknown,
+	sources: Record<string, unknown>,
+): string | undefined {
+	const parents = new Map<unknown, unknown>();
+	for (const trim of asArray(sources.trimmingStreams).filter(isRecord))
+		parents.set(trim.key, trim.sourceKey);
+	for (const concat of asArray(sources.concatenationStreams).filter(isRecord)) {
+		const parts = asArray(concat.sources).filter(isRecord);
+		parents.set(
+			concat.key,
+			(parts.find((part) => part.isMain === true) ?? parts[0])?.sourceKey,
+		);
+	}
+	const seen = new Set<string>();
+	while (typeof key === "string" && parents.has(key)) {
+		if (seen.has(key)) return undefined;
+		seen.add(key);
+		key = parents.get(key);
+	}
+	return asString(key);
+}
+
+/** Fresh Copy metadata for restoring pre-marker drafts. Null identifies the native ordinary
+ * video ingest. This field is never an authored wizard setting, submitted plan or draft field. */
+type CopiedWizardState = WizardState & { copiedPictureSource?: string | null };
+
 /**
  * `basePath` replaces the base folder the plan's manifests would give. Pass it only
  * with a check that the state still rebuilds the plan (`tryImportPresetIntoWizard`).
@@ -1797,7 +1874,7 @@ function sharedOutputFolder(plan: Record<string, unknown>): string | undefined {
 export function planToWizardState(
 	raw: Record<string, unknown>,
 	basePath?: string,
-): WizardState {
+): CopiedWizardState {
 	const bitmovin = isRecord(raw.bitmovin) ? raw.bitmovin : {};
 	const inputs = asArray(raw.inputs).filter(isRecord);
 	const outputs = asArray(raw.outputs).filter(isRecord);
@@ -1806,6 +1883,10 @@ export function planToWizardState(
 	const muxings = asArray(raw.muxings).filter(isRecord);
 	const manifests = asArray(raw.manifests).filter(isRecord);
 	const fileStreams = asArray(raw.fileStreams).filter(isRecord);
+	const captionStreams = asArray(raw.captionStreams).flatMap((entry) => {
+		const parsed = captionStreamSchema.safeParse(entry);
+		return parsed.success ? [parsed.data] : [];
+	});
 	const filters = asArray(raw.filters).filter(isRecord);
 
 	const origin = outputs[0] ?? {};
@@ -1842,17 +1923,64 @@ export function planToWizardState(
 	// Split inputs[] + every stream's (inputKey, path) into one input FILE per
 	// object; streams reference files by key, the object path lives on the file.
 	const dolbyStreamsRaw = asArray(raw.dolbyStreams).filter(isRecord);
+	const hdr10PlusStreamsRaw = asArray(raw.hdr10PlusStreams).filter(isRecord);
 	const { inputFiles, fileKeyFor } = collectInputFiles(
 		inputs,
 		ingest,
 		[
 			...fileStreams,
+			...captionStreams,
 			...renditions.flatMap((r) =>
 				isRecord(r.burnInSrt) ? [r.burnInSrt] : [],
 			),
 		],
 		dolbyStreamsRaw,
+		hdr10PlusStreamsRaw,
+		asArray(raw.filters)
+			.filter(isRecord)
+			.filter((f) => f.kind === "WATERMARK" || f.kind === "ENHANCED_WATERMARK"),
 	);
+	// The first wizard row is the implicit video master. Audio-only files
+	// sometimes precede the HDR picture in retained native input declarations.
+	let copiedPictureSource: string | null | undefined;
+	if (hdr10PlusStreamsRaw.length) {
+		const pictured = renditions.find((r) =>
+			["H264", "H265", "AV1", "VP9"].includes(String(r.codec)),
+		);
+		// The ordinary picture belongs to the first video rendition, even if an
+		// unrelated rendition uses HDR. Follow its trim or main concat source.
+		const key = mainPictureSourceKey(pictured?.ingestKey, raw);
+		// A declared ordinary ingest is always rebuilt from the first row,
+		// including when only a later rendition reads it.
+		const source =
+			videoIngest ??
+			[
+				...ingest,
+				...fileStreams,
+				...dolbyStreamsRaw,
+				...hdr10PlusStreamsRaw,
+			].find((row) => row.key === key);
+		const picturePath = source?.videoInputPath ?? source?.inputPath;
+		if (
+			typeof source?.inputKey === "string" &&
+			typeof picturePath === "string"
+		) {
+			const pictureKey = fileKeyFor(source.inputKey, picturePath);
+			const index = inputFiles.findIndex((file) => file.key === pictureKey);
+			const primary = inputFiles[index];
+			if (primary)
+				copiedPictureSource = videoIngest ? null : asString(source.key);
+			if (index > 0 && primary) {
+				if (primary.inputKey !== inputFiles[0]?.inputKey) {
+					const order = new Map(inputs.map((input, i) => [input.key, i]));
+					for (const file of inputFiles)
+						file.inputDeclarationIndex = order.get(file.inputKey);
+				}
+				inputFiles.splice(index, 1);
+				inputFiles.unshift(primary);
+			}
+		}
+	}
 	// Separate A/V: the implicit audio reads a different input file than the
 	// video (inputFiles[0]); absent = the same object.
 	const videoFileKey = inputFiles[0]?.key;
@@ -1868,7 +1996,10 @@ export function planToWizardState(
 			? audioFileKey
 			: undefined;
 
-	const read = readBasePath(manifests, muxings);
+	const read = readBasePath(manifests, [
+		...muxings,
+		...asArray(raw.drm).filter(isRecord),
+	]);
 	const base = basePath ?? read.base;
 	const { publicRead } = read;
 
@@ -1889,6 +2020,11 @@ export function planToWizardState(
 			codec === "AV1"
 		) {
 			const video = readVideo(r);
+			if (
+				r.ingestKey === "video" &&
+				hdr10PlusStreamsRaw.some((s) => s.key === "video")
+			)
+				video.extras = { ...video.extras, source: "video" };
 			if (isRecord(r.burnInSrt)) {
 				video.extras = {
 					...video.extras,
@@ -1907,6 +2043,7 @@ export function planToWizardState(
 			videoRaw.push(r);
 		} else if (codec === "WEBVTT" || codec === "IMSC") {
 			const sub: WizardSubtitle = {
+				...readCondition(r),
 				source: asString(r.ingestKey) ?? "",
 				...(codec === "IMSC"
 					? { codec: "IMSC", styling: r.styling as WizardSubtitle["styling"] }
@@ -2061,20 +2198,16 @@ export function planToWizardState(
 	// audioGuard is all-or-nothing: every audio rendition carries the
 	// AUDIOSTREAMCOUNT>0 condition, nothing else does.
 	const audioGuard =
-		audioRaw.length > 0 &&
-		audioRaw.every((r) => {
-			const c = isRecord(r.conditions) ? r.conditions : undefined;
-			return (
-				asString(c?.attribute) === "AUDIOSTREAMCOUNT" &&
-				asString(c?.operator) === "GREATER_THAN" &&
-				asString(c?.value) === "0"
-			);
-		});
+		audios.length > 0 &&
+		audios.every((row) => isAudioStreamGuard(row.conditions)) &&
+		videos.every((row) => !row.conditions) &&
+		subtitles.every((row) => !row.conditions);
+	if (audioGuard) for (const row of audios) delete row.conditions;
 
 	// Read before the literal: `hlsDefaultVersion` needs it (a QC-only plan
 	// emits no standalone audio containers, so they cannot imply a version).
 	const qcState = readQc(raw, base);
-	const state: WizardState = {
+	const state: CopiedWizardState = {
 		...DEFAULT_WIZARD_STATE,
 		name: asString(raw.name) ?? "",
 		accountId: asString(bitmovin.accountId) ?? "",
@@ -2089,6 +2222,7 @@ export function planToWizardState(
 				}
 			: {}),
 		inputFiles,
+		...(copiedPictureSource !== undefined ? { copiedPictureSource } : {}),
 		output: {
 			credentialId: asString(origin.credentialId) ?? "",
 			kind: outputKind,
@@ -2241,7 +2375,16 @@ export function planToWizardState(
 				if (asString(f.kind) === "DEINTERLACE")
 					return deinterlace.filter((d) => d.key === f.key).slice(0, 1);
 				const result = mediaFilterSchema.safeParse(f);
-				return result.success ? [result.data] : [];
+				if (!result.success) return [];
+				const filter = result.data;
+				return [
+					isWizardWatermarkFilter(filter)
+						? {
+								...filter,
+								inputKey: fileKeyFor(filter.inputKey, filter.imagePath),
+							}
+						: filter,
+				];
 			},
 		);
 	}
@@ -2265,6 +2408,33 @@ export function planToWizardState(
 	}
 	if (dolbyStreams.length > 0) {
 		sourceAdditions.dolbyStreams = dolbyStreams;
+	}
+	if (captionStreams.length)
+		sourceAdditions.captionStreams = captionStreams.map(
+			({ inputKey, inputPath, ...track }) => ({
+				...track,
+				inputFile: fileKeyFor(inputKey, inputPath),
+			}),
+		);
+	if (hdr10PlusStreamsRaw.length > 0) {
+		sourceAdditions.hdr10PlusStreams = hdr10PlusStreamsRaw.map(
+			(stream): WizardHdr10PlusStream => ({
+				key: asString(stream.key) ?? "",
+				videoInputFile: fileKeyFor(
+					asString(stream.inputKey),
+					asString(stream.videoInputPath) ?? "",
+				),
+				metadataInputPath: asString(stream.metadataInputPath) ?? "",
+				selectionMode: (asString(stream.selectionMode) ??
+					"AUTO") as WizardHdr10PlusStream["selectionMode"],
+				...(asNumber(stream.position) !== undefined
+					? { position: asNumber(stream.position) }
+					: {}),
+				...(asString(stream.encodingKey) !== undefined
+					? { encodingKey: asString(stream.encodingKey) }
+					: {}),
+			}),
+		);
 	}
 	if (trimmingStreams.length > 0) {
 		sourceAdditions.trimmingStreams = trimmingStreams;
@@ -2407,6 +2577,47 @@ export function planToWizardState(
 		else if (manifest.kind === "DASH")
 			manifest.dash = inheritAcl(manifest.dash);
 		else inheritAcl(manifest);
+	}
+	const audio = renditions.length === 1 ? renditions[0] : undefined;
+	const file = muxings.length === 1 ? muxings[0] : undefined;
+	if (
+		audio &&
+		file &&
+		audioIngest &&
+		typeof file.filename === "string" &&
+		typeof audioIngest.position === "number"
+	) {
+		const common = { position: audioIngest.position, filename: file.filename };
+		if (
+			audio.codec === "PCM" &&
+			typeof audio.rate === "number" &&
+			(audio.channelLayout === "MONO" || audio.channelLayout === "STEREO") &&
+			(audio.sampleFormat === "S16LE" ||
+				audio.sampleFormat === "S24LE" ||
+				audio.sampleFormat === "S32LE")
+		)
+			state.audioFile = {
+				...common,
+				mode: "PCM",
+				rate: audio.rate,
+				channelLayout: audio.channelLayout,
+				sampleFormat: audio.sampleFormat,
+			};
+		if (
+			audio.codec === "AUDIO_PASSTHROUGH" &&
+			typeof audio.inspectionId === "string" &&
+			(audio.sourceCodec === "AAC" || audio.sourceCodec === "PCM") &&
+			(file.kind === "MP4" ||
+				file.kind === "PROGRESSIVE_MOV" ||
+				file.kind === "PROGRESSIVE_WAV")
+		)
+			state.audioFile = {
+				...common,
+				mode: "COPY",
+				container: file.kind,
+				sourceCodec: audio.sourceCodec,
+				inspectionId: audio.inspectionId,
+			};
 	}
 	return state;
 }

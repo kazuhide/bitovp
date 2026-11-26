@@ -3,7 +3,6 @@ import {
 	type AisaFinalizationRun,
 	aisaLiveFinalization,
 	deriveProviderLifecycle,
-	isAisaManagedLivePlan,
 	type PersistedProviderState,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
@@ -19,19 +18,7 @@ function record(value: unknown): Record<string, unknown> | null {
 		: null;
 }
 
-/** A persisted run binding still protects a channel whose old plan is unreadable. */
-export function isAisaLiveChannelView(channel: unknown, run: unknown): boolean {
-	const row = record(channel);
-	const binding = record(run);
-	return (
-		row?.origin === "AISA_IMPORTED" ||
-		isAisaManagedLivePlan(row?.plan) ||
-		(binding !== null &&
-			["aisaAnalysisId", "aisaStatus", "aisaSnapshot"].some(
-				(key) => binding[key] !== null && binding[key] !== undefined,
-			))
-	);
-}
+export { hasAisaLiveBinding as isAisaLiveChannelView } from "@bitovp/core";
 
 /** Use freshly authenticated context, never a caller-supplied role or actor header. */
 export function aisaPublisherConnectionAllowed(tenant: unknown): boolean {
@@ -46,24 +33,90 @@ export function isExpiredStopDispatch(
 	return claim.state === "DISPATCHING" && claim.expiresAt.getTime() <= nowMs;
 }
 
+type AisaStopChannel = {
+	id: string;
+	status: string;
+	bitmovinEncodingId: string | null;
+	plan: unknown;
+};
+type AisaStopRun = AisaFinalizationRun &
+	PersistedProviderState & {
+		id: string;
+		status: string;
+		error: string | null;
+		cancelRequested: boolean;
+	};
+
+async function readManualAisaStop(
+	prisma: Pick<AppPrismaClient, "liveEffectClaim">,
+	channelId: string,
+	runId: string,
+	encodingId: string,
+) {
+	const claim = await prisma.liveEffectClaim.findUnique({
+		where: { idempotencyKey: `manual:stop:${channelId}:${runId}` },
+		select: {
+			generation: true,
+			stopProtocolVersion: true,
+			state: true,
+			expiresAt: true,
+			action: true,
+			liveChannelId: true,
+			liveChannelRunId: true,
+			providerEncodingId: true,
+			scheduleId: true,
+			targetId: true,
+			requestSha256: true,
+		},
+	});
+	return claim?.action === "STOP" &&
+		claim.liveChannelId === channelId &&
+		claim.liveChannelRunId === runId &&
+		claim.providerEncodingId === encodingId &&
+		claim.scheduleId === null &&
+		claim.targetId === null &&
+		claim.requestSha256 === null
+		? claim
+		: null;
+}
+
+/** A worker can exhaust queue retries before its dispatch lease expires. Its next attempt
+ * verifies the Analysis/encoder pair at the provider and honors both send reservations. */
+export async function canResumeAisaStop(
+	prisma: Pick<AppPrismaClient, "liveEffectClaim">,
+	channel: AisaStopChannel & { liveEffectFenceVersion: number },
+	run: AisaStopRun | null,
+	nowMs: number,
+): Promise<boolean> {
+	if (
+		channel.status !== "STOPPING" ||
+		!run ||
+		!["RUNNING", "STOPPING", "ERROR", "STOPPED"].includes(run.status) ||
+		!run.aisaAnalysisId ||
+		run.cancelRequested ||
+		!channel.bitmovinEncodingId ||
+		run.bitmovinEncodingId !== channel.bitmovinEncodingId ||
+		deriveProviderLifecycle(run, nowMs) === "TERMINAL"
+	)
+		return false;
+	const claim = await readManualAisaStop(
+		prisma,
+		channel.id,
+		run.id,
+		channel.bitmovinEncodingId,
+	);
+	return (
+		claim?.generation === channel.liveEffectFenceVersion &&
+		claim?.stopProtocolVersion === 1 &&
+		isExpiredStopDispatch(claim, nowMs)
+	);
+}
+
 /** Separate an ended encoder's recovery from the action that stops an active encoder. */
 export async function canRetryEndedAisaFinalization(
 	prisma: Pick<AppPrismaClient, "liveEffectClaim">,
-	channel: {
-		id: string;
-		status: string;
-		bitmovinEncodingId: string | null;
-		plan: unknown;
-	},
-	run:
-		| (AisaFinalizationRun &
-				PersistedProviderState & {
-					id: string;
-					status: string;
-					error: string | null;
-					cancelRequested: boolean;
-				})
-		| null,
+	channel: AisaStopChannel,
+	run: AisaStopRun | null,
 	nowMs: number,
 ): Promise<boolean> {
 	if (
@@ -71,7 +124,7 @@ export async function canRetryEndedAisaFinalization(
 		run.cancelRequested ||
 		!channel.bitmovinEncodingId ||
 		run.bitmovinEncodingId !== channel.bitmovinEncodingId ||
-		!isAisaManagedLivePlan(channel.plan) ||
+		!run.aisaAnalysisId ||
 		deriveProviderLifecycle(run, nowMs) !== "TERMINAL"
 	)
 		return false;
@@ -92,30 +145,15 @@ export async function canRetryEndedAisaFinalization(
 		return true;
 
 	// The final result can land before its durable stop claim is acknowledged.
-	const claim = await prisma.liveEffectClaim.findUnique({
-		where: { idempotencyKey: `manual:stop:${channel.id}:${run.id}` },
-		select: {
-			state: true,
-			expiresAt: true,
-			action: true,
-			liveChannelId: true,
-			liveChannelRunId: true,
-			providerEncodingId: true,
-			scheduleId: true,
-			targetId: true,
-			requestSha256: true,
-		},
-	});
+	const claim = await readManualAisaStop(
+		prisma,
+		channel.id,
+		run.id,
+		channel.bitmovinEncodingId,
+	);
 	return (
 		claim !== null &&
-		(claim.state === "AMBIGUOUS" || isExpiredStopDispatch(claim, nowMs)) &&
-		claim.action === "STOP" &&
-		claim.liveChannelId === channel.id &&
-		claim.liveChannelRunId === run.id &&
-		claim.providerEncodingId === channel.bitmovinEncodingId &&
-		claim.scheduleId === null &&
-		claim.targetId === null &&
-		claim.requestSha256 === null
+		(claim.state === "AMBIGUOUS" || isExpiredStopDispatch(claim, nowMs))
 	);
 }
 

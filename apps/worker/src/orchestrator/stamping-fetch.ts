@@ -62,6 +62,15 @@ export type CreateStamp = {
 	adoptWindow?: () => boolean;
 	/** Cancellation recovery may adopt a prior CREATE, but must not POST. */
 	allowCreate?: () => boolean;
+	/** Recheck mutable run authorization at the final provider transport boundary. */
+	beforeMutation?: () => Promise<void>;
+	/** Only the active, journaled Live child's native CREATE has this handoff. */
+	childCreateJournal?: () =>
+		| {
+				isPreparing(): boolean;
+				record(state: "PREPARING" | "DISPATCHING"): Promise<void>;
+		  }
+		| undefined;
 	/**
 	 * Durable verification identity. Both fields are derived and committed by
 	 * the server before any provider create; they ride the provider resource so
@@ -187,6 +196,8 @@ export function createStampingFetch(
 		const step = stamp.currentStep();
 		const request = (init ?? {}) as { method?: string; body?: unknown };
 		const method = (request.method ?? "GET").toUpperCase();
+		if (stamp.beforeMutation && !["GET", "HEAD", "OPTIONS"].includes(method))
+			await stamp.beforeMutation();
 		if (
 			step === undefined ||
 			method !== "POST" ||

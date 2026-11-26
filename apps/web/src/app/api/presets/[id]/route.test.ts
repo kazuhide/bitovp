@@ -34,6 +34,51 @@ function withId(id: string) {
 }
 
 describe("GET /api/presets/[id]", () => {
+	it("keeps equal withheld HTTPS paths grouped for source replacement and leaves missing paths unmarked", async () => {
+		const path = "incoming/feature.mxf?ticket=PRIVATE_FIXTURE";
+		const body = {
+			inputs: [{ key: "remote", kind: "HTTPS", host: "media.example" }],
+			ingest: ["audio", "video", "missing", "other"].map((key, index) => ({
+				key,
+				inputKey: "remote",
+				inputPath: index === 2 ? "" : index === 3 ? path + "-alternate" : path,
+			})),
+		};
+		findFirst.mockResolvedValueOnce({ id: ID, kind: "FULL_PLAN", body });
+		const response = await GET(new Request("http://test"), withId(ID));
+		const result = await response.json();
+		expect(JSON.stringify(result)).not.toContain("PRIVATE_FIXTURE");
+		expect(result.body.withheldSourcePaths).toEqual([
+			[
+				{ collection: "ingest", index: 0, field: "inputPath" },
+				{ collection: "ingest", index: 1, field: "inputPath" },
+			],
+			[{ collection: "ingest", index: 3, field: "inputPath" }],
+		]);
+	});
+	it("withholds old HDR source locations from a saved template download without changing the editable body", async () => {
+		const body = {
+			hdr10PlusStreams: [
+				{
+					key: "hdr",
+					videoInputPath: "input/main.mxf",
+					metadataInputPath:
+						"//legacy.invalid/sidecar.json?token=PRESET_PRIVATE_FIXTURE",
+				},
+			],
+		};
+		findFirst.mockResolvedValueOnce({ id: ID, kind: "FULL_PLAN", body });
+		const res = await GET(new Request("http://test"), withId(ID));
+		expect(res.status).toBe(200);
+		expect((await res.json()).body).toEqual({
+			hdr10PlusStreams: [
+				{ key: "hdr", videoInputPath: "input/main.mxf", metadataInputPath: "" },
+			],
+		});
+		expect(body.hdr10PlusStreams[0]?.metadataInputPath).toContain(
+			"PRESET_PRIVATE_FIXTURE",
+		);
+	});
 	it("returns the full preset including the plan body", async () => {
 		const body = samplePresetPlan("fixed-bitrate-hls-on-aws");
 		findFirst.mockResolvedValueOnce({
@@ -481,6 +526,30 @@ describe("PATCH /api/presets/[id]", () => {
 		expect(call.data.body).toBeDefined();
 	});
 
+	it.each([
+		["hdr10PlusStreams"],
+		["captionStreams"],
+		["hdr10PlusStreams", "captionStreams"],
+	])("preserves the preset revision and stored representation when empty fields were omitted (%s)", async (...omitted) => {
+		const stored: Record<string, unknown> = {
+			...encodingPlanSchema.parse(plan()),
+		};
+		for (const field of omitted) delete stored[field];
+		findFirst
+			.mockResolvedValueOnce({ body: stored, kind: "FULL_PLAN" })
+			.mockResolvedValueOnce({ id: ID, revision: 7 });
+		updateMany.mockResolvedValueOnce({ count: 1 });
+		expect(
+			(
+				await PATCH(
+					patchRequest({ plan: stored, expectedUpdatedAt: WHEN }),
+					withId(ID),
+				)
+			).status,
+		).toBe(200);
+		expect(updateManyArg().data).not.toHaveProperty("revision");
+		expect(updateManyArg().data.body).toEqual(stored);
+	});
 	it("an IDENTICAL body — even key-order permuted, as jsonb returns it — does not bump", async () => {
 		// The stored body round-tripped through jsonb (key order normalized);
 		// the client resubmits the same plan in authored order. Equality must

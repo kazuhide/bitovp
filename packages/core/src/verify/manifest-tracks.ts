@@ -24,7 +24,7 @@ export type ExpectedHlsAdditionalMedia = {
 		muxingKey: string;
 		drmKey?: string;
 		drmKind?: "CENC" | "FAIRPLAY" | "SPEKE";
-		container: "FMP4" | "CMAF" | "TS" | "MP4";
+		container: "FMP4" | "CMAF" | "TS" | "MP4" | "CHUNKED_TEXT";
 		outputKey: string;
 		/** Logical aliases and mirrors that actually receive this writer's files. */
 		outputKeys: string[];
@@ -81,7 +81,7 @@ export function expectedHlsWriterResource(
 	if (
 		muxing &&
 		destination &&
-		["FMP4", "CMAF", "TS", "MP4"].includes(muxing.kind)
+		["FMP4", "CMAF", "TS", "MP4", "CHUNKED_TEXT"].includes(muxing.kind)
 	) {
 		const targets = outputStorageKeys(plan, destination.outputKey);
 		const directory = outputFilePath(destination.path, "");

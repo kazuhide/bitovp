@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { runInOrganization } from "../tenant/scope";
 import {
 	createStrandedVmafReconciler,
 	STRANDED_VMAF_ERROR,
+	startOwnedVmafReconciliation,
 } from "./reconcile-stranded";
 
 /**
@@ -78,6 +80,29 @@ function harness(
 	>;
 	return { prisma, queue, orchestratorQueue, updates, added };
 }
+
+it("leaves a running report alone in an empty queue unless this consumer owns QC", async () => {
+	vi.useFakeTimers();
+	const { prisma, queue, updates } = harness([{ id: "live-report" }], {});
+	const owns = vi.fn(async () => false);
+	const tenant = vi.fn((run: () => Promise<void>) =>
+		runInOrganization("11111111-1111-4111-8111-111111111111", run),
+	);
+	const stop = startOwnedVmafReconciliation(owns, tenant, { prisma, queue });
+	try {
+		await vi.advanceTimersByTimeAsync(0);
+		expect(owns).toHaveBeenCalledOnce();
+		expect(tenant).not.toHaveBeenCalled();
+		expect(queue.getJob).not.toHaveBeenCalled();
+		expect(updates).toHaveLength(0);
+		owns.mockResolvedValue(true);
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(updates).toHaveLength(1);
+	} finally {
+		await stop();
+		vi.useRealTimers();
+	}
+});
 
 describe("retiring a VMAF report whose worker went away", () => {
 	it("retires a RUNNING row the queue no longer holds", async () => {

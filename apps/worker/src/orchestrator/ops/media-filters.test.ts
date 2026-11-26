@@ -52,6 +52,55 @@ describe("P1 media filter execution", () => {
 		expect(JSON.stringify(result)).not.toContain("EXAMPLE_SECRET");
 	});
 	it.each([
+		"CREATE_FILTER_WATERMARK",
+		"CREATE_FILTER_ENHANCED_WATERMARK",
+	] as const)("signs distinct S3 object names byte-for-byte for %s", async (kind) => {
+		const sdk = fakeSdk();
+		const ctx: ExecutorContext = {
+			sdk,
+			ids: new Map(),
+			resolveCredential: resolve,
+			poll: { intervalMs: 1, timeoutMs: 1, sleep: async () => {} },
+		};
+		for (const imagePath of ["brand/logo.png", "/brand/logo.png"]) {
+			await executeStep(
+				{
+					kind,
+					step: "filter:v:image",
+					refs: {},
+					payload: {
+						inputKey: "main",
+						imageInput: input,
+						imagePath,
+						left: 0,
+						top: 0,
+					},
+				},
+				ctx,
+			);
+		}
+		const paths = vi
+			.mocked(sdk.createMediaFilter)
+			.mock.calls.map(([, payload]) => new URL(String(payload.image)).pathname);
+		expect(paths).toEqual(["/brand/logo.png", "//brand/logo.png"]);
+	});
+
+	it.each([
+		[
+			"ENHANCED_DEINTERLACE",
+			"enhancedDeinterlace",
+			{
+				mode: "FIELD",
+				parity: "TOP_FIELD_FIRST",
+				autoEnable: "META_DATA_BASED",
+			},
+		],
+		["CONFORM", "conform", { targetFps: 24000 / 1001 }],
+		[
+			"INTERLACE",
+			"interlace",
+			{ mode: "TOP", verticalLowPassFilteringMode: "LOW_PASS" },
+		],
 		["DENOISE_HQDN3D", "denoiseHqdn3d", { lumaSpatial: 4, chromaTmp: 0 }],
 		[
 			"UNSHARP",
@@ -85,12 +134,15 @@ describe("P1 media filter execution", () => {
 		);
 		expect(audited.mock.calls[0]?.[2]).toEqual(params);
 	});
-	it("redacts image URL even when the SDK echoes it in success or an error", async () => {
+	it.each([
+		["WATERMARK", "watermark"],
+		["ENHANCED_WATERMARK", "enhancedWatermark"],
+	] as const)("redacts the %s image URL even when the SDK echoes it in success or an error", async (kind, endpoint) => {
 		const image = "https://private.example/logo?X-Amz-Signature=SECRET";
 		const create = vi.fn(async () => ({ id: "image", image }));
 		const snapshots: unknown[] = [];
 		const ctx = {
-			api: { encoding: { filters: { watermark: { create } } } },
+			api: { encoding: { filters: { [endpoint]: { create } } } },
 			id: (r: { id: string }) => r.id,
 			audited: async (
 				_m: string,
@@ -105,12 +157,12 @@ describe("P1 media filter execution", () => {
 				return r;
 			},
 		} as unknown as OpsContext;
-		await createMediaFilter(ctx, "WATERMARK", { image });
+		await createMediaFilter(ctx, kind, { image });
 		expect(JSON.stringify(snapshots)).not.toContain("SECRET");
 		create.mockRejectedValueOnce(new Error(image));
-		await expect(
-			createMediaFilter(ctx, "WATERMARK", { image }),
-		).rejects.toThrow("Watermark filter creation failed");
+		await expect(createMediaFilter(ctx, kind, { image })).rejects.toThrow(
+			"Watermark filter creation failed",
+		);
 	});
 	it("rejects unsupported and mismatched storage credentials", async () => {
 		await expect(

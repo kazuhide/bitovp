@@ -36,6 +36,7 @@ import { actorFrom } from "@/lib/server/audit";
 import { getServerContext, type ServerContext } from "@/lib/server/context";
 import {
 	type CreateRequestIdentity,
+	changedCreationSession,
 	createRequestConflictResponse,
 	createRequestGoneResponse,
 	createRequestIdentity,
@@ -51,7 +52,10 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import { latestRunsFor } from "@/lib/server/latest-runs";
-import { publicMoqListErrors } from "@/lib/server/moq-public-history";
+import {
+	publicMoqListErrors,
+	publicScheduleOutcome,
+} from "@/lib/server/moq-public-history";
 import {
 	recordUnrestrictedEgress,
 	submitterValidationOptions,
@@ -469,7 +473,12 @@ async function verificationKeyReplay(
 		]);
 		// 200, not 201: nothing was created by THIS request.
 		return NextResponse.json(
-			{ ...publicRows[0], issues: [], schedules, replayed: true },
+			{
+				...publicRows[0],
+				issues: [],
+				schedules: schedules.map(publicScheduleOutcome),
+				replayed: true,
+			},
 			{ status: 200 },
 		);
 	}
@@ -504,7 +513,12 @@ async function ordinaryCreateReplay(
 		publicMoqListErrors(prisma, "channel", [row]),
 	]);
 	return NextResponse.json(
-		{ ...publicRows[0], issues: [], schedules, replayed: true },
+		{
+			...publicRows[0],
+			issues: [],
+			schedules: schedules.map(publicScheduleOutcome),
+			replayed: true,
+		},
 		{ status: 200 },
 	);
 }
@@ -523,17 +537,20 @@ export async function POST(req: Request) {
 		return validationError(body.error);
 	}
 	let ordinaryIdentity: CreateRequestIdentity | undefined;
-	let ordinaryContext: Awaited<ReturnType<typeof getServerContext>> | undefined;
-	// The AISA gate precedes both replay branches as well as new paid dispatch.
-	if (isAisaManagedLivePlan(body.data.plan)) {
-		try {
-			ordinaryContext = await getServerContext();
-			if (!aisaLiveAccessAllowed(ordinaryContext.tenant))
-				return jsonError(404, "Not found");
-		} catch (err) {
-			return routeError(err);
-		}
+	let ctx: Awaited<ReturnType<typeof getServerContext>>;
+	try {
+		ctx = await getServerContext();
+		const changed = changedCreationSession(req, ctx.tenant);
+		if (changed) return changed;
+	} catch (err) {
+		return routeError(err);
 	}
+	// The AISA gate precedes both replay branches as well as new paid dispatch.
+	if (
+		isAisaManagedLivePlan(body.data.plan) &&
+		!aisaLiveAccessAllowed(ctx.tenant)
+	)
+		return jsonError(404, "Not found");
 	try {
 		ordinaryIdentity = createRequestIdentity(req, body.data);
 	} catch (err) {
@@ -561,7 +578,7 @@ export async function POST(req: Request) {
 		// response was lost gets its channel back, never a second billed one.
 		try {
 			const replay = await verificationKeyReplay(
-				(await getServerContext()).prisma,
+				ctx.prisma,
 				verificationKey,
 				requestSha256,
 			);
@@ -584,11 +601,7 @@ export async function POST(req: Request) {
 	}
 	if (ordinaryIdentity) {
 		try {
-			ordinaryContext = await getServerContext();
-			const replay = await ordinaryCreateReplay(
-				ordinaryContext.prisma,
-				ordinaryIdentity,
-			);
+			const replay = await ordinaryCreateReplay(ctx.prisma, ordinaryIdentity);
 			if (replay) return replay;
 		} catch (err) {
 			return routeError(err);
@@ -600,7 +613,7 @@ export async function POST(req: Request) {
 	}
 	const plan = parsedPlan.data;
 	const aisaManaged = isAisaManagedLivePlan(plan);
-	if (aisaManaged && !aisaLiveAccessAllowed(ordinaryContext?.tenant))
+	if (aisaManaged && !aisaLiveAccessAllowed(ctx.tenant))
 		return jsonError(404, "Not found");
 	if (aisaManaged && body.data.schedule) {
 		return jsonError(400, "AISA Live Preview does not support scheduling", {
@@ -609,10 +622,7 @@ export async function POST(req: Request) {
 	}
 	const issues = validateLiveChannel(
 		plan,
-		await submitterValidationOptions(
-			(ordinaryContext ?? (await getServerContext())).prisma,
-			(ordinaryContext ?? (await getServerContext())).credentials,
-		),
+		await submitterValidationOptions(ctx.prisma, ctx.credentials),
 	);
 	if (planHasErrors(issues)) {
 		return jsonError(400, "Live channel plan validation failed", { issues });
@@ -628,7 +638,6 @@ export async function POST(req: Request) {
 		// Fail fast before persisting: with a broken MASTER_KEY the worker
 		// cannot decrypt anything, so the channel would just wedge.
 		masterKeyFromEnv();
-		const ctx = ordinaryContext ?? (await getServerContext());
 		// Filed once the plan is accepted, before anything is persisted or
 		// enqueued — the record is about admitting the plan, not the outcome.
 		await recordUnrestrictedEgress(ctx.prisma, issues, {
@@ -927,20 +936,17 @@ export async function POST(req: Request) {
 			throw enqueueErr;
 		}
 		return NextResponse.json(
-			{ ...created, issues: [...issues, ...scheduleWarnings], schedules },
+			{
+				...created,
+				issues: [...issues, ...scheduleWarnings],
+				schedules: schedules.map(publicScheduleOutcome),
+			},
 			{ status: 201 },
 		);
 	} catch (err) {
-		if (
-			ordinaryIdentity &&
-			ordinaryContext &&
-			isCreateRequestUniqueConflict(err)
-		) {
+		if (ordinaryIdentity && isCreateRequestUniqueConflict(err)) {
 			try {
-				const replay = await ordinaryCreateReplay(
-					ordinaryContext.prisma,
-					ordinaryIdentity,
-				);
+				const replay = await ordinaryCreateReplay(ctx.prisma, ordinaryIdentity);
 				if (replay) return replay;
 			} catch (lookupErr) {
 				return routeError(lookupErr);
@@ -966,7 +972,7 @@ export async function POST(req: Request) {
 			// half-created schedule rows). The winner's channel is the answer.
 			try {
 				const replay = await verificationKeyReplay(
-					(await getServerContext()).prisma,
+					ctx.prisma,
 					verificationKey,
 					requestSha256,
 				);

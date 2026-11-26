@@ -4,13 +4,18 @@ import type {
 	LiveEffectAction,
 	LiveEffectIntent,
 	SlateSource,
+	StepLogEntry,
 } from "@bitovp/core";
 import {
+	compileLiveChannel,
 	compileLiveRunStepLog,
 	DEFAULT_SCHEDULE_START_GRACE_MINUTES,
 	deriveProviderLifecycle,
+	effectiveLivePlanForRun,
 	feederErrorEnglish,
+	hasAisaLiveBinding,
 	ingestConnectedFresh,
+	initStepLog,
 	isLiveRunStatus,
 	isStaleGeneration,
 	liveChannelPlanSchema,
@@ -18,25 +23,45 @@ import {
 	MslEncoderVersionError,
 	PROVISION_LEASE_RELEASE,
 	reseedFailedSteps,
+	restoreCompiledLiveProvisionGraph,
+	restoreLiveProvisionEvidence,
+	scheduledStopJobId,
 	sealedFeederSourceSchema,
 	slateSourceSchema,
 	stepLogSchema,
 } from "@bitovp/core";
-import { type AppPrismaClient, DB_NULL, type Prisma } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	type AppTransactionClient,
+	bindArchivedStopTargetInTransaction,
+	DB_NULL,
+	liveStopRunOwnsEncoding,
+	type Prisma,
+	readLockedLiveStartState,
+} from "@bitovp/db";
 import { estimateStageLeadMs, STAGE_LEAD_MAX_MS } from "../feeder/stage-lead";
-import type { EmitProductEvent } from "../notify/emitter";
+import {
+	prepareScheduledStartDispatch,
+	type ReadProvisionJob,
+	recordRetainedScheduledStart,
+} from "../live/provision-admission";
+import { type EmitProductEvent, emitScheduleFired } from "../notify/emitter";
 import { createRunMirror } from "../orchestrator/run-mirror";
 import { DEFAULT_REGISTRATION_TIMEOUT_MS } from "../orchestrator/slate-register";
 import { reconcileStartupSamples } from "../orchestrator/startup-sample";
-import {
-	admitInactiveOrganization,
-	hasCommittedStart,
-} from "../tenant/admission";
+import { admitInactiveOrganization } from "../tenant/admission";
 import {
 	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
 	recordScheduleOutcomeBestEffort,
+	scheduledStartJobId,
 	transitionScheduleToStale,
 } from "./schedule-outcome";
+import {
+	MISSED_UNOWNED_STOP_REASON,
+	recordScheduledStopHandoff,
+	type ScheduledStopAdmission,
+	writeScheduledStopNotification,
+} from "./stop-handoff";
 
 /**
  * Live schedule sweep . Fires
@@ -73,8 +98,8 @@ import {
  *   and claims atomically: the channel claim RUNNING→STOPPING is the
  *   lock, the synthetic row's fireAt is the DETERMINISTIC epoch deadline
  *   under a partial unique index (P2002 = already recorded), and the
- *   queue jobId derives from the same deadline so a re-enqueue after a
- *   crash dedupes instead of double-stopping.
+ *   outbox stores the same queue delivery identity for retries within the
+ *   admission.
  * - runOnce is reentrancy-guarded: a tick that outruns the interval skips
  *   instead of overlapping itself.
  *
@@ -460,6 +485,8 @@ export type ScheduleSweep = (() => Promise<ScheduleSweepStats>) & {
 };
 
 type SweepDeps = {
+	recoverExhaustedDeliveries?: () => Promise<void>;
+	readStartJob?: ReadProvisionJob;
 	prisma: AppPrismaClient;
 	allowNewWork?: () => Promise<boolean>;
 	enqueue(job: LiveChannelJob, dedupeId: string): Promise<void>;
@@ -473,6 +500,10 @@ type ScheduleRow = {
 	liveChannelId: string;
 	/** : the airing this row was armed for (null = not yet bound). */
 	liveChannelRunId: string | null;
+	startAdmissionFenceVersion?: number | null;
+	stopProviderEncodingId?: string | null;
+	stopAdmissionFenceVersion?: number | null;
+	stopDeliveryToken?: string | null;
 	action: "START" | "STOP" | "SLATE_IN" | "FEEDER_START" | "FEEDER_SWITCH";
 	fireAt: Date;
 	insertableContentId: string | null;
@@ -495,6 +526,19 @@ type ScheduleRow = {
 	stagedAt?: Date | null;
 };
 
+function storedStopAdmission(row: ScheduleRow): ScheduledStopAdmission | null {
+	if (
+		!row.stopProviderEncodingId ||
+		typeof row.stopAdmissionFenceVersion !== "number"
+	)
+		return null;
+	return {
+		providerEncodingId: row.stopProviderEncodingId,
+		admissionFenceVersion: row.stopAdmissionFenceVersion,
+		...(row.stopDeliveryToken && { stopDeliveryToken: row.stopDeliveryToken }),
+	};
+}
+
 /**
  * (row 266): stamp WHICH airing a scheduled job is
  * FOR onto its payload, so the processor can refuse a job the queue delivered
@@ -510,6 +554,20 @@ function plannedRunStamp(runId: string | null): {
 } {
 	return runId !== null ? { plannedLiveChannelRunId: runId } : {};
 }
+
+function scheduledProvision(row: ScheduleRow): LiveChannelJob {
+	return {
+		liveChannelId: row.liveChannelId,
+		action: "provision",
+		...plannedRunStamp(row.liveChannelRunId),
+		...(typeof row.startAdmissionFenceVersion === "number"
+			? { provisionFenceVersion: row.startAdmissionFenceVersion }
+			: {}),
+	};
+}
+
+class UnownedScheduledStop extends Error {}
+class RecoveredScheduledStop extends Error {}
 
 export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	const runs = createRunMirror(deps.prisma);
@@ -549,22 +607,27 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		action: LiveEffectAction,
 		targetId?: string,
 		generationOffset = 0,
+		store: AppTransactionClient | AppPrismaClient = deps.prisma,
 	): Promise<LiveEffectIntent | null> {
 		if (row.liveChannelRunId === null) {
 			return null;
 		}
 		const [channel, currentRun] = await Promise.all([
-			deps.prisma.liveChannel.findUnique({
+			store.liveChannel.findUnique({
 				where: { id: row.liveChannelId },
 				select: {
 					bitmovinEncodingId: true,
 					liveEffectFenceVersion: true,
 				},
 			}),
-			deps.prisma.liveChannelRun.findFirst({
+			store.liveChannelRun.findFirst({
 				where: { liveChannelId: row.liveChannelId },
 				orderBy: { seq: "desc" },
-				select: { id: true, bitmovinEncodingId: true },
+				select: {
+					id: true,
+					bitmovinEncodingId: true,
+					...(action === "STOP" ? { stepLog: true } : {}),
+				},
 			}),
 		]);
 		const providerEncodingId =
@@ -572,7 +635,10 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		if (
 			!channel ||
 			currentRun?.id !== row.liveChannelRunId ||
-			providerEncodingId === null
+			providerEncodingId === null ||
+			(action === "STOP" &&
+				(providerEncodingId !== channel.bitmovinEncodingId ||
+					!liveStopRunOwnsEncoding(currentRun, providerEncodingId)))
 		) {
 			return null;
 		}
@@ -598,8 +664,9 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			| "COMPLETED"
 			| "SKIPPED_STALE_GENERATION",
 		extra: { note?: string; error?: string; firedAt?: Date } = {},
+		store: Pick<AppPrismaClient, "liveSchedule"> = deps.prisma,
 	): Promise<boolean> {
-		const { count } = await deps.prisma.liveSchedule.updateMany({
+		const { count } = await store.liveSchedule.updateMany({
 			where: { id: row.id, status: "ARMED" },
 			data: {
 				status,
@@ -624,7 +691,11 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		const at = deps.now();
 		const reason = `${label} refused: no exact current live run/provider identity was available for a durable effect claim`;
 		const { count } = await deps.prisma.liveSchedule.updateMany({
-			where: { id: row.id, status: "ARMED" },
+			where: {
+				id: row.id,
+				status: "ARMED",
+				liveChannelRunId: row.liveChannelRunId,
+			},
 			data: {
 				status: "ERROR",
 				error: reason,
@@ -648,17 +719,66 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	 * re-add that deduped against an already-running job stamps the row it
 	 * found, and never overwrites an earlier truthful stamp.
 	 */
-	async function markDispatched(rowId: string, jobId: string): Promise<void> {
-		await deps.prisma.liveSchedule.updateMany({
-			where: { id: rowId, status: "FIRED", dispatchedAt: null },
-			data: { dispatchedAt: deps.now(), dispatchJobId: jobId },
+	async function markDispatched(
+		row: ScheduleRow,
+		jobId: string,
+	): Promise<boolean> {
+		const at = deps.now();
+		if (
+			row.action === "START" &&
+			row.liveChannelRunId &&
+			typeof row.startAdmissionFenceVersion === "number"
+		) {
+			const recorded = await recordRetainedScheduledStart(
+				deps.prisma,
+				{
+					id: row.id,
+					liveChannelId: row.liveChannelId,
+					liveChannelRunId: row.liveChannelRunId,
+					startAdmissionFenceVersion: row.startAdmissionFenceVersion,
+				},
+				{ id: jobId, state: "waiting" },
+				at,
+			);
+			return recorded === "handoff";
+		}
+		const { count } = await deps.prisma.liveSchedule.updateMany({
+			where: {
+				id: row.id,
+				status: "FIRED",
+				dispatchedAt: null,
+				...(row.action === "START" && {
+					action: "START",
+					liveChannelId: row.liveChannelId,
+					liveChannelRunId: row.liveChannelRunId,
+					startAdmissionFenceVersion: row.startAdmissionFenceVersion ?? null,
+					firstStartDispatchAt: null,
+					OR: [{ dispatchJobId: null }, { dispatchJobId: jobId }],
+				}),
+			},
+			data: {
+				dispatchedAt: at,
+				dispatchJobId: jobId,
+				...(row.action === "START" && { firstStartDispatchAt: at }),
+			},
 		});
+		return count === 1;
 	}
 
 	/** Release a FIRED claim back to ARMED (enqueue failed / channel moved). */
 	async function rearm(row: ScheduleRow): Promise<void> {
 		const { count } = await deps.prisma.liveSchedule.updateMany({
-			where: { id: row.id, status: "FIRED" },
+			where: {
+				id: row.id,
+				status: "FIRED",
+				...(row.action === "STOP"
+					? {
+							liveChannelRunId: row.liveChannelRunId,
+							dispatchedAt: null,
+							outcome: { in: ["PENDING"] },
+						}
+					: {}),
+			},
 			data: {
 				status: "ARMED",
 				firedAt: null,
@@ -680,12 +800,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	async function emitFired(row: { id: string; liveChannelId: string }) {
-		await deps.emitEvent?.({
-			kind: "SCHEDULE_FIRED",
-			scheduleId: row.id,
-			liveChannelId: row.liveChannelId,
-			path: `/live/${row.liveChannelId}`,
-		});
+		await emitScheduleFired(row, deps.emitEvent);
 	}
 
 	async function emitMissed(
@@ -742,19 +857,16 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		const current = await runs.latest(row.liveChannelId);
 		if (row.liveChannelRunId === null) {
 			if (current) {
-				// CAS on `liveChannelRunId: null` — two overlapping ticks must
-				// not both stamp, and a bind that lost the race wrote the same
-				// value anyway.
-				await deps.prisma.liveSchedule.updateMany({
+				// A concurrent sweep may have bound a different airing. Only the
+				// winner may use its proposed ID; the next scan reads the winner's bind.
+				const bound = await deps.prisma.liveSchedule.updateMany({
 					where: { id: row.id, status: "ARMED", liveChannelRunId: null },
 					data: { liveChannelRunId: current.id },
 				});
-				// (row 266): reflect the just-written
-				// bind on the LOCAL row, so the enqueue that follows this call
-				// stamps the payload's `plannedLiveChannelRunId` with the run
-				// this dispatch is FOR — not the null the row was read as. The
-				// CAS above may match nothing under a race, but the value it
-				// (or the winner) wrote is this same `current.id`.
+				if (!bound.count) {
+					stats.waiting += 1;
+					return true;
+				}
 				row.liveChannelRunId = current.id;
 			}
 			return false;
@@ -772,6 +884,14 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		if (
 			await transitionScheduleToStale(deps.prisma, {
 				scheduleId: row.id,
+				...(row.action === "STOP"
+					? {
+							stop: {
+								liveChannelId: row.liveChannelId,
+								liveChannelRunId: row.liveChannelRunId,
+							},
+						}
+					: {}),
 				note,
 				at: deps.now(),
 			})
@@ -788,35 +908,9 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		return true;
 	}
 
-	/** The route's enqueue-failure pattern: mark the channel, release the row. */
-	async function onEnqueueFailure(
-		row: ScheduleRow,
-		message: string,
-		markChannel: boolean,
-	): Promise<void> {
-		if (markChannel) {
-			await deps.prisma.liveChannel.updateMany({
-				where: { id: row.liveChannelId },
-				data: { status: "ERROR", error: message },
-			});
-			// Dual-write .
-			await runs.mirror(row.liveChannelId, { status: "ERROR", error: message });
-		}
-		await rearm(row);
-	}
-
 	/**
-	 * The channel claim and the run-row write commit or fail TOGETHER
-	 * (review-284 M2→N2, the class-deleting form): the first cut created
-	 * the run row after a committed claim, so a failed create — P2002 race
-	 * or a plain DB blip — left the channel claimed with a step log whose
-	 * rebased paths named a run row that did not exist, and a bare catch
-	 * labelled both causes "a race". With one transaction there is nothing
-	 * to mislabel: any failure rolls the claim back untouched, the schedule
-	 * row re-arms, and the next tick re-decides against the real world (a
-	 * P2002's racing live run is then simply visible to the guard).
-	 * Returns false when the channel claim matched zero rows (caller
-	 * re-arms as WAITING) and throws nothing to the caller's happy path.
+	 * Publish the FIRED outbox row, the channel's next generation and the selected
+	 * airing in one transaction. A failed claim leaves the schedule ARMED.
 	 */
 	async function claimWithRun(
 		row: ScheduleRow,
@@ -831,7 +925,93 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			| { kind: "none" },
 	): Promise<boolean> {
 		const liveChannelId = row.liveChannelId;
-		return deps.prisma.$transaction(async (tx) => {
+		const runId = await deps.prisma.$transaction(async (tx) => {
+			{
+				const { channel, latest, archivesRetired } =
+					await readLockedLiveStartState(tx, liveChannelId);
+				if (hasAisaLiveBinding(channel, latest)) {
+					await tx.liveSchedule.updateMany({
+						where: {
+							id: row.id,
+							liveChannelId,
+							action: "START",
+							status: "ARMED",
+						},
+						data: {
+							status: "CANCELED",
+							note: "A scheduled START cannot re-air an AISA Live Preview channel.",
+						},
+					});
+					return null;
+				}
+				if (
+					!archivesRetired ||
+					(runWrite.kind === "create" &&
+						(latest?.seq ?? 0) + 1 !== runWrite.seq) ||
+					(runWrite.kind === "revive" && latest?.id !== runWrite.runId)
+				)
+					return null;
+				if (
+					latest &&
+					channel &&
+					runWrite.kind !== "create" &&
+					claim.data.stepLog
+				) {
+					const primary =
+						latest.bitmovinEncodingId ?? channel.bitmovinEncodingId;
+					let restored: StepLogEntry[] | null;
+					if (
+						runWrite.kind === "revive" &&
+						runWrite.outputPrefix !== undefined
+					) {
+						// The pre-lock read compiled this graph because the channel
+						// log was empty. Recheck under the actual airing lock.
+						if (!Array.isArray(channel.stepLog) || channel.stepLog.length)
+							return null;
+						// A journal from before per-run rebasing can own output at
+						// the plan paths even when seq >= 2. Recompile missing steps
+						// against that recorded layout before restoring its receipts.
+						let compiled: unknown = claim.data.stepLog;
+						if (Array.isArray(latest.stepLog) && latest.stepLog.length) {
+							const effective = effectiveLivePlanForRun(channel.plan, latest);
+							if (!effective) return null;
+							compiled = initStepLog(compileLiveChannel(effective));
+							runWrite.outputPrefix = latest.outputPrefix;
+						}
+						restored = restoreCompiledLiveProvisionGraph(
+							compiled,
+							latest.stepLog,
+							primary,
+							latest.archivedRtmpAttempt ?? 0,
+						);
+					} else {
+						const saved = restoreLiveProvisionEvidence(
+							channel.stepLog,
+							latest.stepLog,
+							primary,
+							true,
+						);
+						restored =
+							saved &&
+							restoreLiveProvisionEvidence(
+								claim.data.stepLog,
+								saved,
+								primary,
+								true,
+							);
+					}
+					if (
+						!restored ||
+						(channel.bitmovinEncodingId &&
+							latest.bitmovinEncodingId &&
+							channel.bitmovinEncodingId !== latest.bitmovinEncodingId)
+					)
+						return null;
+					claim.data.stepLog = reseedFailedSteps(
+						restored,
+					) as unknown as Prisma.InputJsonValue;
+				}
+			}
 			const claimed = await tx.liveChannel.updateMany({
 				where: {
 					...claim.where,
@@ -849,7 +1029,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				},
 			});
 			if (claimed.count === 0) {
-				return false;
+				return null;
 			}
 			let runId: string;
 			if (runWrite.kind === "create") {
@@ -904,14 +1084,26 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					id: row.id,
 					liveChannelId,
 					action: "START",
-					status: "FIRED",
+					status: "ARMED",
 					liveChannelRunId: row.liveChannelRunId,
 				},
-				data: { liveChannelRunId: runId },
+				data: {
+					status: "FIRED",
+					firedAt: deps.now(),
+					dispatchedAt: null,
+					firstStartDispatchAt: null,
+					dispatchJobId: scheduledStartJobId(row.id, expectedFenceVersion + 1),
+					liveChannelRunId: runId,
+					startAdmissionFenceVersion: expectedFenceVersion + 1,
+				},
 			});
 			if (bound.count !== 1) throw new Error("START schedule run binding lost");
-			return true;
+			return runId;
 		});
+		if (runId === null) return false;
+		row.liveChannelRunId = runId;
+		row.startAdmissionFenceVersion = expectedFenceVersion + 1;
+		return true;
 	}
 
 	async function fireStart(
@@ -1076,9 +1268,6 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						return;
 					}
 				}
-				if (!(await rowTo(row, "FIRED", { firedAt: deps.now() }))) {
-					return; // another sweep claimed the row
-				}
 				let claimed: boolean;
 				try {
 					claimed = await claimWithRun(
@@ -1118,36 +1307,30 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 								: { kind: "none" },
 					);
 				} catch {
-					// Rolled back whole — no claim, no orphan log (N2). The row
-					// re-arms and the next tick re-decides against the world
-					// (: the re-arm enrols the id in the next tick's
-					// query, so "next tick" holds under a backlog too, not only
-					// an empty one).
-					await rearm(row);
+					// An uncommitted START leaves the row ARMED. Revisit it on the next tick.
+					dueRearmed.add(row.id);
 					stats.errors += 1;
 					return;
 				}
 				if (!claimed) {
-					// Channel moved under us; re-dispatched next tick — the
-					// re-arm enrols the id in the next tick's query, so the
-					// backlog ahead of this row cannot defer it .
-					await rearm(row);
+					// The channel moved before commit. Retry the still-armed row on the next tick.
+					dueRearmed.add(row.id);
 					stats.waiting += 1;
 					return;
 				}
+				const jobId = scheduledStartJobId(
+					row.id,
+					row.startAdmissionFenceVersion,
+				);
 				try {
-					await deps.enqueue(
-						{ liveChannelId: row.liveChannelId, action: "provision" },
-						scheduleJobId(row.id),
-					);
+					await deps.enqueue(scheduledProvision(row), jobId);
 				} catch {
-					await onEnqueueFailure(row, "Enqueue failed — start again", true);
+					// Redis may have accepted the job. The FIRED outbox owns its retry.
 					stats.errors += 1;
 					return;
 				}
-				await markDispatched(row.id, scheduleJobId(row.id));
 				stats.fired += 1;
-				await emitFired(row);
+				if (await markDispatched(row, jobId)) void emitFired(row);
 				return;
 			}
 			case "STOPPED": {
@@ -1193,9 +1376,6 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 								: "channel plan does not compile — cannot re-air",
 						);
 					}
-					return;
-				}
-				if (!(await rowTo(row, "FIRED", { firedAt: deps.now() }))) {
 					return;
 				}
 				let claimed: boolean;
@@ -1255,33 +1435,29 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						},
 					);
 				} catch {
-					// Rolled back whole — no claim, no orphan log (N2). The row
-					// re-arms and the next tick re-decides against the world
-					// (: the re-arm enrols the id in the next tick's
-					// query, so "next tick" holds under a backlog too, not only
-					// an empty one).
-					await rearm(row);
+					// An uncommitted START leaves the row ARMED. Revisit it on the next tick.
+					dueRearmed.add(row.id);
 					stats.errors += 1;
 					return;
 				}
 				if (!claimed) {
-					await rearm(row);
+					dueRearmed.add(row.id);
 					stats.waiting += 1;
 					return;
 				}
+				const jobId = scheduledStartJobId(
+					row.id,
+					row.startAdmissionFenceVersion,
+				);
 				try {
-					await deps.enqueue(
-						{ liveChannelId: row.liveChannelId, action: "provision" },
-						scheduleJobId(row.id),
-					);
+					await deps.enqueue(scheduledProvision(row), jobId);
 				} catch {
-					await onEnqueueFailure(row, "Enqueue failed — start again", true);
+					// Redis may have accepted the job. The FIRED outbox owns its retry.
 					stats.errors += 1;
 					return;
 				}
-				await markDispatched(row.id, scheduleJobId(row.id));
 				stats.fired += 1;
-				await emitFired(row);
+				if (await markDispatched(row, jobId)) void emitFired(row);
 				return;
 			}
 			default:
@@ -1300,7 +1476,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		}
 		const channel = await deps.prisma.liveChannel.findUnique({
 			where: { id: row.liveChannelId },
-			select: { status: true },
+			select: { status: true, error: true },
 		});
 		if (!channel) {
 			if (await rowTo(row, "ERROR", { error: "channel no longer exists" })) {
@@ -1312,11 +1488,34 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		switch (channel.status) {
 			case "STOPPED":
 			case "CREATED": {
-				if (
-					await rowTo(row, "COMPLETED", {
-						note: `nothing to stop (channel ${channel.status})`,
-					})
-				) {
+				const complete = (store: Pick<AppPrismaClient, "liveSchedule">) =>
+					rowTo(
+						row,
+						"COMPLETED",
+						{
+							note: `nothing to stop (channel ${channel.status})`,
+						},
+						store,
+					);
+				if (channel.status === "STOPPED") {
+					const completed = await deps.prisma.$transaction(async (tx) => {
+						const locked = await readLockedLiveStartState(
+							tx,
+							row.liveChannelId,
+						);
+						if (
+							locked.channel?.status !== "STOPPED" ||
+							locked.channel.error !== null ||
+							!locked.archivesRetired ||
+							(row.liveChannelRunId &&
+								locked.latest?.id !== row.liveChannelRunId)
+						)
+							return false;
+						return complete(tx);
+					});
+					if (completed) stats.completed += 1;
+					else stats.waiting += 1;
+				} else if (await complete(deps.prisma)) {
 					stats.completed += 1;
 				}
 				return;
@@ -1333,33 +1532,89 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			}
 			case "RUNNING":
 			case "ERROR": {
-				const effect = await effectIntentFor(row, "STOP", undefined, 1);
-				if (!effect) {
-					await failUnfencedArmedEffect(row, stats, "Scheduled STOP");
-					return;
-				}
-				if (!(await rowTo(row, "FIRED", { firedAt: deps.now() }))) {
-					return;
-				}
-				const claim = await deps.prisma.liveChannel.updateMany({
-					where: {
-						id: row.liveChannelId,
-						status: { in: ["RUNNING", "ERROR"] },
-						liveEffectFenceVersion: effect.admissionFenceVersion - 1,
-					},
-					data: {
-						status: "STOPPING",
-						liveEffectFenceVersion: { increment: 1 },
-					},
-				});
-				if (claim.count > 0) {
-					await runs.mirror(row.liveChannelId, { status: "STOPPING" });
-				}
-				if (claim.count === 0) {
-					await rearm(row);
+				const admitted = await deps.prisma
+					.$transaction(async (tx) => {
+						// All airing writers lock the channel first. The outbox and its
+						// exact provider envelope become visible in the same commit as STOPPING.
+						const [locked] = await tx.$queryRaw<
+							{ status: string; bitmovinEncodingId: string | null }[]
+						>`SELECT status, "bitmovinEncodingId" FROM "LiveChannel" WHERE id = ${row.liveChannelId}::uuid FOR UPDATE`;
+						if (!locked || !["RUNNING", "ERROR"].includes(locked.status))
+							return "WAIT";
+						if (!row.liveChannelRunId) return null;
+						const fired = await tx.liveSchedule.updateMany({
+							where: {
+								id: row.id,
+								liveChannelId: row.liveChannelId,
+								action: "STOP",
+								status: "ARMED",
+								liveChannelRunId: row.liveChannelRunId,
+							},
+							data: {
+								status: "FIRED",
+								firedAt: deps.now(),
+								dispatchedAt: null,
+								dispatchJobId: null,
+							},
+						});
+						if (!fired.count) return "WAIT";
+						if (!locked.bitmovinEncodingId) {
+							await bindArchivedStopTargetInTransaction(
+								tx,
+								row.liveChannelId,
+								row.liveChannelRunId,
+							);
+						}
+						const effect = await effectIntentFor(row, "STOP", undefined, 1, tx);
+						if (!effect) throw new UnownedScheduledStop();
+						const stopDeliveryToken = randomUUID();
+						const changed = await tx.liveChannel.updateMany({
+							where: {
+								id: row.liveChannelId,
+								status: { in: ["RUNNING", "ERROR"] },
+								bitmovinEncodingId: effect.providerEncodingId,
+								liveEffectFenceVersion: effect.admissionFenceVersion - 1,
+							},
+							data: {
+								status: "STOPPING",
+								liveEffectFenceVersion: { increment: 1 },
+							},
+						});
+						if (!changed.count) throw new UnownedScheduledStop();
+						await tx.liveChannelRun.update({
+							where: {
+								id: effect.liveChannelRunId,
+								liveChannelId: row.liveChannelId,
+							},
+							data: { status: "STOPPING" },
+						});
+						await tx.liveSchedule.updateMany({
+							where: {
+								id: row.id,
+								liveChannelRunId: effect.liveChannelRunId,
+								status: "FIRED",
+							},
+							data: {
+								stopProviderEncodingId: effect.providerEncodingId,
+								stopAdmissionFenceVersion: effect.admissionFenceVersion,
+								stopDeliveryToken,
+							},
+						});
+						return { ...effect, stopDeliveryToken };
+					})
+					.catch((error: unknown) => {
+						if (error instanceof UnownedScheduledStop) return null;
+						throw error;
+					});
+				if (admitted === "WAIT") {
 					stats.waiting += 1;
 					return;
 				}
+				if (!admitted) {
+					await failUnfencedArmedEffect(row, stats, "Scheduled STOP");
+					return;
+				}
+				const effect = admitted;
 				try {
 					await deps.enqueue(
 						{
@@ -1371,23 +1626,25 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 							...plannedRunStamp(row.liveChannelRunId),
 							effect,
 						},
-						scheduleJobId(row.id),
+						scheduledStopJobId(row.id, effect.stopDeliveryToken),
 					);
 				} catch {
-					// Channel ERROR (the route's mark) + row back to ARMED:
-					// next tick claims ERROR→STOPPING again (: the
-					// re-arm enrols the id, so the retry is genuinely the next
-					// tick even mid-backlog, and even mid-OUTAGE — the replay
-					// set never competes with forward progress) — self-healing,
-					// and the alarm no longer shares the failed dependency
-					// (review-190 C3).
-					await onEnqueueFailure(row, "Enqueue failed — stop again", true);
+					// A rejected add can already be executing in Redis. Leave FIRED
+					// and its open outbox intact for retry under the original job ID.
 					stats.errors += 1;
 					return;
 				}
-				await markDispatched(row.id, scheduleJobId(row.id));
+				await recordScheduledStopHandoff(
+					deps.prisma,
+					{
+						id: row.id,
+						liveChannelId: row.liveChannelId,
+						liveChannelRunId: effect.liveChannelRunId,
+					},
+					deps.now(),
+					effect,
+				);
 				stats.fired += 1;
-				await emitFired(row);
 				return;
 			}
 			default:
@@ -1552,11 +1809,11 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		} catch {
 			// No channel mark — a slate enqueue failure does not own channel
 			// status; the row re-arms and the grace machinery decides.
-			await onEnqueueFailure(row, "", false);
+			await rearm(row);
 			stats.errors += 1;
 			return;
 		}
-		await markDispatched(row.id, scheduleJobId(row.id));
+		await markDispatched(row, scheduleJobId(row.id));
 		stats.fired += 1;
 		await emitFired(row);
 	}
@@ -1630,11 +1887,11 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				scheduleJobId(row.id),
 			);
 		} catch {
-			await onEnqueueFailure(row, "", false);
+			await rearm(row);
 			stats.errors += 1;
 			return;
 		}
-		await markDispatched(row.id, scheduleJobId(row.id));
+		await markDispatched(row, scheduleJobId(row.id));
 		stats.fired += 1;
 		await emitFired(row);
 	}
@@ -1705,11 +1962,11 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				scheduleJobId(row.id),
 			);
 		} catch {
-			await onEnqueueFailure(row, "", false);
+			await rearm(row);
 			stats.errors += 1;
 			return;
 		}
-		await markDispatched(row.id, scheduleJobId(row.id));
+		await markDispatched(row, scheduleJobId(row.id));
 		stats.fired += 1;
 		await emitFired(row);
 	}
@@ -2059,6 +2316,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	async function dispatchPendingOnce(): Promise<number> {
+		await deps.recoverExhaustedDeliveries?.();
 		const now = deps.now();
 		let redispatched = 0;
 		// Outbox failures retain their rows. Resume in stable schedule order,
@@ -2081,27 +2339,88 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					take,
 				}),
 			handle: async (row) => {
+				// Exhausted START recovery owns the failure. A missing queue stamp
+				// cannot authorize dispatching that failed provision again.
+				if (row.action === "START") {
+					if (row.outcome !== "PENDING") return;
+					if (
+						!row.liveChannelRunId ||
+						typeof row.startAdmissionFenceVersion !== "number"
+					) {
+						// An unbound pre-upgrade row supplies no authority for a
+						// delivery or a notification for this broadcast.
+						await recordScheduleOutcomeBestEffort(
+							deps.prisma,
+							{
+								scheduledStart: {
+									id: row.id,
+									liveChannelId: row.liveChannelId,
+									...(row.liveChannelRunId && {
+										liveChannelRunId: row.liveChannelRunId,
+									}),
+									startAdmissionFenceVersion: null,
+								},
+							},
+							"UNKNOWN",
+							"The original Live startup could not be tied to an airing.",
+							now,
+							"STALE_GENERATION_REFUSAL",
+						);
+						return;
+					}
+				}
+				if (row.action === "STOP" && row.outcome !== "PENDING") {
+					if (!row.liveChannelRunId) return;
+					// Older workers could mark every FIRED stop on a channel. Only the
+					// original run's exact effect proves delivery after Redis job retention.
+					const owned = await deps.prisma.liveEffectClaim.findFirst({
+						where: {
+							action: "STOP",
+							ownerId: { not: "legacy-stop-observer" },
+							scheduleId: row.id,
+							liveChannelId: row.liveChannelId,
+							liveChannelRunId: row.liveChannelRunId,
+							idempotencyKey: `schedule:${row.id}:stop`,
+						},
+						select: { id: true },
+					});
+					if (owned)
+						await recordScheduledStopHandoff(
+							deps.prisma,
+							{
+								id: row.id,
+								liveChannelId: row.liveChannelId,
+								liveChannelRunId: row.liveChannelRunId,
+							},
+							deps.now(),
+							storedStopAdmission(row),
+						);
+					return;
+				}
 				if (
 					row.action !== "STOP" &&
 					deps.allowNewWork &&
 					!(await deps.allowNewWork())
 				) {
-					const channel =
+					const allowed = await admitInactiveOrganization(
+						deps.prisma,
+						"liveChannel",
 						row.action === "START"
-							? await deps.prisma.liveChannel.findUnique({
-									where: { id: row.liveChannelId },
-									select: { bitmovinEncodingId: true, stepLog: true },
-								})
-							: null;
-					const committed =
-						channel?.bitmovinEncodingId &&
-						hasCommittedStart(channel.stepLog, "START_LIVE_ENCODING");
-					if (!committed) {
-						await admitInactiveOrganization(deps.prisma, "liveChannel", {
-							liveChannelId: row.liveChannelId,
-							action: row.action === "START" ? "provision" : "insert-content",
-							params: { scheduleId: row.id },
-						});
+							? scheduledProvision(row)
+							: {
+									liveChannelId: row.liveChannelId,
+									action: "insert-content",
+									params: { scheduleId: row.id },
+								},
+						{
+							id:
+								row.action === "START"
+									? scheduledStartJobId(row.id, row.startAdmissionFenceVersion)
+									: scheduleJobId(row.id),
+						},
+					);
+					if (!allowed) {
+						if (row.action === "START") return;
 						await deps.prisma.liveSchedule.updateMany({
 							where: { id: row.id, status: "FIRED", dispatchedAt: null },
 							data: {
@@ -2116,8 +2435,43 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				if (!job) {
 					return;
 				}
-				const jobId = scheduleJobId(row.id);
+				const jobId =
+					job.action === "stop"
+						? scheduledStopJobId(row.id, job.effect?.stopDeliveryToken)
+						: row.action === "START"
+							? scheduledStartJobId(row.id, row.startAdmissionFenceVersion)
+							: scheduleJobId(row.id);
 				try {
+					if (
+						row.action === "START" &&
+						row.liveChannelRunId &&
+						typeof row.startAdmissionFenceVersion === "number" &&
+						deps.readStartJob
+					) {
+						const start = {
+							id: row.id,
+							liveChannelId: row.liveChannelId,
+							liveChannelRunId: row.liveChannelRunId,
+							startAdmissionFenceVersion: row.startAdmissionFenceVersion,
+						};
+						const delivery = await prepareScheduledStartDispatch(
+							deps.prisma,
+							deps.readStartJob,
+							start,
+							row,
+						);
+						if (!delivery) return;
+						if (delivery.state === null) await deps.enqueue(job, delivery.id);
+						const recorded = await recordRetainedScheduledStart(
+							deps.prisma,
+							start,
+							{ id: delivery.id, state: delivery.state ?? "waiting" },
+							now,
+						);
+						if (delivery.state === null || recorded) redispatched += 1;
+						if (recorded === "handoff") void emitFired(row);
+						return;
+					}
 					await deps.enqueue(job, jobId);
 				} catch (err) {
 					// Leave FIRED + unstamped and retry on the next cursor lap.
@@ -2132,20 +2486,24 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					);
 					return;
 				}
-				await markDispatched(row.id, jobId);
-				redispatched += 1;
-				// The notification is the LAST thing and cannot stall the pass: a
-				// notify channel that throws for one row would otherwise abort the
-				// loop before the rows behind it — every tick, forever, while a
-				// capped encoding kept billing.
-				try {
-					await emitFired(row);
-				} catch (err) {
-					console.error(
-						`[scheduler] re-dispatch notification for ${row.id} failed:`,
-						err instanceof Error ? err.message : err,
+				if (row.action === "STOP" && row.liveChannelRunId) {
+					await recordScheduledStopHandoff(
+						deps.prisma,
+						{
+							id: row.id,
+							liveChannelId: row.liveChannelId,
+							liveChannelRunId: row.liveChannelRunId,
+						},
+						deps.now(),
+						job.effect ?? null,
 					);
+					redispatched += 1;
+					return;
 				}
+				const firstHandoff = await markDispatched(row, jobId);
+				redispatched += 1;
+				// Notification follows the receipt and does not delay the next row.
+				if (row.action !== "START" || firstHandoff) void emitFired(row);
 			},
 		});
 		redispatched += await redispatchStrandedStages(now);
@@ -2250,17 +2608,85 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		row: ScheduleRow & { note?: string | null },
 		now: Date,
 	): Promise<LiveChannelJob | null> {
-		if (row.action === "START") {
-			return { liveChannelId: row.liveChannelId, action: "provision" };
-		}
+		if (row.action === "START") return scheduledProvision(row);
 		if (row.action === "STOP") {
 			// Includes the runtime cap's synthetic row — same action, same
 			// claim, same recovery. (row 266): a
 			// stranded STOP was FIRED, so its bind is set — carry it so the
 			// recovery add fences on the SAME airing a healthy dispatch would.
-			const effect = await effectIntentFor(row, "STOP");
+			let effect: LiveEffectIntent | null = null;
+			const admission = storedStopAdmission(row);
+			if (row.liveChannelRunId && admission) {
+				effect = {
+					action: "STOP",
+					scheduleId: row.id,
+					liveChannelRunId: row.liveChannelRunId,
+					...admission,
+					idempotencyKey: `schedule:${row.id}:stop`,
+				};
+			} else if (row.liveChannelRunId) {
+				const runId = row.liveChannelRunId;
+				try {
+					effect = await deps.prisma.$transaction(async (tx) => {
+						await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${row.liveChannelId}::uuid FOR UPDATE`;
+						await bindArchivedStopTargetInTransaction(
+							tx,
+							row.liveChannelId,
+							runId,
+						);
+						const channel = await tx.liveChannel.findUnique({
+							where: { id: row.liveChannelId },
+							select: {
+								status: true,
+								liveEffectFenceVersion: true,
+								legacyAdmissionFenceVersion: true,
+							},
+						});
+						if (
+							channel?.status !== "STOPPING" ||
+							channel.legacyAdmissionFenceVersion == null ||
+							channel.legacyAdmissionFenceVersion !==
+								channel.liveEffectFenceVersion
+						)
+							throw new UnownedScheduledStop();
+						const recovered = await effectIntentFor(
+							row,
+							"STOP",
+							undefined,
+							0,
+							tx,
+						);
+						if (!recovered) throw new UnownedScheduledStop();
+						const stopDeliveryToken = randomUUID();
+						// Once a pre-upgrade intent has been recovered, later passes must
+						// reuse it even when Redis accepted the first job but lost its reply.
+						const saved = await tx.liveSchedule.updateMany({
+							where: {
+								id: row.id,
+								action: "STOP",
+								liveChannelId: row.liveChannelId,
+								liveChannelRunId: runId,
+								status: "FIRED",
+								outcome: { in: ["PENDING"] },
+								dispatchedAt: null,
+								stopProviderEncodingId: null,
+							},
+							data: {
+								stopProviderEncodingId: recovered.providerEncodingId,
+								stopAdmissionFenceVersion: recovered.admissionFenceVersion,
+								stopDeliveryToken,
+							},
+						});
+						if (!saved.count) throw new RecoveredScheduledStop();
+						return { ...recovered, stopDeliveryToken };
+					});
+				} catch (err) {
+					if (err instanceof RecoveredScheduledStop) return null;
+					if (!(err instanceof UnownedScheduledStop)) throw err;
+				}
+			}
 			if (!effect) {
-				await failUnfencedStrandedEffect(row.id, "Stranded STOP");
+				await failUnfencedStrandedEffect(row.id, "Stranded STOP", row);
 				return null;
 			}
 			return {
@@ -2411,23 +2837,52 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	async function failUnfencedStrandedEffect(
 		rowId: string,
 		label: string,
-	): Promise<boolean> {
+		missedStop?: { liveChannelId: string; liveChannelRunId: string | null },
+	): Promise<void> {
+		const reason = missedStop
+			? MISSED_UNOWNED_STOP_REASON
+			: `${label} refused: legacy outbox row has no exact current run/provider identity`;
 		const at = deps.now();
-		const reason = `${label} refused: legacy outbox row has no exact current run/provider identity`;
-		const { count } = await deps.prisma.liveSchedule.updateMany({
-			where: { id: rowId, status: "FIRED", dispatchedAt: null },
-			data: {
-				status: "ERROR",
-				error: reason,
-				outcome: "UNKNOWN",
-				outcomeAt: at,
-				outcomeNote: reason,
-				outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
-				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
-				outcomeEvidenceAt: at,
-			},
+		const refuse = (client: Pick<AppTransactionClient, "liveSchedule">) =>
+			client.liveSchedule.updateMany({
+				where: {
+					id: rowId,
+					...(missedStop && {
+						action: "STOP" as const,
+						liveChannelId: missedStop.liveChannelId,
+						liveChannelRunId: missedStop.liveChannelRunId,
+						stopAdmissionFenceVersion: null,
+						stopDeliveryToken: null,
+					}),
+					status: "FIRED",
+					dispatchedAt: null,
+					stopProviderEncodingId: null,
+					outcome: { in: ["PENDING"] },
+				},
+				data: {
+					status: "ERROR",
+					error: reason,
+					outcome: "UNKNOWN",
+					outcomeAt: at,
+					outcomeNote: reason,
+					outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+					outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+					outcomeEvidenceAt: at,
+				},
+			});
+		if (!missedStop) {
+			await refuse(deps.prisma);
+			return;
+		}
+		await deps.prisma.$transaction(async (tx) => {
+			if (!(await refuse(tx)).count) return;
+			await writeScheduledStopNotification(
+				tx,
+				{ id: rowId, liveChannelId: missedStop.liveChannelId },
+				"SCHEDULE_MISSED",
+				at,
+			);
 		});
-		return count === 1;
 	}
 
 	/**
@@ -2562,15 +3017,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		}
 	}
 
-	/**
-	 * The runtime cap: RUNNING longer than maxRunMinutes ⇒ stop, once per
-	 * epoch. Atomicity is layered (review-190 I1 proved the first cut's
-	 * check-then-create raced): the channel claim RUNNING→STOPPING is the
-	 * lock; the synthetic row's fireAt IS the epoch deadline (deterministic
-	 * across workers) under a partial unique index, so a second creator
-	 * loses on P2002; and the queue jobId derives from the same deadline,
-	 * so a crash-retry re-enqueue dedupes instead of double-stopping.
-	 */
+	/** Commit the exact airing's cap and its durable STOP together before touching Redis. */
 	async function enforceCaps(stats: ScheduleSweepStats): Promise<void> {
 		const now = deps.now();
 		const capped = await deps.prisma.liveChannel.findMany({
@@ -2583,167 +3030,173 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				id: true,
 				maxRunMinutes: true,
 				runningSince: true,
+				bitmovinEncodingId: true,
 				liveEffectFenceVersion: true,
+				runs: {
+					orderBy: { seq: "desc" },
+					take: 1,
+					select: { id: true },
+				},
 			},
 		});
 		for (const channel of capped) {
-			if (channel.maxRunMinutes === null || channel.runningSince === null) {
+			if (channel.maxRunMinutes === null || channel.runningSince === null)
 				continue;
-			}
 			const deadline = new Date(
 				channel.runningSince.getTime() + channel.maxRunMinutes * 60_000,
 			);
-			if (now.getTime() < deadline.getTime()) {
+			if (now < deadline) continue;
+			const run = channel.runs[0];
+			const providerEncodingId = channel.bitmovinEncodingId;
+			if (!run || !providerEncodingId) {
+				stats.errors += 1;
 				continue;
 			}
-			// The lock: only one actor can move RUNNING→STOPPING.
-			const claim = await deps.prisma.liveChannel.updateMany({
-				where: {
-					id: channel.id,
-					status: "RUNNING",
-					liveEffectFenceVersion: channel.liveEffectFenceVersion,
-				},
-				data: {
-					status: "STOPPING",
-					liveEffectFenceVersion: { increment: 1 },
-				},
-			});
-			if (claim.count === 0) {
-				continue;
-			}
-			await runs.mirror(channel.id, { status: "STOPPING" });
-			// The cap's synthetic row records WHICH airing it capped.
-			// Provenance only  — the row is born FIRED and dispatched
-			// in the same breath, so it never passes the generation guard that
-			// the ARMED fire paths run.
-			const cappedRun = await runs.latest(channel.id);
-			// EVERYTHING after the claim sits in ONE try whose catch releases
-			// it (review-190 re-verify I1: the first cut released only around
-			// the enqueue, so a non-P2002 create failure — pool exhaustion, a
-			// statement timeout — threw with the channel wedged STOPPING and
-			// NO way out: no job exists for the dead-job reaper, stop/restart
-			// routes 409 on STOPPING, and the next tick selects RUNNING only.
-			// Probed by the reviewer: the channel stayed STOPPING forever
-			// while the encoding billed).
-			let rowId: string | null = null;
+			let scheduleId: string | null = null;
+			const stopDeliveryToken = randomUUID();
+			const admissionFenceVersion = channel.liveEffectFenceVersion + 1;
 			try {
-				try {
-					const created = await deps.prisma.liveSchedule.create({
+				scheduleId = await deps.prisma.$transaction(async (tx) => {
+					const locked = await tx.liveChannel.updateMany({
+						where: {
+							id: channel.id,
+							status: "RUNNING",
+							runningSince: channel.runningSince,
+							maxRunMinutes: channel.maxRunMinutes,
+							bitmovinEncodingId: providerEncodingId,
+							liveEffectFenceVersion: channel.liveEffectFenceVersion,
+						},
 						data: {
-							liveChannelId: channel.id,
-							...(cappedRun ? { liveChannelRunId: cappedRun.id } : {}),
-							action: "STOP",
-							fireAt: deadline,
-							status: "FIRED",
-							firedAt: now,
-							// : the cap's synthetic row is born with an
-							// OPEN outbox exactly like an armed row's claim — the
-							// channel is already STOPPING here, so a death before
-							// the add below is the billing-forever case.
-							dispatchedAt: null,
-							note: CAP_NOTE,
+							status: "STOPPING",
+							liveEffectFenceVersion: { increment: 1 },
 						},
 					});
-					rowId = created.id;
-				} catch (err) {
-					// P2002 on the epoch index: BACKSTOP, not a live path — both
-					// RUNNING writers rewrite runningSince, so a RUNNING channel
-					// with an epoch row at the SAME deadline cannot occur today
-					// (review-190 re-verify I2 corrected the first story here,
-					// which claimed crash-healing through this branch). It
-					// guards a future writer that sets RUNNING without touching
-					// runningSince.
+					if (!locked.count) return null;
+					const latest = await tx.liveChannelRun.findFirst({
+						where: { liveChannelId: channel.id },
+						orderBy: { seq: "desc" },
+						select: { id: true, bitmovinEncodingId: true, stepLog: true },
+					});
 					if (
-						typeof err === "object" &&
-						err !== null &&
-						(err as { code?: string }).code === "P2002"
-					) {
-						const existing = await deps.prisma.liveSchedule.findFirst({
+						latest?.id !== run.id ||
+						!liveStopRunOwnsEncoding(latest, providerEncodingId)
+					)
+						throw new Error("runtime cap no longer owns this broadcast");
+					const epoch = {
+						liveChannelId: channel.id,
+						note: CAP_NOTE,
+						fireAt: deadline,
+					};
+					const prior = await tx.liveSchedule.findFirst({
+						where: epoch,
+						select: {
+							id: true,
+							liveChannelRunId: true,
+							status: true,
+							outcome: true,
+							dispatchedAt: true,
+						},
+					});
+					if (
+						prior &&
+						(prior.liveChannelRunId !== run.id ||
+							prior.status !== "FIRED" ||
+							prior.outcome !== "PENDING" ||
+							prior.dispatchedAt !== null)
+					)
+						throw new Error(
+							"runtime cap found a different or already dispatched schedule for this deadline",
+						);
+					const receipt = {
+						stopProviderEncodingId: providerEncodingId,
+						stopAdmissionFenceVersion: admissionFenceVersion,
+						stopDeliveryToken,
+					};
+					if (prior) {
+						const renewed = await tx.liveSchedule.updateMany({
 							where: {
-								liveChannelId: channel.id,
-								note: CAP_NOTE,
-								fireAt: deadline,
+								id: prior.id,
+								liveChannelRunId: run.id,
+								status: "FIRED",
+								outcome: "PENDING",
+								dispatchedAt: null,
+							},
+							data: receipt,
+						});
+						if (renewed.count !== 1)
+							throw new Error(
+								"runtime cap STOP handoff changed during admission",
+							);
+					}
+					const row =
+						prior ??
+						(await tx.liveSchedule.create({
+							data: {
+								...epoch,
+								...receipt,
+								liveChannelRunId: run.id,
+								action: "STOP",
+								status: "FIRED",
+								firedAt: now,
 							},
 							select: { id: true },
-						});
-						rowId = existing?.id ?? null;
-					} else {
-						throw err;
-					}
-				}
-				// : ONE id rule for every scheduled action — derived
-				// from the row, so the dispatcher can rebuild it after a crash
-				// without re-reading a stamp the crash never wrote. The epoch
-				// id below survives only for the P2002 backstop's torn read,
-				// where there is no row to derive from AND no outbox record to
-				// keep, so it behaves exactly as it did before this change.
-				const effect =
-					rowId && cappedRun
-						? await effectIntentFor(
-								{
-									id: rowId,
-									liveChannelId: channel.id,
-									liveChannelRunId: cappedRun.id,
-								},
-								"STOP",
-							)
-						: null;
-				if (!effect) {
-					throw new Error(
-						"runtime-cap STOP has no exact run/provider effect identity",
-					);
-				}
+						}));
+					await tx.liveChannelRun.update({
+						where: { id: run.id, liveChannelId: channel.id },
+						data: { status: "STOPPING" },
+					});
+					return row.id;
+				});
+				if (!scheduleId) continue;
+				const jobId = scheduledStopJobId(scheduleId, stopDeliveryToken);
+				const effect: LiveEffectIntent = {
+					action: "STOP",
+					scheduleId,
+					liveChannelRunId: run.id,
+					providerEncodingId,
+					idempotencyKey: `schedule:${scheduleId}:stop`,
+					admissionFenceVersion,
+					stopDeliveryToken,
+				};
 				await deps.enqueue(
 					{
 						liveChannelId: channel.id,
 						action: "stop",
-						// (row 266): the run this cap is
-						// stopping. If the cap-stop job is re-delivered after a
-						// re-air, the fence refuses it rather than cutting the
-						// new airing off at the old one's deadline.
-						...plannedRunStamp(cappedRun?.id ?? null),
+						plannedLiveChannelRunId: run.id,
 						effect,
 					},
-					rowId
-						? scheduleJobId(rowId)
-						: `sched-cap-${channel.id}-${deadline.getTime()}`,
+					jobId,
 				);
-				if (rowId) {
-					await markDispatched(rowId, scheduleJobId(rowId));
-				}
+				await recordScheduledStopHandoff(
+					deps.prisma,
+					{
+						id: scheduleId,
+						liveChannelId: channel.id,
+						liveChannelRunId: run.id,
+					},
+					deps.now(),
+					effect,
+				);
 			} catch (err) {
 				const reason = `runtime-cap STOP handoff failed: ${err instanceof Error ? err.message : String(err)}`;
-				if (rowId) {
-					// A durable FIRED STOP intent exists. Leave STOPPING and its
-					// open outbox intact; dispatchPending will recover it. Minting
-					// RUNNING here without a fresh provider observation was the
-					// false-green rollback from audit SC-01.
+				if (scheduleId) {
 					await deps.prisma.liveSchedule.updateMany({
-						where: { id: rowId, status: "FIRED", dispatchedAt: null },
-						data: { note: reason },
+						where: {
+							id: scheduleId,
+							status: "FIRED",
+							dispatchedAt: null,
+							stopDeliveryToken,
+						},
+						data: { error: reason },
 					});
 				} else {
-					// No durable stop intent exists, so fail closed. The provider may
-					// still be running; ERROR says exactly that and never fabricates a
-					// RUNNING observation.
-					await deps.prisma.liveChannel.updateMany({
-						where: { id: channel.id, status: "STOPPING" },
-						data: { status: "ERROR", error: reason },
-					});
-					await runs.mirror(channel.id, { status: "ERROR", error: reason });
+					// The transaction rolled back. The qualifying RUNNING epoch will be retried.
+					console.error("[scheduler]", reason);
 				}
 				stats.errors += 1;
 				continue;
 			}
 			stats.capStops += 1;
-			if (rowId) {
-				await deps.emitEvent?.({
-					kind: "SCHEDULE_FIRED",
-					scheduleId: rowId,
-					liveChannelId: channel.id,
-					path: `/live/${channel.id}`,
-				});
-			}
 		}
 	}
 

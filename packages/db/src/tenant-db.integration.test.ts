@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
+import { encodingPlanSchema } from "@bitovp/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type AppPrismaClient, createPrismaClient } from "./client";
 import {
@@ -13,6 +14,7 @@ import {
 	renewExperimentTrial,
 } from "./encoding-experiments";
 import { createTenantPrismaClient } from "./tenant-client";
+import { resolveInspectedAudioSource } from "./verified-audio-source";
 
 const adminUrl = process.env.BITOVP_TENANT_TEST_ADMIN_URL;
 const appUrl = process.env.BITOVP_TENANT_TEST_APP_URL;
@@ -96,6 +98,112 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			if (app) await app.$disconnect();
 		});
 
+		it("binds an inspected audio track to its organization, credential, object and immutable generation", async () => {
+			const meta = {
+				credentialId: credentialA,
+				bucket: "inputs",
+				objectKey: "clip.mov",
+				status: "FINISHED" as const,
+				probe: {
+					streams: [
+						{ index: 0, codec_type: "audio", codec_name: "mp3" },
+						{ index: 1, codec_type: "audio", codec_name: "pcm_s24le" },
+					],
+				},
+			};
+			const unversioned = await a.storageInspection.create({ data: meta });
+			const row = await a.storageInspection.create({
+				data: {
+					...meta,
+					verifyAudioCopy: true,
+					sourceIdentity: { size: 1000, generation: "103" },
+				},
+			});
+			const plan = (
+				id: string,
+				credentialId: string,
+				position = 1,
+				key = meta.objectKey,
+			) =>
+				encodingPlanSchema.parse({
+					name: "File",
+					planVersion: 1,
+					bitmovin: {},
+					inputs: [{ key: "main", kind: "S3", bucket: "inputs", credentialId }],
+					outputs: [{ key: "out", kind: "S3", bucket: "files", credentialId }],
+					ingest: [
+						{
+							key: "audio",
+							inputKey: "main",
+							inputPath: key,
+							position,
+							selectionMode: "AUDIO_RELATIVE",
+						},
+					],
+					renditions: [
+						{
+							key: "copy",
+							ingestKey: "audio",
+							codec: "AUDIO_PASSTHROUGH",
+							name: "Sound",
+							sourceCodec: "PCM",
+							inspectionId: id,
+						},
+					],
+					muxings: [
+						{
+							key: "wav",
+							kind: "PROGRESSIVE_WAV",
+							streamKey: "copy",
+							filename: "out.wav",
+							destination: { outputKey: "out", path: "out/" },
+						},
+					],
+					manifests: [],
+					generation: { timing: "POST_ENCODING" },
+				});
+			await expect(
+				resolveInspectedAudioSource(a, orgA, plan(row.id, credentialA)),
+			).resolves.toMatchObject({
+				track: { position: 1, sourceCodec: "PCM" },
+				storage: {
+					key: meta.objectKey,
+					size: 1000,
+					expect: { generation: "103" },
+				},
+			});
+			const slashKey = "/" + meta.objectKey;
+			const slashObject = await a.storageInspection.create({
+				data: {
+					...meta,
+					objectKey: slashKey,
+					verifyAudioCopy: true,
+					sourceIdentity: { size: 2048, generation: "104" },
+				},
+			});
+			await expect(
+				resolveInspectedAudioSource(
+					a,
+					orgA,
+					plan(slashObject.id, credentialA, 1, slashKey),
+				),
+			).resolves.toMatchObject({
+				storage: { key: slashKey, size: 2048, expect: { generation: "104" } },
+			});
+			for (const args of [
+				[a, orgA, plan(row.id, credentialA, 1, slashKey)],
+				[a, orgA, plan(slashObject.id, credentialA, 1, meta.objectKey)],
+				[b, orgB, plan(row.id, credentialB)],
+				[a, orgA, plan(row.id, credentialB)],
+				[a, orgA, plan(row.id, credentialA, 0)],
+				[a, orgA, plan(row.id, credentialA, 1, "different.mov")],
+				[a, orgA, plan(unversioned.id, credentialA)],
+			] as const) {
+				await expect(resolveInspectedAudioSource(...args)).rejects.toThrow(
+					"AUDIO_COPY_INPUT_UNVERIFIED",
+				);
+			}
+		});
 		it("isolates list, ID, explicit secret selects, raw SQL and unscoped queries", async () => {
 			expect((await a.credential.findMany()).map((row) => row.id)).toEqual([
 				credentialA,

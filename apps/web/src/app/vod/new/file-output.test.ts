@@ -161,6 +161,37 @@ describe("file names", () => {
 		expect(defaultFileNames("", started.videos)).toEqual(["output.mp4"]);
 	});
 
+	it.each([
+		"Logo: 2026 @2x.png",
+		"Review: cut @ Studio",
+		"Review: cut @ Studio 2.0",
+		"Review: cut @ Studio.v2",
+		"Review: cut @ Studio.mp4",
+		"Review: final cut @",
+		"s3:take 2@",
+	])("restores the automatic TS filename and AI results directory for %s", (name) => {
+		const ts = apply(started, editFile(started, 0, { kind: "PROGRESSIVE_TS" }));
+		const configured = {
+			...ts,
+			startOptions: {
+				...ts.startOptions,
+				aiSceneAnalysis: {
+					filename: "analysis.json",
+					path: fileJobFolder(ts.name),
+				},
+			},
+		};
+		const renamed = apply(configured, renameFileJob(configured, name));
+		writeWizardDraft("label-file", "vod", renamed, 2);
+		const saved = readWizardDraft("label-file", "vod");
+		expect(saved?.value.videos).toMatchObject([
+			{ muxing: { filename: `${name}.ts` } },
+		]);
+		expect(saved?.value.startOptions).toMatchObject({
+			aiSceneAnalysis: { path: `${name}/` },
+		});
+	});
+
 	it("come back from a saved draft as they were typed, ? and # taken out on the way in", () => {
 		const ts = apply(started, editFile(started, 0, { kind: "PROGRESSIVE_TS" }));
 		const typed = apply(ts, editFile(ts, 0, { filename: "sub/take#2?.ts" }));
@@ -266,7 +297,7 @@ describe("the containers the flow offers", () => {
 		]);
 	});
 
-	it("hold every codec of the ladder step that the plan accepts in them, and between them every codec it has", () => {
+	it("offer the ladder codecs accepted by each file container and keep HE-AAC in fragmented MP4", () => {
 		for (const container of FILE_CONTAINERS) {
 			const row: readonly string[] = MUXING_CODEC_MATRIX[container.kind];
 			expect(container.video, container.kind).toEqual(
@@ -279,7 +310,13 @@ describe("the containers the flow offers", () => {
 		const offered = (pick: "video" | "audio") =>
 			new Set<string>(FILE_CONTAINERS.flatMap((container) => container[pick]));
 		expect(offered("video")).toEqual(new Set(VIDEO_CODECS));
-		expect(offered("audio")).toEqual(new Set(AUDIO_CODECS));
+		const streamingOnly = AUDIO_CODECS.filter(
+			(codec) => !offered("audio").has(codec),
+		);
+		expect(streamingOnly).toEqual(["HE_AAC_V1", "HE_AAC_V2"]);
+		expect(MUXING_CODEC_MATRIX.FMP4).toEqual(
+			expect.arrayContaining(streamingOnly),
+		);
 	});
 
 	it.each(
@@ -2833,4 +2870,31 @@ describe("a plan this flow built, loaded again", () => {
 			"exports/proxy",
 		]);
 	});
+});
+
+it("keeps file-mode video and audio conditions visible and preserves them when changing file settings", () => {
+	const video = {
+		attribute: "HEIGHT",
+		operator: "GREATER_THAN_OR_EQUAL" as const,
+		value: "1080",
+	};
+	const audio = {
+		attribute: "LANGUAGE",
+		operator: "EQUAL" as const,
+		value: "ja",
+	};
+	const changed = {
+		...started,
+		...editFile(started, 0, { conditions: video }),
+	};
+	const finished = {
+		...changed,
+		...editFileAudio(changed, 0, { conditions: audio }),
+	};
+	expect(fileOutputBlockers(finished)).toEqual([]);
+	expect(finished.videos[0]?.conditions).toEqual(video);
+	expect(fileAudios(finished)[0]?.conditions).toEqual(audio);
+	expect(
+		editFile(finished, 0, { filename: "programme.mp4" }).videos[0]?.conditions,
+	).toEqual(video);
 });

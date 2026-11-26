@@ -31,6 +31,9 @@ describe("GET /api/storage-inspections/[id]", () => {
 	it("projects exactly the polling fields — nothing more", async () => {
 		findUnique.mockResolvedValueOnce({
 			id: ID,
+			credentialId: "synthetic-inspection-credential",
+			verifyAudioCopy: false,
+			sourceIdentity: null,
 			status: "FINISHED",
 			bucket: "my-bucket",
 			objectKey: "videos/raw/bbb.mp4",
@@ -58,24 +61,27 @@ describe("GET /api/storage-inspections/[id]", () => {
 		expect(body.createdAt).toBe("2026-08-06T00:00:00.000Z");
 	});
 
-	it("selects an explicit column set (credentialId is not published)", async () => {
+	it("selects the polling and verified audio provenance fields explicitly", async () => {
 		findUnique.mockResolvedValueOnce(null);
 		await get();
 		const arg = findUnique.mock.calls[0]?.[0] as {
 			select: Record<string, boolean>;
 		};
 		expect(arg.select).toBeDefined();
-		expect(arg.select).not.toHaveProperty("credentialId");
+		expect(arg.select.credentialId).toBe(true);
 		expect(Object.keys(arg.select).sort()).toEqual([
 			"bucket",
 			"bytesRead",
 			"createdAt",
+			"credentialId",
 			"error",
 			"id",
 			"objectKey",
 			"probe",
+			"sourceIdentity",
 			"status",
 			"updatedAt",
+			"verifyAudioCopy",
 		]);
 	});
 

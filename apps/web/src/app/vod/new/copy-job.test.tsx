@@ -1,9 +1,21 @@
-import { encodingPlanSchema, INTERNAL_HEVC_V2_BCF_VERSION } from "@bitovp/core";
+import {
+	encodingPlanSchema,
+	INTERNAL_HEVC_V2_BCF_VERSION,
+	markWithheldPlanSources,
+	publicVodSourceProjection,
+	withheldPlanSources,
+} from "@bitovp/core";
+import { tryImportPresetIntoWizard } from "@bitovp/core/wizard";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import {
+	draftFingerprint,
+	draftKey,
+	writeWizardDraft,
+} from "@/lib/wizard-draft";
 import p1AudioCopy from "@/test/fixtures/p1-audio-copy.json";
 import p1VideoCopy from "@/test/fixtures/p1-video-copy.json";
-import { renderWithQuery } from "@/test/render";
+import { renderWithOperatorSession as renderWithQuery } from "@/test/render";
 import {
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
@@ -63,9 +75,311 @@ const sourceState: WizardState = {
 const plan = buildPlan(sourceState);
 beforeEach(() => {
 	vi.clearAllMocks();
+	localStorage.clear();
 	apiFetch.mockImplementation(async (url: string) =>
 		url === `/api/encoding-jobs/${ID}` ? { name: "Copied source", plan } : [],
 	);
+});
+
+it.each([
+	["the redacted HTTPS label", "HTTPS", false],
+	["an edited HTTPS label", "HTTPS", true],
+	["the redacted HDR10+ sidecar", "HDR10_PLUS", false],
+	["an edited HDR10+ sidecar", "HDR10_PLUS", true],
+	[
+		"the redacted HTTPS label for a withheld HDR10+ sidecar",
+		"HTTPS_HDR10_PLUS",
+		false,
+	],
+	[
+		"an edited HTTPS label for a withheld HDR10+ sidecar",
+		"HTTPS_HDR10_PLUS",
+		true,
+	],
+] as const)("restores %s in a pre-upgrade protected copy", async (_, kind, edited) => {
+	const original = structuredClone(sourceState);
+	const [file] = original.inputFiles;
+	if (!file) throw new Error("Missing fixture input");
+	const https = kind !== "HDR10_PLUS";
+	const hdr = kind !== "HTTPS";
+	const previousPath = hdr
+		? "sidecar.json?ticket=OLD_PRIVATE_FIXTURE"
+		: "picture.mp4?ticket=OLD_PRIVATE_FIXTURE";
+	const suppliedPath = hdr ? "fresh/sidecar.json" : "fresh/picture.mp4";
+	if (https) {
+		original.inputFiles = [
+			{
+				...file,
+				kind: "HTTPS",
+				credentialId: "",
+				bucket: "media.example",
+				name: previousPath,
+				path: hdr ? file.path : previousPath,
+			},
+		];
+	}
+	if (hdr) {
+		original.sources = {
+			hdr10PlusStreams: [
+				{
+					key: "hdr",
+					videoInputFile: file.key,
+					metadataInputPath: previousPath,
+					selectionMode: "AUTO",
+				},
+			],
+		};
+		original.videos = original.videos.map((video) => ({
+			...video,
+			codec: "H265",
+			h265: { dynamicRangeFormat: "HDR10", profile: "MAIN10" },
+			extras: { ...video.extras, source: "hdr" },
+		}));
+	}
+	const raw = buildPlan(original);
+	const authored = structuredClone(original);
+	authored.name = "Continue legacy edits";
+	const editedName = "Editorial source";
+	const editedMetadata = "edited/sidecar.json";
+	if (edited && https && authored.inputFiles[0]) {
+		authored.inputFiles[0].name = editedName;
+	}
+	const savedHdr = authored.sources?.hdr10PlusStreams?.[0];
+	if (edited && savedHdr) savedHdr.metadataInputPath = editedMetadata;
+
+	const key = draftKey(
+		["org", "user"],
+		"vod",
+		`job:${ID}:${draftFingerprint(raw)}`,
+	);
+	writeWizardDraft(key, "vod", authored, 0);
+	const stored = localStorage.getItem(key);
+	if (!stored) throw new Error("Expected a saved draft");
+	expect(stored).not.toContain("OLD_PRIVATE_FIXTURE");
+	expect(JSON.parse(stored).value).toMatchObject({
+		inputFiles: [
+			{
+				path: hdr ? file.path : "",
+				...(https && { name: edited ? editedName : "" }),
+			},
+		],
+		...(hdr && {
+			sources: {
+				hdr10PlusStreams: [{ metadataInputPath: edited ? editedMetadata : "" }],
+			},
+		}),
+	});
+
+	const projection = publicVodSourceProjection({ plan: raw }, raw);
+	const copyPlan = markWithheldPlanSources(raw, projection.plan);
+	const sources = withheldPlanSources(copyPlan);
+	expect(sources?.labels).toHaveLength(1);
+	const label = sources?.labels[0];
+	if (!label) throw new Error("Missing protected source");
+	expect(JSON.stringify(copyPlan)).not.toContain("OLD_PRIVATE_FIXTURE");
+	if (https) {
+		const imported = encodingPlanSchema.parse(sources?.fill([suppliedPath]));
+		expect(imported.inputs).toMatchObject([
+			{
+				kind: "HTTPS",
+				key: file.inputKey,
+				host: "media.example",
+				name: "HTTPS Input",
+			},
+		]);
+	}
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
+		url === `/api/encoding-jobs/${ID}`
+			? { plan: copyPlan }
+			: init?.method === "POST"
+				? { id: ID }
+				: [],
+	);
+	renderWithQuery(<CopyVodJob source={ID} />);
+	fireEvent.change(await screen.findByLabelText(label), {
+		target: { value: suppliedPath },
+	});
+	fireEvent.click(screen.getByRole("button", { name: /use replacement/i }));
+	fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+	expect(screen.getByRole("textbox", { name: /job name/i })).toHaveValue(
+		"Continue legacy edits",
+	);
+	fireEvent.click(screen.getByRole("button", { name: /^8\. Review$/ }));
+	const start = screen.getByRole("button", { name: /start encoding$/i });
+	expect(
+		start,
+		screen
+			.queryAllByRole("alert")
+			.map((alert) => alert.textContent)
+			.join("\n"),
+	).toBeEnabled();
+	fireEvent.click(start);
+	await waitFor(() =>
+		expect(
+			apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(true),
+	);
+	const posted = apiFetch.mock.calls.find(
+		([, init]) => init?.method === "POST",
+	);
+	if (!posted) throw new Error("Expected restored copy submission");
+	expect(posted[1].body).not.toContain("OLD_PRIVATE_FIXTURE");
+	const submitted = encodingPlanSchema.parse(JSON.parse(posted[1].body).plan);
+	if (https) {
+		expect(submitted.inputs).toMatchObject([
+			{
+				kind: "HTTPS",
+				key: file.inputKey,
+				host: "media.example",
+				name: edited ? editedName : "HTTPS Input",
+			},
+		]);
+		expect(submitted.ingest).toContainEqual(
+			expect.objectContaining({
+				inputKey: file.inputKey,
+				inputPath: hdr ? file.path : suppliedPath,
+			}),
+		);
+	}
+	if (hdr) {
+		expect(submitted.hdr10PlusStreams).toMatchObject([
+			{
+				inputKey: file.inputKey,
+				videoInputPath: file.path,
+				metadataInputPath: edited ? editedMetadata : suppliedPath,
+			},
+		]);
+	}
+});
+
+it.each([
+	"swap bitrates",
+	"remove the sibling",
+	"reassign an existing subtitle",
+] as const)("restores the saved subtitle source when editors %s", async (edit) => {
+	const reassigned = edit === "reassign an existing subtitle";
+	const original = structuredClone(sourceState);
+	original.inputFiles.push(
+		...[0, 1, 2].map((index) => ({
+			key: `caption-${index}`,
+			inputKey: "captions",
+			kind: "HTTPS" as const,
+			credentialId: "",
+			bucket: "media.example",
+			path: `subtitles/track-${index}.srt?ticket=PRIVATE_FIXTURE`,
+		})),
+	);
+	original.videos = [1080, 720, 540].map((height, index) => ({
+		height: reassigned ? height : 1080,
+		bitrate: index === 2 ? 1_000_000 : 2_000_000,
+		codec: index === 1 ? "H265" : "H264",
+		encodingMode: "SINGLE_PASS",
+		extras: {
+			burnInSrt: {
+				inputFile: `caption-${index}`,
+				characterEncoding: "UTF_8",
+			},
+		},
+	}));
+	const raw = buildPlan(original);
+	const imported = tryImportPresetIntoWizard(raw);
+	if (!imported.ok) throw new Error(imported.reasonKey);
+	const [first, sibling, last] = imported.state.videos;
+	if (!first || !sibling || !last)
+		throw new Error("Missing fixture renditions");
+	expect(imported.state.videos.map((row) => row.extras?.key)).toEqual([
+		undefined,
+		undefined,
+		undefined,
+	]);
+	if (edit === "swap bitrates") {
+		[first.bitrate, last.bitrate] = [last.bitrate, first.bitrate];
+	} else if (edit === "remove the sibling") {
+		imported.state.videos = [first, last];
+	} else {
+		if (!first.extras || !sibling.extras?.burnInSrt)
+			throw new Error("Missing fixture subtitle");
+		first.extras.burnInSrt = sibling.extras.burnInSrt;
+		delete sibling.extras.burnInSrt;
+	}
+	imported.state.name = "Subtitles after edit";
+	const key = draftKey(
+		["org", "user"],
+		"vod",
+		`job:${ID}:${draftFingerprint(raw)}`,
+	);
+	writeWizardDraft(key, "vod", imported.state, 0);
+	expect(localStorage.getItem(key)).not.toContain("PRIVATE_FIXTURE");
+
+	const projected = publicVodSourceProjection({ plan: raw }, raw);
+	const copyPlan = markWithheldPlanSources(raw, projected.plan);
+	const sources = withheldPlanSources(copyPlan);
+	if (!sources) throw new Error("Missing protected subtitles");
+	const shared = "subtitles/shared.srt";
+	const distinct = "subtitles/distinct.srt";
+	const replacements = reassigned
+		? [shared, distinct, shared]
+		: [shared, shared, distinct];
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
+		url === `/api/encoding-jobs/${ID}`
+			? { plan: copyPlan }
+			: init?.method === "POST"
+				? { id: ID }
+				: [],
+	);
+	renderWithQuery(<CopyVodJob source={ID} />);
+	for (const [index, label] of sources.labels.entries()) {
+		fireEvent.change(await screen.findByLabelText(label), {
+			target: { value: replacements[index] },
+		});
+	}
+	fireEvent.click(screen.getByRole("button", { name: /use replacement/i }));
+	const name = await screen.findByRole("textbox", { name: /job name/i });
+	fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+	expect(name).toHaveValue("Subtitles after edit");
+	fireEvent.click(screen.getByRole("button", { name: /^8\. Review$/ }));
+	const start = screen.getByRole("button", { name: /start encoding$/i });
+	expect(
+		start,
+		screen
+			.queryAllByRole("alert")
+			.map((alert) => alert.textContent)
+			.join("\n"),
+	).toBeEnabled();
+	fireEvent.click(start);
+	await waitFor(() =>
+		expect(
+			apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(true),
+	);
+	const post = apiFetch.mock.calls.find(([, init]) => init?.method === "POST");
+	if (!post) throw new Error("Expected explicit job submission");
+	const saved = encodingPlanSchema.parse(JSON.parse(post[1].body).plan);
+	expect(
+		saved.renditions.flatMap((row) =>
+			row.codec === "H264" || row.codec === "H265"
+				? [[row.height, row.bitrate, row.burnInSrt?.inputPath ?? null]]
+				: [],
+		),
+	).toEqual(
+		reassigned
+			? [
+					[1080, 2_000_000, distinct],
+					[720, 2_000_000, null],
+					[540, 1_000_000, shared],
+				]
+			: edit === "swap bitrates"
+				? [
+						[1080, 1_000_000, shared],
+						[1080, 2_000_000, shared],
+						[1080, 2_000_000, distinct],
+					]
+				: [
+						[1080, 2_000_000, shared],
+						[1080, 1_000_000, distinct],
+					],
+	);
+	expect(JSON.stringify(saved)).not.toContain("bitovp-withheld-layout");
 });
 
 it("prefills the wizard without creating a job and never overwrites edits on refetch", async () => {
@@ -561,4 +875,104 @@ it.each([
 			muxing.destination.path.startsWith(expectedBase),
 		),
 	).toBe(true);
+});
+
+it.each([
+	false,
+	true,
+])("replaces a protected HTTPS source and recovers a legacy copy draft if present (%s)", async (legacy) => {
+	const first = sourceState.inputFiles[0];
+	if (!first) throw new Error("Missing input file");
+	const remote = {
+		...sourceState,
+		inputFiles: [
+			{
+				...first,
+				kind: "HTTPS" as const,
+				credentialId: "",
+				bucket: "media.example",
+				path: "original.mp4?ticket=PRIVATE_FIXTURE",
+			},
+		],
+	};
+	const releasedPlan = buildPlan(remote);
+	const remotePlan = encodingPlanSchema.parse(releasedPlan);
+	if (legacy) {
+		writeWizardDraft(
+			draftKey(
+				["org", "user"],
+				"vod",
+				`job:${ID}:${draftFingerprint(releasedPlan)}`,
+			),
+			"vod",
+			{
+				...remote,
+				name: "Recovered editorial change",
+			},
+			0,
+		);
+		writeWizardDraft(
+			draftKey(
+				["elsewhere", "user"],
+				"vod",
+				`job:${ID}:${draftFingerprint(releasedPlan)}`,
+			),
+			"vod",
+			{
+				...remote,
+				name: "Other organization draft",
+			},
+			0,
+		);
+	}
+	const projected = {
+		...remotePlan,
+		ingest: remotePlan.ingest.map((row) => ({ ...row, inputPath: "" })),
+		withheldSourcePaths: [
+			remotePlan.ingest.map((_, index) => ({
+				collection: "ingest",
+				index,
+				field: "inputPath",
+			})),
+		],
+	};
+	apiFetch.mockImplementation(async (url: string) =>
+		url === `/api/encoding-jobs/${ID}` ? { plan: projected } : [],
+	);
+	renderWithQuery(<CopyVodJob source={ID} />);
+	const field = await screen.findByLabelText(
+		remotePlan.ingest.map((row) => row.key).join(" / "),
+	);
+	expect(
+		screen.getByRole("button", { name: /use replacement/i }),
+	).toBeDisabled();
+	expect(screen.queryByRole("button", { name: /start encoding/i })).toBeNull();
+	fireEvent.change(field, { target: { value: "copy/replaced.mp4" } });
+	fireEvent.click(screen.getByRole("button", { name: /use replacement/i }));
+	const name = await screen.findByRole("textbox", { name: /job name/i });
+	if (legacy) {
+		fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+		expect(name).toHaveValue("Recovered editorial change");
+	}
+	fireEvent.click(screen.getByRole("button", { name: /^8\. Review$/ }));
+	fireEvent.click(screen.getByRole("button", { name: /start encoding$/i }));
+	await waitFor(() =>
+		expect(
+			apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(true),
+	);
+	const submission = apiFetch.mock.calls.find(
+		([, init]) => init?.method === "POST",
+	);
+	if (!submission) throw new Error("Missing copied job submission");
+	expect(encodingPlanSchema.parse(JSON.parse(submission[1].body).plan)).toEqual(
+		encodingPlanSchema.parse({
+			...remotePlan,
+			...(legacy && { name: "Recovered editorial change" }),
+			ingest: remotePlan.ingest.map((row) => ({
+				...row,
+				inputPath: "copy/replaced.mp4",
+			})),
+		}),
+	);
 });

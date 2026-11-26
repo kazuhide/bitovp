@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HEARTBEAT_SWEEP_JOB } from "../handlers";
 import {
 	deadJobScheduleWrites,
-	isFinalManualStopFailure,
+	isFinalStopFailure,
 	recordDeadFeederJob,
 	recordDeadJobScheduleOutcomes,
-	recordFinalManualStopFailure,
+	recordFinalProvisionFailure,
+	recordFinalStopFailure,
 	releaseDeadStageClaim,
 } from "./dead-job-outcome";
+import { createExhaustedProvisionRecovery } from "./exhausted-provisions";
 
 /**
  *  / review-350 HIGH-1 — the dead-job verdicts, at last reachable.
@@ -26,6 +28,7 @@ const SCHEDULE = "33333333-3333-4333-8333-333333333333";
 const SESSION = "00000000-0000-4000-8000-0000000000f1";
 const RUN = "11111111-1111-4111-8111-111111111111";
 
+const SCHEDULE_ID = "00000000-0000-4000-8000-000000000123";
 const MANUAL_STOP_JOB = {
 	name: "live-channel",
 	attemptsMade: 5,
@@ -43,27 +46,158 @@ const MANUAL_STOP_JOB = {
 	},
 } as const;
 
+describe("scheduled START final-delivery recovery", () => {
+	const at = new Date("2026-11-26T12:00:00Z");
+	const job = {
+		id: `sched-${SCHEDULE_ID}`,
+		data: { liveChannelId: CHANNEL, action: "provision" },
+		attemptsMade: 5,
+		opts: { attempts: 5 },
+		timestamp: at.getTime(),
+	};
+
+	function failedProjection(receiptCount: number, firstHandoff = false) {
+		const updateMany = vi
+			.fn()
+			.mockResolvedValueOnce({ count: firstHandoff ? 1 : 0 })
+			.mockResolvedValueOnce({ count: 0 })
+			.mockResolvedValueOnce({ count: receiptCount });
+		const transaction = vi.fn(async () => {
+			throw new Error("retirement rolled back");
+		});
+		const prisma = {
+			liveChannel: {
+				findMany: vi.fn(async () => [
+					{
+						id: CHANNEL,
+						status: "PROVISIONING",
+						liveEffectFenceVersion: 7,
+						runs: [{ id: RUN, status: "PROVISIONING" }],
+					},
+				]),
+			},
+			liveSchedule: {
+				findMany: vi.fn(async () => [
+					{
+						id: SCHEDULE_ID,
+						outcome: "PENDING",
+						dispatchJobId: job.id,
+						dispatchedAt: firstHandoff ? null : at,
+					},
+				]),
+				findFirst: vi.fn(async () => ({
+					liveChannelRunId: RUN,
+					startAdmissionFenceVersion: 7,
+					liveChannel: {
+						origin: "MANAGED",
+						liveEffectFenceVersion: 7,
+						legacyAdmissionFenceVersion: 7,
+						runs: [{ id: RUN, legacyProvisionAdmissionAt: at }],
+					},
+				})),
+				updateMany,
+			},
+			$transaction: transaction,
+		} as unknown as AppPrismaClient;
+		return { prisma, updateMany, transaction };
+	}
+
+	const fired = {
+		kind: "SCHEDULE_FIRED",
+		scheduleId: SCHEDULE_ID,
+		liveChannelId: CHANNEL,
+		path: `/live/${CHANNEL}`,
+	};
+
+	it("notifies before retirement when the final failed callback saves the first START receipt", async () => {
+		const { prisma, updateMany, transaction } = failedProjection(0, true);
+		const emit = vi.fn().mockRejectedValue(new Error("notify unavailable"));
+		await expect(
+			recordFinalProvisionFailure(prisma, job, "queue worker lost", at, emit),
+		).rejects.toThrow("retirement rolled back");
+		expect(updateMany).toHaveBeenCalledOnce();
+		expect(emit).toHaveBeenCalledExactlyOnceWith(fired);
+		const emission = emit.mock.invocationCallOrder[0] ?? 0;
+		expect(updateMany.mock.invocationCallOrder[0]).toBeLessThan(emission);
+		expect(emission).toBeLessThan(transaction.mock.invocationCallOrder[0] ?? 0);
+	});
+
+	it("saves an exact migrated legacy failure before a rollback can lose retirement", async () => {
+		const { prisma, updateMany, transaction } = failedProjection(1);
+		const emit = vi.fn(async () => {});
+		await expect(
+			recordFinalProvisionFailure(prisma, job, "queue worker lost", at, emit),
+		).rejects.toThrow("retirement rolled back");
+		expect(updateMany).toHaveBeenLastCalledWith({
+			where: expect.objectContaining({
+				id: SCHEDULE_ID,
+				liveChannelRunId: RUN,
+				startAdmissionFenceVersion: 7,
+				dispatchJobId: job.id,
+			}),
+			data: expect.objectContaining({ outcome: "UNKNOWN" }),
+		});
+		expect(updateMany.mock.invocationCallOrder[2]).toBeLessThan(
+			transaction.mock.invocationCallOrder[0] ?? 0,
+		);
+		expect(emit).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		true,
+		false,
+	])("notifies a recovered failed START before retirement only for its first receipt (first=%s)", async (firstHandoff) => {
+		const { prisma, transaction } = failedProjection(1, firstHandoff);
+		const emit = vi.fn(async () => {});
+		const add = vi.fn(async () => {});
+		const recover = createExhaustedProvisionRecovery(
+			prisma,
+			async (id) =>
+				id === job.id ? { ...job, getState: async () => "failed" } : undefined,
+			add,
+			emit,
+		);
+		await expect(recover(at)).rejects.toThrow("retirement rolled back");
+		expect(add).not.toHaveBeenCalled();
+		if (firstHandoff) {
+			expect(emit).toHaveBeenCalledExactlyOnceWith(fired);
+			expect(emit.mock.invocationCallOrder[0]).toBeLessThan(
+				transaction.mock.invocationCallOrder[0] ?? 0,
+			);
+		} else expect(emit).not.toHaveBeenCalled();
+	});
+
+	it("does not retire a START replaced by a different queue receipt", async () => {
+		const { prisma, updateMany, transaction } = failedProjection(0);
+		await expect(
+			recordFinalProvisionFailure(prisma, job, "queue worker lost", at),
+		).resolves.toBe(false);
+		expect(updateMany).toHaveBeenCalledTimes(3);
+		expect(transaction).not.toHaveBeenCalled();
+	});
+});
+
 describe("manual STOP final-delivery projection", () => {
 	it("projects only the final failed attempt", () => {
+		expect(isFinalStopFailure({ ...MANUAL_STOP_JOB, attemptsMade: 4 })).toBe(
+			false,
+		);
+		expect(isFinalStopFailure(MANUAL_STOP_JOB)).toBe(true);
 		expect(
-			isFinalManualStopFailure({ ...MANUAL_STOP_JOB, attemptsMade: 4 }),
-		).toBe(false);
-		expect(isFinalManualStopFailure(MANUAL_STOP_JOB)).toBe(true);
-		expect(
-			isFinalManualStopFailure({
+			isFinalStopFailure({
 				...MANUAL_STOP_JOB,
 				attemptsMade: 1,
 				finishedOn: Date.parse("2026-08-31T12:00:00.000Z"),
 			}),
 		).toBe(true);
 		expect(
-			isFinalManualStopFailure({
+			isFinalStopFailure({
 				...MANUAL_STOP_JOB,
 				attemptsMade: 1,
 			}),
 		).toBe(false);
 		expect(
-			isFinalManualStopFailure({
+			isFinalStopFailure({
 				...MANUAL_STOP_JOB,
 				data: { ...MANUAL_STOP_JOB.data, action: "restart" },
 			}),
@@ -89,6 +223,8 @@ describe("manual STOP final-delivery projection", () => {
 		};
 		const run = {
 			id: over.runId ?? RUN,
+			status: "STOPPING",
+			endedAt: null,
 			bitmovinEncodingId: over.providerEncodingId ?? "encoding-1",
 		};
 		const claim = over.claim
@@ -102,25 +238,30 @@ describe("manual STOP final-delivery projection", () => {
 			: null;
 		const updateMany = vi.fn(async () => ({ count: 1 }));
 		const tx = {
+			$queryRaw: vi.fn(async () => []),
 			liveChannel: {
 				findUnique: vi.fn(async () => channel),
 				updateMany,
 			},
-			liveChannelRun: { findFirst: vi.fn(async () => run) },
+			liveChannelRun: {
+				findFirst: vi.fn(async () => run),
+				updateMany: vi.fn(async () => ({ count: 1 })),
+			},
 			liveEffectClaim: { findUnique: vi.fn(async () => claim) },
+			liveSchedule: { findUnique: vi.fn(async () => null) },
 		};
 		const prisma = {
 			...tx,
 			$transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
 		} as unknown as AppPrismaClient;
-		return { prisma, updateMany };
+		return { prisma, updateMany, updateRun: tx.liveChannelRun.updateMany };
 	}
 
 	it("makes a never-claimed exhausted stop visibly retryable under its exact run/fence", async () => {
 		const t = projectionStore();
 		const emitEvent = vi.fn(async () => undefined);
 		await expect(
-			recordFinalManualStopFailure(
+			recordFinalStopFailure(
 				t.prisma,
 				MANUAL_STOP_JOB,
 				"database down",
@@ -131,6 +272,7 @@ describe("manual STOP final-delivery projection", () => {
 			where: {
 				id: CHANNEL,
 				status: { in: ["RUNNING", "STOPPING"] },
+				bitmovinEncodingId: "encoding-1",
 				liveEffectFenceVersion: 7,
 			},
 			data: {
@@ -147,13 +289,45 @@ describe("manual STOP final-delivery projection", () => {
 		});
 	});
 
+	it("retires the exact airing together with its channel when scheduled STOP exhausts before claiming", async () => {
+		const t = projectionStore();
+		const intent = {
+			...MANUAL_STOP_JOB.data.effect,
+			scheduleId: SCHEDULE,
+			idempotencyKey: `schedule:${SCHEDULE}:stop`,
+		};
+		expect(
+			await recordFinalStopFailure(
+				t.prisma,
+				{
+					...MANUAL_STOP_JOB,
+					data: { ...MANUAL_STOP_JOB.data, effect: intent },
+				},
+				"lost worker",
+			),
+		).toBe(true);
+		expect(t.updateRun).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					id: RUN,
+					liveChannelId: CHANNEL,
+					bitmovinEncodingId: "encoding-1",
+				}),
+				data: expect.objectContaining({
+					status: "ERROR",
+					endedAt: expect.any(Date),
+				}),
+			}),
+		);
+	});
+
 	it("projects a conclusively FAILED pre-send claim at its claimed generation", async () => {
 		const t = projectionStore({
 			channelFence: 8,
 			claim: { state: "FAILED", generation: 8 },
 		});
 		await expect(
-			recordFinalManualStopFailure(t.prisma, MANUAL_STOP_JOB, "pre-send"),
+			recordFinalStopFailure(t.prisma, MANUAL_STOP_JOB, "pre-send"),
 		).resolves.toBe(true);
 		expect(t.updateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -172,7 +346,7 @@ describe("manual STOP final-delivery projection", () => {
 		]) {
 			const t = projectionStore(over);
 			await expect(
-				recordFinalManualStopFailure(t.prisma, MANUAL_STOP_JOB, "boom"),
+				recordFinalStopFailure(t.prisma, MANUAL_STOP_JOB, "boom"),
 			).resolves.toBe(false);
 			expect(t.updateMany).not.toHaveBeenCalled();
 		}
@@ -180,19 +354,70 @@ describe("manual STOP final-delivery projection", () => {
 });
 
 describe("deadJobScheduleWrites (ledger #238)", () => {
-	it("a dead provision closes the channel's FIRED START row as UNKNOWN", () => {
+	it("a terminal provision closes only its recorded schedule row as UNKNOWN", () => {
 		expect(
 			deadJobScheduleWrites(
-				{ name: "live-channel", data: { liveChannelId: CHANNEL } },
+				{
+					id: `sched-${SCHEDULE}-start-9`,
+					attemptsMade: 1,
+					name: "live-channel",
+					data: {
+						liveChannelId: CHANNEL,
+						plannedLiveChannelRunId: RUN,
+						provisionFenceVersion: 9,
+					},
+				},
 				"lock lost",
 			),
 		).toEqual([
 			{
-				target: { channelStart: CHANNEL },
+				target: {
+					requireDispatchReceipt: true,
+					scheduledStart: {
+						id: SCHEDULE,
+						liveChannelId: CHANNEL,
+						dispatchJobId: `sched-${SCHEDULE}-start-9`,
+						liveChannelRunId: RUN,
+						startAdmissionFenceVersion: 9,
+					},
+				},
 				outcome: "UNKNOWN",
 				note: expect.stringContaining("lock lost"),
 			},
 		]);
+	});
+
+	it("refuses a START failure whose queue generation or planned run is missing or mismatched", () => {
+		const data = {
+			liveChannelId: CHANNEL,
+			action: "provision",
+			plannedLiveChannelRunId: RUN,
+			provisionFenceVersion: 9,
+		};
+		const valid = {
+			id: `sched-${SCHEDULE}-start-9`,
+			attemptsMade: 2,
+			opts: { attempts: 2 },
+			data,
+		};
+		expect(
+			deadJobScheduleWrites(
+				{ ...valid, data: { ...data, provisionFenceVersion: 8 } },
+				"old delivery",
+			),
+		).toEqual([]);
+		expect(
+			deadJobScheduleWrites(
+				{ ...valid, data: { ...data, provisionFenceVersion: undefined } },
+				"missing generation",
+			),
+		).toEqual([]);
+		expect(
+			deadJobScheduleWrites(
+				{ ...valid, data: { ...data, plannedLiveChannelRunId: undefined } },
+				"missing run",
+			),
+		).toEqual([]);
 	});
 
 	it("an ABSENT action is a provision — the job schema's own default", () => {
@@ -203,29 +428,96 @@ describe("deadJobScheduleWrites (ledger #238)", () => {
 			{ data: { liveChannelId: CHANNEL } },
 			"boom",
 		);
-		expect(write?.target).toEqual({ channelStart: CHANNEL });
+		expect(write).toBeUndefined();
+		expect(
+			deadJobScheduleWrites(
+				{
+					id: `sched-${SCHEDULE}`,
+					attemptsMade: 1,
+					opts: { attempts: 3 },
+					data: { liveChannelId: CHANNEL },
+				},
+				"retry",
+			),
+		).toEqual([]);
 	});
 
-	it("a dead stop closes the channel's FIRED STOP row as UNKNOWN — not FAILED", () => {
-		/**
-		 * The HIGH-1 defect in one arm: this branch used to write nothing, so
-		 * the row read "Fired — outcome not confirmed yet" beside a channel the
-		 * same handler had just marked ERROR, and was then resolved by an
-		 * unrelated later stop. UNKNOWN and not FAILED because a dead job is
-		 * evidence about the job, never about the encoder.
-		 */
+	it("a legacy START failure only targets an unbound schedule generation", () => {
+		const job = {
+			id: `sched-${SCHEDULE_ID}`,
+			data: {
+				liveChannelId: CHANNEL,
+				action: "provision",
+				plannedLiveChannelRunId: RUN,
+			},
+			attemptsMade: 2,
+			opts: { attempts: 2 },
+		};
+		expect(deadJobScheduleWrites(job, "exhausted")).toMatchObject([
+			{
+				target: {
+					scheduledStart: {
+						id: SCHEDULE_ID,
+						liveChannelId: CHANNEL,
+						liveChannelRunId: RUN,
+						startAdmissionFenceVersion: null,
+					},
+				},
+				outcome: "UNKNOWN",
+			},
+		]);
+	});
+
+	it("a bare legacy failure event cannot identify a current STOP by its reused queue key", () => {
+		expect(
+			deadJobScheduleWrites(
+				{
+					id: `sched-${SCHEDULE_ID}`,
+					data: { liveChannelId: CHANNEL, action: "stop" },
+				},
+				"stalled twice",
+			),
+		).toEqual([]);
+	});
+
+	it("closes only the failed scheduled STOP's own airing after attempts are exhausted", () => {
+		const job = {
+			...MANUAL_STOP_JOB,
+			data: {
+				...MANUAL_STOP_JOB.data,
+				effect: {
+					...MANUAL_STOP_JOB.data.effect,
+					scheduleId: SCHEDULE_ID,
+					idempotencyKey: `schedule:${SCHEDULE_ID}:stop`,
+				},
+			},
+		};
+		expect(
+			deadJobScheduleWrites({ ...job, attemptsMade: 1 }, "retrying"),
+		).toEqual([]);
+		expect(deadJobScheduleWrites(job, "exhausted")).toEqual([
+			{
+				target: {
+					scheduledStop: {
+						id: SCHEDULE_ID,
+						liveChannelId: CHANNEL,
+						liveChannelRunId: RUN,
+						admission: {
+							providerEncodingId: job.data.effect.providerEncodingId,
+							admissionFenceVersion: job.data.effect.admissionFenceVersion,
+						},
+					},
+				},
+				outcome: "UNKNOWN",
+				note: expect.stringContaining("exhausted"),
+			},
+		]);
 		expect(
 			deadJobScheduleWrites(
 				{ data: { liveChannelId: CHANNEL, action: "stop" } },
-				"stalled twice",
+				"unknown legacy job",
 			),
-		).toEqual([
-			{
-				target: { channelStop: CHANNEL },
-				outcome: "UNKNOWN",
-				note: expect.stringContaining("stalled twice"),
-			},
-		]);
+		).toEqual([]);
 	});
 
 	it("a durable manual stop never owns or mutates a scheduled STOP outcome", async () => {
@@ -347,19 +639,32 @@ describe("recordDeadJobScheduleOutcomes", () => {
 		const at = new Date("2026-08-29T12:00:00.000Z");
 		await recordDeadJobScheduleOutcomes(
 			prisma,
-			{ data: { liveChannelId: CHANNEL, action: "stop" } },
+			{
+				id: `sched-${SCHEDULE_ID}`,
+				data: {
+					...MANUAL_STOP_JOB.data,
+					effect: {
+						...MANUAL_STOP_JOB.data.effect,
+						scheduleId: SCHEDULE_ID,
+						idempotencyKey: `schedule:${SCHEDULE_ID}:stop`,
+					},
+				},
+			},
 			"connection to postgresql://u:hunter2@db/x failed",
 			at,
 		);
 		expect(updateMany).toHaveBeenCalledWith({
-			where: {
+			where: expect.objectContaining({
+				id: SCHEDULE_ID,
 				liveChannelId: CHANNEL,
+				liveChannelRunId: RUN,
 				action: "STOP",
 				status: "FIRED",
+				stopDeliveryToken: null,
 				// UNKNOWN may only replace PENDING — it never downgrades an
 				// answer the processor already recorded.
 				outcome: { in: ["PENDING"] },
-			},
+			}),
 			data: {
 				outcome: "UNKNOWN",
 				outcomeAt: at,
@@ -379,6 +684,45 @@ describe("recordDeadJobScheduleOutcomes", () => {
 		expect(written).not.toContain("hunter2");
 	});
 
+	it("projects retained provider failure text before persisting a scheduled START outcome", async () => {
+		const updateMany = vi.fn(async (_args: unknown) => ({ count: 1 }));
+		const prisma = {
+			liveSchedule: { updateMany },
+		} as unknown as AppPrismaClient;
+		await recordDeadJobScheduleOutcomes(
+			prisma,
+			{
+				id: `sched-${SCHEDULE_ID}-start-2`,
+				attemptsMade: 2,
+				opts: { attempts: 2 },
+				data: {
+					liveChannelId: CHANNEL,
+					action: "provision",
+					plannedLiveChannelRunId: RUN,
+					provisionFenceVersion: 2,
+				},
+			},
+			"Unable to read media.mxf?token=PRIVATE_FIXTURE",
+			new Date(),
+		);
+		expect(updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					id: SCHEDULE_ID,
+					liveChannelRunId: RUN,
+					startAdmissionFenceVersion: 2,
+					dispatchJobId: `sched-${SCHEDULE_ID}-start-2`,
+					dispatchedAt: { not: null },
+				}),
+				data: expect.objectContaining({
+					outcomeNote: expect.stringContaining("[withheld]"),
+				}),
+			}),
+		);
+		expect(JSON.stringify(updateMany.mock.calls)).not.toContain(
+			"PRIVATE_FIXTURE",
+		);
+	});
 	it("writes nothing at all for a job that closes no row", async () => {
 		const updateMany = vi.fn(async () => ({ count: 1 }));
 		const prisma = {
@@ -476,12 +820,17 @@ describe("recordDeadFeederJob", () => {
 			count?: number;
 			/** : the ownership lease this session carries. */
 			ownerLeaseAt?: Date | null;
+			playbackMode?: "ONCE" | "LOOP";
+			status?: "CREATED" | "PUSHING";
 		} = {},
 	) {
 		const findUnique = vi.fn(async () => ({
 			pid: over.pid === undefined ? 4242 : over.pid,
 			liveChannelId: CHANNEL,
 			ownerLeaseAt: over.ownerLeaseAt ?? null,
+			ownerGeneration: 7,
+			playbackMode: over.playbackMode ?? "LOOP",
+			status: over.status ?? "PUSHING",
 		}));
 		const updateMany = vi.fn(async () => ({ count: over.count ?? 1 }));
 		const scheduleUpdateMany = vi.fn(async () => ({ count: 1 }));
@@ -514,7 +863,9 @@ describe("recordDeadFeederJob", () => {
 		expect(t.updateMany).toHaveBeenCalledWith({
 			where: {
 				id: SESSION,
-				status: { in: ["CREATED", "DOWNLOADING", "PUSHING"] },
+				status: "PUSHING",
+				ownerLeaseAt: null,
+				ownerGeneration: 7,
 			},
 			data: {
 				status: "ERROR",
@@ -585,6 +936,18 @@ describe("recordDeadFeederJob", () => {
 		expect(t.findUnique).not.toHaveBeenCalled();
 		expect(t.updateMany).not.toHaveBeenCalled();
 		expect(t.emitEvent).not.toHaveBeenCalled();
+	});
+
+	it("preserves an unclaimed single-pass start for same-key queue retry", async () => {
+		const t = setup({ playbackMode: "ONCE", status: "CREATED", pid: null });
+		await recordDeadFeederJob(
+			t.deps,
+			startJob,
+			"Redis delivery lost before claim",
+		);
+		expect(t.updateMany).not.toHaveBeenCalled();
+		expect(t.emitEvent).not.toHaveBeenCalled();
+		expect(t.scheduleUpdateMany).not.toHaveBeenCalled();
 	});
 
 	/**

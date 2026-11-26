@@ -157,10 +157,10 @@ export function audioCopyLabel(
 	audio: {
 		codec?: string;
 		bitrate: number;
-		rate: number;
+		rate?: number;
 		extras?: { name?: string; key?: string };
 	},
 	index: number,
 ): string {
-	return `${index + 1}. ${audio.extras?.name ? `${audio.extras.name} · ` : ""}${audio.codec ?? "AAC"} · ${Math.round(audio.bitrate / 1000)}k · ${audio.rate / 1000}kHz`;
+	return `${index + 1}. ${audio.extras?.name ? `${audio.extras.name} · ` : ""}${audio.codec ?? "AAC"} · ${Math.round(audio.bitrate / 1000)}k${audio.rate ? ` · ${audio.rate / 1000}kHz` : ""}`;
 }

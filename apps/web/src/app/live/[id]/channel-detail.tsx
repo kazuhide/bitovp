@@ -475,7 +475,9 @@ function ChannelConsole({
 						cancelRequested={run?.cancelRequested}
 						managedAisa={aisaRow}
 						providerTerminal={providerTerminal}
+						archivedStopRevision={row.archivedStopRevision}
 						canRetryAisaFinalization={row.canRetryAisaFinalization}
+						canResumeAisaStop={row.canResumeAisaStop}
 						hasError={row.error != null}
 					>
 						<DuplicateChannelButton channelId={id} />

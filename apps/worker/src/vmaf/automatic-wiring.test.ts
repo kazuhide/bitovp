@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { compileFunction } from "node:vm";
-import { vmafJobSchema } from "@bitovp/core";
+import { loadEnv, QUEUE_NAMES, vmafJobSchema } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { DelayedError, type Job } from "bullmq";
 import ts from "typescript";
@@ -13,32 +13,42 @@ import {
 	createLocalExecutionGate,
 } from "./execution-dispatch";
 import { queueExcessVmafJobs } from "./job-capacity";
+import {
+	guardVmafQueueOwnership,
+	startStandardVmafConsumer,
+	waitForVmafBrokerClose,
+} from "./queue-ownership";
+import { primaryWorkerQueues } from "./worker-role";
+import { createVmafWorkerServices } from "./worker-services";
 
 // Execute the actual bootstrap declarations without importing index.ts, which
 // would connect services and start every worker. Dependencies stay explicit.
-const text = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
+const text = ["../index.ts", "./worker-services.ts"]
+	.map((file) => readFileSync(new URL(file, import.meta.url), "utf8"))
+	.join("\n");
 const source = ts.createSourceFile(
 	"index.ts",
 	text,
 	ts.ScriptTarget.Latest,
 	true,
 );
-function declaration(name: string) {
-	const matches: ts.VariableStatement[] = [];
+function declaration(name: string, file = source) {
+	const matches: ts.Statement[] = [];
 	function visit(node: ts.Node) {
 		if (
-			ts.isVariableStatement(node) &&
-			node.declarationList.declarations.some(
-				(item) => ts.isIdentifier(item.name) && item.name.text === name,
-			)
+			(ts.isVariableStatement(node) &&
+				node.declarationList.declarations.some(
+					(item) => ts.isIdentifier(item.name) && item.name.text === name,
+				)) ||
+			(ts.isFunctionDeclaration(node) && node.name?.text === name)
 		)
 			matches.push(node);
 		ts.forEachChild(node, visit);
 	}
-	visit(source);
+	visit(file);
 	if (matches.length !== 1)
 		throw new Error(`Expected one bootstrap declaration for ${name}`);
-	return matches[0]?.getText(source) ?? "";
+	return matches[0]?.getText(file) ?? "";
 }
 function evaluate(code: string, scope: Record<string, unknown>) {
 	const javascript = ts.transpileModule(code, {
@@ -57,7 +67,7 @@ function load(
 	scope: Record<string, unknown>,
 ): Record<string, unknown> {
 	return evaluate(
-		`${names.map(declaration).join("\n")}\nreturn {${names.join(",")}};`,
+		`${names.map((name) => declaration(name)).join("\n")}\nreturn {${names.join(",")}};`,
 		scope,
 	);
 }
@@ -66,7 +76,7 @@ async function loadAsync(
 	scope: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
 	return evaluate(
-		`return (async () => {${names.map(declaration).join("\n")}\nreturn {${names.join(",")}};})();`,
+		`return (async () => {${names.map((name) => declaration(name)).join("\n")}\nreturn {${names.join(",")}};})();`,
 		scope,
 	);
 }
@@ -78,14 +88,15 @@ function barrier() {
 	return { wait, release };
 }
 
-it("awaits compatibility on native Linux and preserves an omitted GPU index", async () => {
-	for (const [platform, nativePath, rawDevice] of [
+it("awaits compatibility on native Linux and skips it when only producing QC jobs", async () => {
+	for (const [platform, nativePath, rawDevice, mode = "worker"] of [
 		["linux", "/native", undefined],
 		["linux", "/native", " "],
 		["linux", "/native", "2"],
 		["linux", "/native", "0"],
 		["darwin", "/native", undefined],
 		["linux", undefined, undefined],
+		["linux", "/native", "0", "producer"],
 	] as const) {
 		const runtime = {
 				runner: {},
@@ -99,6 +110,7 @@ it("awaits compatibility on native Linux and preserves an omitted GPU index", as
 			["automaticVmafSelectionState", "automaticVmafRuntime"],
 			{
 				process: { platform, env: { VMAF_GPU_DEVICE: rawDevice } },
+				mode,
 				env: {
 					VMAF_NATIVE_PATH: nativePath,
 					VMAF_FFMPEG_PATH: "/vmaf-ffmpeg",
@@ -116,7 +128,7 @@ it("awaits compatibility on native Linux and preserves an omitted GPU index", as
 				console: { warn: vi.fn() },
 			},
 		);
-		if (platform !== "linux" || !nativePath) {
+		if (mode === "producer" || platform !== "linux" || !nativePath) {
 			expect(create).not.toHaveBeenCalled();
 			expect(loaded.automaticVmafRuntime).toBeUndefined();
 			continue;
@@ -141,6 +153,24 @@ it("awaits compatibility on native Linux and preserves an omitted GPU index", as
 	}
 });
 
+it("refuses the dedicated process when it cannot activate shared host reservations", async () => {
+	await expect(
+		createVmafWorkerServices({
+			mode: "dedicated",
+			env: loadEnv({ VMAF_QUEUE_OWNER: "dedicated" }),
+			prisma: {} as never,
+			cipher: {} as never,
+			processorDeps: {} as never,
+			emitEvent: undefined,
+			orchestratorProducerQueue: undefined,
+			vmafRunner: {} as never,
+			wakePublisher: {} as never,
+			vmafWorkDir: "/scratch",
+			feederSpoolDir: "/spool",
+		}),
+	).rejects.toThrow("VMAF_DEDICATED_SHARED_RUNTIME_REQUIRED");
+});
+
 it("retains the legacy gate when optional compatibility preflight is unavailable", async () => {
 	const hold = barrier();
 	const create = vi.fn(async () => {
@@ -156,6 +186,7 @@ it("retains the legacy gate when optional compatibility preflight is unavailable
 		],
 		{
 			process: { platform: "linux", env: {} },
+			mode: "worker",
 			env: {
 				VMAF_NATIVE_PATH: "/native",
 				FFMPEG_PATH: "/ffmpeg",
@@ -226,6 +257,7 @@ it.each([
 				VMAF_DECODE_BACKEND: "cpu",
 				VMAF_SCORING_BACKEND: "cuda",
 				VMAF_NATIVE_PATH: "/native",
+				VMAF_REUSE_VERIFIED_NATIVE_RESULTS: "1",
 			},
 			vmafWorkDir: "/scratch",
 			feederSpoolDir: "/spool",
@@ -248,6 +280,7 @@ it.each([
 		// An unavailable optional companion never changes the requested scorer.
 		scoringBackend: "cuda",
 		nativePath: "/native",
+		reuseVerifiedNativeResults: true,
 	});
 	expect(live.mock.calls[0]?.[0]).toMatchObject({
 		runner: available ? supervised : raw,
@@ -355,18 +388,38 @@ it("authenticates before classification and keeps local, cloud, and terminal par
 		prisma: prisma as unknown as AppPrismaClient,
 		forEachOrganization: async () => {},
 	});
-	const loaded = load(["classifyVmafJob", "queuedVmafParents", "consume"], {
+	const { admitVmaf } = load(["classifyVmafJob", "admitVmaf"], {
 		prisma,
 		vmafJobSchema,
 		queueExcessVmafJobs,
 		automaticVmafRuntime: {},
 		localVmafResources: { jobCapacity: () => 1 },
 		VMAF_CLOUD_JOB_CONCURRENCY: 2,
+	});
+	const startQueueWorker = vi.fn(
+		(_key: string, _consume: (value: Job) => Promise<unknown>) => ({}),
+	);
+	load(["queuedVmafParents", "standardVmaf"], {
+		vmafRuntime: { admitVmaf },
 		handlers: { vmafRunner: process },
 		consumeTenantJob,
-		key: "vmafRunner",
+		env: { VMAF_QUEUE_OWNER: "worker" },
+		vmafOwnership: {},
+		vmafOwnerConnection: Promise.resolve(),
+		guardVmafQueueOwnership,
+		startQueueWorker,
+		startOwnedVmafReconciliation: () => async () => {},
+		forEachOrganization: vi.fn(),
+		prisma,
+		vmafQueue: {},
+		orchestratorProducerQueue: {},
+		startStandardVmafConsumer: (
+			_registry: unknown,
+			start: (owns: () => Promise<boolean>) => unknown,
+		) => start(async () => true),
 	});
-	const consume = loaded.consume as (value: Job) => Promise<unknown>;
+	const consume = startQueueWorker.mock.calls[0]?.[1];
+	if (!consume) throw new Error("No QC worker started");
 	await expect(consume(job(8))).rejects.toThrow("Tenant resource unavailable");
 	expect(prisma.vmafJob.findUnique).not.toHaveBeenCalled();
 	expect(process).not.toHaveBeenCalled();
@@ -391,6 +444,162 @@ it("authenticates before classification and keeps local, cloud, and terminal par
 		await Promise.all([local, ...clouds]);
 	}
 	await expect(consume(extraLocal)).resolves.toBe("processed");
+});
+
+it.each([
+	"worker",
+	"dedicated",
+] as const)("starts all non-QC handlers immediately and defers standard QC to ownership (%s)", async (mode) => {
+	const connection = barrier();
+	const handlers = Object.fromEntries(
+		Object.keys(QUEUE_NAMES).map((key) => [key, vi.fn()]),
+	);
+	const otherHandlers = Object.entries(handlers).filter(
+		([key]) => key !== "vmafRunner",
+	);
+	const startQueueWorker = vi.fn((_key: string, _handler: unknown) => ({
+		close: async () => {},
+	}));
+	const consumeTenantJob = vi.fn((_key: string, handler: unknown) => handler);
+	const vmafOwnership = {
+		claim: vi.fn(async () => true),
+		owns: vi.fn(async () => true),
+		release: vi.fn(async () => true),
+	};
+	const admitVmaf = vi.fn((handler: unknown) => handler);
+	const stopSweep = vi.fn(async () => {});
+	const startOwnedVmafReconciliation = vi.fn(() => stopSweep);
+	const closeVmafBullWorker = vi.fn(
+		async (
+			_worker: unknown,
+			drain: () => Promise<unknown>,
+			shutdown: { stopSweep(): Promise<unknown> },
+		) => {
+			await Promise.all([drain(), shutdown.stopSweep()]);
+		},
+	);
+	const { standardVmaf } = load(
+		["queuedVmafParents", "workers", "standardVmaf"],
+		{
+			env: { VMAF_QUEUE_OWNER: mode },
+			handlers,
+			vmafRuntime: { admitVmaf },
+			vmafOwnership,
+			vmafOwnerConnection: connection.wait,
+			consumeTenantJob,
+			primaryWorkerQueues,
+			startQueueWorker,
+			startStandardVmafConsumer,
+			guardVmafQueueOwnership,
+			startOwnedVmafReconciliation,
+			closeVmafBullWorker,
+			forEachOrganization: vi.fn(),
+			prisma: {},
+			vmafQueue: {},
+			orchestratorProducerQueue: {},
+		},
+	) as {
+		standardVmaf: ReturnType<typeof startStandardVmafConsumer> | undefined;
+	};
+	try {
+		expect(startQueueWorker.mock.calls).toEqual(otherHandlers);
+		expect(consumeTenantJob.mock.calls).toEqual(otherHandlers);
+		expect(vmafOwnership.claim).not.toHaveBeenCalled();
+		expect(startOwnedVmafReconciliation).not.toHaveBeenCalled();
+		if (mode === "dedicated") {
+			expect(standardVmaf).toBeUndefined();
+			return;
+		}
+		expect(standardVmaf).toBeDefined();
+		connection.release();
+		await vi.waitFor(() =>
+			expect(startQueueWorker).toHaveBeenCalledTimes(otherHandlers.length + 1),
+		);
+		expect(vmafOwnership.claim).toHaveBeenCalledExactlyOnceWith("worker");
+		expect(admitVmaf).toHaveBeenCalledExactlyOnceWith(handlers.vmafRunner);
+		expect(consumeTenantJob).toHaveBeenLastCalledWith(
+			"vmafRunner",
+			handlers.vmafRunner,
+		);
+		expect(startQueueWorker).toHaveBeenLastCalledWith(
+			"vmafRunner",
+			expect.any(Function),
+		);
+		expect(startOwnedVmafReconciliation).toHaveBeenCalledOnce();
+	} finally {
+		connection.release();
+		await standardVmaf?.close();
+	}
+	expect(stopSweep).toHaveBeenCalledOnce();
+});
+
+it.each([
+	{ stalled: false, sweepError: undefined, expected: "closed" },
+	{
+		stalled: true,
+		sweepError: "VMAF_QUEUE_SWEEP_DRAIN_UNCONFIRMED",
+		expected: "VMAF_QUEUE_SWEEP_DRAIN_UNCONFIRMED",
+	},
+	{
+		stalled: true,
+		sweepError: undefined,
+		expected: "VMAF_QUEUE_DATABASE_DISCONNECT_UNCONFIRMED",
+	},
+])("settles the dedicated CLI shutdown after ownership drain (PostgreSQL stalled=$stalled, sweep=$sweepError)", async ({
+	stalled,
+	sweepError,
+	expected,
+}) => {
+	vi.useFakeTimers();
+	const owner = barrier();
+	const database = barrier();
+	const disconnectDatabase = vi.fn(async () => {
+		if (stalled) await database.wait;
+	});
+	const disconnectRedis = vi.fn();
+	const producer = { close: vi.fn(async () => {}) };
+	const dedicated = ts.createSourceFile(
+		"vmaf-only.ts",
+		readFileSync(new URL("../vmaf-only.ts", import.meta.url), "utf8"),
+		ts.ScriptTarget.Latest,
+		true,
+	);
+	const close: () => Promise<void> = evaluate(
+		`${declaration("closing", dedicated)}\n${declaration("close", dedicated)}\nreturn close;`,
+		{
+			registration: {
+				async close() {
+					await owner.wait;
+					if (sweepError) throw new Error(sweepError);
+				},
+			},
+			basePrisma: { $disconnect: disconnectDatabase },
+			redis: { disconnect: disconnectRedis },
+			ownerRedis: { disconnect: disconnectRedis },
+			queue: producer,
+			notifyQueue: producer,
+			orchestratorProducerQueue: producer,
+			waitForVmafBrokerClose,
+		},
+	);
+	const settled = close().then(
+		() => "closed",
+		(error: Error) => error.message,
+	);
+	try {
+		expect(disconnectDatabase).not.toHaveBeenCalled();
+		owner.release();
+		await vi.advanceTimersByTimeAsync(7_000);
+		expect(await Promise.race([settled, Promise.resolve("pending")])).toBe(
+			expected,
+		);
+		expect(disconnectDatabase).toHaveBeenCalledOnce();
+		expect(disconnectRedis).toHaveBeenCalledTimes(2);
+		expect(producer.close).toHaveBeenCalledTimes(3);
+	} finally {
+		database.release();
+		vi.useRealTimers();
+	}
 });
 
 it.each([
@@ -440,6 +649,7 @@ it("retains invalid native preflight separately for AUTO selection", async () =>
 		["automaticVmafSelectionState", "automaticVmafRuntime"],
 		{
 			process: { platform: "linux", env: {} },
+			mode: "worker",
 			env: {
 				VMAF_NATIVE_PATH: "/native",
 				FFMPEG_PATH: "/ffmpeg",

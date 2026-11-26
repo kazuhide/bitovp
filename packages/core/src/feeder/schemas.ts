@@ -15,6 +15,10 @@ import { z } from "zod";
 export const feederProtocolSchema = z.enum(["RTMP", "SRT_CALLER"]);
 export type FeederProtocolId = z.infer<typeof feederProtocolSchema>;
 
+/** ONCE consumes the source once and never retries from the beginning. */
+export const feederPlaybackModeSchema = z.enum(["LOOP", "ONCE"]);
+export type FeederPlaybackMode = z.infer<typeof feederPlaybackModeSchema>;
+
 export const feederSourceSchema = z
 	.object({
 		credentialId: z.uuid(),
@@ -61,28 +65,38 @@ export type FeederSrtTarget = z.infer<typeof feederSrtTargetSchema>;
  */
 const switchFromActiveField = {
 	switchFromActive: z.boolean().optional(),
+	playbackMode: feederPlaybackModeSchema.default("LOOP"),
 };
 
-export const createFeederSessionSchema = z.discriminatedUnion("protocol", [
-	z
-		.object({
-			liveChannelId: z.uuid(),
-			source: feederSourceSchema,
-			protocol: z.literal("RTMP"),
-			target: feederRtmpTargetSchema,
-			...switchFromActiveField,
-		})
-		.strict(),
-	z
-		.object({
-			liveChannelId: z.uuid(),
-			source: feederSourceSchema,
-			protocol: z.literal("SRT_CALLER"),
-			target: feederSrtTargetSchema,
-			...switchFromActiveField,
-		})
-		.strict(),
-]);
+export const createFeederSessionSchema = z
+	.discriminatedUnion("protocol", [
+		z
+			.object({
+				liveChannelId: z.uuid(),
+				source: feederSourceSchema,
+				protocol: z.literal("RTMP"),
+				target: feederRtmpTargetSchema,
+				...switchFromActiveField,
+			})
+			.strict(),
+		z
+			.object({
+				liveChannelId: z.uuid(),
+				source: feederSourceSchema,
+				protocol: z.literal("SRT_CALLER"),
+				target: feederSrtTargetSchema,
+				...switchFromActiveField,
+			})
+			.strict(),
+	])
+	.refine(
+		(request) => request.playbackMode !== "ONCE" || !request.switchFromActive,
+		{
+			message:
+				"Single-pass playback is available only for an immediate input, not a staged switch",
+			path: ["switchFromActive"],
+		},
+	);
 export type CreateFeederSessionRequest = z.infer<
 	typeof createFeederSessionSchema
 >;

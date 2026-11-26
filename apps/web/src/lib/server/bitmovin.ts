@@ -6,6 +6,7 @@ import "server-only";
 // the SDK returned `r.call is not a function`. Do not copy this bare default import
 // into tsx-executed code.
 import BitmovinApi from "@bitmovin/api-sdk";
+import { publicStorageDiagnostic } from "@bitovp/core";
 import type { NextResponse } from "next/server";
 import { writeAuditLog } from "./audit";
 import type { ServerContext } from "./context";
@@ -54,7 +55,7 @@ export async function bitmovinClientForAccount(
 export function bitmovinErrorMessage(err: unknown): string {
 	const e = err as { httpStatusCode?: number; shortMessage?: string };
 	if (typeof e.shortMessage === "string" && e.shortMessage.length > 0) {
-		return `Bitmovin: ${e.shortMessage.slice(0, 300)}`;
+		return `Bitmovin: ${publicStorageDiagnostic(e.shortMessage).slice(0, 300)}`;
 	}
 	return typeof e.httpStatusCode === "number"
 		? `Bitmovin API error (${e.httpStatusCode})`

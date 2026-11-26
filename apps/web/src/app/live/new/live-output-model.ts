@@ -34,6 +34,7 @@ export function liveOutputOptionLabel(
 export function liveOutputReferenced(state: LiveWizardState, key: string) {
 	return (
 		state.archive?.muxing.destination.outputKey === key ||
+		state.dvbSubtitles?.some((track) => track.destination?.outputKey === key) ||
 		[
 			state.manifests.hls,
 			state.manifests.dash,

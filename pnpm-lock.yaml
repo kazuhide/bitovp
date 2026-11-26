@@ -130,8 +130,8 @@ importers:
   apps/web:
     dependencies:
       '@bitmovin/api-sdk':
-        specifier: 1.288.0
-        version: 1.288.0
+        specifier: 1.289.0
+        version: 1.289.0
       '@bitovp/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -266,8 +266,8 @@ importers:
         specifier: ^12.33.0
         version: 12.33.0
       '@bitmovin/api-sdk':
-        specifier: 1.288.0
-        version: 1.288.0
+        specifier: 1.289.0
+        version: 1.289.0
       '@bitovp/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -732,8 +732,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@bitmovin/api-sdk@1.288.0':
-    resolution: {integrity: sha512-4PcR193ZNBFM05mCp+JMPNl+jO/OLagRrpmtDCyFAfhAa3A2tgXDc1zG8SnaoD/eRAtwGmqPX3YeS0SQIfyNRA==}
+  '@bitmovin/api-sdk@1.289.0':
+    resolution: {integrity: sha512-szNhJBM4HWKFdmHHb2Ptd+vzUqjl8XEhXPMUmvGJMYgN19mYkZNkL2AMTFf5ZqVVDBaN+0q0hMmrkP+kN/+XOg==}
 
   '@bramus/specificity@2.4.2':
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
@@ -4501,7 +4501,7 @@ snapshots:
   '@biomejs/cli-win32-x64@2.4.16':
     optional: true
 
-  '@bitmovin/api-sdk@1.288.0':
+  '@bitmovin/api-sdk@1.289.0':
     dependencies:
       url-join: 4.0.1
 

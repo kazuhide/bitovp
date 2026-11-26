@@ -2,6 +2,8 @@ import { QUEUE_NAMES } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
 import { autoTriggerKey } from "@bitovp/db";
 import type { Queue } from "bullmq";
+import { createSweepLoop } from "../lifecycle";
+import { tenantService } from "../tenant/scope";
 import { qcContinuationJobId } from "./processor";
 
 const VMAF_QUEUE_NAME = QUEUE_NAMES.vmafRunner;
@@ -63,6 +65,37 @@ const DEAD_STATES = new Set(["completed", "failed", "unknown"]);
 
 type OrchestratorQueueLike = Pick<Queue, "add" | "getJob">;
 const CONTINUATION_SCAN_LIMIT = 500;
+
+/** A producer cannot use its configured Redis absence as proof that an
+ * owner's measurements stopped. Reconcile only on the admitted consumer. */
+export function startOwnedVmafReconciliation(
+	owns: () => Promise<boolean>,
+	forEachOrganization: (run: () => Promise<void>) => Promise<void>,
+	deps: Parameters<typeof createStrandedVmafReconciler>[0],
+) {
+	const reconcile = tenantService(() => createStrandedVmafReconciler(deps));
+	const loop = createSweepLoop(
+		async () => {
+			if (!(await owns())) return;
+			await forEachOrganization(async () => {
+				const retired = await reconcile();
+				if (retired > 0)
+					console.warn(`[vmaf] retired ${retired} stranded RUNNING report(s)`);
+			});
+		},
+		() =>
+			console.error(
+				"[vmaf] stranded-report reconcile failed; next tick retries",
+			),
+	);
+	const timer = setInterval(() => loop.run(), 60_000).unref();
+	loop.run();
+	return () => {
+		clearInterval(timer);
+		loop.stop();
+		return loop.drain();
+	};
+}
 
 export function createStrandedVmafReconciler(deps: {
 	prisma: AppPrismaClient;

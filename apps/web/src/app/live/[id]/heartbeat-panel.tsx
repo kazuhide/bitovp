@@ -2,6 +2,7 @@
 
 import { heartbeatSampleFresh } from "@bitovp/core";
 import { Badge } from "@/components/ui/badge";
+import { HelpOverlay } from "@/components/ui/help-overlay";
 import { formatDateTime } from "@/lib/format";
 import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
@@ -102,6 +103,15 @@ export function HeartbeatPanel({
 						when: view.at ? formatDateTime(view.at) : "—",
 					})}
 				</span>
+				{view.streams.length > 0 ? (
+					<HelpOverlay
+						label={t("uiX.moreInformationFor", {
+							label: t("heartbeat.stream"),
+						})}
+					>
+						{t("heartbeat.initialMetadata")}
+					</HelpOverlay>
+				) : null}
 			</div>
 
 			<div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -148,6 +158,15 @@ export function HeartbeatPanel({
 									{t("heartbeat.resolution")}
 								</th>
 								<th className="px-2 py-1.5 font-medium">
+									{t("heartbeat.aspectRatio")}
+								</th>
+								<th className="px-2 py-1.5 font-medium">
+									{t("heartbeat.audioChannels")}
+								</th>
+								<th className="px-2 py-1.5 font-medium">
+									{t("heartbeat.audioChannelFormat")}
+								</th>
+								<th className="px-2 py-1.5 font-medium">
 									{t("heartbeat.rate")}
 								</th>
 								<th className="px-2 py-1.5 font-medium">
@@ -176,6 +195,15 @@ export function HeartbeatPanel({
 									<td className="px-2 py-1.5 text-zinc-300">{stream.codec}</td>
 									<td className="px-2 py-1.5 text-zinc-300">
 										{stream.resolution}
+									</td>
+									<td className="px-2 py-1.5 text-zinc-300">
+										{stream.aspectRatio}
+									</td>
+									<td className="px-2 py-1.5 text-zinc-300">
+										{stream.audioChannels}
+									</td>
+									<td className="px-2 py-1.5 text-zinc-300">
+										{stream.audioChannelFormat}
 									</td>
 									<td className="px-2 py-1.5 text-zinc-300">{stream.rate}</td>
 									<td className="px-2 py-1.5 text-zinc-300">

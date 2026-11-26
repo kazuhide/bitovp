@@ -40,9 +40,11 @@ type Row = {
 	firedAt: Date | null;
 	/** : the airing this row was armed for (null = not yet bound). */
 	liveChannelRunId: string | null;
+	startAdmissionFenceVersion?: number | null;
 	/** : the queue-handoff outbox stamp. */
 	dispatchedAt: Date | null;
 	dispatchJobId: string | null;
+	stopDeliveryToken?: string | null;
 	note: string | null;
 	error: string | null;
 	/**  creation-time slate fields. */
@@ -77,6 +79,12 @@ type SessionRow = {
 	readyAt: Date | null;
 	error: string | null;
 };
+
+function storedStopJobId(row: Row | undefined): string {
+	if (!row?.stopDeliveryToken)
+		throw new Error("Missing stored STOP delivery token");
+	return `sched-${row.id}-stop-${row.stopDeliveryToken}`;
+}
 
 type Channel = {
 	id: string;
@@ -195,6 +203,7 @@ function makeRow(over: Partial<Row> = {}): Row {
 		insertableContentId: null,
 		slateDurationSeconds: null,
 		status: "ARMED",
+		outcome: "PENDING",
 		firedAt: null,
 		liveChannelRunId: null,
 		dispatchedAt: null,
@@ -217,6 +226,11 @@ function makeRow(over: Partial<Row> = {}): Row {
 		...over,
 	};
 }
+
+const START_OUTBOX_ADMISSION = {
+	liveChannelRunId: "11111111-1111-4111-8111-111111111111",
+	startAdmissionFenceVersion: 0,
+};
 
 /**
  * A persisted heartbeat COLUMN value proving the ingest is CONNECTED — the
@@ -389,6 +403,10 @@ function makeStore(
 			heartbeatSummaryAt?: Date | null;
 			bitmovinEncodingId?: string | null;
 			encoderStoppedConfirmedFor?: string | null;
+			stepLog?: unknown;
+			previousProviderEncodingIds?: string[];
+			archivedRtmpAttempt?: number;
+			rtmpRetirementEvidence?: unknown;
 		}>,
 		rows,
 		channels,
@@ -407,7 +425,9 @@ function makeStore(
 			waiters: (() => void)[];
 		},
 		prisma: {
-			/**
+			liveStopNotification: {
+				create: vi.fn(async (_args: unknown) => ({})),
+			} /**
 			 * Interactive-tx fake WITH rollback semantics (review-284 N2): the
 			 * sweep's claimWithRun expects a failed run write to roll the
 			 * channel claim back — a fake that kept the claim would green a
@@ -426,7 +446,7 @@ function makeStore(
 			 * interleaved legitimate write), and the fake never raises P2002
 			 * organically — unique-index refusals are asserted by injection,
 			 * not modelled.
-			 */
+			 */,
 			$transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
 				const snapshot = structuredClone({
 					rows: store.rows,
@@ -436,6 +456,10 @@ function makeStore(
 				inTx = true;
 				const tx = {
 					...store.prisma,
+					$queryRaw: async (sql: TemplateStringsArray, id: string) =>
+						sql[0]?.includes('FROM "LiveEffectClaim" c')
+							? []
+							: store.channels.filter((channel) => channel.id === id),
 					liveSchedule: {
 						...store.prisma.liveSchedule,
 						updateMany: (args: unknown) =>
@@ -460,6 +484,11 @@ function makeStore(
 					},
 					liveChannelRun: {
 						...store.prisma.liveChannelRun,
+						updateMany: (
+							args: Parameters<
+								typeof store.prisma.liveChannelRun.updateMany
+							>[0],
+						) => through(() => store.prisma.liveChannelRun.updateMany(args)),
 						create: (args: unknown) =>
 							through(() =>
 								(
@@ -493,7 +522,14 @@ function makeStore(
 			 * the SESSION the commit gate reads. Only the projection
 			 * the sweep selects, honoured by id.
 			 */
+			liveEffectClaim: {
+				findMany: vi.fn(async () => []),
+				findFirst: vi.fn(
+					async (_args: unknown): Promise<{ id: string } | null> => null,
+				),
+			},
 			feederSession: {
+				findFirst: vi.fn(async () => null),
 				findUnique: vi.fn(async (args: { where: { id: string } }) => {
 					const hit = store.sessions.find((s) => s.id === args.where.id);
 					return hit ? { ...hit } : null;
@@ -506,6 +542,7 @@ function makeStore(
 							fireAt?: { lte?: Date; gt?: Date };
 							firedAt?: { lt: Date };
 							status?: string | { in: string[] };
+							NOT?: { action: string; outcome: { not: string } };
 							dispatchedAt?: null;
 							insertableContentId?: null;
 							contentClaimedAt?: null;
@@ -593,6 +630,10 @@ function makeStore(
 								store.rows.filter(
 									(row) =>
 										row.status === "FIRED" &&
+										!(
+											row.action === args.where.NOT?.action &&
+											(row.outcome ?? "PENDING") !== args.where.NOT.outcome.not
+										) &&
 										row.dispatchedAt === null &&
 										row.firedAt !== null &&
 										(olderThan === undefined ||
@@ -682,6 +723,7 @@ function makeStore(
 							deadlineNotifiedAt?: null;
 							dispatchedAt?: null;
 							liveChannelRunId?: string | null;
+							startAdmissionFenceVersion?: number | null;
 							stagedAt?: null;
 							stageDispatchedAt?: null;
 							outcome?: { in: string[] };
@@ -734,7 +776,9 @@ function makeStore(
 							// write may replace (an absent outcome is PENDING).
 							if (
 								args.where.outcome &&
-								!args.where.outcome.in.includes(row.outcome ?? "PENDING")
+								(typeof args.where.outcome === "string"
+									? args.where.outcome !== (row.outcome ?? "PENDING")
+									: !args.where.outcome.in.includes(row.outcome ?? "PENDING"))
 							) {
 								continue;
 							}
@@ -785,6 +829,12 @@ function makeStore(
 							) {
 								continue;
 							}
+							if (
+								"startAdmissionFenceVersion" in args.where &&
+								(row.startAdmissionFenceVersion ?? null) !==
+									args.where.startAdmissionFenceVersion
+							)
+								continue;
 							Object.assign(row, args.data);
 							count += 1;
 						}
@@ -801,7 +851,7 @@ function makeStore(
 								row.note === args.where.note &&
 								row.fireAt.getTime() === args.where.fireAt.getTime(),
 						);
-						return hit ? { id: hit.id } : null;
+						return hit ? { ...hit } : null;
 					},
 				),
 				create: vi.fn(async (args: { data: Partial<Row> }) => {
@@ -855,14 +905,16 @@ function makeStore(
 				// reconciler behaviour is unit-tested in startup-sample.test.ts.
 				findMany: vi.fn(async () => []),
 				findFirst: vi.fn(
-					async (args?: { where?: { liveChannelId?: string } }) =>
-						[...store.runs]
+					async (args?: { where?: { liveChannelId?: string } }) => {
+						const row = [...store.runs]
 							.reverse()
 							.find(
 								(run) =>
 									run.liveChannelId === undefined ||
 									run.liveChannelId === args?.where?.liveChannelId,
-							) ?? null,
+							);
+						return row ? { stepLog: [], ...row } : null;
+					},
 				),
 				create: vi.fn(async (args: { data: Record<string, unknown> }) => {
 					guardEscape("liveChannelRun.create");
@@ -973,6 +1025,12 @@ function makeStore(
 						.map((channel) => ({
 							id: channel.id,
 							maxRunMinutes: channel.maxRunMinutes,
+							bitmovinEncodingId: channel.bitmovinEncodingId,
+							runs: structuredClone(
+								store.runs
+									.filter((run) => run.liveChannelId === channel.id)
+									.slice(-1),
+							),
 							runningSince: channel.runningSince,
 							liveEffectFenceVersion: channel.liveEffectFenceVersion,
 						})),
@@ -984,6 +1042,9 @@ function makeStore(
 							status?: string | { in: string[] };
 							error?: null;
 							liveEffectFenceVersion?: number;
+							runningSince?: Date;
+							bitmovinEncodingId?: string;
+							maxRunMinutes?: number;
 						};
 						data: Partial<Channel>;
 					}) => {
@@ -993,6 +1054,17 @@ function makeStore(
 							if (channel.id !== args.where.id) {
 								continue;
 							}
+							if (
+								(args.where.runningSince &&
+									args.where.runningSince.getTime() !==
+										channel.runningSince?.getTime()) ||
+								(args.where.bitmovinEncodingId !== undefined &&
+									args.where.bitmovinEncodingId !==
+										channel.bitmovinEncodingId) ||
+								(args.where.maxRunMinutes !== undefined &&
+									args.where.maxRunMinutes !== channel.maxRunMinutes)
+							)
+								continue;
 							if (
 								args.where.liveEffectFenceVersion !== undefined &&
 								channel.liveEffectFenceVersion !==
@@ -1058,6 +1130,7 @@ function makeStore(
 			store.runs.push({
 				id: runId,
 				liveChannelId: running.id,
+				bitmovinEncodingId: running.bitmovinEncodingId,
 				seq: 1,
 				status: "RUNNING",
 				providerStatus: "RUNNING",
@@ -1135,7 +1208,11 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 			recordScheduleOutcome(
 				store.prisma as unknown as AppPrismaClient,
 				{
-					canceledChannelStart: { liveChannelId: CH, liveChannelRunId: run.id },
+					canceledChannelStart: {
+						liveChannelId: CH,
+						liveChannelRunId: run.id,
+						startAdmissionFenceVersion: 1,
+					},
 				},
 				"FAILED",
 				"startup canceled",
@@ -1184,12 +1261,50 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 		});
 		expect(store.rows[0]).toMatchObject({ status: "FIRED" });
 		expect(enqueue).toHaveBeenCalledWith(
-			{ liveChannelId: CH, action: "provision" },
-			`sched-${ROW_ID}`,
+			{
+				liveChannelId: CH,
+				action: "provision",
+				provisionFenceVersion: 1,
+				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
+			},
+			`sched-${ROW_ID}-start-1`,
 		);
 		expect(emitEvent).toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "SCHEDULE_FIRED" }),
 		);
+	});
+
+	it.each([
+		"CREATED",
+		"STOPPED",
+	] as const)("%s START completes the scan while its notification is still pending", async (status) => {
+		const store = makeStore([makeRow()], [makeChannel({ status })]);
+		const { sweep, emitEvent } = makeSweep(store);
+		let notifyStarted!: () => void;
+		let releaseNotify!: () => void;
+		const started = new Promise<void>((resolve) => {
+			notifyStarted = resolve;
+		});
+		const blocked = new Promise<void>((resolve) => {
+			releaseNotify = resolve;
+		});
+		emitEvent.mockImplementation(() => {
+			notifyStarted();
+			return blocked;
+		});
+		const scanning = sweep();
+		try {
+			await started;
+			expect(
+				await Promise.race([
+					scanning.then(({ fired }) => fired),
+					new Promise<null>((resolve) => setImmediate(() => resolve(null))),
+				]),
+			).toBe(1);
+		} finally {
+			releaseNotify();
+			await scanning;
+		}
 	});
 
 	it.each([
@@ -1229,6 +1344,72 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 		);
 	});
 
+	it("keeps an ERROR schedule armed when resuming its existing run would create a second encoder", async () => {
+		const store = makeStore(
+			[makeRow({ action: "START" })],
+			[makeChannel({ status: "ERROR", bitmovinEncodingId: null, stepLog: [] })],
+		);
+		store.runs.push({
+			id: "errored",
+			seq: 1,
+			status: "ERROR",
+			bitmovinEncodingId: null,
+			previousProviderEncodingIds: ["displaced"],
+		});
+		const { sweep, enqueue } = makeSweep(store);
+		await sweep();
+		expect(store.channels[0]?.status).toBe("ERROR");
+		expect(store.runs[0]?.status).toBe("ERROR");
+		expect(store.rows[0]?.status).toBe("ARMED");
+		expect(enqueue).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["START", "STOPPED"],
+		["START", "ERROR"],
+		["STOP", "STOPPED"],
+	] as const)("holds scheduled %s on %s until the archived encoder is confirmed", async (action, status) => {
+		const current = makeChannel({
+			status,
+			error: null,
+			bitmovinEncodingId: "primary",
+		});
+		const accountId = (current.plan as { bitmovin: { accountId: string } })
+			.bitmovin.accountId;
+		const store = makeStore([makeRow({ action })], [current]);
+		const run = {
+			id: "run-1",
+			seq: 1,
+			status,
+			bitmovinEncodingId: "primary",
+			providerStatus: "FINISHED",
+			providerTerminalAt: new Date(),
+			providerStatusObservedAt: new Date(),
+			previousProviderEncodingIds: ["previous"],
+			archivedRtmpAttempt: 1,
+			rtmpRetirementEvidence: [] as unknown[],
+		};
+		store.runs.push(run);
+		const { sweep, enqueue } = makeSweep(store);
+		const stats = await sweep();
+		expect(stats.waiting).toBeGreaterThan(0);
+		expect(store.rows[0]?.status).toBe("ARMED");
+		expect(store.runs).toHaveLength(1);
+		expect(enqueue).not.toHaveBeenCalled();
+		run.rtmpRetirementEvidence = [
+			{
+				accountId,
+				encodingId: "previous",
+				disposition: "TERMINAL",
+				providerStatus: "FINISHED",
+				observedAt: new Date().toISOString(),
+			},
+		];
+		await sweep();
+		expect(store.rows[0]?.status).toBe(
+			action === "START" ? "FIRED" : "COMPLETED",
+		);
+	});
 	it("does NOT re-air a stop that never confirmed — unattended is the dangerous half (ledger #130 C-fold)", async () => {
 		// The channel says STOPPED and carries the evidence that Bitmovin never
 		// confirmed it. Re-airing would clear that error, the encoder pointer
@@ -1367,8 +1548,13 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 		expect(store.runs.length).toBe(2);
 		expect(store.runs[1]).toMatchObject({ seq: 2 });
 		expect(enqueue).toHaveBeenCalledWith(
-			{ liveChannelId: CH, action: "provision" },
-			`sched-${ROW_ID}`,
+			{
+				liveChannelId: CH,
+				action: "provision",
+				provisionFenceVersion: 1,
+				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
+			},
+			`sched-${ROW_ID}-start-1`,
 		);
 		// The restart the vendor cannot do is NEVER enqueued — the inverted
 		// direction of the old pin.
@@ -1406,8 +1592,13 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 			outputPrefix: "live-sweep/runs/2-run2corp",
 		});
 		expect(enqueue).toHaveBeenCalledWith(
-			{ liveChannelId: CH, action: "provision" },
-			`sched-${ROW_ID}`,
+			{
+				liveChannelId: CH,
+				action: "provision",
+				provisionFenceVersion: 1,
+				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
+			},
+			`sched-${ROW_ID}-start-1`,
 		);
 	});
 
@@ -1442,8 +1633,13 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 		// The SAME live row joined — no twin, no revive-update needed.
 		expect(store.runs).toHaveLength(1);
 		expect(enqueue).toHaveBeenCalledWith(
-			{ liveChannelId: CH, action: "provision" },
-			`sched-${ROW_ID}`,
+			{
+				liveChannelId: CH,
+				action: "provision",
+				provisionFenceVersion: 1,
+				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
+			},
+			`sched-${ROW_ID}-start-1`,
 		);
 
 		// The CREATED × live-run cell stays a WAIT — a mid-write world.
@@ -1505,8 +1701,13 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 				bitmovinEncodingId: null,
 			});
 			expect(enqueue).toHaveBeenCalledWith(
-				{ liveChannelId: CH, action: "provision" },
-				`sched-${ROW_ID}`,
+				{
+					liveChannelId: CH,
+					action: "provision",
+					provisionFenceVersion: 1,
+					plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
+				},
+				`sched-${ROW_ID}-start-1`,
 			);
 		}
 	});
@@ -1564,8 +1765,13 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 			"enc-ended",
 		);
 		expect(enqueue).toHaveBeenCalledWith(
-			{ liveChannelId: CH, action: "provision" },
-			`sched-${ROW_ID}`,
+			{
+				liveChannelId: CH,
+				action: "provision",
+				provisionFenceVersion: 1,
+				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
+			},
+			`sched-${ROW_ID}-start-1`,
 		);
 	});
 
@@ -1767,8 +1973,13 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 		expect(reseeded[1]?.status).toBe("PENDING");
 		expect(reseeded[1]?.error).toBeUndefined();
 		expect(enqueue).toHaveBeenCalledWith(
-			{ liveChannelId: CH, action: "provision" },
-			`sched-${ROW_ID}`,
+			{
+				liveChannelId: CH,
+				action: "provision",
+				provisionFenceVersion: 1,
+				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
+			},
+			`sched-${ROW_ID}-start-1`,
 		);
 	});
 
@@ -1811,10 +2022,59 @@ describe("STOP — claims like the route, waits out transitions (review-190 C2)"
 		const stats = await sweep();
 		expect(stats.fired).toBe(1);
 		expect(store.channels[0]).toMatchObject({ status: "STOPPING" });
+		expect(store.rows[0]?.dispatchJobId).toBe(storedStopJobId(store.rows[0]));
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: CH, action: "stop" }),
-			`sched-${ROW_ID}`,
+			storedStopJobId(store.rows[0]),
 		);
+	});
+
+	it.each([
+		"missing",
+		"wrong",
+		"owned",
+	])("requires a run-owned encoder before claiming a legacy scheduled STOP (%s)", async (proof) => {
+		const store = makeStore(
+			[makeRow({ action: "STOP" })],
+			[makeChannel({ status: "RUNNING" })],
+		);
+		const run = store.runs[0];
+		if (!run) throw new Error("expected running fixture");
+		run.bitmovinEncodingId = null;
+		run.stepLog =
+			proof === "missing"
+				? []
+				: [
+						{
+							step: "encoding",
+							kind: "CREATE_ENCODING",
+							status: "DONE",
+							payload: {},
+							refs: {},
+							resourceId: proof === "owned" ? "enc-current" : "other",
+						},
+					];
+		const { sweep, enqueue } = makeSweep(store);
+		await sweep();
+		expect(store.rows[0]?.status).toBe(proof === "owned" ? "FIRED" : "ERROR");
+		expect(run.status).toBe(proof === "owned" ? "STOPPING" : "RUNNING");
+		expect(store.channels[0]?.status).toBe(run.status);
+		expect(enqueue).toHaveBeenCalledTimes(proof === "owned" ? 1 : 0);
+	});
+
+	it("waits for an uncertain earlier stop instead of completing the next scheduled STOP", async () => {
+		const store = makeStore(
+			[makeRow({ action: "STOP" })],
+			[makeChannel({ status: "STOPPED", error: "stop did not confirm" })],
+		);
+		const { sweep, enqueue } = makeSweep(store);
+		expect((await sweep()).waiting).toBe(1);
+		expect(store.rows[0]?.status).toBe("ARMED");
+		expect(enqueue).not.toHaveBeenCalled();
+		const channel = store.channels[0];
+		if (!channel) throw new Error("expected channel");
+		channel.error = null;
+		expect((await sweep()).completed).toBe(1);
 	});
 
 	it("PROVISIONING waits — no unclaimed stop is thrown into a transition", async () => {
@@ -1856,33 +2116,110 @@ describe("STOP — claims like the route, waits out transitions (review-190 C2)"
 		expect((await sweep()).fired).toBe(1);
 	});
 
-	it("enqueue failure marks the channel (route pattern), RE-ARMS the row, and the NEXT tick self-heals (review-190 C3)", async () => {
+	it("keeps an unconfirmed STOP handoff in the outbox and retries the same job", async () => {
 		const store = makeStore(
 			[makeRow({ action: "STOP" })],
 			[makeChannel({ status: "RUNNING" })],
 		);
-		let calls = 0;
+		let ms = 2_000_000;
+		let reject = true;
 		const { sweep, enqueue } = makeSweep(store, {
+			now: () => new Date(ms),
 			enqueue: async () => {
-				calls += 1;
-				if (calls === 1) {
-					throw new Error("redis gone");
-				}
+				if (reject) throw new Error("lost Redis reply");
 			},
 		});
-		const first = await sweep();
-		expect(first.errors).toBe(1);
-		expect(store.rows[0]).toMatchObject({ status: "ARMED" }); // NOT terminal
-		expect(store.channels[0]).toMatchObject({
-			status: "ERROR",
-			error: "Enqueue failed — stop again",
+		expect((await sweep()).errors).toBe(1);
+		expect(store.rows[0]).toMatchObject({
+			status: "FIRED",
+			dispatchedAt: null,
 		});
-		// Next tick: ERROR is in the stop-claim set — the row fires again.
-		const second = await sweep();
-		expect(second.fired).toBe(1);
-		expect(store.rows[0]).toMatchObject({ status: "FIRED" });
-		expect(store.channels[0]).toMatchObject({ status: "STOPPING" });
-		expect(enqueue).toHaveBeenCalledTimes(2);
+		expect(store.channels[0]).toMatchObject({
+			status: "STOPPING",
+			error: null,
+		});
+		reject = false;
+		ms += 61_000;
+		expect((await sweep()).redispatched).toBe(1);
+		expect(enqueue.mock.calls[1]).toEqual(enqueue.mock.calls[0]);
+		expect(store.rows[0]?.dispatchedAt).toEqual(new Date(ms));
+	});
+
+	it.each([
+		"DELIVERED",
+		"UNKNOWN",
+	])("a lost STOP reply and replay preserve the %s receipt and successor", async (outcome) => {
+		const fired = makeRow({ action: "STOP" });
+		const channel = makeChannel({ status: "RUNNING" });
+		const store = makeStore([fired], [channel]);
+		let ms = 2_000_000;
+		const at = new Date(ms);
+		const receipt = {
+			status: "FIRED" as const,
+			outcome,
+			outcomeNote: "original evidence",
+			outcomeEvidenceAt: at,
+			outcomeEvidenceKind:
+				outcome === "DELIVERED"
+					? "PROVIDER_TERMINAL"
+					: "PROVIDER_STATUS_UNKNOWN",
+		};
+		const { sweep, enqueue, emitEvent } = makeSweep(store, {
+			now: () => new Date(ms),
+			enqueue: async () => {
+				Object.assign(fired, receipt);
+				store.prisma.liveEffectClaim.findFirst.mockResolvedValue({
+					id: "original-claim",
+				});
+				Object.assign(channel, {
+					status: "RUNNING",
+					bitmovinEncodingId: "next-encoder",
+					liveEffectFenceVersion: 12,
+				});
+				store.runs.push({
+					id: "next-run",
+					liveChannelId: CH,
+					seq: 2,
+					status: "RUNNING",
+					bitmovinEncodingId: "next-encoder",
+				});
+				throw new Error("reply lost after successor started");
+			},
+		});
+		expect((await sweep()).errors).toBe(1);
+		expect(store.rows[0]).toMatchObject(receipt);
+		expect(store.channels[0]).toMatchObject({
+			status: "RUNNING",
+			bitmovinEncodingId: "next-encoder",
+			error: null,
+		});
+		expect(store.runs.at(-1)?.status).toBe("RUNNING");
+		ms += 61_000;
+		await sweep();
+		expect(store.rows[0]).toMatchObject(receipt);
+		expect(enqueue).toHaveBeenCalledTimes(1);
+		expect(fired.dispatchJobId).toBe(storedStopJobId(fired));
+		expect(store.prisma.liveEffectClaim.findFirst).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					scheduleId: fired.id,
+					liveChannelRunId: store.runs[0]?.id,
+				}),
+			}),
+		);
+		expect(
+			store.prisma.liveStopNotification.create,
+		).toHaveBeenCalledExactlyOnceWith({
+			data: expect.objectContaining({
+				kind: "SCHEDULE_FIRED",
+				scheduleId: fired.id,
+				occurredAt: expect.any(Date),
+			}),
+		});
+		expect(emitEvent).not.toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "SCHEDULE_FIRED" }),
+			expect.anything(),
+		);
 	});
 });
 
@@ -2418,19 +2755,17 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 
 	it("past the deadline: claims STOPPING, records the epoch row, enqueues ONE deterministic stop", async () => {
 		const store = makeStore([], [runningChannel()]);
-		const { sweep, enqueue, emitEvent } = makeSweep(store, {
+		const { sweep, enqueue } = makeSweep(store, {
 			now: () => new Date(T0 + 61 * 60_000),
 		});
 		const stats = await sweep();
 		expect(stats.capStops).toBe(1);
 		expect(store.channels[0]).toMatchObject({ status: "STOPPING" });
 		const deadline = T0 + 60 * 60_000;
-		// : ONE id rule — derived from the epoch ROW (itself
-		// unique per channel+deadline under the partial index), so the
-		// outbox dispatcher can rebuild it after a crash.
+		// The outbox stores this delivery's ID before entering the queue.
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: CH, action: "stop" }),
-			`sched-${store.rows[0]?.id}`,
+			storedStopJobId(store.rows[0]),
 		);
 		expect(store.rows[0]).toMatchObject({
 			action: "STOP",
@@ -2438,14 +2773,51 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 			note: "max-run-cap",
 		});
 		expect(store.rows[0]?.fireAt.getTime()).toBe(deadline);
-		expect(emitEvent).toHaveBeenCalledWith(
-			expect.objectContaining({ kind: "SCHEDULE_FIRED" }),
-		);
+		expect(store.prisma.liveStopNotification.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				kind: "SCHEDULE_FIRED",
+				scheduleId: store.rows[0]?.id,
+				occurredAt: new Date(T0 + 61 * 60_000),
+			}),
+		});
 		// Second tick: channel is STOPPING — the claim is the lock, nothing
 		// doubles.
 		const again = await sweep();
 		expect(again.capStops).toBe(0);
 		expect(enqueue).toHaveBeenCalledTimes(1);
+	});
+
+	it("a captured deadline cannot stop a successor airing or ignore a changed cap", async () => {
+		for (const change of ["airing", "duration"]) {
+			const current = runningChannel();
+			const store = makeStore([], [current]);
+			const list = store.prisma.liveChannel.findMany.getMockImplementation();
+			if (!list) throw new Error("expected cap scan fixture");
+			store.prisma.liveChannel.findMany.mockImplementationOnce(async () => {
+				const original = await list();
+				if (change === "duration") current.maxRunMinutes = 120;
+				else {
+					current.runningSince = new Date(T0 + 60 * 60_000);
+					current.bitmovinEncodingId = "successor";
+					store.runs.push({
+						id: "successor-run",
+						seq: 2,
+						liveChannelId: CH,
+						status: "RUNNING",
+						bitmovinEncodingId: "successor",
+					});
+				}
+				return original;
+			});
+			const { sweep, enqueue } = makeSweep(store, {
+				now: () => new Date(T0 + 61 * 60_000),
+			});
+			expect((await sweep()).capStops).toBe(0);
+			expect(current.status).toBe("RUNNING");
+			expect(store.runs.at(-1)?.status).toBe("RUNNING");
+			expect(store.rows).toHaveLength(0);
+			expect(enqueue).not.toHaveBeenCalled();
+		}
 	});
 
 	it("TWO racing cap sweeps: the channel claim admits exactly one (review-190 I1)", async () => {
@@ -2478,6 +2850,8 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 				fireAt: new Date(deadline),
 				status: "FIRED",
 				note: "max-run-cap",
+				liveChannelRunId: store.runs[0]?.id ?? null,
+				outcome: "PENDING",
 			}),
 		);
 		const { sweep, enqueue } = makeSweep(store, {
@@ -2485,12 +2859,10 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 		});
 		const stats = await sweep();
 		expect(stats.capStops).toBe(1);
-		// Same deterministic id — BullMQ dedupes if the job DID survive. The
-		// id comes from the EXISTING epoch row the P2002 lookup found
-		// , which is what keeps it stable across the collision.
+		// Reuse the existing schedule while allocating a fresh delivery ID.
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: CH, action: "stop" }),
-			"sched-44444444-4444-4444-8444-444444444444",
+			storedStopJobId(store.rows[0]),
 		);
 		expect(store.rows).toHaveLength(1); // no second epoch row
 	});
@@ -2513,10 +2885,7 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 		expect(enqueue).not.toHaveBeenCalled();
 	});
 
-	it("a NON-P2002 create failure fails closed — it never fabricates RUNNING without a provider observation", async () => {
-		// There is no durable STOP row to recover here. ERROR is the honest
-		// state: the provider may still be running, while RUNNING would be an
-		// invented lifecycle observation.
+	it("rolls the whole cap claim back when the schedule cannot be persisted and retries the same epoch", async () => {
 		const store = makeStore([], [runningChannel()]);
 		let creates = 0;
 		const originalCreate = store.prisma.liveSchedule.create;
@@ -2535,16 +2904,12 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 		const first = await sweep();
 		expect(first.errors).toBe(1);
 		expect(first.capStops).toBe(0);
-		expect(store.channels[0]).toMatchObject({
-			status: "ERROR",
-			error: expect.stringContaining("runtime-cap STOP handoff failed"),
-		});
+		expect(store.channels[0]?.status).toBe("RUNNING");
+		expect(store.runs[0]?.status).toBe("RUNNING");
+		expect(store.rows).toHaveLength(0);
 		expect(enqueue).not.toHaveBeenCalled();
-		// ERROR is not silently promoted back to RUNNING on the next tick.
-		const second = await sweep();
-		expect(second.capStops).toBe(0);
-		expect(store.channels[0]).toMatchObject({ status: "ERROR" });
-		expect(enqueue).not.toHaveBeenCalled();
+		expect((await sweep()).capStops).toBe(1);
+		expect(enqueue).toHaveBeenCalledTimes(1);
 	});
 
 	it("cap enqueue failure keeps STOPPING and its durable outbox; the next tick re-dispatches it", async () => {
@@ -2566,7 +2931,8 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 		expect(store.rows[0]).toMatchObject({
 			status: "FIRED",
 			dispatchedAt: null,
-			note: expect.stringContaining("runtime-cap STOP handoff failed"),
+			note: "max-run-cap",
+			error: expect.stringContaining("runtime-cap STOP handoff failed"),
 		});
 		nowMs += 61_000;
 		const second = await sweep();
@@ -2896,14 +3262,19 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		const stats = await sweep();
 		expect(stats.redispatched).toBe(1);
 		expect(enqueue).toHaveBeenCalledWith(
-			{ liveChannelId: CH, action: "provision" },
-			`sched-${ROW_ID}`,
+			{
+				liveChannelId: CH,
+				action: "provision",
+				provisionFenceVersion: 1,
+				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
+			},
+			`sched-${ROW_ID}-start-1`,
 		);
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
-		expect(store.rows[0]?.dispatchJobId).toBe(`sched-${ROW_ID}`);
+		expect(store.rows[0]?.dispatchJobId).toBe(`sched-${ROW_ID}-start-1`);
 	});
 
-	it("re-air START (STOPPED channel): the fresh run row is claimed and the lost provision comes back", async () => {
+	it("re-air START (STOPPED channel): the fresh run row and admission generation survive a lost provision handoff", async () => {
 		const store = makeStore(
 			[makeRow()],
 			[makeChannel({ status: "STOPPED", bitmovinEncodingId: "enc-1" })],
@@ -2916,6 +3287,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		expect(store.runs).toHaveLength(2);
 		expect(store.rows[0]).toMatchObject({
 			status: "FIRED",
+			startAdmissionFenceVersion: 1,
 			dispatchedAt: null,
 		});
 
@@ -2924,8 +3296,13 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		});
 		expect((await sweep()).redispatched).toBe(1);
 		expect(enqueue).toHaveBeenCalledWith(
-			{ liveChannelId: CH, action: "provision" },
-			`sched-${ROW_ID}`,
+			{
+				liveChannelId: CH,
+				action: "provision",
+				provisionFenceVersion: 1,
+				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
+			},
+			`sched-${ROW_ID}-start-1`,
 		);
 		expect(store.runs).toHaveLength(2);
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
@@ -2953,9 +3330,48 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		expect(store.channels[0]).toMatchObject({ status: "STOPPING" });
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: CH, action: "stop" }),
-			`sched-${ROW_ID}`,
+			storedStopJobId(store.rows[0]),
 		);
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
+	});
+
+	it.each([
+		"DELIVERED",
+		"UNKNOWN",
+	])("a stale outbox scan cannot overwrite an exact %s receipt committed after its query", async (outcome) => {
+		const old = "11111111-3333-4333-8333-111111111111";
+		const row = makeRow({
+			action: "STOP",
+			status: "FIRED",
+			liveChannelRunId: old,
+			firedAt: new Date(CRASH_AT),
+			outcome: "PENDING",
+		});
+		const store = makeStore([row], [makeChannel({ status: "RUNNING" })]);
+		const scan = store.prisma.liveSchedule.findMany.getMockImplementation();
+		if (!scan) throw new Error("schedule scan fixture missing");
+		store.prisma.liveSchedule.findMany.mockImplementation(async (args) => {
+			const selected = await scan(args);
+			if (args.where.dispatchedAt === null && selected.length) {
+				Object.assign(row, {
+					outcome,
+					outcomeNote: "the actual worker receipt",
+					outcomeEvidenceAt: new Date(CRASH_AT),
+				});
+			}
+			return selected;
+		});
+		const { sweep, enqueue } = makeSweep(store, {
+			now: () => new Date(RECOVERY_AT),
+		});
+		await sweep.dispatchPending();
+		expect(row).toMatchObject({
+			status: "FIRED",
+			outcome,
+			outcomeNote: "the actual worker receipt",
+			outcomeEvidenceAt: new Date(CRASH_AT),
+		});
+		expect(enqueue).not.toHaveBeenCalled();
 	});
 
 	it("SLATE_IN: the lost insert comes back with the duration re-derived at recovery time", async () => {
@@ -3137,7 +3553,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 			note: "max-run-cap",
 			dispatchedAt: null,
 		});
-		const capRowId = store.rows[0]?.id as string;
+		const capJobId = storedStopJobId(store.rows[0]);
 
 		const { sweep, enqueue } = makeSweep(store, {
 			// The crash instant + 61s: past DISPATCH_GRACE_MS (2 × 30s).
@@ -3150,25 +3566,57 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		expect(store.rows).toHaveLength(1);
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: CH, action: "stop" }),
-			`sched-${capRowId}`,
+			capJobId,
 		);
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
 	});
 
-	it("a handoff that DID land is not run twice — the job id is derived, so BullMQ dedupes", async () => {
+	it("a retained legacy START does not block a bound START, whose retries still dedupe", async () => {
+		const runId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
 		const store = makeStore(
-			[makeRow({ status: "FIRED", firedAt: new Date(1_900_000) })],
-			[makeChannel({ status: "PROVISIONING" })],
+			[
+				makeRow({
+					status: "FIRED",
+					firedAt: new Date(1_900_000),
+					liveChannelRunId: runId,
+					startAdmissionFenceVersion: 2,
+				}),
+			],
+			[makeChannel({ status: "PROVISIONING", liveEffectFenceVersion: 2 })],
 		);
+		store.runs.push({
+			id: runId,
+			seq: 1,
+			liveChannelId: CH,
+			status: "PROVISIONING",
+		});
 		const queue = dedupingQueue();
+		const legacyJobId = `sched-${ROW_ID}`;
+		const currentJobId = `sched-${ROW_ID}-start-2`;
+		const legacyJob = { liveChannelId: CH, action: "provision" };
+		await queue.add(legacyJob, legacyJobId);
 		const { sweep } = makeSweep(store, { enqueue: queue.add });
 		expect(await sweep.dispatchPending()).toBe(1);
-		expect(queue.added).toHaveLength(1);
-		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
+		const deliveries = [
+			{ job: legacyJob, jobId: legacyJobId },
+			{
+				job: {
+					...legacyJob,
+					plannedLiveChannelRunId: runId,
+					provisionFenceVersion: 2,
+				},
+				jobId: currentJobId,
+			},
+		];
+		expect(queue.added).toEqual(deliveries);
+		expect(store.rows[0]).toMatchObject({
+			dispatchedAt: expect.any(Date),
+			dispatchJobId: currentJobId,
+		});
 
 		// A stamped row leaves the scan entirely.
 		expect(await sweep.dispatchPending()).toBe(0);
-		expect(queue.added).toHaveLength(1);
+		expect(queue.added).toEqual(deliveries);
 
 		// And when the STAMP itself was the write that was lost, the re-add
 		// resolves against the job already in the queue rather than running
@@ -3179,19 +3627,63 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 			row.dispatchJobId = null;
 		}
 		expect(await sweep.dispatchPending()).toBe(1);
-		expect(queue.added).toHaveLength(1);
-		expect(queue.added[0]?.jobId).toBe(`sched-${ROW_ID}`);
-		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
+		expect(queue.added).toEqual(deliveries);
+		expect(store.rows[0]).toMatchObject({
+			dispatchedAt: expect.any(Date),
+			dispatchJobId: currentJobId,
+		});
+	});
+
+	it("a late START enqueue acknowledgment cannot stamp a newer admission of the same run", async () => {
+		const runId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+		const row = makeRow({
+			status: "FIRED",
+			firedAt: new Date(1_900_000),
+			liveChannelRunId: runId,
+			startAdmissionFenceVersion: 2,
+		});
+		const channel = makeChannel({
+			status: "PROVISIONING",
+			liveEffectFenceVersion: 2,
+		});
+		const store = makeStore([row], [channel]);
+		const { sweep, enqueue } = makeSweep(store, {
+			enqueue: async (_job, jobId) => {
+				if (jobId === `sched-${ROW_ID}-start-2`) {
+					row.startAdmissionFenceVersion = 3;
+					channel.liveEffectFenceVersion = 3;
+				}
+			},
+		});
+		await sweep.dispatchPending();
+		expect(enqueue).toHaveBeenCalledWith(
+			expect.objectContaining({ provisionFenceVersion: 2 }),
+			`sched-${ROW_ID}-start-2`,
+		);
+		expect(row).toMatchObject({
+			startAdmissionFenceVersion: 3,
+			dispatchedAt: null,
+			dispatchJobId: null,
+		});
+
+		await sweep.dispatchPending();
+		expect(enqueue).toHaveBeenCalledWith(
+			expect.objectContaining({ provisionFenceVersion: 3 }),
+			`sched-${ROW_ID}-start-3`,
+		);
+		expect(row.dispatchJobId).toBe(`sched-${ROW_ID}-start-3`);
 	});
 
 	it("the BOOT pass recovers a stale row and leaves a fresh one to the tick", async () => {
 		const stale = makeRow({
+			...START_OUTBOX_ADMISSION,
 			id: "55555555-5555-4555-8555-555555555555",
 			status: "FIRED",
 			// 100s before now — past the 60s grace.
 			firedAt: new Date(1_900_000),
 		});
 		const fresh = makeRow({
+			...START_OUTBOX_ADMISSION,
 			id: "66666666-6666-4666-8666-666666666666",
 			status: "FIRED",
 			// 10s before now — INSIDE the grace: this is a healthy dispatch
@@ -3207,8 +3699,14 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		expect(await sweep.dispatchPending()).toBe(1);
 		expect(enqueue).toHaveBeenCalledTimes(1);
 		expect(enqueue).toHaveBeenCalledWith(
-			{ liveChannelId: CH, action: "provision" },
-			`sched-${stale.id}`,
+			{
+				liveChannelId: CH,
+				action: "provision",
+				plannedLiveChannelRunId: START_OUTBOX_ADMISSION.liveChannelRunId,
+				provisionFenceVersion:
+					START_OUTBOX_ADMISSION.startAdmissionFenceVersion,
+			},
+			`sched-${stale.id}-start-${START_OUTBOX_ADMISSION.startAdmissionFenceVersion}`,
 		);
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
 		expect(store.rows[1]?.dispatchedAt).toBeNull();
@@ -3216,11 +3714,13 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 
 	it("a notification failure does not stall the rows behind it", async () => {
 		const first = makeRow({
+			...START_OUTBOX_ADMISSION,
 			id: "77777777-7777-4777-8777-777777777777",
 			status: "FIRED",
 			firedAt: new Date(1_900_000),
 		});
 		const second = makeRow({
+			...START_OUTBOX_ADMISSION,
 			id: "88888888-8888-4888-8888-888888888888",
 			status: "FIRED",
 			firedAt: new Date(1_901_000),
@@ -3249,24 +3749,32 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 
 	it("a re-dispatch that cannot be enqueued keeps the row recoverable (no re-arm)", async () => {
 		const store = makeStore(
-			[makeRow({ status: "FIRED", firedAt: new Date(1_900_000) })],
+			[
+				makeRow({
+					...START_OUTBOX_ADMISSION,
+					status: "FIRED",
+					firedAt: new Date(1_900_000),
+				}),
+			],
 			[makeChannel({ status: "PROVISIONING" })],
 		);
 		const errorSpy = vi
 			.spyOn(console, "error")
 			.mockImplementation(() => undefined);
 		try {
-			const { sweep } = makeSweep(store, {
+			const { sweep, enqueue } = makeSweep(store, {
 				enqueue: async () => {
 					throw new Error("redis down");
 				},
 			});
 			expect(await sweep.dispatchPending()).toBe(0);
+			expect(enqueue).toHaveBeenCalledTimes(1);
 			// Still FIRED and still unstamped: the claim was committed by a
 			// process that is gone, so there is no channel state to hand back
 			// — the next pass tries again.
 			expect(store.rows[0]).toMatchObject({
 				status: "FIRED",
+				outcome: "PENDING",
 				dispatchedAt: null,
 			});
 			expect(store.channels[0]).toMatchObject({ status: "PROVISIONING" });
@@ -3281,7 +3789,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		await sweep();
 		expect(store.rows[0]).toMatchObject({
 			status: "FIRED",
-			dispatchJobId: `sched-${ROW_ID}`,
+			dispatchJobId: `sched-${ROW_ID}-start-1`,
 		});
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
 		// Even well past the grace, a stamped row is out of scope.
@@ -3290,20 +3798,39 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		expect(later.enqueue).not.toHaveBeenCalled();
 	});
 
-	it("a re-armed row closes its outbox — the next firing is not read as already handed off", async () => {
+	it("retains the exact scheduled START after an accepted Redis add loses its reply and STOP wins", async () => {
 		const store = makeStore([makeRow()], [makeChannel()]);
-		const { sweep } = makeSweep(store, {
+		const { sweep, enqueue } = makeSweep(store, {
 			enqueue: async () => {
-				throw new Error("redis down");
+				// A different consumer has already acted on the accepted start.
+				const channel = store.channels[0];
+				const run = store.runs.at(-1);
+				if (!channel || !run)
+					throw new Error("scheduled START lost its admitted broadcast");
+				channel.status = "STOPPING";
+				run.status = "STOPPING";
+				throw new Error("Redis reply lost");
 			},
 		});
 		await sweep();
+		const run = store.runs.at(-1);
 		expect(store.rows[0]).toMatchObject({
-			status: "ARMED",
-			firedAt: null,
+			status: "FIRED",
+			liveChannelRunId: run?.id,
 			dispatchedAt: null,
-			dispatchJobId: null,
+			dispatchJobId: `sched-${ROW_ID}-start-1`,
 		});
+		expect(store.channels[0]?.status).toBe("STOPPING");
+		expect(run?.status).toBe("STOPPING");
+		expect(enqueue).toHaveBeenCalledWith(
+			{
+				action: "provision",
+				provisionFenceVersion: 1,
+				liveChannelId: CH,
+				plannedLiveChannelRunId: run?.id,
+			},
+			`sched-${ROW_ID}-start-1`,
+		);
 	});
 });
 
@@ -3362,7 +3889,7 @@ describe("row #245 — the due scan cannot starve (paged, resuming cursor)", () 
 		expect(stats.fired).toBe(1);
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: OTHER, action: "stop" }),
-			`sched-${VICTIM}`,
+			storedStopJobId(store.rows.find((row) => row.id === VICTIM)),
 		);
 		expect(store.channels[1]).toMatchObject({ status: "STOPPING" });
 	});
@@ -3388,7 +3915,7 @@ describe("row #245 — the due scan cannot starve (paged, resuming cursor)", () 
 		expect(enqueue).toHaveBeenCalledTimes(1);
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: OTHER, action: "stop" }),
-			`sched-${VICTIM}`,
+			storedStopJobId(store.rows.find((row) => row.id === VICTIM)),
 		);
 	});
 
@@ -3420,6 +3947,7 @@ describe("row #245 — the due scan cannot starve (paged, resuming cursor)", () 
 			store.runs.push({
 				id: `dddddddd-4444-4444-8444-${String(index + 1).padStart(12, "0")}`,
 				liveChannelId: channel.id,
+				bitmovinEncodingId: channel.bitmovinEncodingId,
 				seq: 1,
 				status: "RUNNING",
 			});
@@ -3462,6 +3990,7 @@ describe("row #245 — bounded outbox recovery fairness", () => {
 		const rows = Array.from({ length: count }, (_, index) =>
 			makeRow({
 				id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+				...(kind === "fire" && START_OUTBOX_ADMISSION),
 				// Equal timestamps demand the id tie-breaker; storage order is reversed.
 				fireAt: new Date(kind === "stage" ? 3_000_000 : 1_000_000),
 				status: kind === "stage" ? "ARMED" : "FIRED",
@@ -3522,7 +4051,11 @@ describe("row #245 — bounded outbox recovery fairness", () => {
 	});
 	it("coalesces overlapping boot and tick recovery before advancing the cursor", async () => {
 		const store = makeStore([
-			makeRow({ status: "FIRED", firedAt: new Date(1_900_000) }),
+			makeRow({
+				...START_OUTBOX_ADMISSION,
+				status: "FIRED",
+				firedAt: new Date(1_900_000),
+			}),
 		]);
 		let release = () => {};
 		const blocked = new Promise<void>((resolve) => {
@@ -4114,18 +4647,24 @@ describe("row #245 review #356 v2 — re-examination never costs the forward sca
 	const VICTIM_CH = "77777777-0000-4000-8000-000000000002";
 	const VICTIM = "88888888-0000-4000-8000-000000000000";
 
-	function stop(id: string, channelId: string, fireAtMs: number): Row {
+	function feeder(id: string, channelId: string, fireAtMs: number): Row {
 		return makeRow({
 			id,
 			liveChannelId: channelId,
-			action: "STOP",
+			action: "FEEDER_START",
+			slateUntil: new Date(3_600_000),
+			feederSource: {
+				credentialId: "00000000-0000-4000-8000-0000000000c1",
+				bucket: "in",
+				key: "filler.mp4",
+			},
 			fireAt: new Date(fireAtMs),
 		});
 	}
 
 	function backlog(count: number, offsetMs: number): Row[] {
 		return Array.from({ length: count }, (_, i) =>
-			stop(
+			feeder(
 				`dddddddd-${String(offsetMs).padStart(4, "0")}-4000-8000-${String(i).padStart(12, "0")}`,
 				BLOCKED,
 				offsetMs + i,
@@ -4133,14 +4672,14 @@ describe("row #245 review #356 v2 — re-examination never costs the forward sca
 		);
 	}
 
-	/** N STOP rows, each on its OWN RUNNING channel, so every one can fire. */
+	/** N feeder rows, each on its OWN RUNNING channel, so every one can fire. */
 	function ownChannelRows(count: number, prefix: string) {
 		const rows: Row[] = [];
 		const channels: Channel[] = [];
 		for (let i = 0; i < count; i++) {
 			const channelId = `${prefix}-0000-4000-8000-${String(i).padStart(12, "0")}`;
 			rows.push(
-				stop(
+				feeder(
 					`${prefix}-1111-4000-8000-${String(i).padStart(12, "0")}`,
 					channelId,
 					1_000_000 + i,
@@ -4155,7 +4694,7 @@ describe("row #245 review #356 v2 — re-examination never costs the forward sca
 		const store = makeStore(
 			[
 				...backlog(10, 1_000_000),
-				stop(VICTIM, VICTIM_CH, 1_100_000),
+				feeder(VICTIM, VICTIM_CH, 1_100_000),
 				...backlog(1000, 1_200_000),
 			],
 			[
@@ -4254,7 +4793,7 @@ describe("row #245 review #356 v2 — re-examination never costs the forward sca
 		// where the tail sits inside one replay-plus-budget allowance.
 		const CH_ONE = "99999999-0000-4000-8000-000000000001";
 		const rows = Array.from({ length: DUE_SCAN_BUDGET + 100 }, (_, i) =>
-			stop(
+			feeder(
 				`ffffffff-0000-4000-8000-${String(i).padStart(12, "0")}`,
 				CH_ONE,
 				1_000_000 + i,
@@ -4458,6 +4997,37 @@ describe("generation bind — a row fires only into the airing it was armed for 
 		return store;
 	}
 
+	it("does not dispatch a null-bound STOP scan into the successor of the airing another sweep bound", async () => {
+		const store = runningOn(
+			[makeRow({ action: "STOP", liveChannelRunId: null })],
+			[RUN_1, RUN_2],
+		);
+		const original =
+			store.prisma.liveSchedule.updateMany.getMockImplementation();
+		if (!original) throw new Error("missing schedule delegate");
+		store.prisma.liveSchedule.updateMany.mockImplementation(async (args) => {
+			if (
+				args.where.liveChannelRunId === null &&
+				args.data.liveChannelRunId === RUN_2
+			) {
+				// Another worker committed the bind to run 1 between scanning and this CAS.
+				const scheduled = store.rows[0];
+				if (!scheduled) throw new Error("missing scheduled stop");
+				scheduled.liveChannelRunId = RUN_1;
+			}
+			return original(args);
+		});
+		const { sweep, enqueue } = makeSweep(store);
+		await sweep();
+		expect(enqueue).not.toHaveBeenCalled();
+		expect(store.channels[0]?.status).toBe("RUNNING");
+		expect(store.runs.at(-1)?.status).toBe("RUNNING");
+		expect(store.rows[0]?.liveChannelRunId).toBe(RUN_1);
+		await sweep();
+		expect(store.rows[0]?.status).toBe("SKIPPED_STALE_GENERATION");
+		expect(enqueue).not.toHaveBeenCalled();
+	});
+
 	it("STOP armed for run 1 is REFUSED once the channel is on run 2 — never a live programme taken off the air", async () => {
 		const store = runningOn(
 			[makeRow({ action: "STOP", liveChannelRunId: RUN_1 })],
@@ -4548,7 +5118,7 @@ describe("generation bind — a row fires only into the airing it was armed for 
 				plannedLiveChannelRunId: RUN_2,
 				effect: expect.objectContaining({ action: "STOP" }),
 			}),
-			`sched-${ROW_ID}`,
+			storedStopJobId(store.rows[0]),
 		);
 	});
 
@@ -4671,7 +5241,13 @@ describe("generation bind — a row fires only into the airing it was armed for 
 		);
 		store.runs.push(
 			{ id: RUN_1, seq: 1, status: "RUNNING", outputPrefix: "" },
-			{ id: RUN_2, seq: 2, status: "RUNNING", outputPrefix: "" },
+			{
+				id: RUN_2,
+				seq: 2,
+				status: "RUNNING",
+				outputPrefix: "",
+				bitmovinEncodingId: "enc-current",
+			},
 		);
 		const { sweep, enqueue } = makeSweep(store);
 		const stats = await sweep();
@@ -4740,8 +5316,13 @@ describe("generation bind — a row fires only into the airing it was armed for 
 		expect(stats.skippedStale).toBe(0);
 		expect(store.rows[0]?.status).toBe("FIRED");
 		expect(enqueue).toHaveBeenCalledWith(
-			{ liveChannelId: CH, action: "provision" },
-			`sched-${ROW_ID}`,
+			{
+				liveChannelId: CH,
+				action: "provision",
+				provisionFenceVersion: 1,
+				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
+			},
+			`sched-${ROW_ID}-start-1`,
 		);
 	});
 
@@ -4801,7 +5382,13 @@ describe("a panel-armed row survives a re-air it never saw (row #241)", () => {
 		// Run 1 ended; the channel re-aired as run 2, which is what is on now.
 		store.runs.push(
 			{ id: RUN_1, seq: 1, status: "STOPPED", outputPrefix: "" },
-			{ id: RUN_2, seq: 2, status: "RUNNING", outputPrefix: "" },
+			{
+				id: RUN_2,
+				seq: 2,
+				status: "RUNNING",
+				outputPrefix: "",
+				bitmovinEncodingId: "enc-current",
+			},
 		);
 		const { sweep, enqueue } = makeSweep(store);
 		const stats = await sweep();
@@ -4838,7 +5425,7 @@ describe("a panel-armed row survives a re-air it never saw (row #241)", () => {
 				plannedLiveChannelRunId: RUN_2,
 				effect: expect.objectContaining({ action: "STOP" }),
 			}),
-			`sched-${CREATION_ROW}`,
+			storedStopJobId(store.rows.find((row) => row.id === CREATION_ROW)),
 		);
 	});
 });
@@ -4873,13 +5460,28 @@ it("inactive organization suppresses new ARMED work while STOP schedules remain 
 	).toBe(true);
 });
 it("inactive undispatched START releases its transitional channel instead of leaving an endless handoff", async () => {
-	const row = makeRow({ status: "FIRED", firedAt: new Date(1_800_000) });
+	const runId = "10000000-1111-4111-8111-222222222222";
+	const row = makeRow({
+		status: "FIRED",
+		firedAt: new Date(1_800_000),
+		liveChannelRunId: runId,
+		startAdmissionFenceVersion: 2,
+	});
 	const channel = makeChannel({
 		status: "PROVISIONING",
+		liveEffectFenceVersion: 2,
 		bitmovinEncodingId: null,
 		stepLog: [],
 	});
 	const store = makeStore([row], [channel]);
+	store.runs.push({
+		id: runId,
+		seq: 1,
+		status: "PROVISIONING",
+	});
+	store.prisma.liveSchedule.findFirst.mockImplementationOnce(
+		async () => row as never,
+	);
 	const { sweep, enqueue } = makeSweep(store, {
 		allowNewWork: async () => false,
 	});

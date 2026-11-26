@@ -66,7 +66,16 @@ describe("library writes", () => {
 						name: "asset",
 						planHash: "hash",
 						identity: "UNVERIFIED",
-						inputs: [],
+						inputs: [{ name: "source", path: "file#1.mp4" }],
+						fileOutputs: [
+							{
+								key: "file",
+								kind: "MP4",
+								bucket: "other",
+								credentialId: sourceId,
+								path: "file#1.mp4",
+							},
+						],
 						playbackLinks: [],
 						qcVerdict: null,
 						qcOverriddenAt: null,

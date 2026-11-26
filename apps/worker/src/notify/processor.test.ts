@@ -58,6 +58,22 @@ describe("createNotifyProcessor", () => {
 		vi.clearAllMocks();
 	});
 
+	it("checks the durable delivery owner before posting to each subscribed destination", async () => {
+		const { deps, fetchImpl } = makeDeps();
+		vi.mocked(deps.prisma.notificationChannel.findMany).mockResolvedValue([
+			channelRow(),
+			channelRow({ id: "second-channel" }),
+		]);
+		const beforeSend = vi
+			.fn()
+			.mockResolvedValueOnce(undefined)
+			.mockRejectedValueOnce(new Error("lease lost"));
+		await expect(
+			createNotifyProcessor(deps)({ data: event(), beforeSend }),
+		).rejects.toThrow("lease lost");
+		expect(beforeSend).toHaveBeenCalledTimes(2);
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+	});
 	it("POSTs the event verbatim with the kind header to a matching channel", async () => {
 		const { deps, fetchImpl } = makeDeps();
 		const results = await createNotifyProcessor(deps)({ data: event() });
@@ -76,6 +92,35 @@ describe("createNotifyProcessor", () => {
 			kind: "JOB_FINISHED",
 			jobId: JOB,
 		});
+	});
+
+	it("projects old queued diagnostics before delivering webhook and Slack bodies", async () => {
+		const { deps, fetchImpl } = makeDeps();
+		vi.mocked(deps.prisma.notificationChannel.findMany).mockResolvedValue(
+			["GENERIC_WEBHOOK", "SLACK_WEBHOOK"].map((kind) =>
+				channelRow({
+					kind,
+					rules: [{ events: ["CHANNEL_ERROR"], filter: {} }],
+				}),
+			),
+		);
+		const legacy = {
+			kind: "CHANNEL_ERROR",
+			eventVersion: EVENT_VERSION,
+			occurredAt: "2026-08-12T00:00:00.000Z",
+			link: "https://ovp.example.com/live/channel",
+			liveChannelId: CHANNEL,
+			name: "Main",
+			error: "Download failed at clip.mxf?token=PRIVATE_FIXTURE",
+		};
+		await createNotifyProcessor(deps)({ data: legacy });
+		expect(fetchImpl).toHaveBeenCalledTimes(2);
+		const bodies = fetchImpl.mock.calls.map(([, init]) => String(init.body));
+		for (const body of bodies) {
+			expect(body).toContain("[withheld]");
+			expect(body).not.toContain("PRIVATE_FIXTURE");
+		}
+		expect(legacy.error).toContain("PRIVATE_FIXTURE");
 	});
 
 	it("REFUSES a host outside the allowlist at send time (C22, worker end)", async () => {
@@ -206,6 +251,9 @@ describe("createNotifyProcessor", () => {
 		fetchImpl.mockResolvedValue({ ok: false, status: 500 });
 		const failure = createNotifyProcessor(deps)({ data: event() });
 		await expect(failure).rejects.toThrow(/ops hook \(HTTP 500\)/);
+		await expect(failure).rejects.toMatchObject({
+			publicReason: "Notification delivery failed (HTTP 500)",
+		});
 		// review-185 N5's residual, made structural: the thrown message is
 		// what BullMQ persists as failedReason and the deliveries route
 		// echoes — the vault URL must never ride it (today guaranteed by

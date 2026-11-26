@@ -1,10 +1,27 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	aisaLiveFinalization,
 	classifyProviderStatusWord,
+	FEEDER_ACTIVE_STATUSES,
 	feederOccupancyWhere,
+	hasAisaLiveBinding,
+	isAisaManagedLivePlan,
+	scheduledStopJobId,
+	stepLogSchema,
 } from "@bitovp/core";
-import type { AppPrismaClient } from "./client";
+import type { Prisma } from "../generated/client";
+import type { AppPrismaClient, AppTransactionClient } from "./client";
+import {
+	isLiveStopAdmissionFence,
+	recordConfirmedLiveStopNotification,
+	recordObservedScheduledStop,
+	recordOwnedScheduledStopDelivery,
+	recordStopScheduleFailure,
+	settleExhaustedStopSchedules,
+} from "./live-stop-delivery";
+
+export const STRANDED_RUN_ERROR =
+	"The job driving this run died and the channel was marked ERROR; the run row was left mid-transition, which blocked every restart. Retired by the worker's startup sweep — start the channel again.";
 
 export const LIVE_EFFECT_OPEN_STATES = [
 	"CLAIMED",
@@ -26,6 +43,8 @@ export type LiveEffectAction =
 	| "FEEDER_SPAWN";
 
 export type LiveEffectBeginInput = {
+	/** Retained pre-effect schedule, checked under the channel/schedule locks. */
+	legacyStopDelivery?: "FIRST" | "UNKNOWN" | "EXHAUSTED";
 	idempotencyKey: string;
 	requestSha256?: string;
 	liveChannelId: string;
@@ -34,6 +53,7 @@ export type LiveEffectBeginInput = {
 	expectedFenceVersion: number;
 	action: LiveEffectAction;
 	scheduleId?: string;
+	stopDeliveryToken?: string;
 	targetId?: string;
 	ownerId: string;
 	now: Date;
@@ -46,7 +66,10 @@ export type LiveEffectBeginInput = {
 };
 
 export type LiveEffectClaimHandle = {
+	/** A resumed, previously dispatched intent must observe active state before any still-unsent ordinary STOP. */
+	requireActiveStopReadback?: boolean;
 	id: string;
+	scheduleId?: string | null;
 	idempotencyKey: string;
 	token: string;
 	liveChannelId: string;
@@ -91,14 +114,894 @@ export type ResolveLiveEffectsAfterConfirmedStopInput = {
 	stopClaimId: string;
 	stopIdempotencyKey: string;
 	at: Date;
+	/** Terminal GETs for every encoder actually observed by the original owner. */
+	ownerReadbacks?: {
+		/** Only the scheduled owner that received a successful primary STOP response supplies this. */
+		acceptedScheduleAdmission?: number;
+		generation: number;
+		token: string;
+		bitmovinAccountId: string;
+		encodings: readonly { id: string; status: string }[];
+	};
+	/** Periodic recovery after the original worker committed a clean STOP projection. */
+	interruptedAckGeneration?: number;
+	/** Fresh provider GET issued for this generation after its owner recorded ambiguity. */
+	terminalReadback?: {
+		generation: number;
+		bitmovinAccountId: string;
+		providerStatus: string;
+		encodings?: readonly { id: string; status: string }[];
+		/** Recover an interrupted legacy failure without acknowledging a send. */
+		exhaustedFailedSchedule?: {
+			id: string;
+			claimToken: string;
+			stopDeliveryToken?: string;
+		};
+	};
 };
 
+export function liveEffectSendUncertainty(reason: string): string {
+	return `${reason}; the provider/process call crossed its send boundary, so exact readback or operator resolution is required before retry`;
+}
+
+export function liveChannelAccountId(row: {
+	bitmovinAccountId?: string | null;
+	plan?: unknown;
+}): string | null {
+	const account =
+		row.bitmovinAccountId ??
+		(row.plan as { bitmovin?: { accountId?: unknown } } | null)?.bitmovin
+			?.accountId;
+	return typeof account === "string" && account.length > 0 ? account : null;
+}
+
+const LEGACY_EXPIRED_DISPATCH =
+	"effect owner expired after DISPATCHING; exact readback is required before retry";
+
+type StopReceipt = { id: string; status: string };
+type StopHistory = {
+	providerEncodingId: string;
+	action: string;
+	failure?: string | null;
+	stopProtocolVersion?: number | null;
+	stopSendEncodingIds?: string[];
+	legacyUnsentStopIds?: string[];
+	stopOutcomeEvidence?: unknown;
+};
+
+/** Native legacy STOP only retried its own FAILED key before sending. An
+ * Analysis retry could follow a composite dispatch, so an older multi-attempt
+ * Analysis needs independent evidence before emitting a new notification. */
+function legacyStopFailedBeforeSend(
+	claim: {
+		state: string;
+		attempt: number;
+		stopSendEncodingIds?: string[];
+		stopAnalysisSendId?: string | null;
+		stopOutcomeEvidence?: unknown;
+	},
+	channel: { plan: unknown },
+	run: {
+		aisaAnalysisId?: string | null;
+		aisaStatus?: string | null;
+		aisaSnapshot?: unknown;
+	},
+): boolean {
+	return (
+		claim.state === "FAILED" &&
+		!claim.stopSendEncodingIds?.length &&
+		!claim.stopAnalysisSendId &&
+		claim.stopOutcomeEvidence == null &&
+		(claim.attempt === 1 ||
+			(!isAisaManagedLivePlan(channel.plan) &&
+				!run.aisaAnalysisId &&
+				run.aisaStatus == null &&
+				run.aisaSnapshot == null))
+	);
+}
+
+/** Only legacy STOP diagnostics need to recover target IDs from human-readable fields. */
+function legacyFaultTargets(
+	error: string | null | undefined,
+	known: ReadonlySet<string>,
+): string[] | null {
+	const prefix = "stop did not confirm — ";
+	if (!error?.startsWith(prefix)) return [];
+	const ids: string[] = [];
+	// Legacy enqueue diagnostics wrapped arbitrary queue error text, including
+	// the same semicolon delimiter used between encoder faults.
+	const faults = error
+		.slice(prefix.length)
+		.replace(
+			/(^|; )feeder stop could not be enqueued \([\s\S]*?\) — its push may still be running(?=; |$)/g,
+			"$1feeder stop could not be enqueued (failure) — its push may still be running",
+		);
+	// Legacy provider/queue messages can contain arbitrary semicolons. A new
+	// entry starts with an encoder ID and colon, or the worker's feeder prefix.
+	for (const [index, fault] of faults
+		.split(
+			/; (?=[A-Za-z0-9_-]+: |feeder (?:[^:;]+: stop was enqueued|stop could not be enqueued))/,
+		)
+		.entries()) {
+		if (
+			/^feeder [^:;]+: stop was enqueued but publisher termination was not confirmed$/.test(
+				fault,
+			) ||
+			/^feeder stop could not be enqueued \(.+\) — its push may still be running$/.test(
+				fault,
+			)
+		)
+			continue;
+		const match = /^([A-Za-z0-9_-]+): /.exec(fault);
+		if (!match?.[1]) return null;
+		// The first label belongs to our formatter. Inside arbitrary provider text,
+		// only an existing identity or the provider's UUID grammar starts another encoder.
+		if (
+			index === 0 ||
+			known.has(match[1]) ||
+			/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(match[1])
+		)
+			ids.push(match[1]);
+	}
+	return ids;
+}
+
+function rtmpRebuildAttempt(log: unknown): number {
+	const parsed = stepLogSchema.safeParse(log);
+	return parsed.success
+		? Math.max(
+				0,
+				...parsed.data
+					.filter((entry) => entry.kind === "CREATE_INPUT_RTMP")
+					.map((entry) => entry.attempt ?? 0),
+			)
+		: 0;
+}
+
+export type RtmpRetirementReceipt = {
+	accountId: string;
+	encodingId: string;
+	providerStatus: string;
+	observedAt: string;
+	disposition: "TERMINAL" | "NEVER_STARTED";
+};
+
+function validRetirement(value: unknown): value is RtmpRetirementReceipt {
+	if (!value || typeof value !== "object") return false;
+	const r = value as Partial<RtmpRetirementReceipt>;
+	return (
+		typeof r.encodingId === "string" &&
+		!!r.encodingId &&
+		typeof r.accountId === "string" &&
+		!!r.accountId &&
+		typeof r.observedAt === "string" &&
+		Number.isFinite(Date.parse(r.observedAt)) &&
+		((r.disposition === "TERMINAL" &&
+			classifyProviderStatusWord(r.providerStatus) === "TERMINAL") ||
+			(r.disposition === "NEVER_STARTED" && r.providerStatus === "CREATED"))
+	);
+}
+
+export function mergeRtmpRetirementEvidence(
+	existing: unknown,
+	receipts: readonly RtmpRetirementReceipt[],
+): RtmpRetirementReceipt[] {
+	const result = new Map<string, RtmpRetirementReceipt>();
+	for (const r of [...(Array.isArray(existing) ? existing : []), ...receipts])
+		if (validRetirement(r))
+			result.set(JSON.stringify([r.accountId, r.encodingId]), r);
+	return [...result.values()];
+}
+
+export function unconfirmedRtmpEncoders(
+	run: {
+		stepLog: unknown;
+		previousProviderEncodingIds?: readonly string[];
+		archivedRtmpAttempt?: number;
+		rtmpRetirementEvidence?: unknown;
+	},
+	channel: { stepLog: unknown },
+	accountId: string | null,
+): string[] | null {
+	if (
+		Math.max(
+			rtmpRebuildAttempt(run.stepLog),
+			rtmpRebuildAttempt(channel.stepLog),
+		) > (run.archivedRtmpAttempt ?? 0)
+	)
+		return null;
+	const retired = new Set(
+		mergeRtmpRetirementEvidence(run.rtmpRetirementEvidence, [])
+			.filter((r) => r.accountId === accountId)
+			.map((r) => r.encodingId),
+	);
+	return (run.previousProviderEncodingIds ?? []).filter(
+		(id) => !retired.has(id),
+	);
+}
+
+export function archivedStopRecoveryTarget(
+	channel: {
+		origin?: string;
+		purpose?: string | null;
+		status: string;
+		error?: string | null;
+		provisionClaimedAt?: Date | null;
+		bitmovinEncodingId?: string | null;
+		bitmovinAccountId?: string | null;
+		encoderStoppedConfirmedFor?: string | null;
+		plan?: unknown;
+		stepLog: unknown;
+	},
+	run:
+		| ({
+				bitmovinEncodingId?: string | null;
+				aisaAnalysisId?: string | null;
+				encoderStoppedConfirmedFor?: string | null;
+		  } & Parameters<typeof unconfirmedRtmpEncoders>[0])
+		| null,
+	history: readonly StopHistory[] = [],
+) {
+	if (
+		!run ||
+		channel.origin !== "MANAGED" ||
+		channel.provisionClaimedAt ||
+		(!["STOPPING", "ERROR", "STOPPED"].includes(channel.status) &&
+			!(
+				channel.purpose === "PROBE" &&
+				channel.status === "RUNNING" &&
+				!channel.bitmovinEncodingId &&
+				!run.bitmovinEncodingId
+			)) ||
+		isAisaManagedLivePlan(channel.plan) ||
+		run.aisaAnalysisId
+	)
+		return null;
+	const account = liveChannelAccountId(channel);
+	const archive = account
+		? pendingAiringRetirement(run, channel, history, account)
+		: null;
+	if (!archive?.length) return null;
+	if (!channel.bitmovinEncodingId && !run.bitmovinEncodingId) {
+		const paired =
+			channel.encoderStoppedConfirmedFor === run.encoderStoppedConfirmedFor
+				? run.encoderStoppedConfirmedFor
+				: undefined;
+		const candidates = archive.filter(
+			(id) =>
+				run.previousProviderEncodingIds?.includes(id) ||
+				liveStopLogEncodings(run.stepLog)?.includes(id) ||
+				history.some(
+					(c) =>
+						c.providerEncodingId === id || c.stopSendEncodingIds?.includes(id),
+				),
+		);
+		return candidates.find((id) => id !== paired) ?? candidates[0] ?? null;
+	}
+	return channel.bitmovinEncodingId &&
+		run.bitmovinEncodingId === channel.bitmovinEncodingId
+		? channel.bitmovinEncodingId
+		: null;
+}
+
+/** Identify the archive displayed to the operator without exposing historical provider IDs. */
+export function archivedStopRevision(
+	channel: Parameters<typeof archivedStopRecoveryTarget>[0] & {
+		id: string;
+		liveEffectFenceVersion: number;
+	},
+	run:
+		| (NonNullable<Parameters<typeof archivedStopRecoveryTarget>[1]> & {
+				id: string;
+		  })
+		| null,
+	history: readonly StopHistory[] = [],
+): string | null {
+	const target = archivedStopRecoveryTarget(channel, run, history);
+	if (!run || !target) return null;
+	const accountId = liveChannelAccountId(channel);
+	return createHash("sha256")
+		.update(
+			JSON.stringify([
+				channel.id,
+				run.id,
+				channel.liveEffectFenceVersion,
+				accountId,
+				target,
+				pendingAiringRetirement(run, channel, history, accountId),
+			]),
+		)
+		.digest("hex");
+}
+
+/** Restore a lost primary only from this current run's durable RTMP archive.
+ * Called by an explicit stop. Normal provisioning and heartbeat never rebind a target. */
+export async function bindArchivedStopTarget(
+	prisma: AppPrismaClient,
+	liveChannelId: string,
+	expectedRunId?: string,
+	expectedRevision?: string,
+): Promise<string | null> {
+	return prisma.$transaction((tx) =>
+		bindArchivedStopTargetInTransaction(
+			tx,
+			liveChannelId,
+			expectedRunId,
+			expectedRevision,
+		),
+	);
+}
+
+export async function bindArchivedStopTargetInTransaction(
+	tx: AppTransactionClient,
+	liveChannelId: string,
+	expectedRunId?: string,
+	expectedRevision?: string,
+): Promise<string | null> {
+	const locked = await tx.$queryRaw<
+		{ id: string }[]
+	>`SELECT id FROM "LiveChannel" WHERE id=${liveChannelId}::uuid FOR UPDATE`;
+	if (!locked.length) return null;
+	const channel = await tx.liveChannel.findUnique({
+		where: { id: liveChannelId },
+	});
+	if (!channel) return null;
+	const run = await tx.liveChannelRun.findFirst({
+		where: { liveChannelId },
+		orderBy: { seq: "desc" },
+	});
+	if (!run || (expectedRunId && run.id !== expectedRunId)) return null;
+	const history = await readAiringEffectHistory(tx, liveChannelId, run.id);
+	if (
+		expectedRevision !== undefined &&
+		archivedStopRevision(channel, run, history) !== expectedRevision
+	)
+		return null;
+	const target = archivedStopRecoveryTarget(channel, run, history);
+	if (!target || channel.bitmovinEncodingId === target) return target;
+	// Rebinding cannot retroactively validate an old CREATED observation. Only an ID
+	// previously indexed by the retirement writer qualified for that disposition.
+	const receipts = mergeRtmpRetirementEvidence(run.rtmpRetirementEvidence, []);
+	// Older clean STOPs can predate per-target receipts. Before moving the
+	// primary, materialize the old paired confirmation on its own account/ID.
+	const priorId = run.encoderStoppedConfirmedFor;
+	const accountId = liveChannelAccountId(channel);
+	const priorTerminal =
+		priorId &&
+		accountId &&
+		channel.encoderStoppedConfirmedFor === priorId &&
+		(!run.bitmovinEncodingId || run.bitmovinEncodingId === priorId) &&
+		run.status === "STOPPED" &&
+		!run.error &&
+		channel.status === "STOPPED" &&
+		!channel.error &&
+		run.providerTerminalAt &&
+		run.providerStatus &&
+		classifyProviderStatusWord(run.providerStatus) === "TERMINAL" &&
+		history.some(
+			(claim) =>
+				claim.action === "STOP" &&
+				claim.state === "ACKED" &&
+				!claim.failure &&
+				claim.providerEncodingId === priorId,
+		)
+			? [
+					{
+						accountId,
+						encodingId: priorId,
+						providerStatus: run.providerStatus,
+						observedAt: (
+							run.providerStatusObservedAt ?? run.providerTerminalAt
+						).toISOString(),
+						disposition: "TERMINAL" as const,
+					},
+				]
+			: [];
+	const retained = receipts.filter(
+		(r) =>
+			r.encodingId !== target ||
+			r.disposition !== "NEVER_STARTED" ||
+			run.previousProviderEncodingIds.includes(target),
+	);
+	await tx.liveChannelRun.update({
+		where: { id: run.id },
+		data: {
+			bitmovinEncodingId: target,
+			...(retained.length !== receipts.length || priorTerminal.length
+				? {
+						rtmpRetirementEvidence: mergeRtmpRetirementEvidence(
+							retained,
+							priorTerminal,
+						),
+					}
+				: {}),
+			// The rebound primary remains an outstanding archive until its own receipt lands.
+			previousProviderEncodingIds: [
+				...new Set([...run.previousProviderEncodingIds, target]),
+			],
+			providerStatus: null,
+			providerStatusObservedAt: null,
+			providerTerminalAt: null,
+			providerFeederStopsEnqueuedAt: null,
+			providerUnknownSince: null,
+			providerUnknownAlertedAt: null,
+			encoderStoppedConfirmedFor: null,
+			heartbeatPollEpoch: { increment: 1 },
+		},
+	});
+	await tx.liveChannel.update({
+		where: { id: liveChannelId },
+		data: { bitmovinEncodingId: target, encoderStoppedConfirmedFor: null },
+	});
+	return target;
+}
+
+export function collectLiveStopTargets(
+	run: {
+		bitmovinEncodingId: string | null;
+		stepLog: unknown;
+		aisaAnalysisId?: string | null;
+		previousProviderEncodingIds?: readonly string[];
+		rtmpRetirementEvidence?: unknown;
+		archivedRtmpAttempt?: number;
+	},
+	channel: {
+		bitmovinEncodingId: string | null;
+		stepLog: unknown;
+		error?: string | null;
+	},
+	history: readonly StopHistory[],
+	accountId?: string | null,
+): { encodingIds: string[]; complete: boolean } {
+	const channelIds = liveStopLogEncodings(channel.stepLog);
+	const runIds = liveStopLogEncodings(run.stepLog);
+	const archive = unconfirmedRtmpEncoders(run, channel, accountId ?? null);
+	let complete = !!channelIds && !!runIds && archive !== null;
+	const ids = new Set([
+		...(run.bitmovinEncodingId ? [run.bitmovinEncodingId] : []),
+		...(channel.bitmovinEncodingId ? [channel.bitmovinEncodingId] : []),
+		...(channelIds ?? []),
+		...(runIds ?? []),
+		...(archive ?? run.previousProviderEncodingIds ?? []),
+	]);
+	for (const claim of history) {
+		for (const id of [
+			claim.providerEncodingId,
+			...(claim.stopSendEncodingIds ?? []),
+			...(claim.legacyUnsentStopIds ?? []),
+		]) {
+			if (typeof id === "string" && id) ids.add(id);
+			else complete = false;
+		}
+		const required = (
+			claim.stopOutcomeEvidence as { requiredEncodingIds?: unknown } | null
+		)?.requiredEncodingIds;
+		if (Array.isArray(required))
+			for (const id of required) {
+				if (typeof id !== "string" || !id) complete = false;
+				else ids.add(id);
+			}
+		if (claim.action !== "STOP" || claim.stopProtocolVersion === 1) continue;
+		const legacy = legacyFaultTargets(claim.failure, ids);
+		if (!legacy) complete = false;
+		for (const id of legacy ?? []) ids.add(id);
+	}
+	// An unclaimed or pre-upgrade projection can be the last remaining trace of
+	// a secondary encoder. Typed receipts retain the exact set separately.
+	const ownerRecordedError = history.some(
+		(c) =>
+			c.stopProtocolVersion === 1 &&
+			(c.stopOutcomeEvidence as { error?: unknown } | null)?.error ===
+				channel.error,
+	);
+	if (!ownerRecordedError) {
+		const extra = legacyFaultTargets(channel.error, ids);
+		if (!extra) complete = false;
+		for (const id of extra ?? []) ids.add(id);
+	}
+	return { encodingIds: [...ids], complete };
+}
+
+/** Settlement needs a complete inventory; recovery can still inspect recorded targets. */
+export function liveStopKnownTargets(
+	...args: Parameters<typeof collectLiveStopTargets>
+): string[] | null {
+	const targets = collectLiveStopTargets(...args);
+	return targets.complete ? targets.encodingIds : null;
+}
+
+/** A never-started archive receipt no longer applies after a RESTART targets the same encoder. */
+export function validLiveRetirementReceipts(
+	run: {
+		rtmpRetirementEvidence?: unknown;
+		previousProviderEncodingIds?: readonly string[];
+	},
+	history: readonly StopHistory[],
+	accountId: string | null,
+) {
+	return mergeRtmpRetirementEvidence(run.rtmpRetirementEvidence, []).filter(
+		(receipt) =>
+			receipt.accountId === accountId &&
+			(receipt.disposition === "TERMINAL" ||
+				(run.previousProviderEncodingIds?.includes(receipt.encodingId) &&
+					!history.some(
+						(claim) =>
+							claim.action === "RESTART" &&
+							claim.providerEncodingId === receipt.encodingId,
+					))),
+	);
+}
+
+/** Claims may outlive their run. Only exact terminal evidence on the surviving channel retires them. */
+export function unresolvedOrphanLiveClaimTargets(
+	history: readonly StopHistory[],
+	evidence: unknown,
+	accountId: string | null,
+) {
+	const empty = { stepLog: [], bitmovinEncodingId: null };
+	const inventory = outstandingLiveStopTargets(
+		{ ...empty, rtmpRetirementEvidence: evidence },
+		empty,
+		history,
+		accountId,
+		null,
+	);
+	return inventory.complete ? inventory.encodingIds : null;
+}
+
+/** All identities whose retirement still needs a readback on this account. */
+export function outstandingLiveStopTargets(
+	run: Parameters<typeof collectLiveStopTargets>[0],
+	channel: Parameters<typeof collectLiveStopTargets>[1],
+	history: readonly StopHistory[],
+	accountId: string | null,
+	primary: string | null,
+) {
+	const inventory = collectLiveStopTargets(run, channel, history, accountId);
+	const retired = new Set(
+		validLiveRetirementReceipts(run, history, accountId).map(
+			(r) => r.encodingId,
+		),
+	);
+	return {
+		complete: inventory.complete,
+		encodingIds: inventory.encodingIds.filter(
+			(id) => id === primary || !retired.has(id),
+		),
+	};
+}
+export function pendingSecondaryStopTargets(
+	run: Parameters<typeof outstandingLiveStopTargets>[0],
+	channel: Parameters<typeof outstandingLiveStopTargets>[1],
+	history: readonly StopHistory[],
+	accountId: string | null,
+	primary: string | null,
+): string[] | null {
+	const inventory = outstandingLiveStopTargets(
+		run,
+		channel,
+		history,
+		accountId,
+		primary,
+	);
+	return inventory.complete
+		? inventory.encodingIds.filter((id) => id !== primary)
+		: null;
+}
+/** A lifecycle observation on one primary cannot retire a different primary on the other mirror. */
+export function divergentLivePrimaries(
+	run: { bitmovinEncodingId?: string | null },
+	channel: { bitmovinEncodingId?: string | null },
+): string[] {
+	const a = run.bitmovinEncodingId,
+		b = channel.bitmovinEncodingId;
+	return a && b && a !== b ? [a, b] : [];
+}
+/** The primary has its own lifecycle guard. If its column was lost, every surviving ID needs retirement. */
+export function pendingAiringRetirement(
+	run: Parameters<typeof unconfirmedRtmpEncoders>[0] & {
+		bitmovinEncodingId?: string | null;
+	},
+	channel: {
+		stepLog: unknown;
+		bitmovinEncodingId?: string | null;
+		error?: string | null;
+	},
+	history: readonly StopHistory[],
+	accountId: string | null,
+): string[] | null {
+	const primary = run.bitmovinEncodingId ?? null;
+	const pending = pendingSecondaryStopTargets(
+		{ ...run, bitmovinEncodingId: primary },
+		{ ...channel, bitmovinEncodingId: channel.bitmovinEncodingId ?? null },
+		history,
+		accountId,
+		primary,
+	);
+	if (!pending) return null;
+	// An explicitly indexed encoder can itself have been rebound as the primary of
+	// an archive-only STOP. Its positive receipt is still required before re-air.
+	const receipts = validLiveRetirementReceipts(run, history, accountId);
+	const valid = new Set(receipts.map((receipt) => receipt.encodingId));
+	const terminal = new Set(
+		receipts
+			.filter((receipt) => receipt.disposition === "TERMINAL")
+			.map((receipt) => receipt.encodingId),
+	);
+	const divergent = divergentLivePrimaries(run, channel).filter(
+		(id) => !terminal.has(id),
+	);
+	const indexed = (run.previousProviderEncodingIds ?? []).filter(
+		(id) => !valid.has(id),
+	);
+	return [...new Set([...pending, ...indexed, ...divergent])].sort();
+}
+export function readAiringEffectHistory(
+	tx: Pick<AppTransactionClient, "liveEffectClaim">,
+	liveChannelId: string,
+	liveChannelRunId: string,
+) {
+	return tx.liveEffectClaim.findMany({
+		where: { liveChannelId, liveChannelRunId },
+		select: {
+			action: true,
+			providerEncodingId: true,
+			state: true,
+			failure: true,
+			attempt: true,
+			stopProtocolVersion: true,
+			stopSendEncodingIds: true,
+			legacyUnsentStopIds: true,
+			stopAnalysisSendId: true,
+			stopOutcomeEvidence: true,
+			legacyStopErrorNotificationPossible: true,
+		},
+	});
+}
+
+export function stopNotificationHistoryEligible(
+	history: Awaited<ReturnType<typeof readAiringEffectHistory>>,
+	channel: { plan: unknown },
+	run: {
+		aisaAnalysisId?: string | null;
+		aisaStatus?: string | null;
+		aisaSnapshot?: unknown;
+	},
+	status: "STOPPED" | "ERROR",
+) {
+	return history.every(
+		(claim) =>
+			claim.action !== "STOP" ||
+			(claim.stopProtocolVersion === 1
+				? status === "STOPPED" || !claim.legacyStopErrorNotificationPossible
+				: status === "STOPPED" &&
+					legacyStopFailedBeforeSend(claim, channel, run)),
+	);
+}
+/** An acknowledged provider operation carries the target checked against this airing
+ * at admission. A failed operation, feeder-only claim, or ID mentioned in a
+ * diagnostic can require observation without authorizing a new encoder mutation. */
+export function acknowledgedProviderTargets(
+	history: readonly (StopHistory & { state: string })[],
+): string[] {
+	return history
+		.filter(
+			(c) =>
+				c.state === "ACKED" &&
+				[
+					"RESTART",
+					"SLATE_INSERT",
+					"SLATE_REGISTER",
+					"SCTE35",
+					"TIMESHIFT_RESET",
+					"RTMP_INGEST_UPDATE",
+					"AUTO_SHUTDOWN_UPDATE",
+				].includes(c.action),
+		)
+		.map((c) => c.providerEncodingId);
+}
+/** Identities proved to belong to the airing, distinct from IDs mentioned only by a diagnostic. */
+export function ownedLiveStopEncoders(
+	run: Parameters<typeof liveStopKnownTargets>[0],
+	channel: Parameters<typeof liveStopKnownTargets>[1],
+	history: readonly (StopHistory & { state: string })[],
+): Set<string> {
+	return new Set(
+		[
+			...acknowledgedProviderTargets(history),
+			run.bitmovinEncodingId,
+			...(liveStopLogEncodings(run.stepLog) ?? []),
+			...(liveStopLogEncodings(channel.stepLog) ?? []),
+			...(run.previousProviderEncodingIds ?? []),
+		].filter((id): id is string => Boolean(id)),
+	);
+}
+
+/** Targets with affirmative run ownership and no historical STOP reservation.
+ * Legacy dispatches cannot distinguish an attempted encoding from an untouched one. */
+export function unreservedStopTargets(
+	run: Parameters<typeof liveStopKnownTargets>[0],
+	channel: Parameters<typeof liveStopKnownTargets>[1] & {
+		plan?: unknown;
+		bitmovinAccountId?: string | null;
+	},
+	history: readonly (StopHistory & { state: string })[],
+): string[] {
+	const account = liveChannelAccountId(channel);
+	if (!account || run.aisaAnalysisId || isAisaManagedLivePlan(channel.plan))
+		return [];
+	const stops = history.filter((c) => c.action === "STOP");
+	const reservations = new Set(
+		stops.flatMap((c) => c.stopSendEncodingIds ?? []),
+	);
+	const outstanding = outstandingLiveStopTargets(
+		run,
+		channel,
+		history,
+		account,
+		run.bitmovinEncodingId ?? null,
+	);
+	const owned = ownedLiveStopEncoders(run, channel, history);
+	return outstanding.encodingIds.filter(
+		(id) =>
+			owned.has(id) &&
+			!reservations.has(id) &&
+			stops.every(
+				(c) =>
+					c.stopProtocolVersion === 1 ||
+					!["DISPATCHING", "AMBIGUOUS", "ACKED"].includes(c.state) ||
+					c.legacyUnsentStopIds?.includes(id) === true,
+			),
+	);
+}
+
+export function savedStopReadbacks(
+	claim: { stopOutcomeEvidence?: unknown },
+	accountId: string,
+): StopReceipt[] {
+	const saved = claim.stopOutcomeEvidence as {
+		accountId?: unknown;
+		encodings?: unknown;
+	} | null;
+	if (
+		!saved ||
+		saved.accountId !== accountId ||
+		!Array.isArray(saved.encodings)
+	)
+		return [];
+	return saved.encodings.filter(
+		(r): r is StopReceipt =>
+			r &&
+			typeof r.id === "string" &&
+			typeof r.status === "string" &&
+			classifyProviderStatusWord(r.status) === "TERMINAL",
+	);
+}
+
+type ScheduledStopAcceptance = {
+	admissionFence: number;
+	accountId: string;
+};
+
+function savedScheduledStopAcceptance(claim: {
+	stopOutcomeEvidence?: unknown;
+}): ScheduledStopAcceptance | undefined {
+	const saved = (
+		claim.stopOutcomeEvidence as {
+			acceptedScheduledDelivery?: Partial<ScheduledStopAcceptance>;
+		} | null
+	)?.acceptedScheduledDelivery;
+	if (
+		typeof saved?.admissionFence !== "number" ||
+		!Number.isSafeInteger(saved.admissionFence) ||
+		saved.admissionFence < 0 ||
+		typeof saved.accountId !== "string" ||
+		!saved.accountId
+	)
+		return undefined;
+	return {
+		admissionFence: saved.admissionFence,
+		accountId: saved.accountId,
+	};
+}
+
+export function canObserveLiveStop(
+	claim: {
+		state: string;
+		failure?: string | null;
+		expiresAt: Date;
+		stopProtocolVersion?: number | null;
+		stopOutcomeEvidence?: unknown;
+	},
+	channel: { status: string; error: string | null },
+	at: Date,
+): boolean {
+	if (
+		claim.state !== "AMBIGUOUS" &&
+		!(claim.state === "DISPATCHING" && claim.expiresAt <= at)
+	)
+		return false;
+	if (channel.status === "STOPPING") return true;
+	if (channel.status !== "ERROR" && channel.status !== "STOPPED") return false;
+	if (channel.status === "STOPPED" && channel.error === null) return true;
+	const saved = claim.stopOutcomeEvidence as {
+		status?: unknown;
+		error?: unknown;
+	} | null;
+	if (claim.stopProtocolVersion === 1)
+		return (
+			!!saved &&
+			saved.status === channel.status &&
+			saved.error === channel.error
+		);
+	const expired =
+		claim.expiresAt <= at &&
+		(claim.state === "DISPATCHING" ||
+			claim.failure === LEGACY_EXPIRED_DISPATCH);
+	return (
+		!!channel.error &&
+		(expired ||
+			(channel.status === "ERROR"
+				? claim.failure === liveEffectSendUncertainty(channel.error)
+				: claim.failure === channel.error &&
+					channel.error.startsWith("stop did not confirm — ")))
+	);
+}
+
+/** Both projected logs are part of a broadcast's encoder ownership record. */
+export function liveStopLogEncodings(log: unknown): string[] | null {
+	const parsed = stepLogSchema.safeParse(log);
+	if (!parsed.success) return null;
+	return parsed.data.flatMap((entry) =>
+		(entry.kind === "CREATE_ENCODING" ||
+			entry.kind === "RESOLVE_AISA_LIVE_ENCODING") &&
+		entry.resourceId
+			? [entry.resourceId]
+			: [],
+	);
+}
+
+/** Older runs had no encoder column. Only their own completed creation receipt can replace it. */
+export function liveStopRunOwnsEncoding(
+	run: { bitmovinEncodingId: string | null; stepLog: unknown },
+	id: string,
+): boolean {
+	if (run.bitmovinEncodingId !== null) return run.bitmovinEncodingId === id;
+	const parsed = stepLogSchema.safeParse(run.stepLog);
+	return (
+		parsed.success &&
+		parsed.data.some(
+			(entry) =>
+				entry.kind === "CREATE_ENCODING" &&
+				entry.status === "DONE" &&
+				entry.resourceId === id,
+		)
+	);
+}
+
+export function liveStopFeederWhere(liveChannelId: string) {
+	return {
+		liveChannelId,
+		OR: [
+			feederOccupancyWhere(),
+			{ status: { in: [...FEEDER_ACTIVE_STATUSES] } },
+		],
+	};
+}
+
 export type ResolveLiveEffectsAfterConfirmedStopResult =
-	| { kind: "RESOLVED"; count: number }
-	| { kind: "BLOCKED"; reason: string };
+	| {
+			kind: "RESOLVED";
+			count: number;
+			recoveredFromError?: true;
+			terminalFailure?: true;
+	  }
+	| { kind: "BLOCKED"; reason: string }
+	| { kind: "ALREADY_ACKED" };
 
 function handleOf(row: {
 	id: string;
+	scheduleId?: string | null;
 	idempotencyKey: string;
 	token: string;
 	liveChannelId: string;
@@ -110,6 +1013,7 @@ function handleOf(row: {
 }): LiveEffectClaimHandle {
 	return {
 		id: row.id,
+		...(row.scheduleId ? { scheduleId: row.scheduleId } : {}),
 		idempotencyKey: row.idempotencyKey,
 		token: row.token,
 		liveChannelId: row.liveChannelId,
@@ -130,6 +1034,128 @@ function isPrismaSerializationConflict(error: unknown): boolean {
 	);
 }
 
+/** Locked admission for an explicit recovery after an earlier clean STOP.
+ * The journal-free worker sent only to its primary and channel-log IDs. An
+ * unrecorded response can suppress a repeat, but cannot suppress a positively
+ * identified displaced encoder's first send outside that set. */
+async function recoverAcknowledgedStop(
+	tx: AppTransactionClient,
+	input: LiveEffectBeginInput,
+	existingId: string | undefined,
+): Promise<{ requireReadback: boolean; existingUnsent?: string[] } | null> {
+	const initial = await tx.liveChannel.findUnique({
+		where: { id: input.liveChannelId },
+	});
+	if (initial?.status !== "STOPPED" || initial.error !== null) return null;
+	// Every writer of the airing, including outgoing send reservations, locks
+	// the channel first. Never lock a historical acknowledgement ahead of it.
+	const locked = await tx.$queryRaw<
+		{ id: string }[]
+	>`SELECT id FROM "LiveChannel" WHERE id=${input.liveChannelId}::uuid AND status='STOPPED' AND error IS NULL FOR UPDATE`;
+	if (!locked.length) return null;
+	const channel = await tx.liveChannel.findUnique({
+		where: { id: input.liveChannelId },
+	});
+	if (!channel) return null;
+	const run = await tx.liveChannelRun.findFirst({
+		where: { liveChannelId: input.liveChannelId },
+		orderBy: { seq: "desc" },
+	});
+	if (run?.id !== input.liveChannelRunId) return null;
+	const history = await tx.liveEffectClaim.findMany({
+		where: { liveChannelId: input.liveChannelId, liveChannelRunId: run.id },
+	});
+	const target = archivedStopRecoveryTarget(channel, run, history);
+	if (!target || target !== input.providerEncodingId) return null;
+
+	const result: { requireReadback: boolean; existingUnsent?: string[] } = {
+		requireReadback: history.some(
+			(c) =>
+				c.action === "STOP" &&
+				c.state === "ACKED" &&
+				c.providerEncodingId !== target,
+		),
+	};
+	const channelLog = liveStopLogEncodings(channel.stepLog);
+	if (!channelLog || run.status !== "STOPPED" || run.error) return result;
+	const terminalIds = new Set(
+		validLiveRetirementReceipts(run, history, liveChannelAccountId(channel))
+			.filter((r) => r.disposition === "TERMINAL")
+			.map((r) => r.encodingId),
+	);
+	if (
+		run.bitmovinEncodingId &&
+		run.providerTerminalAt &&
+		classifyProviderStatusWord(run.providerStatus) === "TERMINAL"
+	)
+		terminalIds.add(run.bitmovinEncodingId);
+	const pending =
+		pendingAiringRetirement(
+			run,
+			channel,
+			history,
+			liveChannelAccountId(channel),
+		) ?? [];
+	for (const claim of history) {
+		if (
+			claim.action !== "STOP" ||
+			claim.state !== "ACKED" ||
+			claim.stopProtocolVersion !== null ||
+			!terminalIds.has(claim.providerEncodingId) ||
+			claim.failure
+		)
+			continue;
+		const covered = new Set([
+			claim.providerEncodingId,
+			...channelLog,
+			...claim.stopSendEncodingIds,
+		]);
+		const unsent = pending.filter((id) => !covered.has(id));
+		if (!unsent.length) continue;
+		result.requireReadback = true;
+		if (claim.id === existingId) result.existingUnsent = unsent;
+		else
+			await tx.liveEffectClaim.updateMany({
+				where: {
+					id: claim.id,
+					state: "ACKED",
+					generation: claim.generation,
+					token: claim.token,
+				},
+				data: { legacyUnsentStopIds: unsent },
+			});
+	}
+	return result;
+}
+
+/** Legacy schedulers could change another STOP's outcome and used local clocks. */
+export function competingScheduledStop(
+	scheduleId: string,
+	runId: string,
+	fence: number,
+): Prisma.LiveScheduleWhereInput {
+	return {
+		id: { not: scheduleId },
+		liveChannelRunId: runId,
+		action: "STOP",
+		status: "FIRED",
+		outcome: { in: ["PENDING", "UNKNOWN"] },
+		AND: [
+			{
+				OR: [
+					{ stopAdmissionFenceVersion: null },
+					{ stopAdmissionFenceVersion: fence },
+				],
+			},
+			{
+				OR: [
+					{ legacyStopExhaustedFence: null },
+					{ legacyStopExhaustedFence: { not: fence } },
+				],
+			},
+		],
+	};
+}
 /**
  * Acquire and durably write DISPATCHING before the caller crosses its send or
  * spawn boundary. The channel fence CAS is the linearization point shared with
@@ -141,6 +1167,117 @@ export async function beginLiveEffect(
 	hooks: BeginHooks = {},
 ): Promise<LiveEffectBeginResult> {
 	return prisma.$transaction(async (tx) => {
+		if (input.action === "STOP" && input.scheduleId) {
+			await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${input.liveChannelId}::uuid FOR UPDATE`;
+			await tx.$queryRaw`SELECT id FROM "LiveSchedule" WHERE id = ${input.scheduleId}::uuid FOR UPDATE`;
+			const saved = await tx.liveSchedule.findUnique({
+				where: { id: input.scheduleId },
+				select: {
+					liveChannelId: true,
+					liveChannelRunId: true,
+					stopDeliveryToken: true,
+					dispatchJobId: true,
+					stopProviderEncodingId: true,
+					stopAdmissionFenceVersion: true,
+					action: true,
+					status: true,
+				},
+			});
+			if (
+				(saved?.stopDeliveryToken || input.stopDeliveryToken) &&
+				(!saved ||
+					saved.stopDeliveryToken !== input.stopDeliveryToken ||
+					saved.dispatchJobId !==
+						scheduledStopJobId(input.scheduleId, input.stopDeliveryToken) ||
+					saved.liveChannelId !== input.liveChannelId ||
+					saved.liveChannelRunId !== input.liveChannelRunId ||
+					saved.stopProviderEncodingId !== input.providerEncodingId ||
+					saved.stopAdmissionFenceVersion !== input.expectedFenceVersion ||
+					saved.action !== "STOP" ||
+					saved.status !== "FIRED" ||
+					input.idempotencyKey !== `schedule:${input.scheduleId}:stop`)
+			)
+				return {
+					kind: "STALE",
+					reason: "the scheduled STOP has a newer queue delivery",
+				};
+		}
+		if (input.legacyStopDelivery) {
+			if (
+				input.action !== "STOP" ||
+				!input.scheduleId ||
+				input.idempotencyKey !== `schedule:${input.scheduleId}:stop`
+			)
+				return {
+					kind: "STALE" as const,
+					reason: "Legacy schedule STOP has no exact receipt",
+				};
+			const original = await tx.liveSchedule.findFirst({
+				where: {
+					id: input.scheduleId,
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: input.liveChannelRunId,
+					action: "STOP",
+					status: "FIRED",
+					...(input.legacyStopDelivery !== "EXHAUSTED" && {
+						stopAdmissionFenceVersion: null,
+						stopProviderEncodingId: null,
+						stopDeliveryToken: null,
+					}),
+					outcome:
+						input.legacyStopDelivery === "EXHAUSTED"
+							? { in: ["PENDING", "UNKNOWN"] }
+							: "PENDING",
+					liveChannel: {
+						status: "STOPPING",
+						...(input.legacyStopDelivery === "EXHAUSTED"
+							? {
+									legacyAdmissionFenceVersion: input.expectedFenceVersion,
+									liveEffectFenceVersion: input.expectedFenceVersion,
+									bitmovinEncodingId: input.providerEncodingId,
+									runs: {
+										some: {
+											id: input.liveChannelRunId,
+											status: { in: ["RUNNING", "STOPPING", "ERROR"] },
+										},
+									},
+								}
+							: {}),
+					},
+					OR: [
+						{ dispatchJobId: null },
+						{
+							dispatchJobId: scheduledStopJobId(
+								input.scheduleId,
+								input.stopDeliveryToken,
+							),
+						},
+					],
+				},
+				select: { id: true, firedAt: true },
+			});
+			if (
+				!original ||
+				(input.legacyStopDelivery === "EXHAUSTED" &&
+					(!original.firedAt ||
+						(await tx.liveSchedule.findFirst({
+							where: {
+								liveChannelId: input.liveChannelId,
+								...competingScheduledStop(
+									input.scheduleId,
+									input.liveChannelRunId,
+									input.expectedFenceVersion,
+								),
+							},
+							select: { id: true },
+						}))))
+			)
+				return {
+					kind: "STALE" as const,
+					reason:
+						"The preclaimed legacy schedule or its broadcast is no longer pending",
+				};
+		}
 		const durableManualStop =
 			input.action === "STOP" &&
 			input.supersedeOpen === true &&
@@ -158,7 +1295,69 @@ export async function beginLiveEffect(
 				reason: "the request id is already bound to a different payload",
 			};
 		}
+		let unsentGeneration: number | undefined;
+
 		let retryingFailed = existing?.state === "FAILED" ? existing : null;
+		if (
+			(existing?.stopProtocolVersion === 1 ||
+				(!!existing && existing.legacyUnsentStopIds?.length > 0)) &&
+			input.action === "STOP" &&
+			(existing.state === "DISPATCHING" || existing.state === "AMBIGUOUS") &&
+			existing.expiresAt <= input.now
+		) {
+			const [channel, run, history] = await Promise.all([
+				tx.liveChannel.findUnique({ where: { id: input.liveChannelId } }),
+				tx.liveChannelRun.findFirst({
+					where: { liveChannelId: input.liveChannelId },
+					orderBy: { seq: "desc" },
+				}),
+				readAiringEffectHistory(
+					tx,
+					input.liveChannelId,
+					input.liveChannelRunId,
+				),
+			]);
+			if (
+				channel &&
+				run?.id === input.liveChannelRunId &&
+				channel.liveEffectFenceVersion === existing.generation &&
+				channel.bitmovinEncodingId === input.providerEncodingId &&
+				liveStopRunOwnsEncoding(run, input.providerEncodingId) &&
+				canObserveLiveStop(existing, channel, input.now) &&
+				unreservedStopTargets(run, channel, history).length
+			) {
+				retryingFailed = existing;
+				unsentGeneration = existing.generation;
+			}
+		}
+		// A clean pre-journal STOP covered the primary and the then-current channel
+		// creation log. Its old dedupe key can be scheduled or manual.
+		const recovery =
+			durableManualStop &&
+			(!existing ||
+				(existing.state === "ACKED" &&
+					existing.liveChannelId === input.liveChannelId &&
+					existing.liveChannelRunId === input.liveChannelRunId &&
+					existing.providerEncodingId === input.providerEncodingId))
+				? await recoverAcknowledgedStop(tx, input, existing?.id)
+				: null;
+		if (recovery && existing) retryingFailed = existing;
+		const recoveringLegacyAck = recovery?.requireReadback ?? false;
+		const retryingPromotedTarget =
+			durableManualStop &&
+			retryingFailed?.state === "FAILED" &&
+			(await tx.liveEffectClaim.findFirst({
+				where: {
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: input.liveChannelRunId,
+					action: "STOP",
+					state: "ACKED",
+					providerEncodingId: { not: input.providerEncodingId },
+				},
+				select: { id: true },
+			}));
+		const legacyUnsentStopIds = recovery?.existingUnsent;
+
 		if (
 			existing &&
 			input.resumeAisaFinalization &&
@@ -232,8 +1431,7 @@ export async function beginLiveEffect(
 					},
 					data: {
 						state: "AMBIGUOUS",
-						failure:
-							"effect owner expired after DISPATCHING; exact readback is required before retry",
+						failure: LEGACY_EXPIRED_DISPATCH,
 					},
 				});
 				if (expired.count === 1) state = "AMBIGUOUS";
@@ -268,6 +1466,10 @@ export async function beginLiveEffect(
 				where: { id: input.liveChannelId },
 				select: {
 					status: true,
+					error: true,
+					plan: true,
+					stepLog: true,
+					bitmovinAccountId: true,
 					liveEffectFenceVersion: true,
 					bitmovinEncodingId: true,
 				},
@@ -275,7 +1477,23 @@ export async function beginLiveEffect(
 			tx.liveChannelRun.findFirst({
 				where: { liveChannelId: input.liveChannelId },
 				orderBy: { seq: "desc" },
-				select: { id: true, bitmovinEncodingId: true },
+				select: {
+					id: true,
+					bitmovinEncodingId: true,
+					stepLog: true,
+					status: true,
+					error: true,
+					providerStatus: true,
+					providerTerminalAt: true,
+					stopNotificationAt: true,
+					stopNotificationKind: true,
+					aisaAnalysisId: true,
+					aisaStatus: true,
+					aisaSnapshot: true,
+					archivedRtmpAttempt: true,
+					previousProviderEncodingIds: true,
+					rtmpRetirementEvidence: true,
+				},
 			}),
 			tx.liveEffectClaim.findFirst({
 				where: {
@@ -302,6 +1520,9 @@ export async function beginLiveEffect(
 		}
 		if (
 			currentRun?.id !== input.liveChannelRunId ||
+			(input.action === "STOP" &&
+				(!liveStopRunOwnsEncoding(currentRun, input.providerEncodingId) ||
+					channel.bitmovinEncodingId !== input.providerEncodingId)) ||
 			(currentRun.bitmovinEncodingId ?? channel.bitmovinEncodingId) !==
 				input.providerEncodingId
 		) {
@@ -311,24 +1532,60 @@ export async function beginLiveEffect(
 					"the planned live run or provider encoding is no longer current",
 			};
 		}
+		// A heartbeat may have completed this exact airing after the UI queued STOP.
+		// Its durable completion also owns the notification for the manual request.
+		if (
+			durableManualStop &&
+			!open &&
+			channel.status === "STOPPED" &&
+			channel.error === null &&
+			currentRun.status === "STOPPED" &&
+			currentRun.error === null &&
+			currentRun.providerTerminalAt &&
+			classifyProviderStatusWord(currentRun.providerStatus) === "TERMINAL" &&
+			currentRun.stopNotificationAt &&
+			currentRun.stopNotificationKind === "CHANNEL_STOPPED" &&
+			pendingSecondaryStopTargets(
+				currentRun,
+				channel,
+				await readAiringEffectHistory(tx, input.liveChannelId, currentRun.id),
+				liveChannelAccountId(channel),
+				input.providerEncodingId,
+			)?.length === 0 &&
+			!(await tx.feederSession.findFirst({
+				where: liveStopFeederWhere(input.liveChannelId),
+				select: { id: true },
+			}))
+		) {
+			return {
+				kind: "STALE",
+				reason: "the airing was already confirmed stopped",
+			};
+		}
 		// A queue-first manual STOP is the cost-safety override. Its run/provider
 		// identity is the
 		// immutable admission boundary; an unrelated same-run effect advancing the
 		// generation after HTTP admission must be superseded, not turn the stop into
 		// a normally-completed no-op. FAILED stop retries adopt the same current
 		// generation for the same reason.
-		const claimedFromGeneration = durableManualStop
-			? channel.liveEffectFenceVersion
-			: retryingFailed
-				? retryingFailed.generation
-				: input.expectedFenceVersion;
+		const claimedFromGeneration =
+			unsentGeneration ??
+			(durableManualStop
+				? channel.liveEffectFenceVersion
+				: retryingFailed
+					? retryingFailed.generation
+					: input.expectedFenceVersion);
 		if (channel.liveEffectFenceVersion !== claimedFromGeneration) {
 			return {
 				kind: "STALE",
 				reason: "the live effect generation changed after admission",
 			};
 		}
-		if (open && !input.supersedeOpen) {
+		if (
+			open &&
+			(!input.supersedeOpen ||
+				(input.legacyStopDelivery && open.id !== existing?.id))
+		) {
 			return {
 				kind: "BLOCKED",
 				claimId: open.id,
@@ -342,13 +1599,16 @@ export async function beginLiveEffect(
 			where: {
 				id: input.liveChannelId,
 				liveEffectFenceVersion: claimedFromGeneration,
+				...(input.action === "RESTART" ? { provisionClaimedAt: null } : {}),
 			},
 			data: {
 				liveEffectFenceVersion: { increment: 1 },
 				// This is the same transaction that supersedes the open RESTART and
 				// persists STOP as DISPATCHING. No restart loser can therefore retain
 				// PROVISIONING after the STOP owns its new generation.
-				...(durableManualStop ? { status: "STOPPING" as const } : {}),
+				...(durableManualStop
+					? { status: "STOPPING" as const, provisionClaimedAt: null }
+					: {}),
 			},
 		});
 		if (advanced.count !== 1) {
@@ -402,6 +1662,23 @@ export async function beginLiveEffect(
 						dispatchedAt: null,
 						acknowledgedAt: null,
 						failure: null,
+						...(legacyUnsentStopIds ? { legacyUnsentStopIds } : {}),
+						...(retryingFailed.stopProtocolVersion == null &&
+						input.action === "STOP" &&
+						retryingFailed.state !== "FAILED" &&
+						!retryingFailed.stopSendEncodingIds?.includes(
+							input.providerEncodingId,
+						)
+							? { stopSendEncodingIds: { push: input.providerEncodingId } }
+							: {}),
+						...(input.action === "STOP" &&
+						retryingFailed.stopProtocolVersion == null &&
+						legacyStopFailedBeforeSend(retryingFailed, channel, currentRun)
+							? {
+									stopProtocolVersion: 1,
+									legacyStopErrorNotificationPossible: true,
+								}
+							: {}),
 						attempt: { increment: 1 },
 					},
 				})
@@ -411,6 +1688,16 @@ export async function beginLiveEffect(
 						liveChannelRunId: input.liveChannelRunId,
 						...(input.scheduleId ? { scheduleId: input.scheduleId } : {}),
 						action: input.action,
+						...(input.legacyStopDelivery && input.legacyStopDelivery !== "FIRST"
+							? // A worker from before the send ledger may have posted for any
+								// encoder in this compound STOP. Reuse its readback-only semantics.
+								{
+									stopProtocolVersion: null,
+									stopSendEncodingIds: [input.providerEncodingId],
+								}
+							: input.action === "STOP"
+								? { stopProtocolVersion: 1 }
+								: {}),
 						idempotencyKey: input.idempotencyKey,
 						...(input.requestSha256
 							? { requestSha256: input.requestSha256 }
@@ -424,6 +1711,33 @@ export async function beginLiveEffect(
 						expiresAt: input.expiresAt,
 					},
 				});
+		if (
+			retryingFailed?.state === "FAILED" &&
+			input.action === "STOP" &&
+			input.scheduleId
+		) {
+			// A new attempt is underway. A crash or its final callback must never inherit
+			// a definitive pre-send failure from the previous attempt.
+			await tx.liveSchedule.updateMany({
+				where: {
+					id: input.scheduleId,
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: input.liveChannelRunId,
+					action: "STOP",
+					status: "FIRED",
+					outcome: "FAILED",
+					outcomeEvidenceKind: "EFFECT_FAILED",
+				},
+				data: {
+					outcome: "PENDING",
+					outcomeAt: null,
+					outcomeNote: null,
+					outcomeEvidenceAt: null,
+					outcomeEvidenceKind: null,
+					outcomeEvidenceVersion: null,
+				},
+			});
+		}
 		await hooks.afterClaimed?.();
 		const intent = await tx.liveEffectClaim.updateMany({
 			where: { id: created.id, token, state: "CLAIMED" },
@@ -432,7 +1746,19 @@ export async function beginLiveEffect(
 		if (intent.count !== 1) {
 			throw new Error("LIVE_EFFECT_INTENT_NOT_DURABLE");
 		}
-		return { kind: "EXECUTE", claim: handleOf({ ...created, generation }) };
+		return {
+			kind: "EXECUTE",
+			claim: {
+				...handleOf({ ...created, generation }),
+				...(input.action === "STOP" &&
+				(recoveringLegacyAck ||
+					retryingPromotedTarget ||
+					(retryingFailed &&
+						(retryingFailed.state !== "FAILED" || retryingFailed.attempt > 1)))
+					? { requireActiveStopReadback: true }
+					: {}),
+			},
+		};
 	});
 }
 
@@ -448,14 +1774,24 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 ): Promise<ResolveLiveEffectsAfterConfirmedStopResult> {
 	return prisma.$transaction(
 		async (tx) => {
-			const [channel, run, feeder, stopClaim] = await Promise.all([
+			const proof = input.terminalReadback;
+			const owner = input.ownerReadbacks;
+			const periodic =
+				proof !== undefined || input.interruptedAckGeneration !== undefined;
+			const [channel, run, feeder, stopClaim, history] = await Promise.all([
 				tx.liveChannel.findUnique({
 					where: { id: input.liveChannelId },
 					select: {
+						name: true,
 						status: true,
 						error: true,
 						liveEffectFenceVersion: true,
+						legacyAdmissionFenceVersion: true,
 						bitmovinEncodingId: true,
+						bitmovinAccountId: true,
+						origin: true,
+						plan: true,
+						stepLog: true,
 					},
 				}),
 				tx.liveChannelRun.findFirst({
@@ -473,92 +1809,409 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						aisaStatus: true,
 						aisaSnapshot: true,
 						aisaFinalization: true,
+						stepLog: true,
+						previousProviderEncodingIds: true,
+						archivedRtmpAttempt: true,
+						rtmpRetirementEvidence: true,
+						endedAt: true,
 					},
 				}),
 				tx.feederSession.findFirst({
-					where: {
-						...feederOccupancyWhere(input.liveChannelId),
-						liveChannelRunId: input.liveChannelRunId,
-					},
+					where: liveStopFeederWhere(input.liveChannelId),
 					select: { id: true },
 				}),
-				tx.liveEffectClaim.findUnique({
-					where: { id: input.stopClaimId },
+				tx.liveEffectClaim.findUnique({ where: { id: input.stopClaimId } }),
+				tx.liveEffectClaim.findMany({
+					where: {
+						liveChannelId: input.liveChannelId,
+						liveChannelRunId: input.liveChannelRunId,
+					},
 					select: {
+						id: true,
 						idempotencyKey: true,
-						liveChannelId: true,
-						liveChannelRunId: true,
+						scheduleId: true,
 						providerEncodingId: true,
 						action: true,
 						generation: true,
 						state: true,
+						token: true,
+						failure: true,
+						stopProtocolVersion: true,
+						legacyStopErrorNotificationPossible: true,
+						attempt: true,
+						stopSendEncodingIds: true,
+						legacyUnsentStopIds: true,
+						stopAnalysisSendId: true,
+						stopOutcomeEvidence: true,
+						dispatchedAt: true,
 					},
 				}),
 			]);
-			const aisa = run ? aisaLiveFinalization(run) : "UNBOUND";
-			if (aisa === "PENDING")
-				return {
-					kind: "BLOCKED",
-					reason: "the exact Analysis finalization is not yet confirmed",
-				};
-			const confirmedStatus = aisa === "FAILED" ? "ERROR" : "STOPPED";
-			const confirmedError =
-				aisa === "FAILED" ? "AISA_LIVE_TERMINAL_FAILURE" : null;
-			if (
-				channel?.status !== confirmedStatus ||
-				channel.error !== confirmedError ||
-				channel.bitmovinEncodingId !== input.providerEncodingId
-			) {
-				return {
-					kind: "BLOCKED",
-					reason: "the exact channel STOP is not confirmed clean",
-				};
-			}
-			if (
-				run?.id !== input.liveChannelRunId ||
-				run.status !== confirmedStatus ||
-				run.error !== confirmedError ||
-				run.bitmovinEncodingId !== input.providerEncodingId ||
-				!run.providerStatusObservedAt ||
-				!run.providerTerminalAt ||
-				classifyProviderStatusWord(run.providerStatus) !== "TERMINAL"
-			) {
-				return {
-					kind: "BLOCKED",
-					reason:
-						"the exact provider encoding has no authoritative terminal readback",
-				};
-			}
+			const blocked = (reason: string) => ({
+				kind: "BLOCKED" as const,
+				reason,
+			});
 			if (
 				!stopClaim ||
 				stopClaim.idempotencyKey !== input.stopIdempotencyKey ||
 				stopClaim.liveChannelId !== input.liveChannelId ||
 				stopClaim.liveChannelRunId !== input.liveChannelRunId ||
 				stopClaim.providerEncodingId !== input.providerEncodingId ||
-				stopClaim.action !== "STOP" ||
+				stopClaim.action !== "STOP"
+			)
+				return blocked("the exact STOP identity changed");
+			const settleSchedule = async (
+				claim: Pick<
+					typeof stopClaim,
+					| "id"
+					| "scheduleId"
+					| "idempotencyKey"
+					| "token"
+					| "generation"
+					| "attempt"
+					| "dispatchedAt"
+					| "stopProtocolVersion"
+					| "stopSendEncodingIds"
+					| "stopOutcomeEvidence"
+				> = stopClaim,
+				recordObservation = true,
+			) => {
+				if (
+					!claim.scheduleId ||
+					claim.idempotencyKey !== `schedule:${claim.scheduleId}:stop`
+				)
+					return;
+				const target = {
+					scheduleId: claim.scheduleId,
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: input.liveChannelRunId,
+					providerEncodingId: input.providerEncodingId,
+					at: input.at,
+				};
+				const currentAcceptance =
+					claim.id === stopClaim.id &&
+					owner?.token === claim.token &&
+					owner.generation === claim.generation &&
+					channel &&
+					owner.bitmovinAccountId === liveChannelAccountId(channel) &&
+					owner.encodings.some(
+						(encoding) =>
+							encoding.id === input.providerEncodingId &&
+							classifyProviderStatusWord(encoding.status) === "TERMINAL",
+					)
+						? owner.acceptedScheduleAdmission
+						: undefined;
+				const saved = savedScheduledStopAcceptance(claim);
+				const savedAcceptance =
+					saved && channel && saved.accountId === liveChannelAccountId(channel)
+						? saved.admissionFence
+						: undefined;
+				const admissionFence = currentAcceptance ?? savedAcceptance;
+				if (
+					admissionFence !== undefined &&
+					claim.stopProtocolVersion === 1 &&
+					claim.stopSendEncodingIds.includes(input.providerEncodingId)
+				)
+					await recordOwnedScheduledStopDelivery(tx, {
+						...target,
+						admissionFence,
+						claimDispatchedAt: claim.dispatchedAt,
+						legacyAdmissionMatches:
+							!!channel &&
+							isLiveStopAdmissionFence(
+								channel.legacyAdmissionFenceVersion,
+								claim.generation,
+								claim,
+							),
+					});
+				if (recordObservation)
+					await recordObservedScheduledStop(tx, {
+						...target,
+						generation: claim.generation,
+					});
+			};
+			if (stopClaim.state === "ACKED") {
+				// A periodic observer can win while the owner is returning its own
+				// successful POST and terminal reads. Only repair the exact receipt.
+				await settleSchedule(stopClaim, false);
+				return { kind: "ALREADY_ACKED" };
+			}
+			const exhausted = proof?.exhaustedFailedSchedule;
+			if (
+				!channel ||
+				!run ||
+				run.id !== input.liveChannelRunId ||
+				channel.bitmovinEncodingId !== input.providerEncodingId ||
+				!liveStopRunOwnsEncoding(run, input.providerEncodingId) ||
 				stopClaim.generation !== channel.liveEffectFenceVersion ||
-				(stopClaim.state !== "DISPATCHING" && stopClaim.state !== "AMBIGUOUS")
-			) {
-				return {
-					kind: "BLOCKED",
-					reason: "the exact STOP claim is not the current unresolved effect",
-				};
-			}
+				(!exhausted && !["DISPATCHING", "AMBIGUOUS"].includes(stopClaim.state))
+			)
+				return blocked(
+					"the exact STOP claim is not the current unresolved effect",
+				);
 			const stopGeneration = stopClaim.generation;
-			if (feeder) {
-				return {
-					kind: "BLOCKED",
-					reason: "a feeder still occupies the ended live run",
-				};
+			if (exhausted) {
+				if (
+					owner ||
+					channel.status !== "STOPPING" ||
+					channel.legacyAdmissionFenceVersion !== stopGeneration ||
+					stopClaim.token !== exhausted.claimToken ||
+					stopClaim.scheduleId !== exhausted.id ||
+					stopClaim.idempotencyKey !== `schedule:${exhausted.id}:stop` ||
+					!legacyStopFailedBeforeSend(stopClaim, channel, run)
+				)
+					return blocked(
+						"the exhausted legacy STOP no longer owns this broadcast",
+					);
+				const [schedule, other] = await Promise.all([
+					tx.liveSchedule.findFirst({
+						where: {
+							id: exhausted.id,
+							liveChannelId: input.liveChannelId,
+							liveChannelRunId: run.id,
+							action: "STOP",
+							status: "FIRED",
+							legacyStopExhaustedFence: stopGeneration,
+							stopDeliveryToken: exhausted.stopDeliveryToken ?? null,
+							AND: [
+								{
+									OR: [
+										{ outcome: "UNKNOWN" },
+										{ outcome: "PENDING", dispatchedAt: { not: null } },
+									],
+								},
+								{
+									OR: [
+										{ dispatchJobId: null },
+										{
+											dispatchJobId: scheduledStopJobId(
+												exhausted.id,
+												exhausted.stopDeliveryToken,
+											),
+										},
+									],
+								},
+								{
+									OR: [
+										{
+											stopProviderEncodingId: null,
+											stopAdmissionFenceVersion: null,
+										},
+										{
+											stopProviderEncodingId: input.providerEncodingId,
+											stopAdmissionFenceVersion: stopGeneration,
+										},
+									],
+								},
+							],
+						},
+						select: { id: true },
+					}),
+					tx.liveSchedule.findFirst({
+						where: {
+							liveChannelId: input.liveChannelId,
+							...competingScheduledStop(exhausted.id, run.id, stopGeneration),
+						},
+						select: { id: true },
+					}),
+				]);
+				if (!schedule || other)
+					return blocked(
+						"the exhausted legacy STOP no longer owns the schedule handoff",
+					);
 			}
+			const terminal = new Map(
+				(owner?.encodings ?? proof?.encodings ?? []).map(({ id, status }) => [
+					id,
+					status,
+				]),
+			);
+			if (!owner) {
+				const recorded =
+					run.providerStatusObservedAt && run.providerTerminalAt
+						? run.providerStatus
+						: null;
+				const status = proof?.providerStatus ?? recorded;
+				if (status) terminal.set(input.providerEncodingId, status);
+			}
+			const providerStatus = terminal.get(input.providerEncodingId);
+			if (
+				!providerStatus ||
+				[...terminal.values()].some(
+					(status) => classifyProviderStatusWord(status) !== "TERMINAL",
+				)
+			)
+				return blocked(
+					"the exact provider encoding has no authoritative terminal readback",
+				);
+			if (
+				Math.max(
+					rtmpRebuildAttempt(run.stepLog),
+					rtmpRebuildAttempt(channel.stepLog),
+				) > (run.archivedRtmpAttempt ?? 0)
+			)
+				return blocked(
+					"encoder identities from an earlier RTMP rebuild were not archived; verify the provider account before resolving this broadcast",
+				);
+			const inventory = outstandingLiveStopTargets(
+				run,
+				channel,
+				history,
+				liveChannelAccountId(channel),
+				input.providerEncodingId,
+			);
+			const targets = inventory.encodingIds;
+			if (!inventory.complete || targets.some((id) => !terminal.has(id)))
+				return blocked(
+					"a broadcast log or historical effect identifies an encoder without terminal readback",
+				);
+			const stops = history.filter(
+				(c) =>
+					c.action === "STOP" &&
+					LIVE_EFFECT_OPEN_STATES.some((state) => state === c.state),
+			);
+			if (
+				stops.some(
+					(c) =>
+						c.providerEncodingId !== input.providerEncodingId ||
+						c.generation > stopGeneration,
+				)
+			)
+				return blocked(
+					"another unresolved STOP needs independent target verification",
+				);
+			if (feeder) return blocked("a feeder still occupies this channel");
+			const aisa = aisaLiveFinalization({ ...run, providerStatus });
+			if (
+				aisa === "PENDING" ||
+				(isAisaManagedLivePlan(channel.plan) && aisa === "UNBOUND")
+			)
+				return blocked("the exact Analysis finalization is not yet confirmed");
+			const confirmedStatus = aisa === "FAILED" ? "ERROR" : "STOPPED";
+			const confirmedError =
+				aisa === "FAILED" ? "AISA_LIVE_TERMINAL_FAILURE" : null;
+			if (
+				periodic &&
+				(channel.origin !== "MANAGED" ||
+					(aisa !== "COMPLETE" &&
+						(isAisaManagedLivePlan(channel.plan) ||
+							run.aisaAnalysisId ||
+							[run.stepLog, channel.stepLog].some((log) =>
+								stepLogSchema
+									.parse(log)
+									.some((e) => e.kind === "RESOLVE_AISA_LIVE_ENCODING"),
+							))))
+			)
+				return blocked(
+					"periodic STOP reconciliation requires an ordinary managed broadcast or complete Analysis finalization",
+				);
+			if (owner) {
+				if (
+					owner.generation !== stopGeneration ||
+					owner.token !== stopClaim.token ||
+					stopClaim.state !== "DISPATCHING" ||
+					liveChannelAccountId(channel) !== owner.bitmovinAccountId ||
+					channel.status !== "STOPPING"
+				)
+					return blocked("the original STOP no longer owns these readbacks");
+			} else if (proof) {
+				const matchingRun =
+					channel.status === run.status && channel.error === run.error;
+				const terminalHeartbeat =
+					run.status === "STOPPED" &&
+					run.error === null &&
+					run.providerTerminalAt &&
+					run.providerStatusObservedAt &&
+					classifyProviderStatusWord(run.providerStatus) === "TERMINAL";
+				if (
+					proof.generation !== stopGeneration ||
+					liveChannelAccountId(channel) !== proof.bitmovinAccountId ||
+					(!exhausted && !canObserveLiveStop(stopClaim, channel, input.at)) ||
+					!(
+						matchingRun ||
+						terminalHeartbeat ||
+						(stopClaim.stopProtocolVersion == null &&
+							(channel.status === "STOPPED" || channel.status === "ERROR") &&
+							(run.status === "STOPPING" ||
+								(run.status === "ERROR" &&
+									run.error === STRANDED_RUN_ERROR &&
+									!!channel.error &&
+									(stopClaim.failure === channel.error ||
+										stopClaim.failure ===
+											liveEffectSendUncertainty(channel.error))))) ||
+						(channel.status === "STOPPING" &&
+							[
+								"STOPPING",
+								"RUNNING",
+								"ERROR",
+								"PROVISIONING",
+								"STOPPED",
+							].includes(run.status))
+					)
+				)
+					return blocked(
+						"the terminal GET cannot be bound to this interrupted or uncertain STOP",
+					);
+			} else {
+				if (
+					channel.status !== confirmedStatus ||
+					channel.error !== confirmedError ||
+					run.status !== confirmedStatus ||
+					run.error !== confirmedError
+				)
+					return blocked("the exact channel STOP is not confirmed clean");
+				if (
+					input.interruptedAckGeneration !== undefined &&
+					(input.interruptedAckGeneration !== stopGeneration ||
+						(stopClaim.state === "DISPATCHING" &&
+							stopClaim.expiresAt > input.at))
+				)
+					return blocked("the interrupted STOP owner has not expired");
+			}
+			const legacyFailure =
+				proof && stopClaim.stopProtocolVersion == null && channel.error
+					? {
+							accountId: proof.bitmovinAccountId,
+							status: channel.status,
+							error: channel.error,
+							requiredEncodingIds: targets,
+							encodings: [...terminal].map(([id, status]) => ({ id, status })),
+						}
+					: null;
 			// Advance the same CAS that beginLiveEffect uses. A stale admission that
 			// read the pre-reconciliation fence must lose even if it resumes only after
 			// this transaction commits; a no-op row lock would not invalidate it.
+			const archived =
+				pendingAiringRetirement(
+					run,
+					channel,
+					history,
+					liveChannelAccountId(channel),
+				) ?? [];
+			if (archived.length && !owner && !proof)
+				return blocked(
+					"archived encoder ownership requires an account-bound provider read",
+				);
+			const observedAccount =
+				owner?.bitmovinAccountId ?? proof?.bitmovinAccountId;
+			const retirements: RtmpRetirementReceipt[] = [];
+			if (observedAccount)
+				for (const encodingId of archived) {
+					const status = terminal.get(encodingId);
+					if (status)
+						retirements.push({
+							accountId: observedAccount,
+							encodingId,
+							providerStatus: status,
+							observedAt: input.at.toISOString(),
+							disposition: "TERMINAL",
+						});
+				}
 			const locked = await tx.liveChannel.updateMany({
 				where: {
 					id: input.liveChannelId,
-					status: confirmedStatus,
-					error: confirmedError,
+					status: channel.status,
+					error: channel.error,
 					bitmovinEncodingId: input.providerEncodingId,
 					liveEffectFenceVersion: stopGeneration,
 					effectClaims: {
@@ -569,11 +2222,18 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 							providerEncodingId: input.providerEncodingId,
 							action: "STOP",
 							generation: stopGeneration,
-							state: { in: ["DISPATCHING", "AMBIGUOUS"] },
+							...(exhausted && { token: exhausted.claimToken }),
+							state: {
+								in: [stopClaim.state],
+							},
 						},
 					},
 				},
-				data: { liveEffectFenceVersion: { increment: 1 } },
+				data: {
+					liveEffectFenceVersion: { increment: 1 },
+					status: confirmedStatus,
+					error: confirmedError,
+				},
 			});
 			if (locked.count !== 1) {
 				return {
@@ -581,41 +2241,127 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					reason: "the exact channel STOP changed during reconciliation",
 				};
 			}
-			const acknowledged = await tx.liveEffectClaim.updateMany({
-				where: {
-					id: input.stopClaimId,
-					idempotencyKey: input.stopIdempotencyKey,
-					liveChannelId: input.liveChannelId,
-					liveChannelRunId: input.liveChannelRunId,
-					providerEncodingId: input.providerEncodingId,
-					action: "STOP",
-					generation: stopGeneration,
-					state: { in: ["DISPATCHING", "AMBIGUOUS"] },
-					// Keep the ownership predicate on the ACK itself as a second fence. The
-					// channel row is already write-locked above against re-air admission.
-					liveChannel: {
-						is: {
-							status: confirmedStatus,
-							error: confirmedError,
-							bitmovinEncodingId: input.providerEncodingId,
-							liveEffectFenceVersion: stopGeneration + 1,
+			{
+				const projected = await tx.liveChannelRun.updateMany({
+					where: {
+						id: run.id,
+						liveChannelId: input.liveChannelId,
+						bitmovinEncodingId: run.bitmovinEncodingId,
+						status: run.status,
+						error: run.error,
+					},
+					data: {
+						status: confirmedStatus,
+						error: confirmedError,
+						...(retirements.length
+							? {
+									rtmpRetirementEvidence: mergeRtmpRetirementEvidence(
+										run.rtmpRetirementEvidence,
+										retirements,
+									),
+								}
+							: {}),
+						endedAt: run.endedAt ?? input.at,
+						bitmovinEncodingId: input.providerEncodingId,
+						heartbeatPollEpoch: { increment: 1 },
+						providerStatus,
+						providerStatusObservedAt:
+							proof || owner ? input.at : run.providerStatusObservedAt,
+						...(run.aisaAnalysisId && { cancelRequested: false }),
+						providerUnknownSince: null,
+						providerUnknownAlertedAt: null,
+						providerTerminalAt: run.providerTerminalAt ?? input.at,
+					},
+				});
+				if (projected.count !== 1)
+					throw new Error("LIVE_STOP_RECONCILIATION_RUN_FENCE_LOST");
+			}
+			if (!exhausted) {
+				const acknowledged = await tx.liveEffectClaim.updateMany({
+					where: {
+						id: input.stopClaimId,
+						idempotencyKey: input.stopIdempotencyKey,
+						liveChannelId: input.liveChannelId,
+						liveChannelRunId: input.liveChannelRunId,
+						providerEncodingId: input.providerEncodingId,
+						action: "STOP",
+						generation: stopGeneration,
+						state: { in: [stopClaim.state] },
+						// Keep the ownership predicate on the ACK itself as a second fence. The
+						// channel row is already write-locked above against re-air admission.
+						liveChannel: {
+							is: {
+								status: confirmedStatus,
+								error: confirmedError,
+								bitmovinEncodingId: input.providerEncodingId,
+								liveEffectFenceVersion: stopGeneration + 1,
+							},
 						},
 					},
-				},
-				data: {
-					state: "ACKED",
-					acknowledgedAt: input.at,
-					failure: confirmedError,
-				},
+					data: {
+						state: "ACKED",
+						...(legacyFailure ? { stopOutcomeEvidence: legacyFailure } : {}),
+						acknowledgedAt: input.at,
+						...(proof && !stopClaim.failure && channel.error
+							? { failure: channel.error }
+							: {}),
+						...(confirmedError && !stopClaim.failure
+							? { failure: confirmedError }
+							: {}),
+					},
+				});
+				if (acknowledged.count !== 1) {
+					// Throw so the transaction rolls back the fence increment. Redelivery
+					// re-runs authoritative readback and never sends a second provider STOP.
+					throw new Error("LIVE_STOP_RECONCILIATION_ACK_FENCE_LOST");
+				}
+			}
+			for (const sibling of stops.filter((c) => c.id !== input.stopClaimId)) {
+				const finished = await tx.liveEffectClaim.updateMany({
+					where: {
+						id: sibling.id,
+						token: sibling.token,
+						generation: sibling.generation,
+						providerEncodingId: input.providerEncodingId,
+						state: sibling.state,
+					},
+					data: { state: "ACKED", acknowledgedAt: input.at },
+				});
+				if (finished.count !== 1)
+					throw new Error("LIVE_STOP_RECONCILIATION_SIBLING_FENCE_LOST");
+				await settleSchedule(sibling);
+			}
+			if (!exhausted) await settleSchedule();
+			await recordConfirmedLiveStopNotification(tx, {
+				channelName: channel.name,
+				// Older workers could emit an unkeyed notification before persisting the ACK.
+				notificationEligible:
+					stopClaim.stopProtocolVersion === 1 &&
+					stopNotificationHistoryEligible(
+						history,
+						channel,
+						run,
+						confirmedStatus,
+					),
+				liveChannelId: input.liveChannelId,
+				liveChannelRunId: run.id,
+				status: confirmedStatus,
+				at: input.at,
 			});
-			if (acknowledged.count !== 1) {
-				// Throw so the transaction rolls back the fence increment. Redelivery
-				// re-runs authoritative readback and never sends a second provider STOP.
-				throw new Error("LIVE_STOP_RECONCILIATION_ACK_FENCE_LOST");
+			const admissionFence = channel.legacyAdmissionFenceVersion;
+			if (isLiveStopAdmissionFence(admissionFence, stopGeneration, stopClaim)) {
+				await settleExhaustedStopSchedules(tx, {
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: run.id,
+					providerEncodingId: input.providerEncodingId,
+					admissionFence,
+					at: input.at,
+				});
 			}
 			const { count } = await tx.liveEffectClaim.updateMany({
 				where: {
 					id: { not: input.stopClaimId },
+					action: { not: "STOP" },
 					liveChannelId: input.liveChannelId,
 					liveChannelRunId: input.liveChannelRunId,
 					providerEncodingId: input.providerEncodingId,
@@ -624,13 +2370,52 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				data: {
 					state: "RESOLVED",
 					acknowledgedAt: input.at,
-					failure:
-						"resolved by authoritative provider-terminal and feeder-stop readback",
 				},
 			});
-			return { kind: "RESOLVED", count };
+			return {
+				kind: "RESOLVED",
+				count,
+				...(confirmedStatus === "ERROR"
+					? { terminalFailure: true as const }
+					: {}),
+				...(proof && channel.status === "ERROR"
+					? { recoveredFromError: true as const }
+					: {}),
+			};
 		},
 		{ isolationLevel: "Serializable" },
+	);
+}
+
+export async function wasLiveStopAcknowledged(
+	db: Pick<AppTransactionClient, "liveEffectClaim">,
+	claim: Pick<
+		LiveEffectClaimHandle,
+		| "id"
+		| "idempotencyKey"
+		| "liveChannelId"
+		| "liveChannelRunId"
+		| "providerEncodingId"
+	>,
+): Promise<boolean> {
+	const row = await db.liveEffectClaim.findUnique({
+		where: { id: claim.id },
+		select: {
+			state: true,
+			action: true,
+			idempotencyKey: true,
+			liveChannelId: true,
+			liveChannelRunId: true,
+			providerEncodingId: true,
+		},
+	});
+	return (
+		row?.state === "ACKED" &&
+		row.action === "STOP" &&
+		row.idempotencyKey === claim.idempotencyKey &&
+		row.liveChannelId === claim.liveChannelId &&
+		row.liveChannelRunId === claim.liveChannelRunId &&
+		row.providerEncodingId === claim.providerEncodingId
 	);
 }
 
@@ -640,7 +2425,28 @@ export async function resolveLiveEffectsAfterConfirmedStop(
 ): Promise<ResolveLiveEffectsAfterConfirmedStopResult> {
 	for (let attempt = 0; ; attempt += 1) {
 		try {
-			return await resolveLiveEffectsAfterConfirmedStopOnce(prisma, input);
+			const outcome = await resolveLiveEffectsAfterConfirmedStopOnce(
+				prisma,
+				input,
+			);
+			if (
+				outcome.kind === "BLOCKED" &&
+				(await wasLiveStopAcknowledged(prisma, {
+					...input,
+					id: input.stopClaimId,
+					idempotencyKey: input.stopIdempotencyKey,
+				}))
+			) {
+				// The observation may have committed after our first snapshot. Let
+				// the ACK branch merge any exact owner receipt before returning.
+				if (
+					input.ownerReadbacks?.acceptedScheduleAdmission !== undefined &&
+					attempt < 2
+				)
+					continue;
+				return { kind: "ALREADY_ACKED" };
+			}
+			return outcome;
 		} catch (error) {
 			if (!isPrismaSerializationConflict(error) || attempt >= 2) throw error;
 		}
@@ -649,10 +2455,14 @@ export async function resolveLiveEffectsAfterConfirmedStop(
 
 /** Re-check the exact token/run/encoding/generation immediately pre-send. */
 export async function assertLiveEffectCurrent(
-	prisma: AppPrismaClient,
+	prisma: Pick<
+		AppPrismaClient,
+		"liveChannel" | "liveChannelRun" | "liveEffectClaim"
+	>,
 	claim: LiveEffectClaimHandle,
 	now: Date,
 ): Promise<boolean> {
+	const ordinaryTimer = claim.action === "AUTO_SHUTDOWN_UPDATE";
 	const [held, channel, currentRun] = await Promise.all([
 		prisma.liveEffectClaim.findUnique({
 			where: { idempotencyKey: claim.idempotencyKey },
@@ -661,26 +2471,145 @@ export async function assertLiveEffectCurrent(
 		prisma.liveChannel.findUnique({
 			where: { id: claim.liveChannelId },
 			select: {
+				...(ordinaryTimer ? { origin: true, plan: true, stepLog: true } : {}),
 				liveEffectFenceVersion: true,
+				provisionClaimedAt: true,
 				bitmovinEncodingId: true,
 			},
 		}),
 		prisma.liveChannelRun.findFirst({
 			where: { liveChannelId: claim.liveChannelId },
 			orderBy: { seq: "desc" },
-			select: { id: true, bitmovinEncodingId: true },
+			select: {
+				id: true,
+				bitmovinEncodingId: true,
+				...(ordinaryTimer
+					? {
+							stepLog: true,
+							aisaAnalysisId: true,
+							aisaStatus: true,
+							aisaSnapshot: true,
+						}
+					: {}),
+			},
 		}),
 	]);
 	return (
+		(!ordinaryTimer || !hasAisaLiveBinding(channel, currentRun)) &&
 		held?.id === claim.id &&
 		held.token === claim.token &&
 		held.state === "DISPATCHING" &&
 		held.expiresAt.getTime() > now.getTime() &&
 		channel?.liveEffectFenceVersion === claim.generation &&
+		(claim.action !== "RESTART" || channel.provisionClaimedAt == null) &&
 		currentRun?.id === claim.liveChannelRunId &&
 		(currentRun.bitmovinEncodingId ?? channel?.bitmovinEncodingId) ===
 			claim.providerEncodingId
 	);
+}
+
+/** Reserve each outgoing STOP under the same channel lock used for supersession. */
+export async function claimLiveStopSend(
+	prisma: AppPrismaClient,
+	claim: LiveEffectClaimHandle,
+	encodingId: string,
+	at: Date,
+): Promise<boolean> {
+	return prisma.$transaction(async (tx) => {
+		const held = {
+			id: claim.id,
+			action: "STOP" as const,
+			token: claim.token,
+			state: "DISPATCHING" as const,
+			expiresAt: { gt: at },
+		};
+		const lock = await tx.liveChannel.updateMany({
+			where: {
+				id: claim.liveChannelId,
+				bitmovinEncodingId: claim.providerEncodingId,
+				liveEffectFenceVersion: claim.generation,
+				effectClaims: { some: held },
+			},
+			data: { liveEffectFenceVersion: claim.generation },
+		});
+		if (!lock.count) return false;
+		const recorded = await tx.liveEffectClaim.updateMany({
+			where: { ...held, NOT: { stopSendEncodingIds: { has: encodingId } } },
+			data: { stopSendEncodingIds: { push: encodingId } },
+		});
+		return recorded.count === 1;
+	});
+}
+
+/** The Analysis and Encoding stop POSTs are independent. An older reservation
+ * suppresses only that provider operation; an owner lost during the binding
+ * GET must leave the winning owner eligible to make the first POST. */
+export async function reserveAisaStop(
+	prisma: AppPrismaClient,
+	claim: LiveEffectClaimHandle,
+	service: "analysis" | "encoding",
+	targetId: string,
+	at: Date,
+): Promise<"RESERVED" | "PRIOR" | "LOST"> {
+	return prisma.$transaction(async (tx) => {
+		const held = {
+			id: claim.id,
+			token: claim.token,
+			state: "DISPATCHING" as const,
+			expiresAt: { gt: at },
+		};
+		const lock = await tx.liveChannel.updateMany({
+			where: {
+				id: claim.liveChannelId,
+				bitmovinEncodingId: claim.providerEncodingId,
+				liveEffectFenceVersion: claim.generation,
+				effectClaims: { some: held },
+			},
+			data: { liveEffectFenceVersion: claim.generation },
+		});
+		if (!lock.count) return "LOST";
+		const run = await tx.liveChannelRun.findFirst({
+			where: { liveChannelId: claim.liveChannelId },
+			orderBy: { seq: "desc" },
+			select: { id: true, bitmovinEncodingId: true, aisaAnalysisId: true },
+		});
+		if (
+			!run ||
+			run.id !== claim.liveChannelRunId ||
+			!run.aisaAnalysisId ||
+			run.bitmovinEncodingId !== claim.providerEncodingId ||
+			(service === "analysis" ? run.aisaAnalysisId : run.bitmovinEncodingId) !==
+				targetId
+		)
+			return "LOST";
+		const previous = await tx.liveEffectClaim.findFirst({
+			where: {
+				liveChannelRunId: run.id,
+				liveChannelId: claim.liveChannelId,
+				action: "STOP",
+				OR: [
+					service === "analysis"
+						? { stopAnalysisSendId: targetId }
+						: { stopSendEncodingIds: { has: targetId } },
+					{
+						id: { not: claim.id },
+						stopProtocolVersion: null,
+						state: { in: ["DISPATCHING", "AMBIGUOUS", "ACKED"] },
+					},
+				],
+			},
+			select: { id: true },
+		});
+		if (previous) return "PRIOR";
+		await tx.liveEffectClaim.update({
+			where: { id: claim.id, token: claim.token },
+			data:
+				service === "analysis"
+					? { stopAnalysisSendId: targetId }
+					: { stopSendEncodingIds: { push: targetId } },
+		});
+		return "RESERVED";
+	});
 }
 
 export async function markLiveEffectAcked(
@@ -707,11 +2636,273 @@ export async function markLiveEffectAcked(
 	return count === 1;
 }
 
+/** Combine a late POST receipt with the terminal projection the observer committed. */
+async function recordAcceptedStopAfterAck(
+	tx: AppTransactionClient,
+	claim: LiveEffectClaimHandle,
+	input: {
+		acceptedScheduleAdmission?: number;
+		accountId?: string | null;
+		at: Date;
+	},
+): Promise<void> {
+	const { scheduleId, providerEncodingId, liveChannelId, liveChannelRunId } =
+		claim;
+	const { acceptedScheduleAdmission, accountId, at } = input;
+	if (
+		!scheduleId ||
+		claim.idempotencyKey !== `schedule:${scheduleId}:stop` ||
+		acceptedScheduleAdmission === undefined ||
+		!accountId
+	)
+		return;
+	await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
+	const [channel, run, acknowledged] = await Promise.all([
+		tx.liveChannel.findUnique({
+			where: { id: liveChannelId },
+			select: {
+				plan: true,
+				bitmovinAccountId: true,
+				legacyAdmissionFenceVersion: true,
+			},
+		}),
+		tx.liveChannelRun.findFirst({
+			where: {
+				id: liveChannelRunId,
+				liveChannelId,
+				bitmovinEncodingId: providerEncodingId,
+				status: { in: ["STOPPED", "ERROR"] },
+				providerStatusObservedAt: { not: null },
+				providerTerminalAt: { not: null },
+			},
+			select: { providerStatus: true },
+		}),
+		tx.liveEffectClaim.findFirst({
+			where: {
+				id: claim.id,
+				token: claim.token,
+				generation: claim.generation,
+				idempotencyKey: claim.idempotencyKey,
+				action: "STOP",
+				state: "ACKED",
+				acknowledgedAt: { not: null },
+				scheduleId,
+				providerEncodingId,
+				liveChannelId,
+				liveChannelRunId,
+				stopProtocolVersion: 1,
+				stopSendEncodingIds: { has: providerEncodingId },
+			},
+			select: { attempt: true, dispatchedAt: true, stopOutcomeEvidence: true },
+		}),
+	]);
+	if (
+		!channel ||
+		liveChannelAccountId(channel) !== accountId ||
+		!run ||
+		classifyProviderStatusWord(run.providerStatus) !== "TERMINAL" ||
+		!acknowledged ||
+		!isLiveStopAdmissionFence(
+			acceptedScheduleAdmission,
+			claim.generation,
+			acknowledged,
+		)
+	)
+		return;
+	const oldEvidence = acknowledged.stopOutcomeEvidence;
+	await tx.liveEffectClaim.update({
+		where: {
+			id: claim.id,
+			token: claim.token,
+			generation: claim.generation,
+			state: "ACKED",
+		},
+		data: {
+			stopOutcomeEvidence: {
+				...(oldEvidence &&
+				typeof oldEvidence === "object" &&
+				!Array.isArray(oldEvidence)
+					? oldEvidence
+					: {}),
+				acceptedScheduledDelivery: {
+					accountId,
+					admissionFence: acceptedScheduleAdmission,
+				},
+			},
+		},
+	});
+	await recordOwnedScheduledStopDelivery(tx, {
+		scheduleId,
+		providerEncodingId,
+		liveChannelId,
+		liveChannelRunId,
+		admissionFence: acceptedScheduleAdmission,
+		claimDispatchedAt: acknowledged.dispatchedAt,
+		legacyAdmissionMatches: isLiveStopAdmissionFence(
+			channel.legacyAdmissionFenceVersion,
+			claim.generation,
+			acknowledged,
+		),
+		at,
+	});
+}
+
+/** A late owner cannot overwrite the winner's channel, history, or error evidence. */
+export async function recordLiveStopFailure(
+	prisma: AppPrismaClient,
+	claim: LiveEffectClaimHandle,
+	input: {
+		status: "STOPPED" | "ERROR";
+		error: string;
+		failure: string;
+		state: "FAILED" | "AMBIGUOUS";
+		accountId?: string | null;
+		encodings?: StopReceipt[];
+		requiredEncodingIds?: string[];
+		acceptedScheduleAdmission?: number;
+		at: Date;
+	},
+): Promise<"RECORDED" | "ALREADY_ACKED" | "LOST"> {
+	return prisma.$transaction(async (tx) => {
+		const current = await tx.liveChannel.updateMany({
+			where: {
+				id: claim.liveChannelId,
+				liveEffectFenceVersion: claim.generation,
+				bitmovinEncodingId: claim.providerEncodingId,
+				effectClaims: {
+					some: {
+						id: claim.id,
+						token: claim.token,
+						action: "STOP",
+						state: "DISPATCHING",
+					},
+				},
+			},
+			data: { status: input.status, error: input.error },
+		});
+		if (!current.count) {
+			if (!(await wasLiveStopAcknowledged(tx, claim))) return "LOST";
+			await recordAcceptedStopAfterAck(tx, claim, input);
+			return "ALREADY_ACKED";
+		}
+		const run = {
+			id: claim.liveChannelRunId,
+			liveChannelId: claim.liveChannelId,
+		};
+		const account =
+			input.accountId &&
+			(await tx.liveChannel.findUnique({
+				where: { id: claim.liveChannelId },
+				select: { plan: true, bitmovinAccountId: true },
+			}));
+		const accountMatches =
+			!!account && liveChannelAccountId(account) === input.accountId;
+		const receipts = (accountMatches ? (input.encodings ?? []) : []).filter(
+			(r) => classifyProviderStatusWord(r.status) === "TERMINAL",
+		);
+		const primary =
+			input.accountId &&
+			receipts.find((r) => r.id === claim.providerEncodingId);
+		const delivery = claim.scheduleId
+			? await tx.liveEffectClaim.findUnique({
+					where: { id: claim.id, token: claim.token },
+					select: {
+						stopProtocolVersion: true,
+						stopSendEncodingIds: true,
+						stopOutcomeEvidence: true,
+					},
+				})
+			: null;
+		const acceptedScheduledDelivery =
+			delivery?.stopProtocolVersion === 1 &&
+			claim.idempotencyKey === `schedule:${claim.scheduleId}:stop` &&
+			delivery.stopSendEncodingIds.includes(claim.providerEncodingId)
+				? accountMatches &&
+					input.accountId &&
+					input.acceptedScheduleAdmission !== undefined
+					? {
+							admissionFence: input.acceptedScheduleAdmission,
+							accountId: input.accountId,
+						}
+					: savedScheduledStopAcceptance(delivery)
+				: undefined;
+		const projected = await tx.liveChannelRun.updateMany({
+			where: run,
+			data: {
+				status: input.status,
+				error: input.error,
+				...(primary
+					? {
+							providerStatus: primary.status,
+							providerStatusObservedAt: input.at,
+							heartbeatPollEpoch: { increment: 1 },
+							providerUnknownSince: null,
+							providerUnknownAlertedAt: null,
+						}
+					: {}),
+			},
+		});
+		if (primary)
+			await tx.liveChannelRun.updateMany({
+				where: { ...run, providerTerminalAt: null },
+				data: { providerTerminalAt: input.at },
+			});
+		const marked = await tx.liveEffectClaim.updateMany({
+			where: { id: claim.id, token: claim.token, state: "DISPATCHING" },
+			data: {
+				state: input.state,
+				failure: input.failure,
+				stopOutcomeEvidence: {
+					status: input.status,
+					error: input.error,
+					accountId: input.accountId ?? null,
+					encodings: receipts,
+					requiredEncodingIds: input.requiredEncodingIds ?? [],
+					...(acceptedScheduledDelivery && { acceptedScheduledDelivery }),
+				},
+			},
+		});
+		if (projected.count !== 1 || marked.count !== 1)
+			throw new Error("LIVE_STOP_FAILURE_FENCE_LOST");
+		await recordStopScheduleFailure(tx, claim.id, {
+			liveChannelId: claim.liveChannelId,
+			liveChannelRunId: claim.liveChannelRunId,
+			state: input.state,
+			status: input.status,
+			error: input.error,
+			at: input.at,
+		});
+		await tx.liveChannelRun.updateMany({
+			where: { ...run, endedAt: null },
+			data: { endedAt: input.at },
+		});
+		return "RECORDED";
+	});
+}
+
 export async function markLiveEffectAmbiguous(
 	prisma: AppPrismaClient,
 	claim: LiveEffectClaimHandle,
 	reason: string,
 ): Promise<boolean> {
+	if (claim.action === "STOP" && claim.scheduleId) {
+		return prisma.$transaction(async (tx) => {
+			const changed = await tx.liveEffectClaim.updateMany({
+				where: { id: claim.id, token: claim.token, state: "DISPATCHING" },
+				data: { state: "AMBIGUOUS", failure: reason },
+			});
+			if (!changed.count) return false;
+			await recordStopScheduleFailure(tx, claim.id, {
+				liveChannelId: claim.liveChannelId,
+				liveChannelRunId: claim.liveChannelRunId,
+				state: "AMBIGUOUS",
+				status: "ERROR",
+				error: reason,
+				at: new Date(),
+			});
+			return true;
+		});
+	}
 	const { count } = await prisma.liveEffectClaim.updateMany({
 		where: { id: claim.id, token: claim.token, state: "DISPATCHING" },
 		data: { state: "AMBIGUOUS", failure: reason },
@@ -720,8 +2911,8 @@ export async function markLiveEffectAmbiguous(
 }
 
 export async function markLiveEffectFailed(
-	prisma: AppPrismaClient,
-	claim: LiveEffectClaimHandle,
+	prisma: Pick<AppTransactionClient, "liveEffectClaim">,
+	claim: Pick<LiveEffectClaimHandle, "id" | "token">,
 	reason: string,
 ): Promise<boolean> {
 	const { count } = await prisma.liveEffectClaim.updateMany({
@@ -729,6 +2920,70 @@ export async function markLiveEffectFailed(
 		data: { state: "FAILED", failure: reason },
 	});
 	return count === 1;
+}
+
+/** Fail a LOOP effect only while its pre-dispatch owner still holds the lease. */
+export async function failUnstartedLoopFeederHandoff(
+	prisma: AppPrismaClient,
+	fence: {
+		id: string;
+		ownerId: string;
+		ownerGeneration: number;
+		liveChannelId: string;
+		liveChannelRunId: string;
+		leaseNotBefore: Date;
+	},
+	reason: string,
+	claim?: Pick<LiveEffectClaimHandle, "id" | "token" | "action">,
+): Promise<boolean> {
+	// Discovering a handoff without a handle is safe only for the first owner.
+	if (!claim && fence.ownerGeneration !== 1) return false;
+	const spawn = claim?.action === "FEEDER_SPAWN";
+	return prisma.$transaction(async (tx) => {
+		// Use the same lock order as Live STOP and single-pass dispatch.
+		const [channel] = await tx.$queryRaw<
+			{ bitmovinEncodingId: string | null; liveEffectFenceVersion: number }[]
+		>`
+			SELECT "bitmovinEncodingId", "liveEffectFenceVersion" FROM "LiveChannel"
+			WHERE id = ${fence.liveChannelId}::uuid FOR UPDATE`;
+		if (!channel?.bitmovinEncodingId) return false;
+		const [handoff] = await tx.$queryRaw<{ id: string; token: string }[]>`
+			SELECT c.id, c.token FROM "LiveEffectClaim" c
+			JOIN LATERAL (
+				SELECT r.id, r."bitmovinEncodingId" FROM "LiveChannelRun" r
+				WHERE r."liveChannelId" = c."liveChannelId" ORDER BY r.seq DESC LIMIT 1
+			) current_run ON current_run.id = c."liveChannelRunId"
+			WHERE c."liveChannelId" = ${fence.liveChannelId}::uuid
+				AND c."liveChannelRunId" = ${fence.liveChannelRunId}::uuid
+				AND c."providerEncodingId" = ${channel.bitmovinEncodingId}
+				AND COALESCE(current_run."bitmovinEncodingId", c."providerEncodingId") = c."providerEncodingId"
+				AND c.generation = ${channel.liveEffectFenceVersion}
+				AND c."targetId" = ${fence.id}
+				AND (c.action IN ('FEEDER_START', 'FEEDER_COMMIT') OR (${spawn} AND c.action = 'FEEDER_SPAWN'))
+				AND c.id = COALESCE(${claim?.id ?? null}::uuid, c.id)
+				AND c.token = COALESCE(${claim?.token ?? null}::uuid, c.token)
+				AND c.state = 'DISPATCHING'
+			FOR UPDATE OF c`;
+		if (!handoff) return false;
+		const [owner] = await tx.$queryRaw<{ id: string }[]>`
+			SELECT id FROM "FeederSession"
+			WHERE id = ${fence.id}::uuid
+				AND "liveChannelId" = ${fence.liveChannelId}::uuid
+				AND "liveChannelRunId" = ${fence.liveChannelRunId}::uuid
+				AND "ownerId" = ${fence.ownerId}
+				AND "ownerGeneration" = ${fence.ownerGeneration}
+				AND "ownerLeaseAt" >= ${fence.leaseNotBefore}
+				AND "playbackMode" = 'LOOP' AND "playbackDispatchedAt" IS NULL
+				AND (
+					(${spawn} AND status IN ('DOWNLOADING', 'PUSHING'))
+					OR (
+						status = 'DOWNLOADING' AND pid IS NULL AND "startedAt" IS NULL AND "committedAt" IS NULL
+						AND ("publisherClaimedAt" IS NULL OR "publisherReleasedAt" IS NOT NULL)
+					)
+				)
+			FOR UPDATE`;
+		return owner ? markLiveEffectFailed(tx, handoff, reason) : false;
+	});
 }
 
 /**

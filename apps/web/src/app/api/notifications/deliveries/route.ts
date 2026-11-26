@@ -1,42 +1,97 @@
+import { publicStorageDiagnostic } from "@bitovp/core";
 import { NextResponse } from "next/server";
+import { getServerContext } from "@/lib/server/context";
 import { routeError } from "@/lib/server/http";
 import { getNotifyQueue } from "@/lib/server/queue";
 
-/**
- * Recent notify deliveries  — reads the QUEUE, the design's
- * stated v1 trade (no delivery table; BullMQ's failed set IS the dead-letter
- * view). Completed jobs age out fast (removeOnComplete 1000), failed ones
- * park longer (removeOnFail 5000). The event payload is already the strict
- * union, so echoing kind/occurredAt/link is secret-free by construction.
- */
+const PAGE_SIZE = 20;
+type State = "FAILED" | "DELIVERED";
+
+/** Ordinary deliveries live in BullMQ. Confirmed Live STOPs retain their result in SQL. */
 export async function GET() {
 	try {
+		const { prisma } = await getServerContext();
 		const queue = getNotifyQueue();
+		async function completedDeliveries() {
+			const first = await queue.getCompleted(0, PAGE_SIZE - 1);
+			const visible = first.filter(
+				(job) => job.returnvalue?.delivery !== "NO_DESTINATION",
+			);
+			if (first.length < PAGE_SIZE || visible.length >= PAGE_SIZE)
+				return visible;
+			// Ordinary notification jobs retain at most 1,000 completions.
+			const remaining = await queue.getCompleted(PAGE_SIZE, 999);
+			return [
+				...visible,
+				...remaining.filter(
+					(job) => job.returnvalue?.delivery !== "NO_DESTINATION",
+				),
+			].slice(0, PAGE_SIZE);
+		}
+		async function recent(state: State) {
+			const failed = state === "FAILED";
+			const [jobs, stops] = await Promise.all([
+				failed ? queue.getFailed(0, PAGE_SIZE - 1) : completedDeliveries(),
+				prisma.liveStopNotification.findMany({
+					where: {
+						finishedAt: { not: null },
+						skipped: false,
+						failureReason: failed ? { not: null } : null,
+					},
+					orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
+					take: PAGE_SIZE,
+					select: {
+						id: true,
+						channelId: true,
+						kind: true,
+						occurredAt: true,
+						finishedAt: true,
+						failures: true,
+						failureReason: true,
+					},
+				}),
+			]);
+			const rows = [
+				...jobs.map((job) => ({
+					id: job.id ?? "",
+					state: failed
+						? "FAILED"
+						: job.returnvalue?.delivery === "DELIVERED"
+							? "DELIVERED"
+							: "UNCONFIRMED",
+					kind: job.data?.kind ?? "UNKNOWN",
+					occurredAt: job.data?.occurredAt ?? null,
+					link: job.data?.link ?? null,
+					attemptsMade: job.attemptsMade ?? 0,
+					failedReason: failed
+						? (publicStorageDiagnostic(job.failedReason) ?? null)
+						: null,
+					sortTime: job.finishedOn ?? 0,
+				})),
+				...stops.map((stop) => ({
+					id: `live-stop-${stop.id}`,
+					state,
+					kind: stop.kind,
+					occurredAt: stop.occurredAt.toISOString(),
+					link: `/live/${stop.channelId}`,
+					attemptsMade: stop.failures + (failed ? 0 : 1),
+					failedReason: publicStorageDiagnostic(stop.failureReason) ?? null,
+					sortTime: stop.finishedAt?.getTime() ?? 0,
+				})),
+			];
+			return rows
+				.sort(
+					(a, b) =>
+						b.sortTime - a.sortTime || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
+				)
+				.slice(0, PAGE_SIZE)
+				.map(({ sortTime: _sortTime, ...delivery }) => delivery);
+		}
 		const [failed, completed] = await Promise.all([
-			queue.getFailed(0, 19),
-			queue.getCompleted(0, 19),
+			recent("FAILED"),
+			recent("DELIVERED"),
 		]);
-		const row = (state: "FAILED" | "DELIVERED") => (job: unknown) => {
-			const typed = job as {
-				id?: string;
-				data?: { kind?: string; occurredAt?: string; link?: string };
-				attemptsMade?: number;
-				failedReason?: string;
-			};
-			return {
-				id: typed.id ?? "",
-				state,
-				kind: typed.data?.kind ?? "UNKNOWN",
-				occurredAt: typed.data?.occurredAt ?? null,
-				link: typed.data?.link ?? null,
-				attemptsMade: typed.attemptsMade ?? 0,
-				failedReason: typed.failedReason ?? null,
-			};
-		};
-		return NextResponse.json({
-			failed: failed.map(row("FAILED")),
-			completed: completed.map(row("DELIVERED")),
-		});
+		return NextResponse.json({ failed, completed });
 	} catch (err) {
 		return routeError(err);
 	}

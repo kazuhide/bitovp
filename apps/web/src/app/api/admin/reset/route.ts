@@ -48,15 +48,27 @@ import {
 	isIdle,
 	RESET_DELETES,
 	ResetRaceLost,
+	resetFeederBlockers,
 	uniqueEncoderPointers,
 } from "@/lib/server/reset";
 import { tokenActorRefusal } from "@/lib/server/reset-actor";
+import {
+	AISA_FINALIZATION_REQUIRED_MESSAGE,
+	AisaFinalizationNotConfirmed,
+	resetLiveAnalysisBlockers,
+} from "@/lib/server/reset-live-analyses";
+import {
+	INCOMPLETE_RTMP_ARCHIVE_MESSAGE,
+	IncompleteRtmpArchive,
+	readResetRtmpArchives,
+} from "@/lib/server/reset-rtmp-archives";
 import {
 	countResetCategories,
 	deleteSelectedData,
 	SelectedResetBlocked,
 	SelectedResetLibraryEditingBlocked,
 	type SelectedResetOutcome,
+	SelectedResetPublisherActive,
 } from "@/lib/server/selected-reset";
 
 /**
@@ -201,27 +213,57 @@ export async function GET(req: Request) {
 					: resetSelectionSchema.safeParse(requested.split(","));
 			if (!parsed.success) return validationError(parsed.error);
 			const selected = new Set(parsed.data);
+			const [analyses, archives, feeders, deleteCounts] = await Promise.all([
+				selected.has("liveChannels")
+					? resetLiveAnalysisBlockers(ctx.prisma)
+					: [],
+				selected.has("liveChannels")
+					? readResetRtmpArchives(ctx.prisma).then((r) => r.incomplete)
+					: [],
+				selected.has("pseudoLiveFeeds")
+					? resetFeederBlockers(ctx.prisma)
+					: { rows: [], total: 0 },
+				countResetCategories(ctx.prisma, selected),
+			]);
+			const channels = [
+				...new Map(
+					[...analyses, ...archives].map((row) => [row.id, row]),
+				).values(),
+			];
+			const selectionBlocked = channels.length > 0 || feeders.total > 0;
 			return NextResponse.json(
 				resetPreviewResponseSchema.parse({
 					active: {
 						vodJobs: [],
-						liveChannels: [],
-						pseudoLiveFeeds: [],
+						liveChannels: channels.slice(0, 50).map(({ id, name, status }) => ({
+							name,
+							status,
+							href: `/live/${id}`,
+						})),
+						pseudoLiveFeeds: feeders.rows.map(
+							({ id, channelName, sourceName, status, createdAt }) => ({
+								channelName,
+								sourceName,
+								status,
+								createdAt: createdAt.toISOString(),
+								href: `/live/feeders/${id}`,
+							}),
+						),
 						vmafMeasurements: [],
 						providerResourcesToCheck: [],
 						totals: {
 							vodJobs: 0,
-							liveChannels: 0,
-							pseudoLiveFeeds: 0,
+							liveChannels: channels.length,
+							pseudoLiveFeeds: feeders.total,
 							vmafMeasurements: 0,
 							providerResourcesToCheck: 0,
 						},
 					},
 					cleanupUnconfirmed: false,
-					blocked: false,
+					blocked: selectionBlocked,
 					aisaSnapshotRequiredJobHref: null,
-					selectionBlocked: false,
-					deleteCounts: await countResetCategories(ctx.prisma),
+					selectionBlocked,
+					deleteCounts,
 					channelAlertsToDelete: selected.has("channelAlertRules")
 						? await ctx.prisma.alertRule.count({
 								where: { liveChannelId: { not: null } },
@@ -407,6 +449,18 @@ export async function POST(req: Request) {
 			if (err instanceof ResetRaceLost) {
 				return resetConflict("RESET_STATE_CHANGED");
 			}
+			if (err instanceof AisaFinalizationNotConfirmed)
+				return jsonError(409, AISA_FINALIZATION_REQUIRED_MESSAGE, {
+					code: "AISA_FINALIZATION_PENDING",
+				});
+			if (err instanceof SelectedResetPublisherActive)
+				return resetConflict("RESET_ACTIVE_WORK");
+			if (err instanceof IncompleteRtmpArchive)
+				return jsonError(
+					409,
+					INCOMPLETE_RTMP_ARCHIVE_MESSAGE,
+					customerErrorDetails("RESET_PROVIDER_RESOURCES_UNCONFIRMED"),
+				);
 			if (err instanceof SelectedResetBlocked) {
 				return jsonError(400, "Reset selection is missing required categories");
 			}

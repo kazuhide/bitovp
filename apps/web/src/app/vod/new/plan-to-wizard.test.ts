@@ -1010,35 +1010,68 @@ describe("describeFormGap", () => {
 });
 
 describe("round-trip gate", () => {
-	it("rejects a plan whose field the form can't carry", () => {
-		// Passes describeFormGap but adds a per-VIDEO stream condition buildPlan
-		// never emits — the readback drops it, so the gate must refuse it.
+	it("keeps a valid plan in Expert JSON if the form changes the order of its renditions", () => {
 		const raw = structuredClone(presetPlan("fixed-bitrate-hls-on-aws"));
-		const renditions = raw.renditions as Array<Record<string, unknown>>;
-		const video = renditions.find((r) => r.codec === "H264");
-		if (!video) {
-			throw new Error("fixture changed: no H264 rendition");
+		const rows = raw.renditions as Array<Record<string, unknown>>;
+		raw.renditions = [
+			...rows.filter((r) => r.codec === "AAC"),
+			...rows.filter((r) => r.codec !== "AAC"),
+		];
+		expect(describeFormGap(encodingPlanSchema.parse(raw))).toBeNull();
+		expect(tryImportPresetIntoWizard(raw)).toMatchObject({
+			ok: false,
+			reasonKey: "wizardX.reasonUsesUnrepresentedOptions",
+		});
+	});
+
+	it("preserves a video-only comparison and an audio alternative through preset import and the audio guard toggle", () => {
+		const raw = structuredClone(presetPlan("fixed-bitrate-hls-on-aws"));
+		for (const location of [
+			...(raw.inputs as Array<Record<string, unknown>>),
+			...(raw.outputs as Array<Record<string, unknown>>),
+		]) {
+			if (location.credentialId)
+				location.credentialId = "711c25f0-e170-4d63-8fbb-aea30bbd7fb7";
 		}
+		const rows = raw.renditions as Array<Record<string, unknown>>;
+		const video = rows.find((r) => r.codec === "H264");
+		const audio = rows.find((r) => r.codec === "AAC");
+		if (!video || !audio) throw new Error("expected video and audio fixture");
 		video.conditions = {
 			attribute: "WIDTH",
 			operator: "GREATER_THAN",
 			value: "0",
 		};
-		const parsed = encodingPlanSchema.safeParse(raw);
-		if (!parsed.success) {
-			throw new Error("mutated plan should still parse");
-		}
-		expect(describeFormGap(parsed.data)).toBeNull(); // no form-gap…
+		const alternative = {
+			type: "OR",
+			conditions: ["ja", "en"].map((value) => ({
+				attribute: "LANGUAGE",
+				operator: "EQUAL",
+				value,
+			})),
+		};
+		audio.conditions = alternative;
 		const result = tryImportPresetIntoWizard(raw);
-		expect(result.ok).toBe(false); // …but the gate refuses it
-		if (!result.ok) {
-			// The reason is a MESSAGE KEY now, not prose — it is spliced into a
-			// localized frame, and an English clause inside a Japanese sentence was
-			// the bug (review catch).
-			expect(result.reasonKey).toMatch(
-				/reasonUsesUnrepresented|reasonCannotBeRebuilt/,
-			);
-		}
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error(result.reasonKey);
+		expect(result.state.audioGuard).toBe(false);
+		expect(result.state.videos[0]?.conditions).toEqual(video.conditions);
+		expect(result.state.audios[0]?.conditions).toEqual(alternative);
+		const guarded = encodingPlanSchema.parse(
+			buildPlan({ ...result.state, audioGuard: true }),
+		);
+		expect(
+			guarded.renditions.find((r) => r.key === audio.key)?.conditions,
+		).toEqual({
+			type: "AND",
+			conditions: [
+				{ attribute: "AUDIOSTREAMCOUNT", operator: "GREATER_THAN", value: "0" },
+				alternative,
+			],
+		});
+		expect(encodingPlanSchema.parse(buildPlan(result.state))).toEqual(
+			encodingPlanSchema.parse(raw),
+		);
 	});
 
 	it("rejects non-plan input", () => {

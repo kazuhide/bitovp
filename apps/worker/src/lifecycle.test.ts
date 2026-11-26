@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createShutdown, createSweepLoop } from "./lifecycle";
+import { createShutdown, createSweepLoop, createWorkDrain } from "./lifecycle";
 
 /**
  *  (audit 2026-08-29 CRITICAL-1), the shutdown half.
@@ -102,6 +102,46 @@ describe("createSweepLoop", () => {
 		loop.run();
 		await loop.drain();
 		expect(tick).not.toHaveBeenCalled();
+	});
+});
+
+describe("failed worker callbacks", () => {
+	it("finishes an in-flight failure projection before closing its notification or database connection", async () => {
+		const handlers = createWorkDrain();
+		const started = deferred<void>();
+		const release = deferred<void>();
+		const events: string[] = [];
+		const shutdown = createShutdown({
+			stopFeeders: () => [],
+			drains: [],
+			closables: [
+				{
+					close: async () => {
+						handlers.track(
+							(async () => {
+								started.resolve();
+								await release.promise;
+								events.push("schedule written");
+							})(),
+						);
+					},
+				},
+			],
+			disconnect: async () => {
+				await handlers.drain();
+				events.push("disconnected");
+			},
+			exit: () => {
+				events.push("exit");
+			},
+		});
+		const done = shutdown("SIGTERM");
+		await started.promise;
+		await Promise.resolve();
+		expect(events).toEqual([]);
+		release.resolve();
+		await done;
+		expect(events).toEqual(["schedule written", "disconnected", "exit"]);
 	});
 });
 

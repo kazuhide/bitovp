@@ -1,3 +1,4 @@
+import { storageObjectUrl } from "./hls-video-reference-binding";
 /**
  * `verify live` — drive a live scenario end to end, through the product's own API.
  *
@@ -77,6 +78,8 @@ import {
 } from "./live-evidence-assembly";
 import { sampleLiveStorageObjects } from "./live-storage-sample";
 import {
+	bindDashDvbSubtitles,
+	checkDashDvbOrigin,
 	collectHlsReferenceChecks,
 	dashExternalSubtitleChecks,
 } from "./manifest-reference-checks";
@@ -735,14 +738,35 @@ export async function collectManifestFiles(
 			let referenceChecks: Check[] | undefined;
 			if (m.kind === "DASH") {
 				const { parseDashText } = await import("./adapters");
-				const parsed = await parseDashText(text);
+				const manifestUri = new URL(
+					"./" + key.split("/").map(encodeURIComponent).join("/"),
+					"https://origin.invalid/",
+				).href;
+				const parsed = await parseDashText(
+					text,
+					m.dashDvbSubtitles?.length ? manifestUri : undefined,
+					deps.now(),
+				);
 				entries = parsed.representations.length;
-				if (m.dashExternalSubtitles?.length)
-					referenceChecks = dashExternalSubtitleChecks(
-						`live:manifest:${m.manifestKey}`,
-						m.dashExternalSubtitles,
-						parsed,
-					);
+				if (m.dashExternalSubtitles?.length || m.dashDvbSubtitles?.length) {
+					const id = `live:manifest:${m.manifestKey}`;
+					referenceChecks = [
+						...dashExternalSubtitleChecks(
+							id,
+							m.dashExternalSubtitles ?? [],
+							parsed,
+						),
+						...(await checkDashDvbOrigin(
+							bindDashDvbSubtitles(
+								id,
+								m.dashDvbSubtitles ?? [],
+								parsed,
+								manifestUri,
+							),
+							(prefix) => deps.listAll(m.outputKey, prefix),
+						)),
+					];
+				}
 				videoCodecSets = parsed.adaptationSets
 					?.filter((set) => set.kind === "video")
 					.map((set) => set.codecs);
@@ -889,6 +913,15 @@ export async function collectEdgeClosures(
 			// filenames/topology, but resolve the delivery master at that event root.
 			const edgeManifest = {
 				...manifest,
+				...(manifest.dashDvbSubtitles && {
+					dashDvbSubtitles: manifest.dashDvbSubtitles.map((track) => ({
+						...track,
+						segmentPath: new URL(
+							track.segmentPath || "./",
+							storageObjectUrl(policy.base, manifest.dir.prefix),
+						).href,
+					})),
+				}),
 				dir: { pattern: "", prefix: "", templated: false as const },
 			};
 			const observed = await observeEdgeLeg(
@@ -981,7 +1014,7 @@ async function measureFirstPublish(
 }
 
 /** Exact provider resources written by the current airing's step log. */
-function providerResourcesFromStepLog(stepLog: unknown): {
+export function providerResourcesFromStepLog(stepLog: unknown): {
 	streamIds: Record<string, string>;
 	outputIds: Record<string, string>;
 } {
@@ -994,6 +1027,17 @@ function providerResourcesFromStepLog(stepLog: unknown): {
 				}
 				const step = (entry as { step?: unknown }).step;
 				const resourceId = (entry as { resourceId?: unknown }).resourceId;
+				if (
+					prefix === "stream:" &&
+					typeof step === "string" &&
+					step.startsWith("dvb:") &&
+					step.endsWith(":stream") &&
+					(entry as { kind?: unknown }).kind === "CREATE_STREAM" &&
+					typeof resourceId === "string" &&
+					resourceId
+				) {
+					return [[step.slice(0, -":stream".length), resourceId] as const];
+				}
 				return typeof step === "string" &&
 					step.startsWith(prefix) &&
 					typeof resourceId === "string" &&

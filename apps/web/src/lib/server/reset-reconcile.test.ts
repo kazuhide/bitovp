@@ -36,7 +36,11 @@ function fakePrisma(seed: {
 	) => ({
 		fields: fieldRefs(modelName, ["bitmovinEncodingId"]),
 		findMany: async (args: { where?: Row; select?: Row; take?: number }) =>
-			rows
+			// These ordinary-channel fixtures carry no AISA bindings or secondary effect claims.
+			(args.select?.effectClaims || (args.select?.origin && args.select?.runs)
+				? []
+				: rows
+			)
 				.filter((r) => matchesWhere(r, args.where, rel))
 				.slice(0, args.take ?? rows.length)
 				.map((r) => projectSelect(r, args.select, rel)),

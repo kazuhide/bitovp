@@ -1,26 +1,51 @@
+import { audioMixPreset } from "@bitovp/core";
 import { fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import { expect, it } from "vitest";
 import { renderWithQuery as render } from "@/test/render";
 import { AudioMixEditor } from "./audio-mix-editor";
-import { DEFAULT_WIZARD_STATE, type WizardState } from "./build-plan";
+import {
+	buildPlan,
+	DEFAULT_WIZARD_STATE,
+	type WizardState,
+} from "./build-plan";
 import { LadderSection } from "./wizard-sections";
 
 let current: WizardState;
-function Harness() {
-	const [state, setState] = useState<WizardState>({
-		...DEFAULT_WIZARD_STATE,
-		sources: {
-			tracks: [
-				{
-					key: "mono2",
-					inputFile: "primary",
-					selectionMode: "AUDIO_RELATIVE",
-					position: 1,
-				},
-			],
+function Harness({
+	hdrKey,
+	initial,
+}: {
+	hdrKey?: string;
+	initial?: WizardState;
+} = {}) {
+	const [state, setState] = useState<WizardState>(
+		initial ?? {
+			...DEFAULT_WIZARD_STATE,
+			sources: {
+				...(hdrKey
+					? {
+							hdr10PlusStreams: [
+								{
+									key: hdrKey,
+									videoInputFile: "main",
+									metadataInputPath: "picture.json",
+									selectionMode: "AUTO" as const,
+								},
+							],
+						}
+					: {}),
+				tracks: [
+					{
+						key: "mono2",
+						inputFile: "primary",
+						selectionMode: "AUDIO_RELATIVE",
+						position: 1,
+					},
+				],
+			},
 		},
-	});
+	);
 	current = state;
 	return (
 		<AudioMixEditor
@@ -34,6 +59,73 @@ function Harness() {
 		/>
 	);
 }
+it("mixes the ordinary audio track when a named HDR stream already uses audio", () => {
+	render(<Harness hdrKey="audio" />);
+	fireEvent.click(screen.getByText("Audio channel mix"));
+	fireEvent.change(screen.getByLabelText("Start from a preset"), {
+		target: { value: "swap" },
+	});
+	const result = buildPlan(current);
+	const source =
+		current.sources?.audioMixStreams?.[0]?.audioMixChannels[0]?.sourceKey;
+	expect(source).not.toBe("audio");
+	expect(result.ingest).toContainEqual(
+		expect.objectContaining({ key: source, selectionMode: "AUDIO_RELATIVE" }),
+	);
+});
+it("rebinds another mix and the selected rendition when removing a mix frees an ordinary audio key", () => {
+	const audio = DEFAULT_WIZARD_STATE.audios[0];
+	if (!audio) throw new Error("missing AAC fixture");
+	const initial: WizardState = {
+		...DEFAULT_WIZARD_STATE,
+		audios: [
+			{ ...audio, extras: { source: "audio-input-1" } },
+			{ ...audio, extras: { source: "other-mix" } },
+		],
+		sources: {
+			hdr10PlusStreams: [
+				{
+					key: "audio",
+					videoInputFile: "main",
+					metadataInputPath: "hdr.json",
+					selectionMode: "AUTO",
+				},
+			],
+			audioMixStreams: ["audio-input-1", "other-mix"].map((key) => ({
+				key,
+				audioMixChannels: audioMixPreset(
+					"swap",
+					"audio-input-2",
+					"audio-input-2",
+				),
+			})),
+		},
+	};
+	render(<Harness initial={initial} />);
+	fireEvent.click(screen.getByText("Remove mix from this rendition"));
+	expect(current.audios[0]?.extras?.source).toBe("audio-input-1");
+	expect(
+		current.sources?.audioMixStreams?.map((mix) =>
+			mix.audioMixChannels.map((channel) => channel.sourceKey),
+		),
+	).toEqual([["audio-input-1", "audio-input-1"]]);
+	expect(buildPlan(current).ingest).toContainEqual(
+		expect.objectContaining({
+			key: "audio-input-1",
+			selectionMode: "AUDIO_RELATIVE",
+		}),
+	);
+});
+it("allocates a preset mix key alongside an HDR10+ source with the same prefix", () => {
+	render(<Harness hdrKey="audioMix1" />);
+	fireEvent.click(screen.getByText("Audio channel mix"));
+	fireEvent.change(screen.getByLabelText("Start from a preset"), {
+		target: { value: "mono" },
+	});
+	expect(current.sources?.audioMixStreams?.[0]?.key).toBe("audioMix2");
+	expect(current.audios[0]?.extras?.source).toBe("audioMix2");
+});
+
 it("creates mix with existing source refs, edits decimal and zero gain, clears optional gain, detaches", () => {
 	render(<Harness />);
 	fireEvent.click(screen.getByText("Audio channel mix"));

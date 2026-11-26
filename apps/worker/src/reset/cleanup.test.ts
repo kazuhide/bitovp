@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 import {
 	cleanResetPayload,
 	createResetCleanupSweep,
+	RESET_ENCODING_ABSENT,
 	type ResetCleanupProvider,
 } from "./cleanup";
 
@@ -37,8 +38,11 @@ it("requires terminal readback after STOP and releases exact encoding keys", asy
 	const { payload, provider } = fixture();
 	vi.mocked(provider.status).mockResolvedValueOnce("RUNNING");
 	const result = await cleanResetPayload(payload, async () => provider);
-	expect(provider.stop).toHaveBeenCalledWith("encoding");
-	expect(provider.releaseTemporaryKeys).toHaveBeenCalledWith("encoding");
+	expect(provider.stop).toHaveBeenCalledWith("encoding", undefined);
+	expect(provider.releaseTemporaryKeys).toHaveBeenCalledWith(
+		"encoding",
+		undefined,
+	);
 	expect([...result.encodings]).toEqual(["account:encoding"]);
 });
 it("keeps failed provider cleanup and key release durable", async () => {
@@ -63,12 +67,105 @@ it("does not clear CREATED while a late START can still return", async () => {
 	).toBe(0);
 	expect(provider.releaseTemporaryKeys).not.toHaveBeenCalled();
 });
-it("settles CREATED once the owning worker has acknowledged its fence", async () => {
+it("keeps the displaced encoder across a CREATED read through either of its mirrored ownership records", async () => {
 	const { payload, provider } = fixture();
+	payload.encodings.push({
+		entityKey: "liveChannelRun:historical",
+		accountId: "account",
+		encodingId: "encoding",
+		requireTerminal: true,
+	});
+	vi.mocked(provider.status).mockResolvedValue("CREATED");
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(0);
+	expect(provider.releaseTemporaryKeys).not.toHaveBeenCalled();
+	vi.mocked(provider.status).mockResolvedValue("FINISHED");
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(1);
+});
+it("settles CREATED with positive never-started evidence and no owner in flight", async () => {
+	const { payload, provider } = fixture();
+	const [row] = payload.encodings;
+	if (!row) throw new Error("Missing test encoder");
+	row.allowCreated = true;
 	vi.mocked(provider.status).mockResolvedValue("CREATED");
 	expect(
 		(await cleanResetPayload(payload, async () => provider)).encodings.size,
 	).toBe(1);
+});
+it("settles a saved verification alias using the exact native proof without downgrading a second owner's terminal requirement", async () => {
+	const { payload, provider } = fixture();
+	const row = payload.encodings[0];
+	if (!row) throw new Error("Missing encoder fixture");
+	row.allowCreated = true;
+	payload.encodings.unshift({
+		...row,
+		entityKey: "liveChannel:verification-intent:legacy",
+		allowCreated: undefined,
+		verificationOwnerCheck: true,
+	});
+	vi.mocked(provider.status).mockResolvedValue("CREATED");
+	const independent = {
+		...row,
+		entityKey: "liveChannelRun:other",
+		allowCreated: undefined,
+	};
+	payload.encodings.push(independent);
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(0);
+	expect(provider.releaseTemporaryKeys).not.toHaveBeenCalled();
+	payload.encodings.pop();
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(1);
+	expect(provider.releaseTemporaryKeys).toHaveBeenCalledTimes(1);
+});
+it("retains a rotated or unbound account on verified absence and accepts an exact terminal result", async () => {
+	const { payload, provider } = fixture();
+	vi.mocked(provider.status).mockResolvedValue(RESET_ENCODING_ABSENT);
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(0);
+	expect(provider.releaseTemporaryKeys).not.toHaveBeenCalled();
+	const row = payload.encodings[0];
+	if (!row) throw new Error("Missing encoder fixture");
+	row.allowVerifiedMissing = true;
+	payload.encodings.push({
+		...row,
+		entityKey: "liveChannelRun:old",
+		allowVerifiedMissing: undefined,
+	});
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(0);
+	vi.mocked(provider.status).mockResolvedValue("FINISHED");
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(1);
+});
+it("accepts verified absence using the bound credential only after every mirrored writer closes", async () => {
+	const { payload, provider } = fixture();
+	const row = payload.encodings[0];
+	if (!row) throw new Error("Missing encoder fixture");
+	row.allowVerifiedMissing = true;
+	payload.encodings.push({ ...row, entityKey: "liveChannelRun:other" });
+	payload.pendingEntities.push({
+		entityKey: "liveChannelRun:other",
+		accountId: "account",
+		status: "PROVISIONING",
+	});
+	vi.mocked(provider.status).mockResolvedValue(RESET_ENCODING_ABSENT);
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(0);
+	payload.pendingEntities = [];
+	expect(
+		(await cleanResetPayload(payload, async () => provider)).encodings.size,
+	).toBe(1);
+	expect(provider.stop).not.toHaveBeenCalled();
 });
 it("never calls a provider without the saved selected account", async () => {
 	const { payload, provider } = fixture();

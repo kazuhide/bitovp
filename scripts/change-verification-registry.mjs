@@ -55,7 +55,7 @@ export const RULES = Object.freeze(
 		{
 			id: "submission",
 			patterns: [
-				/\/app\/api\/(encoding-jobs|live-channels)\//,
+				/\/app\/api\/(encoding-jobs|live-channels|feeder-sessions)\//,
 				/(^|\/)create-request[/.]/,
 				/^apps\/worker\/src\/orchestrator\//,
 			],

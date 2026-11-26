@@ -1,8 +1,14 @@
-import type { ExpectedManifest } from "@bitovp/core";
+import {
+	createFilenameMatcher,
+	type ExpectedLiveManifest,
+	type ExpectedManifest,
+} from "@bitovp/core";
 import type { Check, ParsedDash, ParsedHls } from "./engine";
 import {
 	bindHlsVideoReferences,
 	checkHlsReferenceObjects,
+	type HlsVideoReferences,
+	referencedObjectKey,
 	storageObjectUrl,
 } from "./hls-video-reference-binding";
 
@@ -82,8 +88,10 @@ export function hlsMediaReferenceChecks(
 		if (found >= 0) available.splice(found, 1);
 		return check(
 			`${id}:additional-media:${index}:reference`,
-			found >= 0,
-			"Configured HLS media must retain its type, group, name, URI, language, and caption identity",
+			found >= 0 &&
+				(media.type !== "SUBTITLES" ||
+					parsed.variants.some((row) => row.subtitles === media.groupId)),
+			"Configured HLS media must retain its identity and a variant must reference each subtitle group",
 		);
 	});
 }
@@ -156,7 +164,7 @@ export async function collectHlsReferenceChecks(
 					check(
 						sid,
 						false,
-						"The configured video media playlist was not readable or parseable",
+						"The configured media playlist was not readable or parseable",
 					),
 				);
 			continue;
@@ -170,7 +178,7 @@ export async function collectHlsReferenceChecks(
 				sid,
 				(child.segmentUris?.length ?? 0) > 0 &&
 					(!media.requiresInit || child.mapUri !== undefined),
-				"Configured HLS video media must publish a playable child with its required initialization reference",
+				"Configured HLS media must publish a playable child with its required initialization reference",
 			),
 		);
 		const root = new URL("https://objects.invalid/");
@@ -194,7 +202,7 @@ export async function collectHlsReferenceChecks(
 					check(
 						`${sid}:objects`,
 						false,
-						"The configured VIDEO writer's object listing could not be read",
+						"The configured media writer's object listing could not be read",
 					),
 				);
 			}
@@ -204,7 +212,7 @@ export async function collectHlsReferenceChecks(
 				area: "manifest",
 				verdict: "SKIP",
 				detail:
-					"Object bytes cannot certify a VIDEO child whose writer binding was not proven",
+					"Object bytes cannot certify a media playlist whose writer binding was not proven",
 			});
 		if (
 			media.startSegmentNumber !== undefined ||
@@ -244,4 +252,98 @@ export function dashExternalSubtitleChecks(
 			unverified(`${id}:external-subtitle:${index}:content`),
 		];
 	});
+}
+
+type DvbTrack = NonNullable<ExpectedLiveManifest["dashDvbSubtitles"]>[number];
+/** Match player-resolved media and initialization references to one writer before checking its delivery. */
+export function bindDashDvbSubtitles(
+	id: string,
+	expected: readonly DvbTrack[],
+	parsed: ParsedDash,
+	manifestUri: string,
+) {
+	const tracks = parsed.representations.filter(
+		(row) =>
+			row.kind === "text" &&
+			["TEMPLATE", "TIMELINE", "LIST"].includes(row.addressing),
+	);
+	const master = new URL(manifestUri);
+	return expected.map((sub) => {
+		const directory = new URL(
+			sub.segmentPath ? sub.segmentPath.replace(/\/?$/, "/") : "./",
+			master,
+		);
+		const matchSegment = createFilenameMatcher(sub.segmentNaming, {
+			policyTokens: true,
+			randomTokens: false,
+		});
+		const index = tracks.findIndex(
+			(row) =>
+				row.language === sub.language &&
+				row.subtitleSegments?.length &&
+				row.subtitleSegments.every((segment) => {
+					const name =
+						segment.media &&
+						referencedObjectKey(segment.media, master, directory);
+					return (
+						directory.origin === master.origin &&
+						name &&
+						matchSegment(name) === "MATCH" &&
+						(sub.initSegment !== undefined
+							? segment.init &&
+								referencedObjectKey(segment.init, master, directory) ===
+									sub.initSegment
+							: segment.init === undefined)
+					);
+				}),
+		);
+		const segments =
+			index < 0 ? [] : (tracks.splice(index, 1)[0]?.subtitleSegments ?? []);
+		const objects: HlsVideoReferences["objects"] = [];
+		for (const segment of segments) {
+			for (const [ref, init, range] of [
+				[segment.init, true, segment.initRange],
+				[segment.media, false, segment.mediaRange],
+			] as const) {
+				if (!ref) continue;
+				const key = referencedObjectKey(ref, master, new URL("/", master));
+				if (key !== undefined)
+					objects.push({ key, reference: ref, init, ...(range && { range }) });
+			}
+		}
+		return {
+			track: sub,
+			objects,
+			directory,
+			check: check(
+				`${id}:dvb-subtitle:${sub.key}:representation`,
+				index >= 0,
+				"Every advertised subtitle segment and initialization reference must belong to its configured writer",
+			),
+		};
+	});
+}
+
+export async function checkDashDvbOrigin(
+	bindings: ReturnType<typeof bindDashDvbSubtitles>,
+	list: (directory: string) => Promise<{ key: string; size?: number }[]>,
+): Promise<Check[]> {
+	return Promise.all(
+		bindings.map(async ({ check: binding, objects, directory }) => {
+			if (binding.verdict !== "PASS") return binding;
+			try {
+				return checkHlsReferenceObjects(
+					binding.id,
+					objects,
+					await list(decodeURIComponent(directory.pathname.slice(1))),
+				);
+			} catch {
+				return check(
+					binding.id,
+					false,
+					"The configured DASH subtitle writer's object listing could not be read",
+				);
+			}
+		}),
+	);
 }

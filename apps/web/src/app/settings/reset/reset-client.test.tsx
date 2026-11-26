@@ -206,11 +206,24 @@ describe("selected reset categories", () => {
 		await user.type(screen.getByLabelText(/RESET/), "RESET");
 		expect(screen.getByRole("button", { name: "Reset data" })).toBeDisabled();
 	});
+	it("links the blocking live asset and prevents submission of that selection", async () => {
+		preview.selectionBlocked = true;
+		preview.active.liveChannels = [
+			{ name: "Evening Sports", status: "ERROR", href: "/live/owned-channel" },
+		];
+		const user = userEvent.setup();
+		mount();
+		await user.type(await screen.findByLabelText(/RESET/), "RESET");
+		expect(
+			screen.getByRole("link", { name: "Evening Sports" }),
+		).toHaveAttribute("href", "/live/owned-channel");
+		expect(screen.getByRole("button", { name: "Reset data" })).toBeDisabled();
+	});
 	it.each([
 		"en",
 		"ja",
 	] as const)("permits confirmed selected deletion despite every historical blocker (%s)", async (locale) => {
-		preview.selectionBlocked = true;
+		preview.selectionBlocked = false;
 		preview.blocked = true;
 		preview.cleanupUnconfirmed = true;
 		preview.aisaSnapshotRequiredJobHref = "/vod/jobs/aisa-job";

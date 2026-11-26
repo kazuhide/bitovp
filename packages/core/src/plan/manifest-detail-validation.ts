@@ -116,11 +116,6 @@ export function validateManifestDetails(plan: EncodingPlan): PlanIssue[] {
 					`muxings[${index}]`,
 					"Progressive WebM requires a standard video stream",
 				);
-			if (plan.drm.some((drm) => drm.muxingKey === muxing.key))
-				error(
-					`muxings[${index}]`,
-					"Progressive WebM encryption is not supported by this output path",
-				);
 			if (muxing.filename && !/^[^/\\?#]+\.webm$/i.test(muxing.filename))
 				error(
 					`muxings[${index}].filename`,

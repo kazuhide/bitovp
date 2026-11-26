@@ -1,3 +1,4 @@
+import { publicStorageDiagnostic } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
@@ -75,7 +76,7 @@ export async function GET(req: Request) {
 						error:
 							row.error === null ? null : "Webhook provider operation failed",
 					}
-				: row,
+				: { ...row, error: publicStorageDiagnostic(row.error) },
 		);
 		return NextResponse.json(
 			{

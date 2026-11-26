@@ -25,6 +25,24 @@ function deps() {
 	};
 }
 
+it("records confirmed notification deliveries and terminates refused or partially delivered fan-out", async () => {
+	const d = deps(),
+		handler = createHandlers(d).notify;
+	const job = { data: {} } as Job;
+	await expect(handler(job)).resolves.toMatchObject({
+		delivery: "NO_DESTINATION",
+	});
+	d.notify.mockResolvedValue([{ outcome: "DELIVERED" }]);
+	await expect(handler(job)).resolves.toMatchObject({ delivery: "DELIVERED" });
+	d.notify.mockResolvedValue([
+		{ outcome: "DELIVERED" },
+		{ outcome: "REFUSED_CONFIG" },
+	]);
+	await expect(handler(job)).rejects.toMatchObject({
+		name: "UnrecoverableError",
+	});
+});
+
 describe("createHandlers", () => {
 	it("registers a handler for every queue", () => {
 		const handlers = createHandlers(deps());
@@ -71,6 +89,31 @@ describe("createHandlers", () => {
 	});
 
 	it.each([
+		[1, 0, 0, true],
+		[2, 0, 1, false],
+		[2, 1, 0, false],
+		[1, 0, 1, false],
+	] as const)("forwards the retained BullMQ identity and delivery evidence (%s starts, %s failed, %s stalls)", async (attemptsStarted, attemptsMade, stalledCounter, first) => {
+		const d = deps();
+		const id = "sched-44444444-4444-4444-8444-444444444444";
+		const data = { liveChannelId: "channel", action: "stop" };
+		await createHandlers(d).liveChannel({
+			id,
+			data,
+			attemptsStarted,
+			attemptsMade,
+			stalledCounter,
+		} as Job);
+		expect(d.liveChannel).toHaveBeenCalledWith(
+			data,
+			id,
+			first,
+			undefined,
+			undefined,
+		);
+	});
+
+	it.each([
 		"FINISHED",
 		"CANCELED",
 		"QC_FAILED",
@@ -107,10 +150,16 @@ describe("createHandlers", () => {
 			action: "stop",
 			status: "STOPPED",
 		});
-		expect(d.liveChannel).toHaveBeenCalledWith({
-			liveChannelId: "x",
-			action: "stop",
-		});
+		expect(d.liveChannel).toHaveBeenCalledWith(
+			{
+				liveChannelId: "x",
+				action: "stop",
+			},
+			"1",
+			false,
+			undefined,
+			undefined,
+		);
 		expect(d.liveHeartbeatSweep).not.toHaveBeenCalled();
 	});
 

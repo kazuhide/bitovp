@@ -64,11 +64,14 @@ import {
 const liveEffectMocks = vi.hoisted(() => ({
 	begin: vi.fn(),
 	assertCurrent: vi.fn(),
+	claimStopSend: vi.fn(),
+	reserveAisa: vi.fn(),
 	bindTarget: vi.fn(),
 	markAcked: vi.fn(),
 	markAmbiguous: vi.fn(),
 	markFailed: vi.fn(),
 	resolveAfterStop: vi.fn(),
+	recordStopFailure: vi.fn(),
 }));
 
 vi.mock("@bitovp/db", async (importOriginal) => {
@@ -77,11 +80,14 @@ vi.mock("@bitovp/db", async (importOriginal) => {
 		...actual,
 		beginLiveEffect: liveEffectMocks.begin,
 		assertLiveEffectCurrent: liveEffectMocks.assertCurrent,
+		claimLiveStopSend: liveEffectMocks.claimStopSend,
+		reserveAisaStop: liveEffectMocks.reserveAisa,
 		bindLiveEffectTarget: liveEffectMocks.bindTarget,
 		markLiveEffectAcked: liveEffectMocks.markAcked,
 		markLiveEffectAmbiguous: liveEffectMocks.markAmbiguous,
 		markLiveEffectFailed: liveEffectMocks.markFailed,
 		resolveLiveEffectsAfterConfirmedStop: liveEffectMocks.resolveAfterStop,
+		recordLiveStopFailure: liveEffectMocks.recordStopFailure,
 	};
 });
 
@@ -171,19 +177,24 @@ function setup(
 			// limitation).
 			where.id === row.id ? (structuredClone(row) as Row) : null,
 		),
-		findMany: vi.fn(async () => [
-			{
-				id: row.id,
-				purpose: (row.purpose as string | null | undefined) ?? null,
-				updatedAt: new Date("2026-06-11T23:59:30.000Z"),
-				// /review-223 F10: the sweep's own read carries the
-				// program window to the alert engine.
-				programStartAt:
-					(rowOverrides.programStartAt as Date | null | undefined) ?? null,
-				programEndAt:
-					(rowOverrides.programEndAt as Date | null | undefined) ?? null,
-			},
-		]),
+		findMany: vi.fn(async (args?: { where?: { feederSessions?: unknown } }) =>
+			args?.where?.feederSessions
+				? []
+				: [
+						{
+							id: row.id,
+							purpose: (row.purpose as string | null | undefined) ?? null,
+							updatedAt: new Date("2026-06-11T23:59:30.000Z"),
+							// /review-223 F10: the sweep's own read carries the
+							// program window to the alert engine.
+							programStartAt:
+								(rowOverrides.programStartAt as Date | null | undefined) ??
+								null,
+							programEndAt:
+								(rowOverrides.programEndAt as Date | null | undefined) ?? null,
+						},
+					],
+		),
 		update: vi.fn(async ({ data }: { data: Row }) => {
 			// CLONE at push time: persist hands the SAME entries array on
 			// every call, so pushing the reference makes every "snapshot"
@@ -204,8 +215,12 @@ function setup(
 					status?: string | { in: string[] } | { not: string };
 					liveEffectFenceVersion?: number;
 					runs?: {
-						some: { id: string; cancelRequested: boolean };
-						none: { seq: { gt: number } };
+						some?: {
+							id: string;
+							cancelRequested?: boolean;
+							status?: { in: string[] };
+						};
+						none?: { seq?: { gt: number } };
 					};
 					provisionClaimedAt?: Date | null;
 					bitmovinEncodingId?: string | null;
@@ -241,16 +256,18 @@ function setup(
 				// The stub ignored this key, so every renewal "succeeded" and
 				// the lease-lost path was unreachable — the same defect the OR
 				// clause had, found the same way.
+				const some = where.runs?.some;
+				const none = where.runs?.none;
 				const cancelRunOk =
-					!where.runs ||
-					(runRows.some(
-						(run) =>
-							run.id === where.runs?.some.id &&
-							run.cancelRequested === where.runs.some.cancelRequested,
-					) &&
-						!runRows.some(
-							(run) => run.seq > (where.runs?.none.seq.gt ?? Infinity),
-						));
+					(!some ||
+						runRows.some(
+							(run) =>
+								run.id === some.id &&
+								(some.cancelRequested === undefined ||
+									run.cancelRequested === some.cancelRequested) &&
+								(!some.status || some.status.in.includes(run.status)),
+						)) &&
+					(!none || !runRows.some((run) => !none.seq || run.seq > none.seq.gt));
 				const held = row.provisionClaimedAt as Date | null | undefined;
 				const casOk =
 					!("provisionClaimedAt" in where) ||
@@ -477,7 +494,14 @@ function setup(
 			feederSessionId: scheduleRow.feederSessionId,
 			status: scheduleRow.status,
 		})),
-		findFirst: vi.fn(async () => null as { id: string } | null),
+		findFirst: vi.fn(
+			async () =>
+				null as {
+					id: string;
+					dispatchJobId?: string;
+					dispatchedAt?: Date;
+				} | null,
+		),
 	};
 	//  PR2: a minimal STATEFUL run-row stub — ensureCurrentRun
 	// creates, mirror reads the latest back, update records the mirrored
@@ -508,6 +532,7 @@ function setup(
 					{
 						id: LIVE_TO_VOD_RUN_ID,
 						seq: 1,
+						stepLog: structuredClone(row.stepLog),
 						status: "RUNNING",
 						bitmovinEncodingId: row.bitmovinEncodingId,
 						heartbeatPollEpoch: 0,
@@ -529,13 +554,28 @@ function setup(
 		 * OLD run, not the newest row; every other read is "the current run".
 		 */
 		findFirst: vi.fn(
-			async (args?: { where?: { bitmovinEncodingId?: string } }) => {
+			async (args?: {
+				where?: { id?: string; bitmovinEncodingId?: string };
+				select?: { liveChannel?: unknown };
+			}) => {
 				const want = args?.where?.bitmovinEncodingId;
 				const pool =
 					want === undefined
 						? runRows
 						: runRows.filter((r) => r.bitmovinEncodingId === want);
-				return pool[pool.length - 1] ?? null;
+				const selected = args?.where?.id
+					? pool.find((r) => r.id === args.where?.id)
+					: pool.at(-1);
+				if (selected && args?.select?.liveChannel)
+					return {
+						...selected,
+						liveChannel: {
+							name: "Fixture channel",
+							...structuredClone(row),
+							runs: structuredClone(runRows.slice(-1)),
+						},
+					};
+				return selected ?? null;
 			},
 		),
 		findMany: vi.fn(async () => runRows),
@@ -621,6 +661,7 @@ function setup(
 		),
 		create: vi.fn(async (args: { data: Record<string, unknown> }) => {
 			const created = {
+				stepLog: [],
 				id: `run-${runRows.length + 1}`,
 				seq: (args.data.seq as number) ?? runRows.length + 1,
 				status: (args.data.status as string) ?? "CREATED",
@@ -656,21 +697,36 @@ function setup(
 	// lost fence that production cannot produce.
 	let transactionTail = Promise.resolve();
 	const prisma = {
+		liveEffectClaim: {
+			findMany: vi.fn(async () => []),
+			findUnique: vi.fn(async () => null),
+		},
 		liveChannel,
 		feederSession,
 		liveHeartbeat,
 		liveSchedule,
+		liveStopNotification: { create: vi.fn(async () => ({})) },
 		liveChannelRun,
 		startupSample,
 		$queryRaw: vi.fn(
 			async (
-				_sql: TemplateStringsArray,
+				sql: TemplateStringsArray,
 				channelId: string,
 				encodingId: string,
-			) =>
-				row.id === channelId && row.bitmovinEncodingId === encodingId
+				jobId?: string,
+			) => {
+				if (sql[0]?.includes('FROM "LiveSchedule"')) {
+					const schedule = await liveSchedule.findFirst();
+					return schedule?.id === channelId &&
+						encodingId === row.id &&
+						schedule.dispatchJobId === jobId
+						? [schedule]
+						: [];
+				}
+				return row.id === channelId && row.bitmovinEncodingId === encodingId
 					? [{ id: row.id }]
-					: [],
+					: [];
+			},
 		),
 		$transaction: vi.fn(async <T>(fn: (tx: AppPrismaClient) => Promise<T>) => {
 			let release = () => {};
@@ -883,14 +939,65 @@ beforeEach(() => {
 		}),
 	);
 	liveEffectMocks.assertCurrent.mockResolvedValue(true);
+	liveEffectMocks.reserveAisa.mockResolvedValue("RESERVED");
+	liveEffectMocks.claimStopSend.mockResolvedValue(true);
 	liveEffectMocks.bindTarget.mockResolvedValue(true);
 	liveEffectMocks.markAcked.mockResolvedValue(true);
 	liveEffectMocks.markAmbiguous.mockResolvedValue(true);
 	liveEffectMocks.markFailed.mockResolvedValue(true);
-	liveEffectMocks.resolveAfterStop.mockResolvedValue({
-		kind: "RESOLVED",
-		count: 0,
-	});
+	liveEffectMocks.recordStopFailure.mockImplementation(
+		async (prisma: AppPrismaClient, claim, data) => {
+			const projection = { status: data.status, error: data.error };
+			await prisma.liveChannel.update({
+				where: { id: claim.liveChannelId },
+				data: projection,
+			});
+			await prisma.liveChannelRun.updateMany({
+				where: { id: claim.liveChannelRunId },
+				data: projection,
+			});
+			return "RECORDED";
+		},
+	);
+	liveEffectMocks.resolveAfterStop.mockImplementation(
+		async (prisma: AppPrismaClient, input) => {
+			if (input.ownerReadbacks) {
+				const run = await prisma.liveChannelRun.findFirst({
+					where: { id: input.liveChannelRunId },
+				});
+				const terminal = input.ownerReadbacks.encodings.find(
+					(r: { id: string }) => r.id === input.providerEncodingId,
+				)?.status;
+				const aisaFailure = run?.aisaStatus === "ERROR";
+				const state = {
+					status: aisaFailure ? ("ERROR" as const) : ("STOPPED" as const),
+					error: aisaFailure ? "AISA_LIVE_TERMINAL_FAILURE" : null,
+				};
+				// The DB settlement is the owner of these writes. Drive the worker fixture's
+				// projections; the resolver suite exercises the transaction and its guards.
+				await prisma.liveChannel.update({
+					where: { id: input.liveChannelId },
+					data: state,
+				});
+				await prisma.liveChannelRun.updateMany({
+					where: { id: input.liveChannelRunId },
+					data: {
+						...state,
+						providerStatus: terminal,
+						providerStatusObservedAt: input.at,
+						endedAt: run?.endedAt ?? input.at,
+					},
+				});
+				await prisma.liveChannelRun.updateMany({
+					where: { id: input.liveChannelRunId, providerTerminalAt: null },
+					data: { providerTerminalAt: input.at },
+				});
+				if (aisaFailure)
+					return { kind: "RESOLVED", count: 0, terminalFailure: true };
+			}
+			return { kind: "RESOLVED", count: 0 };
+		},
+	);
 });
 
 describe("run-bound automatic stop replacement", () => {
@@ -928,6 +1035,14 @@ describe("run-bound automatic stop replacement", () => {
 		};
 	}
 
+	it("refuses an already-queued automatic stop when the current run retains an AISA binding", async () => {
+		const t = harness();
+		const run = t.runRows[0];
+		if (!run) throw new Error("Missing current run");
+		Object.assign(run, { aisaStatus: "RUNNING" });
+		await expect(t.rawProcess(t.job)).rejects.toThrow(/current live run/);
+		expect(t.sdk.updateLiveAutoShutdown).not.toHaveBeenCalled();
+	});
 	it("applies once after the send fence, stores the accepted instant on the admitted run and keeps the next-run plan", async () => {
 		const t = harness();
 		const planBefore = structuredClone(t.row.plan);
@@ -1520,6 +1635,70 @@ describe("live channel provisioning", () => {
 		expect(statusUpdates.at(-1)).toBe("RUNNING");
 	});
 
+	it("carries only safe terminal provider messages into channel, run, queue failure and event", async () => {
+		const h = setup(
+			{},
+			{
+				getEncodingStatus: vi.fn(async () => ({
+					status: "ERROR",
+					messages: [
+						"Read https://storage.invalid/media?token=PRIVATE_FIXTURE",
+						"Ingest refused",
+					],
+				})),
+			},
+		);
+		const emitEvent = vi.fn(async () => {});
+		h.deps.emitEvent = emitEvent;
+		const failure = await h.process({ liveChannelId: CHANNEL_ID }).then(
+			() => "",
+			(err: Error) => err.message,
+		);
+		expect(failure).toContain(
+			"ended ERROR before reaching RUNNING: [withheld]; Ingest refused",
+		);
+		expect(h.row).toMatchObject({ status: "ERROR", error: failure });
+		expect(h.runRows[0]?.stepLog).toEqual(h.row.stepLog);
+		expect(emitEvent).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "CHANNEL_ERROR", error: failure }),
+		);
+		expect(
+			JSON.stringify([h.row, h.runRows, emitEvent.mock.calls]),
+		).not.toContain("PRIVATE_FIXTURE");
+	});
+
+	it("keeps a rejected startup status read out of queue failure/stack, channel, run and event", async () => {
+		const h = setup(
+			{},
+			{
+				getEncodingStatus: vi
+					.fn()
+					.mockRejectedValue(
+						new Error("Source unavailable: media.mxf?sig=PRIVATE_FIXTURE"),
+					),
+			},
+		);
+		const emitEvent = vi.fn(async () => {});
+		h.deps.emitEvent = emitEvent;
+		const failure: Error = await h.process({ liveChannelId: CHANNEL_ID }).then(
+			() => {
+				throw new Error("expected failure");
+			},
+			(err: Error) => err,
+		);
+		expect(failure.message).toBe("[withheld]");
+		expect(failure.stack).not.toContain("PRIVATE_FIXTURE");
+		expect(h.row).toMatchObject({ status: "ERROR", error: failure.message });
+		expect(emitEvent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: "CHANNEL_ERROR",
+				error: failure.message,
+			}),
+		);
+		expect(
+			JSON.stringify([h.row, h.runRows, emitEvent.mock.calls]),
+		).not.toContain("PRIVATE_FIXTURE");
+	});
 	it("acknowledges cancellation during startup as STOPPED, never RUNNING or CHANNEL_ERROR", async () => {
 		const h = setup(
 			{},
@@ -1544,9 +1723,16 @@ describe("live channel provisioning", () => {
 			status: "STOPPED",
 			providerStatus: "CANCELED",
 		});
-		expect(h.deps.emitEvent).toHaveBeenCalledWith(
+		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "CHANNEL_STOPPED" }),
 		);
+		expect(h.deps.prisma.liveStopNotification.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				id: h.runRows[0]?.id,
+				channelId: CHANNEL_ID,
+				kind: "CHANNEL_STOPPED",
+			}),
+		});
 		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "CHANNEL_ERROR" }),
 		);
@@ -1633,17 +1819,30 @@ describe("live channel provisioning", () => {
 	});
 
 	it("snapshots the C7 start request onto the await entry, redacted", async () => {
-		const { process, row, sdk } = setup();
+		const warning = "Read https://storage.invalid/source?sig=fixture-data-key";
+		const { process, row, sdk, runRows } = setup(
+			{},
+			{
+				getEncodingStatus: vi.fn(async () => ({
+					status: "RUNNING",
+					messages: [warning, "normal progress"],
+				})),
+			},
+		);
 		await process({ liveChannelId: CHANNEL_ID });
 		expect(sdk.getLiveStartRequest).toHaveBeenCalledWith("bm-live-enc");
 		const entries = row.stepLog as StepLogEntry[];
 		const awaitEntry = entries.find((e) => e.kind === "AWAIT_LIVE_RUNNING");
 		expect(awaitEntry?.response).toMatchObject({
 			status: "RUNNING",
+			messages: ["[withheld]", "normal progress"],
 			// Snapshots stay masked — only the columns carry the values.
 			live: { streamKey: REDACTED, encoderIp: "203.0.113.10" },
 			startRequest: { streamKey: REDACTED },
 		});
+		expect(JSON.stringify([row.stepLog, runRows[0]?.stepLog])).not.toContain(
+			"fixture-data-key",
+		);
 	});
 
 	it("resumes by reusing DONE resource ids when the RTMP input is unchanged", async () => {
@@ -1678,7 +1877,7 @@ describe("live channel provisioning", () => {
 		// the dead encoding and hit "input could not be found" (2025) again. The
 		// provision must rebuild the input layer + a fresh encoding against the
 		// current input.
-		const { process, row, sdk } = setup({ status: "PROVISIONING" });
+		const { process, row, sdk, runRows } = setup({ status: "PROVISIONING" });
 		const entries = row.stepLog as StepLogEntry[];
 		const input = entries.find((e) => e.kind === "CREATE_INPUT_RTMP");
 		const encoding = entries.find((e) => e.kind === "CREATE_ENCODING");
@@ -1689,9 +1888,13 @@ describe("live channel provisioning", () => {
 		input.resourceId = "bm-stale-rtmp"; // ≠ the account's "bm-rtmp-default"
 		encoding.status = "DONE";
 		encoding.resourceId = "bm-stale-enc";
+		vi.mocked(sdk.getEncodingStatus).mockResolvedValueOnce({
+			status: "CREATED",
+		});
 		await process({ liveChannelId: CHANNEL_ID });
 		// Re-resolved, found stale → the DONE encoding is rebuilt, not reused…
 		expect(sdk.createEncoding).toHaveBeenCalled();
+		expect(runRows[0]?.previousProviderEncodingIds).toContain("bm-stale-enc");
 		// …and the new input streams reference the FRESH account input id.
 		// Live streams reference the input directly (no IngestInputStream) — the
 		// resolved RTMP input id rides on createStream's StreamInput (C13).
@@ -1704,6 +1907,29 @@ describe("live channel provisioning", () => {
 			(e) => e.kind === "CREATE_INPUT_RTMP",
 		);
 		expect(rebuiltInput?.resourceId).toBe("bm-rtmp-default");
+	});
+
+	it("retains an active displaced RTMP encoder and makes it stoppable before rebuilding", async () => {
+		const { process, row, sdk, runRows } = setup({ status: "PROVISIONING" });
+		const entries = row.stepLog as StepLogEntry[];
+		const input = entries.find((e) => e.kind === "CREATE_INPUT_RTMP"),
+			encoder = entries.find((e) => e.kind === "CREATE_ENCODING");
+		if (!input || !encoder) throw new Error("missing steps");
+		Object.assign(input, { status: "DONE", resourceId: "old-input" });
+		Object.assign(encoder, { status: "DONE", resourceId: "billing-encoder" });
+		await expect(process({ liveChannelId: CHANNEL_ID })).rejects.toThrow(
+			"billing-encoder",
+		);
+		expect(sdk.createEncoding).not.toHaveBeenCalled();
+		expect(row).toMatchObject({
+			status: "ERROR",
+			bitmovinEncodingId: "billing-encoder",
+			provisionClaimedAt: null,
+		});
+		expect(runRows[0]).toMatchObject({
+			status: "ERROR",
+			bitmovinEncodingId: "billing-encoder",
+		});
 	});
 
 	it("provision stamps as the CHANNEL — window opens only for the crash-leftover step", async () => {
@@ -1839,6 +2065,9 @@ describe("live channel provisioning", () => {
 		encoding.resourceId = "bm-stale-enc";
 		encoding.startedAt = "2026-06-11T23:58:00.000Z";
 		encoding.finishedAt = "2026-06-11T23:59:00.000Z";
+		vi.mocked(harness.sdk.getEncodingStatus).mockResolvedValueOnce({
+			status: "CREATED",
+		});
 		await harness.process({ liveChannelId: CHANNEL_ID });
 		// The rebuilt steps stamped with the BUMPED generation…
 		const gen1 = seen.filter(({ step }) => step.endsWith("#1"));
@@ -1932,6 +2161,9 @@ describe("live channel provisioning", () => {
 					}) as StepLogEntry,
 			),
 		);
+		vi.mocked(sdk.getEncodingStatus).mockResolvedValueOnce({
+			status: "CREATED",
+		});
 		await process({ liveChannelId: CHANNEL_ID });
 		// The channel provisions instead of wedging.
 		expect(row.status).toBe("RUNNING");
@@ -2161,6 +2393,13 @@ describe("live channel actions", () => {
 			aisaStatus: "RUNNING",
 			aisaSnapshot: null,
 		});
+		h.deps.makeSdk = (options) => ({
+			...h.sdk,
+			stopLiveEncoding: async (id) => {
+				await options.aisaLive?.reserveStop?.("analysis", analysisId);
+				await h.sdk.stopLiveEncoding(id);
+			},
+		});
 		let attempt = 0;
 		h.sdk.stopLiveEncoding = vi.fn(async () => {
 			if (mode === "recover" && attempt++ === 0)
@@ -2190,10 +2429,34 @@ describe("live channel actions", () => {
 			);
 			expect(h.row.status).toBe("ERROR");
 			expect(liveEffectMocks.markAmbiguous).toHaveBeenCalled();
+			Object.assign(h.deps.prisma.liveEffectClaim, {
+				findMany: async () => [
+					{
+						id: "scheduled-sibling",
+						providerEncodingId: encodingId,
+						action: "STOP",
+						state: "AMBIGUOUS",
+						stopProtocolVersion: 1,
+						stopSendEncodingIds: [encodingId],
+						stopAnalysisSendId: analysisId,
+					},
+				],
+			});
+			h.sdk.getAisaLiveAnalysis = vi.fn(async () => {
+				Object.assign(requiredFixtureRun(h), {
+					aisaStatus: "FINISHED",
+					aisaSnapshot: finalAisaSnapshot(analysisId, encodingId),
+				});
+				return { analysisId, encodingId, status: "FINISHED" as const };
+			});
 		}
 		await expect(h.rawProcess(job)).resolves.toMatchObject({
 			status: mode === "terminal-failure" ? "ERROR" : "STOPPED",
 		});
+		if (mode === "recover") {
+			expect(h.sdk.getAisaLiveAnalysis).toHaveBeenCalledWith(analysisId, true);
+			expect(h.sdk.stopLiveEncoding).toHaveBeenCalledTimes(1);
+		}
 		expect(h.runRows).toHaveLength(1);
 		expect(h.row.error).toBe(
 			mode === "terminal-failure" ? "AISA_LIVE_TERMINAL_FAILURE" : null,
@@ -2235,6 +2498,7 @@ describe("live channel actions", () => {
 		h.deps.acknowledgeResetEntity = ack;
 		Object.assign(h.deps.prisma, {
 			liveEffectClaim: {
+				findMany: async () => [],
 				findUnique: async () => {
 					cleanupEntered();
 					await cleanupWait;
@@ -2263,15 +2527,7 @@ describe("live channel actions", () => {
 		expect(ack).not.toHaveBeenCalled();
 		expect(liveEffectMocks.markAcked).not.toHaveBeenCalled();
 		expect(liveEffectMocks.resolveAfterStop).not.toHaveBeenCalled();
-		expect(h.liveSchedule.updateMany.mock.calls).toEqual(
-			expect.arrayContaining([
-				[
-					expect.objectContaining({
-						data: expect.objectContaining({ outcome: "UNKNOWN" }),
-					}),
-				],
-			]),
-		);
+		expect(h.liveSchedule.updateMany).not.toHaveBeenCalled(); // This manual STOP has no scheduled row.
 	});
 
 	it("stops a RUNNING channel: STOPPING → stop API → STOPPED", async () => {
@@ -2285,7 +2541,9 @@ describe("live channel actions", () => {
 			});
 			expect(result).toMatchObject({ action: "stop", status: "STOPPED" });
 			expect(sdk.stopLiveEncoding).toHaveBeenCalledWith("bm-live-enc");
-			const statusUpdates = updates.map((u) => u.status);
+			const statusUpdates = updates
+				.filter((u) => "status" in u)
+				.map((u) => u.status);
 			expect(statusUpdates).toEqual(["STOPPING", "STOPPED"]);
 			expect(row.status).toBe("STOPPED");
 		} finally {
@@ -2314,7 +2572,11 @@ describe("live channel actions", () => {
 		});
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(row.status).toBe("STOPPED");
 		expect(row.error).toMatch(/stop did not confirm/);
 	});
@@ -2343,7 +2605,11 @@ describe("live channel actions", () => {
 		});
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(row.status).toBe("STOPPED");
 		expect(row.error).toMatch(/stop did not confirm/);
 		expect(row.error).toMatch(/could never be read/);
@@ -2393,7 +2659,11 @@ describe("live channel actions", () => {
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
 		expect(t.row.error).toMatch(/publisher termination was not confirmed/);
 		expect(liveEffectMocks.resolveAfterStop).not.toHaveBeenCalled();
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 	});
 
 	it.each([
@@ -2464,6 +2734,7 @@ describe("live channel actions", () => {
 		runRows.push({
 			id: LIVE_TO_VOD_RUN_ID,
 			seq: 1,
+			stepLog: [],
 			status: "STOPPED",
 			bitmovinEncodingId: "bm-live-enc",
 			providerStatus: "RUNNING",
@@ -2481,6 +2752,132 @@ describe("live channel actions", () => {
 		expect(sdk.stopLiveEncoding).toHaveBeenCalledWith("bm-live-enc");
 		expect(row.status).toBe("STOPPED");
 		expect(row.error).toBeNull();
+	});
+
+	it("only reads both encoders after an interrupted legacy compound STOP", async () => {
+		const h = setup(
+			{ ...runningRow, stepLog: stepLogNaming("other") },
+			{ getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })) },
+		);
+		Object.assign(h.deps.prisma.liveEffectClaim, {
+			findMany: async () => [
+				{
+					id: "legacy",
+					action: "STOP",
+					state: "AMBIGUOUS",
+					providerEncodingId: "bm-live-enc",
+					stopProtocolVersion: null,
+				},
+			],
+		});
+		expect(
+			await h.process({ liveChannelId: CHANNEL_ID, action: "stop" }),
+		).toMatchObject({ status: "STOPPED" });
+		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("other");
+		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("bm-live-enc");
+	});
+	it("sends an archived encoder its first STOP even after the primary response is lost", async () => {
+		const h = setup(runningRow, {
+			stopLiveEncoding: vi.fn(async (id) => {
+				if (id === "bm-live-enc") throw new Error("lost reply");
+			}),
+			getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
+		});
+		Object.assign(requiredFixtureRun(h), {
+			previousProviderEncodingIds: ["displaced"],
+		});
+		expect(
+			await h.process({ liveChannelId: CHANNEL_ID, action: "stop" }),
+		).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
+		expect(vi.mocked(h.sdk.stopLiveEncoding).mock.calls).toEqual([
+			["bm-live-enc"],
+			["displaced"],
+		]);
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({
+				encodings: [{ id: "displaced", status: "FINISHED" }],
+			}),
+		);
+	});
+	it("stops a run-log-only encoder and checks the failed restart's historical target without sending it STOP", async () => {
+		const statuses: Record<string, string> = {
+			"bm-live-enc": "FINISHED",
+			"run-only": "CANCELED",
+			"prior-restart": "RUNNING",
+		};
+		const t = setup(runningRow, {
+			getEncodingStatus: vi.fn(async (id) => ({
+				status: statuses[id] ?? "RUNNING",
+			})),
+		});
+		const run = t.runRows[0];
+		if (!run) throw new Error("missing run");
+		run.stepLog = stepLogNaming("run-only");
+		Object.assign(t.deps.prisma.liveEffectClaim, {
+			findMany: vi.fn(async () => [
+				{
+					id: "old",
+					action: "RESTART",
+					state: "FAILED",
+					providerEncodingId: "prior-restart",
+				},
+			]),
+		});
+		const result = await t.process({
+			liveChannelId: CHANNEL_ID,
+			action: "stop",
+		});
+		expect(
+			vi.mocked(t.sdk.stopLiveEncoding).mock.calls.map((call) => call[0]),
+		).toEqual(["bm-live-enc", "run-only"]);
+		expect(t.sdk.getEncodingStatus).toHaveBeenCalledWith("prior-restart");
+		expect(result.status).toBe("EFFECT_AMBIGUOUS");
+		expect(t.row.error).toContain("prior-restart: prior effect still RUNNING");
+		expect(liveEffectMocks.resolveAfterStop).not.toHaveBeenCalled();
+	});
+
+	it("does not clear the channel or publish a success event when other STOP evidence blocks settlement", async () => {
+		const t = setup(runningRow, {
+			getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
+		});
+		const events = vi.fn(async () => {});
+		t.deps.emitEvent = events;
+		liveEffectMocks.resolveAfterStop.mockResolvedValueOnce({
+			kind: "BLOCKED",
+			reason: "another target is not terminal",
+		});
+		await expect(
+			t.process({ liveChannelId: CHANNEL_ID, action: "stop" }),
+		).resolves.toMatchObject({ status: "EFFECT_AMBIGUOUS" });
+		expect(t.row.status).toBe("STOPPING");
+		expect(events).not.toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "CHANNEL_STOPPED" }),
+		);
+	});
+
+	it("returns the durable winning ACK to a redelivery or to an expired owner", async () => {
+		for (const redelivery of [false, true]) {
+			const t = setup(runningRow, {
+				getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
+			});
+			if (redelivery)
+				liveEffectMocks.begin.mockResolvedValueOnce({
+					kind: "BLOCKED",
+					claimId: "exact",
+					state: "DISPATCHING",
+					reason: "lost reply",
+				});
+			liveEffectMocks.resolveAfterStop.mockResolvedValueOnce({
+				kind: "ALREADY_ACKED",
+			});
+			await expect(
+				t.process({ liveChannelId: CHANNEL_ID, action: "stop" }),
+			).resolves.toMatchObject({ status: "EFFECT_ALREADY_ACKNOWLEDGED" });
+			if (redelivery) expect(t.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		}
 	});
 
 	it("stops EVERY encoding the channel knows about, not just the column's", async () => {
@@ -2529,7 +2926,11 @@ describe("live channel actions", () => {
 		});
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(row.status).toBe("STOPPED");
 	});
 
@@ -2550,7 +2951,11 @@ describe("live channel actions", () => {
 		});
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(row.status).toBe("ERROR");
 		expect(row.error).toBe("stop refused");
 	});
@@ -2591,7 +2996,11 @@ describe("live channel actions", () => {
 		feederSession.findMany.mockResolvedValueOnce([{ id: "feed-1" }]);
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(enqueueFeederJob).toHaveBeenCalledWith({
 			feederSessionId: "feed-1",
 			action: "stop",
@@ -2619,7 +3028,11 @@ describe("live channel actions", () => {
 		const result = await process({ liveChannelId: CHANNEL_ID, action: "stop" });
 		// Not blocked: the channel still reaches STOPPED and the encodings stop.
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.anything(),
+			expect.objectContaining({ state: "AMBIGUOUS" }),
+		);
 		expect(sdk.stopLiveEncoding).toHaveBeenCalled();
 		expect(row.status).toBe("STOPPED");
 		// Not swallowed: the enqueue failure is durable on the channel error, so
@@ -2655,7 +3068,7 @@ describe("live channel actions", () => {
 		over: Partial<(typeof t.runRows)[number]> = {},
 	) => {
 		t.runRows.push({
-			id: "run-1",
+			id: LIVE_TO_VOD_RUN_ID,
 			seq: 1,
 			status: "RUNNING",
 			bitmovinEncodingId: "bm-live-enc",
@@ -2678,12 +3091,15 @@ describe("live channel actions", () => {
 			liveEffectFenceVersion: 1,
 		});
 		seedRun(t);
-		liveEffectMocks.assertCurrent.mockImplementation(async () => {
-			// The same-run manual STOP atomically superseded this restart.
+		t.sdk.getEncodingStatus = vi.fn(async () => {
+			// The same-run manual STOP wins while the provider read is in flight.
 			t.row.status = "STOPPING";
 			t.row.liveEffectFenceVersion = 2;
-			return false;
+			return { status: "RUNNING" };
 		});
+		liveEffectMocks.assertCurrent.mockImplementation(
+			async () => t.row.liveEffectFenceVersion === 1,
+		);
 
 		await expect(
 			t.process({ liveChannelId: CHANNEL_ID, action: "restart" }),
@@ -2693,7 +3109,7 @@ describe("live channel actions", () => {
 		expect(t.updates).not.toEqual(
 			expect.arrayContaining([expect.objectContaining({ status: "ERROR" })]),
 		);
-		expect(liveEffectMocks.assertCurrent).toHaveBeenCalledTimes(2);
+		expect(t.runRows[0]?.providerStatus).toBeNull();
 	});
 
 	it("a restart response that loses to STOP cannot late-mark the channel ERROR", async () => {
@@ -2703,19 +3119,10 @@ describe("live channel actions", () => {
 			liveEffectFenceVersion: 1,
 		});
 		seedRun(t);
-		let fenceChecks = 0;
-		liveEffectMocks.assertCurrent.mockImplementation(async () => {
-			fenceChecks += 1;
-			if (fenceChecks === 1) return true;
-			// Simulate STOP committing immediately after the catch's claim read.
-			// Returning the now-stale true snapshot forces the ERROR write's own
-			// generation CAS—not a check-then-write—to preserve STOPPING.
-			t.row.status = "STOPPING";
-			t.row.liveEffectFenceVersion = 2;
-			return true;
-		});
 		vi.mocked(t.sdk.restartLiveEncoding).mockImplementation(async () => {
 			// The request crossed its send boundary before its response was lost.
+			t.row.status = "STOPPING";
+			t.row.liveEffectFenceVersion = 2;
 			throw new Error("restart response was lost");
 		});
 
@@ -2727,7 +3134,7 @@ describe("live channel actions", () => {
 		expect(t.updates).not.toEqual(
 			expect.arrayContaining([expect.objectContaining({ status: "ERROR" })]),
 		);
-		expect(liveEffectMocks.assertCurrent).toHaveBeenCalledTimes(2);
+		expect(t.runRows[0]?.status).toBe("RUNNING");
 		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalled();
 	});
 
@@ -2913,7 +3320,9 @@ describe("live channel actions", () => {
 				{ getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })) },
 			);
 			const run = seedRun(t);
-			t.feederSession.findMany.mockResolvedValueOnce([{ id: "feed-1" }]);
+			t.feederSession.findMany
+				.mockResolvedValueOnce([])
+				.mockResolvedValueOnce([{ id: "feed-1" }]);
 			await expect(
 				t.process({ liveChannelId: CHANNEL_ID, action: "restart" }),
 			).rejects.toThrow(/FINISHED/);
@@ -2943,7 +3352,15 @@ describe("live channel actions", () => {
 			});
 			expect(t.feederSession.findMany).toHaveBeenCalledWith(
 				expect.objectContaining({
-					where: expect.objectContaining({ liveChannelRunId: "run-1" }),
+					where: expect.objectContaining({
+						AND: expect.arrayContaining([
+							expect.objectContaining({
+								OR: expect.arrayContaining([
+									{ liveChannelRunId: LIVE_TO_VOD_RUN_ID },
+								]),
+							}),
+						]),
+					}),
 				}),
 			);
 		});
@@ -5715,12 +6132,53 @@ describe("run-generation fence for queue retries", () => {
 				liveChannelId: CHANNEL_ID,
 				action: "stop",
 				plannedLiveChannelRunId: run,
+				effect: {
+					idempotencyKey: `schedule:${SCHEDULE_ID}:stop`,
+					liveChannelRunId: run,
+					providerEncodingId: "bm-live-enc",
+					admissionFenceVersion: 0,
+					action: "STOP",
+					scheduleId: SCHEDULE_ID,
+				},
 			}),
 			// The STOPPING claim — stopChannel's first write.
 			sideEffect: (t) => t.liveChannel.updateMany,
 			ranStatus: "STOPPED",
 		},
 	];
+
+	it("closes only the legacy queue-id STOP receipt when its planned airing has ended", async () => {
+		const t = setup(plainChannel());
+		t.runRows.push({
+			id: RUN_2,
+			seq: 2,
+			status: "RUNNING",
+			bitmovinEncodingId: "next",
+		});
+		const received = {
+			liveChannelId: CHANNEL_ID,
+			action: "stop",
+			plannedLiveChannelRunId: RUN_1,
+		};
+		const result = await t.rawProcess(received, `sched-${SCHEDULE_ID}`);
+		expect(result.status).toBe("SKIPPED_STALE_GENERATION");
+		expect(t.liveSchedule.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					id: SCHEDULE_ID,
+					action: "STOP",
+					liveChannelId: CHANNEL_ID,
+					liveChannelRunId: RUN_1,
+					outcome: { in: ["PENDING"] },
+				}),
+				data: expect.objectContaining({
+					outcome: "FAILED",
+					outcomeEvidenceKind: "STALE_GENERATION_REFUSAL",
+				}),
+			}),
+		);
+		expect(t.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+	});
 
 	for (const c of CASES) {
 		it(`REFUSES a stale ${c.action} — nothing acts on the new run, and the row is terminated SKIPPED_STALE_GENERATION with a FAILED outcome`, async () => {
@@ -5735,6 +6193,11 @@ describe("run-generation fence for queue retries", () => {
 				providerStatusObservedAt: new Date("2099-01-01T00:00:00.000Z"),
 			});
 			c.prep?.(t);
+			if (c.action === "stop")
+				liveEffectMocks.begin.mockResolvedValueOnce({
+					kind: "STALE",
+					reason: "the exact planned airing has ended",
+				});
 			const result = await t.process(c.job(RUN_1));
 			expect(result).toMatchObject({ status: "SKIPPED_STALE_GENERATION" });
 			// Nothing was pushed / stopped / inserted, and nothing spawned.
@@ -5761,6 +6224,7 @@ describe("run-generation fence for queue retries", () => {
 			t.runRows.push({
 				id: RUN_2,
 				seq: 2,
+				stepLog: [],
 				status: "RUNNING",
 				bitmovinEncodingId: "bm-live-enc",
 				providerStatus: "RUNNING",
@@ -5818,9 +6282,16 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 			error: null,
 			providerStatus: "FINISHED",
 		});
-		expect(h.deps.emitEvent).toHaveBeenCalledWith(
+		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "CHANNEL_STOPPED" }),
 		);
+		expect(h.deps.prisma.liveStopNotification.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				id: h.runRows[0]?.id,
+				channelId: CHANNEL_ID,
+				kind: "CHANNEL_STOPPED",
+			}),
+		});
 		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "CHANNEL_ERROR" }),
 		);
@@ -5882,6 +6353,12 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 			const matches = rows.filter((row) =>
 				Object.entries((where ?? {}) as Record<string, unknown>).every(
 					([key, value]) => {
+						if (key === "OR" && Array.isArray(value))
+							return value.some((arm) =>
+								Object.entries(arm).every(
+									([field, expected]) => row[field] === expected,
+								),
+							);
 						if (value && typeof value === "object" && "in" in value)
 							return (value.in as unknown[]).includes(row[key]);
 						return row[key] === value;
@@ -5893,17 +6370,59 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 		});
 	}
 
+	function provisionScheduled(
+		h: ReturnType<typeof setup>,
+		queueId = `sched-${SCHEDULE_ID}-start-1`,
+	) {
+		if (!h.runRows.length)
+			h.runRows.push({
+				id: LIVE_TO_VOD_RUN_ID,
+				seq: 1,
+				status: "PROVISIONING",
+				liveChannelId: CHANNEL_ID,
+				cancelRequested: false,
+			});
+		h.liveSchedule.findFirst.mockResolvedValue({
+			id: SCHEDULE_ID,
+			liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+			startAdmissionFenceVersion: 1,
+			dispatchJobId: `sched-${SCHEDULE_ID}-start-1`,
+			dispatchedAt: new Date("2026-06-12T00:00:00Z"),
+		} as never);
+		return h.rawProcess(
+			{
+				liveChannelId: CHANNEL_ID,
+				action: "provision",
+				plannedLiveChannelRunId: LIVE_TO_VOD_RUN_ID,
+				provisionFenceVersion: 1,
+			},
+			queueId,
+		);
+	}
+
+	it("skips a scheduled START whose queue generation differs from its payload", async () => {
+		const h = setup();
+		await expect(
+			provisionScheduled(h, `sched-${SCHEDULE_ID}-start-2`),
+		).resolves.toMatchObject({ status: "SKIPPED_STALE_GENERATION" });
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.liveSchedule.updateMany).not.toHaveBeenCalled();
+	});
+
 	it("preserves delivered START after normal stop and old provision redelivery", async () => {
 		const h = setup();
 		const schedule = {
 			liveChannelId: CHANNEL_ID,
-			liveChannelRunId: "run-1",
+			liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+			id: SCHEDULE_ID,
+			startAdmissionFenceVersion: 1,
+			dispatchJobId: `sched-${SCHEDULE_ID}-start-1`,
 			action: "START",
 			status: "FIRED",
 			outcome: "PENDING",
 		};
 		trackStartOutcomes(h, [schedule]);
-		await h.process({ liveChannelId: CHANNEL_ID });
+		await provisionScheduled(h);
 		expect(schedule.outcome).toBe("DELIVERED");
 		const run = h.runRows[0];
 		if (!run) throw new Error("fixture run missing");
@@ -5927,7 +6446,7 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 		expect(h.row.status).toBe("STOPPED");
 		expect(h.row.error).toBeNull();
 		h.liveSchedule.updateMany.mockClear();
-		await h.process({ liveChannelId: CHANNEL_ID });
+		await provisionScheduled(h);
 		expect(schedule.outcome).toBe("DELIVERED");
 		expect(h.liveSchedule.updateMany).not.toHaveBeenCalled();
 	});
@@ -5940,6 +6459,7 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 		const base = {
 			liveChannelId: CHANNEL_ID,
 			action: "START",
+			startAdmissionFenceVersion: 1,
 			status: "FIRED",
 		};
 		const schedules = [
@@ -6166,6 +6686,51 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 			warn.mockRestore();
 		});
 
+		it("keeps signed provider diagnostics out of slate history, schedule outcome and operator logs", async () => {
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+			try {
+				const harness = setup(runningRow, {
+					listScheduledInsertableContent: erroredEntry,
+					getEncodingMessages: vi.fn(async () => [
+						{
+							type: "ERROR",
+							text: "Read media/scene?auth=PRIVATE_FIXTURE",
+							date: null,
+						},
+						{
+							type: "WARNING",
+							text: "Slates must match video frame rate",
+							date: null,
+						},
+					]),
+				});
+				await fireSlate(harness);
+				const failed = (harness.row.stepLog as StepLogEntry[]).find(
+					(entry) => entry.kind === "SLATE_FAILED",
+				);
+				expect(failed?.payload.providerMessages).toEqual([
+					{ type: "ERROR", text: "[withheld]", date: null },
+					{
+						type: "WARNING",
+						text: "Slates must match video frame rate",
+						date: null,
+					},
+				]);
+				expect(outcomeWrites(harness.liveSchedule)[0]?.data).toMatchObject({
+					outcome: "FAILED",
+				});
+				expect(
+					JSON.stringify([
+						failed,
+						outcomeWrites(harness.liveSchedule),
+						warn.mock.calls,
+					]),
+				).not.toContain("PRIVATE_FIXTURE");
+			} finally {
+				warn.mockRestore();
+			}
+		});
+
 		it("says so when the provider reported no message", async () => {
 			const harness = setup(runningRow, {
 				listScheduledInsertableContent: erroredEntry,
@@ -6330,73 +6895,79 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 		expect(list).toHaveBeenCalledTimes(1);
 	});
 
-	it("a CONFIRMED stop marks its scheduled STOP row DELIVERED", async () => {
-		// The harness default reports RUNNING forever (it is AWAIT_LIVE_RUNNING's
-		// steady state), which is the UNCONFIRMED arm below — an OBSERVED
-		// terminal encoding is what makes a stop confirmed.
-		const harness = setup(runningRow, {
+	const scheduledStopJob = {
+		liveChannelId: CHANNEL_ID,
+		action: "stop",
+		plannedLiveChannelRunId: LIVE_TO_VOD_RUN_ID,
+		effect: {
+			idempotencyKey: `schedule:${SCHEDULE_ID}:stop`,
+			liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+			providerEncodingId: "bm-live-enc",
+			admissionFenceVersion: 0,
+			action: "STOP",
+			scheduleId: SCHEDULE_ID,
+		},
+	};
+
+	it("hands the exact scheduled STOP with its terminal readback to the settlement transaction", async () => {
+		const h = setup(runningRow, {
 			getEncodingStatus: async () => ({ status: "FINISHED" }) as never,
 		});
-		await harness.process({ liveChannelId: CHANNEL_ID, action: "stop" });
-		expect(outcomeWrites(harness.liveSchedule)).toEqual([
-			{
-				where: {
-					liveChannelId: CHANNEL_ID,
-					action: "STOP",
-					status: "FIRED",
-					outcome: {
-						in: [
-							"PENDING",
-							"PROCESS_PUSHING",
-							"INGEST_CONNECTED",
-							"SLATE_ARMED",
-						],
-					},
-				},
-				data: expect.objectContaining({
-					outcome: "DELIVERED",
-					outcomeNote: null,
-				}),
-			},
-		]);
-	});
-
-	it("an UNCONFIRMED stop is UNKNOWN, not DELIVERED — the encoder may still be billing", async () => {
-		const harness = setup(runningRow, {
-			getEncodingStatus: async () => ({ status: "RUNNING" }) as never,
-		});
-		await harness.process({ liveChannelId: CHANNEL_ID, action: "stop" });
-		expect(outcomeWrites(harness.liveSchedule)).toEqual([
+		await h.rawProcess(scheduledStopJob);
+		expect(liveEffectMocks.begin).toHaveBeenCalledWith(
+			h.deps.prisma,
 			expect.objectContaining({
-				data: expect.objectContaining({
-					outcome: "UNKNOWN",
-					outcomeNote: expect.stringMatching(/stop did not confirm/),
+				scheduleId: SCHEDULE_ID,
+				liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+			}),
+		);
+		expect(liveEffectMocks.resolveAfterStop).toHaveBeenCalledWith(
+			h.deps.prisma,
+			expect.objectContaining({
+				stopIdempotencyKey: scheduledStopJob.effect.idempotencyKey,
+				liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+				ownerReadbacks: expect.objectContaining({
+					encodings: [{ id: "bm-live-enc", status: "FINISHED" }],
 				}),
 			}),
-		]);
+		);
+		expect(h.liveSchedule.updateMany).not.toHaveBeenCalled(); // Ownership of the write stays with the transaction.
 	});
 
-	it("a stop rejected after send is AMBIGUOUS and leaves schedule evidence fail-closed", async () => {
-		const harness = setup(runningRow, {
+	it("records an unconfirmed scheduled stop using its exact claim", async () => {
+		const h = setup(runningRow, {
+			getEncodingStatus: async () => ({ status: "RUNNING" }) as never,
+		});
+		await h.rawProcess(scheduledStopJob);
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			h.deps.prisma,
+			expect.objectContaining({
+				idempotencyKey: scheduledStopJob.effect.idempotencyKey,
+			}),
+			expect.objectContaining({
+				state: "AMBIGUOUS",
+				error: expect.stringMatching(/stop did not confirm/),
+			}),
+		);
+	});
+
+	it("records an uncertain response for the scheduled STOP that crossed its send boundary", async () => {
+		const h = setup(runningRow, {
 			stopLiveEncoding: vi.fn(async () => {
 				throw new Error("409 the encoding cannot be stopped");
 			}),
 		});
-		const result = await harness.process({
-			liveChannelId: CHANNEL_ID,
-			action: "stop",
-		});
+		const result = await h.rawProcess(scheduledStopJob);
 		expect(result).toMatchObject({ status: "EFFECT_AMBIGUOUS" });
-		expect(liveEffectMocks.markAmbiguous).toHaveBeenCalledOnce();
-		expect(outcomeWrites(harness.liveSchedule)).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					data: expect.objectContaining({
-						outcome: "UNKNOWN",
-						outcomeNote: expect.stringMatching(/cannot be stopped/),
-					}),
-				}),
-			]),
+		expect(liveEffectMocks.recordStopFailure).toHaveBeenCalledWith(
+			h.deps.prisma,
+			expect.objectContaining({
+				idempotencyKey: scheduledStopJob.effect.idempotencyKey,
+			}),
+			expect.objectContaining({
+				state: "AMBIGUOUS",
+				error: expect.stringContaining("cannot be stopped"),
+			}),
 		);
 	});
 
@@ -6408,20 +6979,22 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 		 * amber.
 		 */
 		const harness = setup();
-		await harness.process({ liveChannelId: CHANNEL_ID });
+		await provisionScheduled(harness);
 		expect(outcomeWrites(harness.liveSchedule)).toEqual([
 			{
 				where: {
 					liveChannelId: CHANNEL_ID,
+					id: SCHEDULE_ID,
+					liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+					startAdmissionFenceVersion: 1,
+					OR: [
+						{ dispatchJobId: null },
+						{ dispatchJobId: `sched-${SCHEDULE_ID}-start-1` },
+					],
 					action: "START",
 					status: "FIRED",
 					outcome: {
-						in: [
-							"PENDING",
-							"PROCESS_PUSHING",
-							"INGEST_CONNECTED",
-							"SLATE_ARMED",
-						],
+						in: ["PENDING"],
 					},
 				},
 				data: expect.objectContaining({ outcome: "DELIVERED" }),
@@ -6438,24 +7011,29 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 				),
 			},
 		);
-		await expect(
-			harness.process({ liveChannelId: CHANNEL_ID }),
-		).rejects.toThrow("region rejected");
+		await expect(provisionScheduled(harness)).rejects.toThrow(
+			"region rejected",
+		);
 		expect(outcomeWrites(harness.liveSchedule)).toEqual([
 			{
 				where: {
 					liveChannelId: CHANNEL_ID,
+					id: SCHEDULE_ID,
+					liveChannelRunId: LIVE_TO_VOD_RUN_ID,
+					startAdmissionFenceVersion: 1,
+					OR: [
+						{ dispatchJobId: null },
+						{ dispatchJobId: `sched-${SCHEDULE_ID}-start-1` },
+					],
+					liveChannel: {
+						status: "ERROR",
+						liveEffectFenceVersion: 1,
+						runs: { some: { id: LIVE_TO_VOD_RUN_ID, status: "ERROR" } },
+					},
 					action: "START",
 					status: "FIRED",
 					outcome: {
-						in: [
-							"PENDING",
-							"PROCESS_PUSHING",
-							"INGEST_CONNECTED",
-							"SLATE_ARMED",
-							"DELIVERED",
-							"UNKNOWN",
-						],
+						in: ["PENDING"],
 					},
 				},
 				data: expect.objectContaining({
@@ -7665,6 +8243,48 @@ describe("live-to-VOD", () => {
 		claimStoppedChannel(t);
 		return t;
 	}
+
+	it.each([
+		"exact",
+		"latest",
+		"after-create",
+	] as const)("refuses an already queued recording publication protected on the %s run", async (phase) => {
+		const t = stoppedChannel(finishedManifests());
+		const run = t.runRows.at(-1);
+		if (!run) throw new Error("Missing recording run");
+		if (phase === "exact") run.aisaAnalysisId = "protected-analysis";
+		else if (phase === "latest")
+			t.runRows.push({
+				id: "new-run",
+				seq: run.seq + 1,
+				status: "STOPPED",
+				aisaAnalysisId: "protected-analysis",
+			});
+		else
+			vi.mocked(t.sdk.createDefaultHlsManifest).mockImplementationOnce(
+				async () => {
+					run.aisaStatus = "FINISHED";
+					return "bm-vod-hls";
+				},
+			);
+		const record = normalizeLiveToVodRecord(t.row.liveToVod);
+		if (!record?.attemptId) throw new Error("Missing exact attempt");
+		await expect(
+			t.process({
+				liveChannelId: CHANNEL_ID,
+				action: "live-to-vod",
+				attemptId: record.attemptId,
+				liveChannelRunId: run.id,
+				encodingId: "bm-live-enc",
+				params: { manifests: ["HLS"] },
+			}),
+		).rejects.toThrow(/AISA/i);
+		expect(t.sdk.createDefaultHlsManifest).toHaveBeenCalledTimes(
+			phase === "after-create" ? 1 : 0,
+		);
+		expect(t.sdk.startHlsManifest).not.toHaveBeenCalled();
+		expect(t.sdk.deleteHlsManifest).not.toHaveBeenCalled();
+	});
 
 	it("generates BOTH default manifests over the stopped encoding with LEGACY", async () => {
 		const t = stoppedChannel(finishedManifests());
@@ -9428,26 +10048,14 @@ describe("the provisioning lease is a WRITE fence (ledger #216, re-audit BLOCKER
 	});
 
 	it("the live `failed` handler flips only a row whose lease is stale or absent, and releases it", () => {
-		// Pinned by shape, like #200's VOD twin: a redelivered failure must not
-		// mark a channel another worker is still renewing.
 		const index = readFileSync(join(__dirname, "../index.ts"), "utf8");
-		const handler = index.slice(
-			index.indexOf('status: { in: ["CREATED", "PROVISIONING", "STOPPING"] }'),
+		const outcomes = readFileSync(
+			join(__dirname, "../live/dead-job-outcome.ts"),
+			"utf8",
 		);
-		expect(handler.slice(0, 900)).toMatch(/\{ provisionClaimedAt: null \}/);
-		expect(handler.slice(0, 900)).toMatch(
-			/lt: new Date\(Date\.now\(\) - PROVISION_LEASE_MS\)/,
-		);
-		expect(handler.slice(0, 1200)).toContain("provisionClaimedAt: null,");
-		// review-336 C3: the run retirement rides the channel flip's count —
-		// a loser that did not win the flip must not retire the winner's run.
-		const gated = handler.slice(0, 3200);
-		expect(gated).toMatch(
-			/\.then\(\(\{ count \}\) => \{[\s\S]*?if \(count === 0\) \{\s*return;\s*\}[\s\S]*?retireTransitionalRuns\(/,
-		);
-		expect(gated.indexOf("retireTransitionalRuns(")).toBeGreaterThan(
-			gated.indexOf(".then(({ count })"),
-		);
+		expect(index).toMatch(/await recordFinalProvisionFailure\(/);
+		expect(outcomes).toMatch(/return recordExpiredProvisionFailure\(/);
+		expect(outcomes).toMatch(/at.getTime\(\) - PROVISION_LEASE_MS/);
 	});
 });
 
@@ -9672,7 +10280,7 @@ describe("verification provider identity durability", () => {
 		}
 	});
 
-	it("does not classify a post-primary run-mirror P1001 as safe-to-compensate", async () => {
+	it("retries a rolled-back run mirror under the same fence before confirming the provider ID", async () => {
 		let callbackResult: string | undefined;
 		const h = setup(
 			{
@@ -9720,16 +10328,16 @@ describe("verification provider identity durability", () => {
 		expect(callbackResult).toBe("PERSISTED");
 		expect(h.row.bitmovinEncodingId).toBe("bm-live-primary-landed");
 		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		expect(h.runRows.at(-1)?.bitmovinEncodingId).toBe("bm-live-primary-landed");
 		const persisted = (h.row.stepLog as StepLogEntry[]).find(
 			(entry) => entry.kind === "CREATE_ENCODING",
 		);
-		expect(persisted?.response).toMatchObject({
-			providerBarrier: {
-				providerId: "bm-live-primary-landed",
-				durability: "PROVIDER_ID_PERSISTED",
-				runMirror: "PERSISTENCE_UNKNOWN_RETRY_PENDING",
-			},
+		expect(failedProviderMirror).toBe(true);
+		expect(persisted).toMatchObject({
+			status: "DONE",
+			resourceId: "bm-live-primary-landed",
 		});
+		expect(h.runRows.at(-1)?.stepLog).toEqual(h.row.stepLog);
 	});
 
 	it("classifies live P1001 before the provider-id write as safe-to-compensate", async () => {
@@ -9909,7 +10517,9 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 		await t.sweep();
 		await t.sweep();
 		expect(run.providerUnknownSince).toEqual(new Date(NOW));
-		t.feederSession.findMany.mockResolvedValueOnce([{ id: "feed-9" }]);
+		t.feederSession.findMany
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([{ id: "feed-9" }]);
 		const heartbeatsBefore = vi.mocked(t.sdk.getLiveHeartbeat).mock.calls
 			.length;
 		await expect(t.sweep()).resolves.toEqual({
@@ -9940,7 +10550,9 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 			getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
 		});
 		const run = seedRun(t);
-		t.feederSession.findMany.mockResolvedValue([{ id: "feed-retry" }]);
+		t.feederSession.findMany
+			.mockResolvedValueOnce([])
+			.mockResolvedValue([{ id: "feed-retry" }]);
 		t.enqueueFeederJob.mockRejectedValueOnce(new Error("redis unavailable"));
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		try {
@@ -9955,7 +10567,9 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 
 			// The production query is RUNNING-only; model the now-STOPPED channel's
 			// absence while the separate terminal-run retry still executes first.
-			t.liveChannel.findMany.mockResolvedValueOnce([]);
+			t.liveChannel.findMany
+				.mockResolvedValueOnce([])
+				.mockResolvedValueOnce([]);
 			await expect(t.sweep()).resolves.toEqual({ polled: 0, failed: 0 });
 			expect(t.enqueueFeederJob).toHaveBeenCalledTimes(2);
 			expect(run.providerFeederStopsEnqueuedAt).toEqual(new Date(NOW));
@@ -10193,6 +10807,7 @@ describe("provider lifecycle reconciliation — sweep, provision, effects (row #
 			getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
 		});
 		const run = seedRun(t, {
+			id: LIVE_TO_VOD_RUN_ID,
 			providerStatus: "RUNNING",
 			providerUnknownSince: new Date(Date.parse(NOW) - 60_000),
 		});
@@ -10592,7 +11207,7 @@ it("journals and stops a deferred RESTART after reset, then acknowledges its exa
 		{ restartLiveEncoding: restart },
 	);
 	t.runRows.push({
-		id: "run-1",
+		id: LIVE_TO_VOD_RUN_ID,
 		seq: 1,
 		status: "RUNNING",
 		bitmovinEncodingId: "bm-live-enc",
@@ -10976,6 +11591,8 @@ describe("confirmed encoding cancellation", () => {
 			status: "STOPPING",
 		});
 		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("bm-live-enc");
+		if (kind === "run-pointer" || kind === "channel-pointer")
+			expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("other-encoding");
 		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		expect(h.row.status).toBe("STOPPING");
 		expect(run.providerStatus).toBeNull();
@@ -11000,8 +11617,7 @@ describe("confirmed encoding cancellation", () => {
 				});
 		});
 		const pending = h.process(cancel);
-		if (kind === "lease") await expect(pending).rejects.toThrow("lease lost");
-		else expect((await pending).status).not.toBe("STOPPED");
+		expect((await pending).status).toBe("STOPPING");
 		expect(h.row.status).not.toBe("STOPPED");
 		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
@@ -11027,6 +11643,7 @@ describe("cooperative startup cancellation", () => {
 		"start-preflight",
 		"commit-interrupted",
 		"start-dispatched",
+		"run-only-create",
 	])("preserves safe AISA cancellation recovery for %s", async (phase) => {
 		const analysisId = "00000000-0000-4000-8000-0000000000aa";
 		const encodingId = "00000000-0000-4000-8000-0000000000ee";
@@ -11097,7 +11714,18 @@ describe("cooperative startup cancellation", () => {
 			cancelRequested: true,
 			bitmovinEncodingId: created ? encodingId : null,
 			aisaAnalysisId: created ? analysisId : null,
-			stepLog: entries,
+			stepLog:
+				phase === "run-only-create"
+					? entries.map((e, i) =>
+							i === 0
+								? {
+										...e,
+										status: "RUNNING",
+										response: { aisaCreateDispatched: true },
+									}
+								: e,
+						)
+					: entries,
 		});
 		h.sdk.getAisaLiveAnalysis = vi.fn(async () => ({
 			analysisId,
@@ -11130,13 +11758,19 @@ describe("cooperative startup cancellation", () => {
 		].includes(phase);
 		expect(outcome.status).toBe(safe ? "STOPPED" : "STOPPING");
 		expect(requiredFixtureRun(h).cancelRequested).toBe(!safe);
+		if (phase === "run-only-create")
+			expect(JSON.stringify(requiredFixtureRun(h).stepLog)).toContain(
+				"aisaCreateDispatched",
+			);
 		if (safe) {
 			expect(aisaLiveNeverStarted(requiredFixtureRun(h), h.row)).toBe(true);
 			expect(requiredFixtureRun(h).aisaSnapshot).toBeUndefined();
 			expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		} else expect(requiredFixtureRun(h).aisaFinalization).toBeUndefined();
 		expect(h.sdk.startAisaLiveAnalysis).not.toHaveBeenCalled();
-		expect(h.sdk.createAisaLiveAnalysis).not.toHaveBeenCalled();
+		if (phase === "run-only-create")
+			expect(h.sdk.createAisaLiveAnalysis).toHaveBeenCalledTimes(1); // Adapter checks the prior operation by GET.
+		else expect(h.sdk.createAisaLiveAnalysis).not.toHaveBeenCalled();
 	});
 	it.each([
 		...(["RUNNING", "FINISHED", "ERROR", "CANCELED"] as const).map(
@@ -11550,7 +12184,10 @@ describe("cooperative startup cancellation", () => {
 		let cancelled = false;
 		Object.assign(h.deps.prisma, {
 			$transaction: async <T>(fn: (tx: AppTransactionClient) => Promise<T>) => {
-				if (!cancelled) {
+				if (
+					!cancelled &&
+					vi.mocked(h.sdk.getLiveEncodingDetails).mock.calls.length > 0
+				) {
 					cancelled = true;
 					h.row.status = "STOPPING";
 					run.status = "STOPPING";
@@ -11605,7 +12242,10 @@ describe("cooperative startup cancellation", () => {
 		let raced = false;
 		Object.assign(h.deps.prisma, {
 			$transaction: async <T>(fn: (tx: AppTransactionClient) => Promise<T>) => {
-				if (!raced) {
+				if (
+					!raced &&
+					vi.mocked(h.sdk.getLiveEncodingDetails).mock.calls.length > 0
+				) {
 					raced = true;
 					const run = h.runRows[0];
 					if (!run) throw new Error("Missing startup run");
@@ -11701,6 +12341,66 @@ describe("startup cancellation races and redelivery", () => {
 		).resolves.toMatchObject({ status: "STOPPED" });
 		expect(h.row.bitmovinEncodingId).toBe("adopted-original");
 		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+	});
+	it("keeps a rental with only an archived encoder recoverable during startup cancellation", async () => {
+		const h = setup();
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "CREATED",
+			cancelRequested: true,
+			previousProviderEncodingIds: ["previous"],
+			archivedRtmpAttempt: 1,
+		});
+		let status: "RUNNING" | "FINISHED" = "RUNNING";
+		h.sdk.getEncodingStatus = vi.fn(async () => ({ status }));
+		const cancel = () =>
+			h.process({
+				liveChannelId: CHANNEL_ID,
+				params: { cancelRunId: LIVE_TO_VOD_RUN_ID },
+			});
+		await expect(cancel()).resolves.toMatchObject({ status: "STOPPING" });
+		expect(h.runRows[0]?.cancelRequested).toBe(true);
+		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("previous");
+		expect(h.sdk.stopLiveEncoding).not.toHaveBeenCalled();
+		status = "FINISHED";
+		await expect(cancel()).resolves.toMatchObject({ status: "STOPPED" });
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.sdk.startLiveEncoding).not.toHaveBeenCalled();
+	});
+	it("keeps startup cancellation pending until the displaced encoder is terminal and then completes", async () => {
+		const h = setup();
+		h.deps.emitEvent = vi.fn(async () => {});
+		h.runRows.push({
+			id: LIVE_TO_VOD_RUN_ID,
+			seq: 1,
+			status: "CREATED",
+			previousProviderEncodingIds: ["previous"],
+			archivedRtmpAttempt: 1,
+		});
+		h.sdk.startLiveEncoding = vi.fn(async () => {
+			cancelCurrentRun(h);
+		});
+		let archivedStatus: "RUNNING" | "FINISHED" = "RUNNING";
+		h.sdk.getEncodingStatus = vi.fn(async (id) => ({
+			status: id === "previous" ? archivedStatus : "FINISHED",
+		}));
+		await expect(
+			h.process({ liveChannelId: CHANNEL_ID }),
+		).resolves.toMatchObject({ status: "STOPPING" });
+		expect(h.row.status).toBe("STOPPING");
+		expect(h.runRows[0]?.cancelRequested).toBe(true);
+		expect(h.deps.emitEvent).not.toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "CHANNEL_STOPPED" }),
+		);
+		archivedStatus = "FINISHED";
+		await expect(
+			h.process({
+				liveChannelId: CHANNEL_ID,
+				params: { cancelRunId: LIVE_TO_VOD_RUN_ID },
+			}),
+		).resolves.toMatchObject({ status: "STOPPED" });
+		expect(h.sdk.getEncodingStatus).toHaveBeenCalledWith("previous");
 	});
 	it("keeps failed stop pending for automatic retry, never false STOPPED", async () => {
 		const h = setup();

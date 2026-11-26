@@ -20,11 +20,18 @@ import {
 	type ProviderLifecycleView,
 	providerEffectRefusal,
 	reseedFailedSteps,
+	restoreLiveProvisionEvidence,
 	selectRtmpIngestPoints,
 	stepLogSchema,
 } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
-import { DB_NULL } from "@bitovp/db";
+import {
+	bindArchivedStopTarget,
+	DB_NULL,
+	liveChannelAccountId,
+	liveStopRunOwnsEncoding,
+	readLockedLiveStartState,
+} from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -41,7 +48,9 @@ import {
 	validationError,
 } from "@/lib/server/http";
 import {
+	canResumeAisaStop,
 	canRetryEndedAisaFinalization,
+	isAisaLiveChannelView,
 	isExpiredStopDispatch,
 } from "@/lib/server/live-channel-aisa-view";
 import { getLiveChannelQueue } from "@/lib/server/queue";
@@ -68,6 +77,7 @@ const PROVIDER_LIFECYCLE_SELECT = {
  * in PROVISIONING and enqueues nothing.
  */
 type EffectPlan = {
+	archiveHandoff?: boolean;
 	cancelRequested?: boolean;
 	runId: string;
 	providerEncodingId: string;
@@ -108,7 +118,7 @@ async function effectPlan(
 	prisma: Pick<AppPrismaClient, "liveChannelRun">,
 	liveChannelId: string,
 	channelEncodingId: string | null,
-	target?: FinalizationTarget,
+	stop?: { finalizationTarget?: FinalizationTarget },
 ): Promise<EffectPlan | EffectPlanFailure> {
 	const latest = await prisma.liveChannelRun.findFirst({
 		where: { liveChannelId },
@@ -117,6 +127,7 @@ async function effectPlan(
 			id: true,
 			bitmovinEncodingId: true,
 			cancelRequested: true,
+			...(stop ? { stepLog: true } : {}),
 			...PROVIDER_LIFECYCLE_SELECT,
 		},
 	});
@@ -127,12 +138,18 @@ async function effectPlan(
 		};
 	}
 	const providerEncodingId = latest.bitmovinEncodingId ?? channelEncodingId;
-	if (!providerEncodingId) {
+	if (
+		!providerEncodingId ||
+		(stop &&
+			(channelEncodingId !== providerEncodingId ||
+				!liveStopRunOwnsEncoding(latest, providerEncodingId)))
+	) {
 		return {
 			error: "the current live run has no provider encoding",
 			code: "LIVE_ACTION_PROVIDER_ENCODING_MISSING",
 		};
 	}
+	const target = stop?.finalizationTarget;
 	const lifecycle = deriveProviderLifecycle(latest, Date.now());
 	if (
 		target &&
@@ -175,6 +192,7 @@ function effectIntent(
 }
 
 /** Sentinels for the start transaction . */
+class DisplacedEncoderPending extends Error {}
 class StartNotClaimableError extends Error {}
 class RunAlreadyLiveError extends Error {}
 const SETTLED_QUEUE_JOB_STATES = new Set(["failed", "completed"]);
@@ -219,7 +237,11 @@ type ManualStopClaimInspection =
 	| { kind: "NONE" | "FAILED" }
 	| { kind: "OPEN"; state: "CLAIMED" | "DISPATCHING" }
 	| { kind: "ACKED" }
-	| { kind: "REFUSED"; reason: string };
+	| { kind: "REFUSED"; reason: string; otherAcknowledgedTarget?: boolean };
+
+function manualStopKey(liveChannelId: string, plan: EffectPlan) {
+	return `manual:stop:${liveChannelId}:${plan.runId}${plan.archiveHandoff ? `:archive:${plan.providerEncodingId}` : ""}`;
+}
 
 function hasExactManualStopIdentity(
 	data: unknown,
@@ -252,7 +274,7 @@ function hasExactManualStopIdentity(
 		queuedData.liveChannelRunId === undefined &&
 		queuedData.encodingId === undefined &&
 		queuedData.plannedLiveChannelRunId === undefined &&
-		effect.idempotencyKey === `manual:stop:${liveChannelId}:${plan.runId}` &&
+		effect.idempotencyKey === manualStopKey(liveChannelId, plan) &&
 		effect.liveChannelRunId === plan.runId &&
 		effect.providerEncodingId === plan.providerEncodingId &&
 		effect.action === "STOP" &&
@@ -264,6 +286,7 @@ function hasExactManualStopIdentity(
 
 type ManualStopRecovery = {
 	allowAisaRecovery: boolean;
+	allowArchiveRecovery: boolean;
 	allowExpiredAisaDispatch: boolean;
 };
 
@@ -275,7 +298,7 @@ async function inspectManualStopClaim(
 ): Promise<ManualStopClaimInspection> {
 	const claim = await prisma.liveEffectClaim.findUnique({
 		where: {
-			idempotencyKey: `manual:stop:${liveChannelId}:${plan.runId}`,
+			idempotencyKey: manualStopKey(liveChannelId, plan),
 		},
 		select: {
 			liveChannelId: true,
@@ -296,7 +319,6 @@ async function inspectManualStopClaim(
 		claim.liveChannelId !== liveChannelId ||
 		claim.requestSha256 !== null ||
 		claim.liveChannelRunId !== plan.runId ||
-		claim.providerEncodingId !== plan.providerEncodingId ||
 		claim.action !== "STOP" ||
 		claim.scheduleId !== null ||
 		claim.targetId !== null
@@ -307,7 +329,13 @@ async function inspectManualStopClaim(
 				"the durable claim does not match the current manual stop identity",
 		};
 	}
-	// Only an explicit run-bound finalization retry can requeue an expired
+	if (claim.providerEncodingId !== plan.providerEncodingId)
+		return {
+			kind: "REFUSED",
+			reason: "the durable claim is for another encoding of this airing",
+			otherAcknowledgedTarget: claim.state === "ACKED",
+		};
+	// Only an explicit run-bound AISA retry can requeue an expired
 	// dispatch. The worker still checks claim ownership before sending.
 	if (
 		recovery.allowExpiredAisaDispatch &&
@@ -322,7 +350,8 @@ async function inspectManualStopClaim(
 		case "DISPATCHING":
 			return { kind: "OPEN", state: claim.state };
 		case "ACKED":
-			if (recovery.allowAisaRecovery) return { kind: "FAILED" };
+			if (recovery.allowAisaRecovery || recovery.allowArchiveRecovery)
+				return { kind: "FAILED" };
 			return { kind: "ACKED" };
 		case "AMBIGUOUS":
 			if (recovery.allowAisaRecovery) return { kind: "FAILED" };
@@ -397,13 +426,22 @@ async function admitManualStop(
 	recovery: ManualStopRecovery,
 ): Promise<ManualStopAdmission> {
 	const queue = getLiveChannelQueue();
-	const jobId = `manual-stop-${liveChannelId}-${plan.runId}`;
-	const claim = await inspectManualStopClaim(
+	let claim = await inspectManualStopClaim(
 		prisma,
 		liveChannelId,
 		plan,
 		recovery,
 	);
+	if (
+		claim.kind === "REFUSED" &&
+		claim.otherAcknowledgedTarget &&
+		recovery.allowArchiveRecovery
+	) {
+		// Keep the retired encoder's claim and retained queue result intact.
+		plan = { ...plan, archiveHandoff: true };
+		claim = await inspectManualStopClaim(prisma, liveChannelId, plan, recovery);
+	}
+	const jobId = `manual-stop-${liveChannelId}-${plan.runId}${plan.archiveHandoff ? `-archive-${plan.providerEncodingId}` : ""}`;
 	if (claim.kind === "REFUSED") {
 		return claim;
 	}
@@ -450,13 +488,22 @@ async function admitManualStop(
 		if (inspection.kind === "REFUSED") {
 			return inspection;
 		}
+		if (recovery.allowArchiveRecovery && !inspection.exactIdentity)
+			return {
+				kind: "REFUSED",
+				reason: "the settled job does not match this airing and encoder",
+			};
 		if (claim.kind === "OPEN") {
 			return {
 				kind: "REFUSED",
 				reason: `the durable stop claim is ${claim.state.toLowerCase()} but its exact in-progress queue job is missing`,
 			};
 		}
-		if (mode === "REPLAY_ONLY" && !recovery.allowAisaRecovery) {
+		if (
+			mode === "REPLAY_ONLY" &&
+			!recovery.allowAisaRecovery &&
+			!recovery.allowArchiveRecovery
+		) {
 			return {
 				kind: "REFUSED",
 				reason: "the matching handoff is no longer in progress",
@@ -470,7 +517,11 @@ async function admitManualStop(
 			kind: "REFUSED",
 			reason: `the durable stop claim is ${claim.state.toLowerCase()} but its exact in-progress queue job is missing`,
 		};
-	} else if (mode === "REPLAY_ONLY" && !recovery.allowAisaRecovery) {
+	} else if (
+		mode === "REPLAY_ONLY" &&
+		!recovery.allowAisaRecovery &&
+		!recovery.allowArchiveRecovery
+	) {
 		return {
 			kind: "REFUSED",
 			reason: "no matching in-progress handoff exists",
@@ -482,7 +533,7 @@ async function admitManualStop(
 		"STOP",
 		admissionFenceVersion,
 		undefined,
-		`manual:stop:${liveChannelId}:${plan.runId}`,
+		manualStopKey(liveChannelId, plan),
 	);
 	await queue.add(
 		"live-channel",
@@ -512,7 +563,9 @@ async function admitManualStop(
 		prisma,
 		liveChannelId,
 		plan,
-		recovery,
+		winnerInspection.kind === "SETTLED"
+			? { ...recovery, allowArchiveRecovery: false }
+			: recovery,
 	);
 	if (winnerClaim.kind === "REFUSED") {
 		return winnerClaim;
@@ -606,8 +659,26 @@ const actionSchema = z.discriminatedUnion("action", [
 	}),
 	z.object({
 		action: z.literal("stop"),
+		target: z
+			.strictObject({
+				runId: z.uuid().nullable(),
+				encodingId: z.string().min(1).nullable(),
+				generation: z.number().int().min(0),
+			})
+			.optional(),
 		// Reject the earlier scoped request rather than stripping its run binding.
 		finalizationRunId: z.never().optional(),
+		recoveryTarget: z.never().optional(),
+	}),
+	z.strictObject({
+		action: z.literal("recover-archived-stop"),
+		runId: z.uuid(),
+		revision: z.string().regex(/^[a-f0-9]{64}$/),
+	}),
+	z.strictObject({
+		action: z.literal("retry-aisa-stop"),
+		runId: z.uuid(),
+		encodingId: z.string().min(1),
 	}),
 	z.strictObject({
 		action: z.literal("retry-finalization"),
@@ -687,15 +758,29 @@ export async function POST(req: Request, { params }: RouteParams) {
 	const action = body.data;
 	try {
 		const ctx = await getServerContext();
-		const row = await ctx.prisma.liveChannel.findUnique({ where: { id } });
+		const row = await ctx.prisma.liveChannel.findUnique({
+			where: { id },
+			include: {
+				runs: {
+					orderBy: { seq: "desc" },
+					take: 1,
+					select: {
+						id: true,
+						bitmovinEncodingId: true,
+						aisaAnalysisId: true,
+						aisaStatus: true,
+						aisaSnapshot: true,
+						stepLog: true,
+					},
+				},
+			},
+		});
 		if (!row) {
 			return jsonError(404, "Not found");
 		}
-		const aisaManaged = isAisaManagedLivePlan(row.plan);
-		if (
-			(aisaManaged || row.origin === "AISA_IMPORTED") &&
-			!aisaLiveAccessAllowed(ctx.tenant)
-		)
+		const latestBinding = row.runs?.[0];
+		const aisaManaged = isAisaLiveChannelView(row, latestBinding);
+		if (aisaManaged && !aisaLiveAccessAllowed(ctx.tenant))
 			return jsonError(404, "Not found");
 		// Validate crypto only after authorization, before any paid dispatch.
 		masterKeyFromEnv();
@@ -704,11 +789,31 @@ export async function POST(req: Request, { params }: RouteParams) {
 				code: "AISA_IMPORTED_READ_ONLY",
 			});
 		}
+		const persistedAisa = aisaManaged && !isAisaManagedLivePlan(row.plan);
+		if (
+			persistedAisa &&
+			(!["stop", "retry-finalization", "retry-aisa-stop"].includes(
+				action.action,
+			) ||
+				!latestBinding?.aisaAnalysisId ||
+				!row.bitmovinEncodingId ||
+				latestBinding.bitmovinEncodingId !== row.bitmovinEncodingId ||
+				!liveChannelAccountId(row))
+		)
+			return jsonError(
+				409,
+				"An exact Analysis and encoder binding is required",
+				{ code: "AISA_ACTION_UNSUPPORTED" },
+			);
 		if (
 			aisaManaged &&
-			!["start", "stop", "cancel-start", "retry-finalization"].includes(
-				action.action,
-			)
+			![
+				"start",
+				"stop",
+				"cancel-start",
+				"retry-finalization",
+				"retry-aisa-stop",
+			].includes(action.action)
 		) {
 			return jsonError(
 				409,
@@ -750,31 +855,19 @@ export async function POST(req: Request, { params }: RouteParams) {
 				// Pre-minted so the run's id can be baked into the #155 rebased
 				// paths BEFORE the row exists (the id names the subtree).
 				const freshRunId = randomUUID();
+				let runId: string;
 				try {
-					await ctx.prisma.$transaction(async (tx) => {
+					runId = await ctx.prisma.$transaction(async (tx) => {
 						// The latest run FIRST: the refusal and the re-air
 						// decision both read it, and reading before the claim
 						// keeps the (channel ERROR × latest STOPPED) cell from
 						// reseeding a FINISHED encoding's step log (review-244
 						// K3 — unreachable as traced, moot by construction).
-						const latest = await tx.liveChannelRun.findFirst({
-							where: { liveChannelId: id },
-							orderBy: { seq: "desc" },
-							select: {
-								id: true,
-								seq: true,
-								status: true,
-								cancelRequested: true,
-								aisaAnalysisId: true,
-								aisaStatus: true,
-								aisaSnapshot: true,
-								aisaFinalization: true,
-								bitmovinEncodingId: true,
-								stepLog: true,
-								encoderStoppedConfirmedFor: true,
-								...PROVIDER_LIFECYCLE_SELECT,
-							},
-						});
+						const {
+							channel: lockedChannel,
+							latest,
+							archivesRetired,
+						} = await readLockedLiveStartState(tx, id);
 						// K2: ONE definition of "live" — core's, pinned to the
 						// migration's index predicate by #240's test.
 						if (latest?.cancelRequested && latest.status !== "STOPPED")
@@ -822,6 +915,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 							row.status === "ERROR" &&
 							latest?.status === "ERROR" &&
 							!latestProviderTerminal;
+						if (!archivesRetired) throw new DisplacedEncoderPending();
 						// ERROR resume: FAILED/RUNNING steps reset to PENDING;
 						// DONE steps keep their resource ids so the worker
 						// resumes instead of recreating (VOD retry pattern).
@@ -834,9 +928,20 @@ export async function POST(req: Request, { params }: RouteParams) {
 						// the fresh log is compiled PER RUN: seq ≥ 2 rebases
 						// into the run's own subtree so a re-air cannot write
 						// over the previous airing's segments (design §4).
-						const reseeded = reseedFailedSteps(
-							stepLogSchema.parse(row.stepLog),
-						);
+						const sourceLog = lockedChannel?.stepLog ?? row.stepLog;
+						const restored =
+							isRevive && latest
+								? restoreLiveProvisionEvidence(
+										sourceLog,
+										latest.stepLog,
+										latest.bitmovinEncodingId ??
+											lockedChannel?.bitmovinEncodingId ??
+											row.bitmovinEncodingId,
+										true,
+									)
+								: stepLogSchema.parse(sourceLog);
+						if (!restored) throw new StartNotClaimableError();
+						const reseeded = reseedFailedSteps(restored);
 						// An EMPTY log also compiles on the resume arm: there is
 						// nothing to resume, and reseeding [] reproduces the
 						// re-air death above on any row the old bug stranded
@@ -889,6 +994,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 							data: {
 								status: "PROVISIONING",
 								liveEffectFenceVersion: { increment: 1 },
+								manualProvisionAdmissionFenceVersion:
+									(row.liveEffectFenceVersion ?? 0) + 1,
 								error: null,
 								// Release any previous run's provisioning lease in
 								// the SAME atomic claim (AKR-E57-003). One shared
@@ -961,7 +1068,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 							// writes at the plan's own paths (prefix "").
 							await tx.liveChannelRun.create({
 								data: {
-									...(compiled ? { id: runForCompile.runId } : {}),
+									id: runForCompile.runId,
 									liveChannelId: id,
 									seq: runForCompile.seq,
 									// Record the claimed canonical log before SDK setup can fail.
@@ -971,8 +1078,15 @@ export async function POST(req: Request, { params }: RouteParams) {
 								},
 							});
 						}
+						return runForCompile.runId;
 					});
 				} catch (err) {
+					if (err instanceof DisplacedEncoderPending)
+						return codedError(
+							409,
+							"Confirm that every encoder and publisher from the previous airing has stopped before starting a new run",
+							"LIVE_ACTION_PROVIDER_UNKNOWN",
+						);
 					if (err instanceof AisaFinalizationPending)
 						return jsonError(
 							409,
@@ -1010,14 +1124,67 @@ export async function POST(req: Request, { params }: RouteParams) {
 					}
 					throw err;
 				}
+				const generation = (row.liveEffectFenceVersion ?? 0) + 1;
+				const jobId = `manual-provision-${id}-${runId}-${generation}`;
+				const job = {
+					liveChannelId: id,
+					action: "provision",
+					plannedLiveChannelRunId: runId,
+				} as const;
+				const queue = getLiveChannelQueue();
 				try {
-					await enqueue(id, "provision");
-				} catch (enqueueErr) {
-					await ctx.prisma.liveChannel.update({
-						where: { id },
-						data: { status: "ERROR", error: "Enqueue failed — start again" },
+					await queue.add("live-channel", job, {
+						jobId,
+						removeOnComplete: 1000,
+						removeOnFail: 1000,
 					});
-					throw enqueueErr;
+				} catch (enqueueErr) {
+					const retained = await queue.getJob(jobId).catch(() => null);
+					const state = await retained?.getState().catch(() => null);
+					const data = retained?.data;
+					if (
+						!data ||
+						data.liveChannelId !== id ||
+						data.action !== "provision" ||
+						data.plannedLiveChannelRunId !== runId ||
+						data.params ||
+						data.effect ||
+						!state ||
+						!(IN_PROGRESS_QUEUE_JOB_STATES.has(state) || state === "completed")
+					) {
+						// A worker can acquire the lease, or STOP can win, before Redis
+						// reports the failure. Reopen only this still-unclaimed airing.
+						await ctx.prisma.$transaction(async (tx) => {
+							const error = "Enqueue failed — start again";
+							const released = await tx.liveChannel.updateMany({
+								where: {
+									id,
+									status: "PROVISIONING",
+									provisionClaimedAt: null,
+									liveEffectFenceVersion: generation,
+									runs: {
+										some: {
+											id: runId,
+											status: "PROVISIONING",
+											cancelRequested: false,
+										},
+									},
+								},
+								data: { status: "ERROR", error },
+							});
+							if (released.count === 1)
+								await tx.liveChannelRun.update({
+									where: {
+										id: runId,
+										liveChannelId: id,
+										status: "PROVISIONING",
+										cancelRequested: false,
+									},
+									data: { status: "ERROR", error, endedAt: new Date() },
+								});
+						});
+						throw enqueueErr;
+					}
 				}
 				return NextResponse.json({
 					id,
@@ -1114,7 +1281,37 @@ export async function POST(req: Request, { params }: RouteParams) {
 				);
 			}
 			case "retry-finalization":
+			case "recover-archived-stop":
+			case "retry-aisa-stop":
 			case "stop": {
+				let recoveredTarget: string | null = null;
+				const displayed = action.action === "stop" ? action.target : undefined;
+				if (
+					displayed &&
+					((row.liveEffectFenceVersion ?? 0) !== displayed.generation ||
+						row.bitmovinEncodingId !== displayed.encodingId)
+				) {
+					return codedError(
+						409,
+						"The displayed airing changed before Stop",
+						"LIVE_ACTION_STATE_CHANGED",
+					);
+				}
+				if (action.action === "recover-archived-stop") {
+					recoveredTarget = await bindArchivedStopTarget(
+						ctx.prisma,
+						id,
+						action.runId,
+						action.revision,
+					);
+					if (!recoveredTarget)
+						return codedError(
+							409,
+							"The selected archive changed before stop recovery",
+							"LIVE_ACTION_STATE_CHANGED",
+						);
+					row.bitmovinEncodingId = recoveredTarget;
+				}
 				if (!row.bitmovinEncodingId) {
 					return codedError(
 						409,
@@ -1128,6 +1325,18 @@ export async function POST(req: Request, { params }: RouteParams) {
 							orderBy: { seq: "desc" },
 						})
 					: null;
+				if (
+					persistedAisa &&
+					(!latestAisaRun ||
+						latestAisaRun.id !== latestBinding?.id ||
+						latestAisaRun.aisaAnalysisId !== latestBinding.aisaAnalysisId ||
+						latestAisaRun.bitmovinEncodingId !== row.bitmovinEncodingId)
+				)
+					return codedError(
+						409,
+						"The Analysis binding changed before stop recovery",
+						"LIVE_ACTION_STATE_CHANGED",
+					);
 				const finalizationTarget =
 					action.action === "retry-finalization" ? action : undefined;
 				if (
@@ -1147,6 +1356,25 @@ export async function POST(req: Request, { params }: RouteParams) {
 						"LIVE_ACTION_NOT_STOPPABLE",
 					);
 				}
+				const activeTarget =
+					action.action === "retry-aisa-stop" ? action : undefined;
+				if (
+					activeTarget &&
+					(latestAisaRun?.id !== activeTarget.runId ||
+						row.bitmovinEncodingId !== activeTarget.encodingId ||
+						!(await canResumeAisaStop(
+							ctx.prisma,
+							row,
+							latestAisaRun,
+							Date.now(),
+						)))
+				) {
+					return codedError(
+						409,
+						"The selected AISA stop is no longer available for retry",
+						"LIVE_ACTION_NOT_STOPPABLE",
+					);
+				}
 				const allowAisaRecovery =
 					Boolean(finalizationTarget) ||
 					Boolean(
@@ -1162,16 +1390,33 @@ export async function POST(req: Request, { params }: RouteParams) {
 						row.error !== null &&
 						row.error !== undefined);
 				const recovery = {
+					allowArchiveRecovery: !!recoveredTarget,
 					allowAisaRecovery,
-					allowExpiredAisaDispatch: finalizationTarget !== undefined,
+					allowExpiredAisaDispatch:
+						finalizationTarget !== undefined || activeTarget !== undefined,
 				};
-				if (row.status === "STOPPING") {
+				if (row.status === "STOPPING" && !recoveredTarget) {
 					const replayPlan = await effectPlan(
 						ctx.prisma,
 						id,
 						row.bitmovinEncodingId,
-						finalizationTarget,
+						{ finalizationTarget },
 					);
+					if (
+						activeTarget &&
+						!("error" in replayPlan) &&
+						(replayPlan.runId !== activeTarget.runId ||
+							replayPlan.providerEncodingId !== activeTarget.encodingId ||
+							replayPlan.cancelRequested ||
+							replayPlan.providerRefusalCode ===
+								"LIVE_ACTION_PROVIDER_TERMINAL")
+					) {
+						return codedError(
+							409,
+							"The selected AISA stop changed before retry",
+							"LIVE_ACTION_NOT_STOPPABLE",
+						);
+					}
 					if ("error" in replayPlan) {
 						return codedError(
 							409,
@@ -1179,6 +1424,22 @@ export async function POST(req: Request, { params }: RouteParams) {
 							replayPlan.code,
 						);
 					}
+					if (
+						displayed &&
+						(replayPlan.runId !== displayed.runId ||
+							replayPlan.providerEncodingId !== displayed.encodingId)
+					)
+						return codedError(
+							409,
+							"The displayed airing changed before Stop",
+							"LIVE_ACTION_STATE_CHANGED",
+						);
+					if (persistedAisa && replayPlan.runId !== latestBinding?.id)
+						return codedError(
+							409,
+							"The Analysis airing changed before stop recovery",
+							"LIVE_ACTION_STATE_CHANGED",
+						);
 					/**
 					 * Validate admissionFenceVersion through the effect schema, but do not
 					 * compare it with the STOPPING row's fence. Durable manual STOP adopts
@@ -1215,7 +1476,8 @@ export async function POST(req: Request, { params }: RouteParams) {
 				if (
 					row.status !== "RUNNING" &&
 					row.status !== "ERROR" &&
-					!retryingUnconfirmedStop
+					!retryingUnconfirmedStop &&
+					!recoveredTarget
 				) {
 					return codedError(
 						409,
@@ -1228,7 +1490,7 @@ export async function POST(req: Request, { params }: RouteParams) {
 					ctx.prisma,
 					id,
 					row.bitmovinEncodingId,
-					finalizationTarget,
+					{ finalizationTarget },
 				);
 				if ("error" in stopPlan) {
 					return codedError(
@@ -1237,6 +1499,34 @@ export async function POST(req: Request, { params }: RouteParams) {
 						stopPlan.code,
 					);
 				}
+				if (
+					displayed &&
+					(stopPlan.runId !== displayed.runId ||
+						stopPlan.providerEncodingId !== displayed.encodingId)
+				)
+					return codedError(
+						409,
+						"The displayed airing changed before Stop",
+						"LIVE_ACTION_STATE_CHANGED",
+					);
+				if (persistedAisa && stopPlan.runId !== latestBinding?.id)
+					return codedError(
+						409,
+						"The Analysis airing changed before stop recovery",
+						"LIVE_ACTION_STATE_CHANGED",
+					);
+				if (
+					action.action === "recover-archived-stop" &&
+					(stopPlan.runId !== action.runId ||
+						stopPlan.providerEncodingId !== recoveredTarget)
+				) {
+					return codedError(
+						409,
+						"The selected airing changed before stop recovery",
+						"LIVE_ACTION_STATE_CHANGED",
+					);
+				}
+
 				/**
 				 * Queue FIRST. The former ordering committed STOPPING and advanced
 				 * the fence before `queue.add`; a process death in that gap left no
@@ -1407,8 +1697,13 @@ export async function POST(req: Request, { params }: RouteParams) {
 						),
 					);
 				} catch (enqueueErr) {
-					await ctx.prisma.liveChannel.update({
-						where: { id },
+					await ctx.prisma.liveChannel.updateMany({
+						where: {
+							id,
+							status: "PROVISIONING",
+							provisionClaimedAt: null,
+							liveEffectFenceVersion: (row.liveEffectFenceVersion ?? 0) + 1,
+						},
 						data: { status: "ERROR", error: "Enqueue failed — restart again" },
 					});
 					throw enqueueErr;

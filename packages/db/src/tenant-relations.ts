@@ -2,6 +2,11 @@
 export const TENANT_MODEL_RELATIONS: Readonly<
 	Record<string, Readonly<Record<string, string>>>
 > = {
+	encodingResourceRemoval: {
+		organization: "organization",
+		pendingJob: "encodingJob",
+		pendingRun: "liveChannelRun",
+	},
 	appSetting: {
 		organization: "organization",
 	},
@@ -14,6 +19,9 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 		libraryMediaVersions: "libraryMediaVersion",
 		outputLibraryMediaVersions: "libraryMediaVersion",
 		renderOutputRuns: "renderRun",
+	},
+	liveStopNotification: {
+		organization: "organization",
 	},
 	resetCleanupTask: {
 		organization: "organization",
@@ -35,6 +43,7 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 		organization: "organization",
 	},
 	encodingJob: {
+		pendingResourceRemovals: "encodingResourceRemoval",
 		evidenceReceipts: "libraryEvidenceReceipt",
 		organization: "organization",
 		bitmovinAccount: "bitmovinAccount",
@@ -178,6 +187,7 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 		alertEvents: "alertEvent",
 	},
 	liveChannelRun: {
+		pendingResourceRemovals: "encodingResourceRemoval",
 		organization: "organization",
 		liveChannel: "liveChannel",
 		liveHeartbeats: "liveHeartbeat",

@@ -25,6 +25,13 @@ type Expectation = {
 
 const EXPECTATIONS: Expectation[] = [
 	{
+		// Each claimed STOP notification uses the usual notification delivery rules.
+		file: "live/stop-notifications.ts",
+		writes: /const claimed = await prisma\.liveStopNotification\.updateMany/g,
+		writeCount: 1,
+		emitCount: 1,
+	},
+	{
 		// setup-catch ERROR, step-loop ERROR, CANCELED finalize, FINISHED —
 		// plus #86 PR2's two: the QC boundary's QC_FAILED (emits
 		// JOB_QC_FAILED) and the trigger-failure ERROR (emits JOB_ERROR; a
@@ -49,7 +56,7 @@ const EXPECTATIONS: Expectation[] = [
 		// ERROR persist, finalize-RUNNING persist, finalize-catch ERROR.
 		file: "orchestrator/live-processor.ts",
 		writes:
-			/(data:\s*\{[^}]*status:\s*(?:"(ERROR|STOPPED|RUNNING)"|settledStatus|outcome\.status)|persist\((?:liveChannelId, )?(?:entries|untouched)[^;]*?status:\s*(?:"(ERROR|RUNNING|STOPPED)"|feeders\.length\s*\?\s*"STOPPING"\s*:\s*"STOPPED"|aisaFailure\s*\?\s*"ERROR"\s*:\s*"STOPPED"))/gs,
+			/(projectProvisionEnd\(failed\)|data:\s*\{\s*status,\s*error\s*\}|data:\s*\{[^}]*status:\s*(?:"(ERROR|STOPPED|RUNNING)"|settledStatus|outcome\.status)|persist\((?:liveChannelId, )?(?:entries|untouched)[^;]*?status:\s*(?:"(ERROR|RUNNING|STOPPED)"|feeders\.length\s*\?\s*"STOPPING"\s*:\s*"STOPPED"|aisaFailure\s*\?\s*"ERROR"\s*:\s*"STOPPED"))/gs,
 		// AISA completion keeps these same two terminal sites and emits. Stop's
 		// settledStatus and cancellation's explicit ERROR/STOPPED branch preserve
 		// terminal failure rather than reporting success. Count both spellings;
@@ -93,8 +100,18 @@ const EXPECTATIONS: Expectation[] = [
 		// 11 -> 13 writes: managed startup cancellation now commits its channel
 		// and run terminal rows explicitly in ONE fenced transaction with the
 		// cancelRequested clear. Both paths retain their existing post-commit emit.
+		// projectRestartState uses the same transaction for PROVISIONING and failure.
+		// Count its { status, error } write; the owned failure emits after commit.
+		// Setup, revival and finalize failures now call projectProvisionEnd(failed).
+		// Each still emits only after its atomic run/channel update succeeds.
+		// Ordinary cancellation now shares the same two atomic terminal writes.
+		// The two former standalone persists disappear; both call sites still emit.
+		// An unsafe RTMP replacement marks both the channel and its run ERROR
+		// in one transaction, then emits one CHANNEL_ERROR for that broadcast.
+		// A queued START that first records its receipt while claiming the lease
+		// emits SCHEDULE_FIRED through the shared helper after the transaction.
 		writeCount: 13,
-		emitCount: 11,
+		emitCount: 13,
 	},
 	{
 		// the provider-lifecycle
@@ -115,8 +132,9 @@ const EXPECTATIONS: Expectation[] = [
 		// Count their `status` shorthand too; the dual-write/emit total is unchanged.
 		file: "live/provider-lifecycle.ts",
 		writes: /data:\s*\{[^}]*\n\s*status(?::\s*"(ERROR|RUNNING)"|,)/gs,
+		// A clean heartbeat claims its durable per-airing notification in this transaction.
 		writeCount: 4,
-		emitCount: 2,
+		emitCount: 3,
 	},
 	{
 		// markTerminal's single write (STOPPED and ERROR share it; the emit
@@ -177,7 +195,8 @@ const EXPECTATIONS: Expectation[] = [
 		// COMPLETED deliberately does not notify (nothing happened that an
 		// operator must act on; the row says so in its note).
 		file: "scheduler/sweep.ts",
-		writes: /rowTo\(row, "(FIRED|MISSED|ERROR|COMPLETED)"/g,
+		writes:
+			/rowTo\(\s*row,\s*"(FIRED|MISSED|ERROR|COMPLETED)"|startAdmissionFenceVersion:\s*expectedFenceVersion \+ 1/g,
 		// 12→13 : the slate whose window is already over at fire
 		// time lands MISSED ("program start already passed") — and it emits,
 		// via the same emitMissed as every other MISSED.
@@ -217,8 +236,17 @@ const EXPECTATIONS: Expectation[] = [
 		// Regular compile failures still use rowTo + emitMissed. The removed
 		// START outbox refusal used strandedRowTo, outside this rowTo pattern.
 		// Emits remain 4 because outcomes still use the existing emit helpers.
-		writeCount: 18,
-		emitCount: 4,
+		// Ordinary scheduled STOP claims FIRED with its channel/run/envelope transaction.
+		// The two scheduled START arms commit FIRED through a single fenced run-admission write.
+		writeCount: 16,
+		// The cap and scheduled STOP share the handoff writer with the queue consumer.
+		emitCount: 3,
+	},
+	{
+		file: "scheduler/stop-handoff.ts",
+		writes: /dispatchedAt: at/g,
+		writeCount: 1,
+		emitCount: 1,
 	},
 	{
 		// : the watch sweep's notified transitions — the
@@ -265,10 +293,29 @@ const EXPECTATIONS: Expectation[] = [
 		 * RUNNING/STOPPING -> ERROR write emits CHANNEL_ERROR so a queue handoff
 		 * that exhausts all retries is visible outside the failed-job log.
 		 */
+		// The exhausted STOP also writes its run in the channel transaction. RESTART
+		// writes the still-owned channel and eligible run, then emits once for the channel.
+		// The first observed terminal START handoff emits through the shared helper.
 		file: "live/dead-job-outcome.ts",
 		writes: /data:\s*\{[^}]*status:\s*"ERROR"/gs,
-		writeCount: 2,
-		emitCount: 2,
+		writeCount: 5,
+		emitCount: 4,
+	},
+	{
+		// The bounded START recovery emits only if its receipt write records
+		// the first handoff. Terminal evidence on an existing handoff is silent.
+		file: "live/exhausted-provisions.ts",
+		writes: /await recordRetainedScheduledStart\(/g,
+		writeCount: 1,
+		emitCount: 1,
+	},
+	{
+		// The shared SCHEDULE_FIRED helper delegates once to the notify queue.
+		// It does not update a database row. Count its callers separately.
+		file: "notify/emitter.ts",
+		writes: /\.(?:create|update|upsert)(?:Many)?\(/g,
+		writeCount: 0,
+		emitCount: 1,
 	},
 	{
 		// : the origin observer's own alert lifecycle — one open
@@ -295,7 +342,8 @@ const EXPECTATIONS: Expectation[] = [
 	},
 ];
 
-const EMIT_CALL = /emitEvent\?\.\(|emitChannel\(/g;
+const EMIT_CALL =
+	/emitEvent\?\.\(|emitChannel\(|(?<!function )\bemitScheduleFired\(|await recordConfirmedLiveStopNotification\(|await tx\.liveStopNotification\.create\(|await deliver\(\{/g;
 
 describe("every terminal transition emits a product event (ledger #88)", () => {
 	for (const expectation of EXPECTATIONS) {

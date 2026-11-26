@@ -29,6 +29,7 @@
 // ---------------------------------------------------------------------------
 
 export type ProbeStream = {
+	index?: number;
 	codec_type?: string;
 	codec_name?: string;
 	profile?: string;
@@ -50,6 +51,7 @@ export type ProbeStream = {
 	r_frame_rate?: string;
 	avg_frame_rate?: string;
 	sample_rate?: string;
+	time_base?: string;
 	channels?: number;
 	/** : stream timing as ffprobe prints it (decimal seconds / integer), read by the feeder's normalizer. */
 	start_time?: string;
@@ -270,6 +272,16 @@ const AUDIO_CHANNEL_FORMATS: Record<string, number> = {
 	"7.1": 8,
 };
 
+/** Positive OpenAPI int32 channel counts reported on initial connection. */
+export function heartbeatAudioChannels(value: unknown): number | undefined {
+	return typeof value === "number" &&
+		Number.isInteger(value) &&
+		value > 0 &&
+		value <= 2_147_483_647
+		? value
+		: undefined;
+}
+
 /** Below this a `rate` is a frame rate; at or above it, a sample rate. */
 const MIN_AUDIO_SAMPLE_RATE = 8000;
 
@@ -329,14 +341,15 @@ export function heartbeatIngestMedia(sample: unknown): MediaAttributes | null {
 			HEARTBEAT_CODEC_TOKENS.has(stream.codec.trim().toLowerCase())
 				? stream.codec.trim().toLowerCase()
 				: undefined;
+		const layout =
+			typeof stream.audioChannelFormat === "string"
+				? stream.audioChannelFormat
+				: "";
 		const channelCount =
-			typeof stream.numberOfAudioChannels === "number"
-				? stream.numberOfAudioChannels
-				: typeof stream.audioChannelFormat === "string"
-					? AUDIO_CHANNEL_FORMATS[
-							stream.audioChannelFormat.trim().toLowerCase()
-						]
-					: undefined;
+			heartbeatAudioChannels(stream.numberOfAudioChannels) ??
+			(Object.hasOwn(AUDIO_CHANNEL_FORMATS, layout)
+				? AUDIO_CHANNEL_FORMATS[layout]
+				: undefined);
 		const isVideo =
 			mediaType === "video" ||
 			(mediaType === undefined &&

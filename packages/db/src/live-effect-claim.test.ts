@@ -82,6 +82,8 @@ function fakePrisma() {
 	let loseNextChannelCas = false;
 
 	const tx = {
+		$queryRaw: vi.fn(async () => []),
+		liveSchedule: { findUnique: vi.fn(async () => null) },
 		liveChannel: {
 			findUnique: vi.fn(async () => ({ ...channel })),
 			updateMany: vi.fn(async ({ where, data }: ChannelUpdateArgs) => {
@@ -104,6 +106,24 @@ function fakePrisma() {
 			findFirst: vi.fn(async () => ({ ...run })),
 		},
 		liveEffectClaim: {
+			findMany: vi.fn(
+				async ({
+					where,
+				}: {
+					where: {
+						liveChannelId: string;
+						liveChannelRunId: string;
+						action: string;
+					};
+				}) =>
+					claims.filter(
+						(c) =>
+							c.liveChannelId === where.liveChannelId &&
+							c.liveChannelRunId === where.liveChannelRunId &&
+							c.action === where.action,
+					),
+			),
+
 			findUnique: vi.fn(
 				async ({ where }: { where: { idempotencyKey: string } }) => {
 					const row = claims.find(
@@ -118,13 +138,22 @@ function fakePrisma() {
 				}: {
 					where: {
 						liveChannelId: string;
-						state: { in: Claim["state"][] };
+						liveChannelRunId?: string;
+						action?: string;
+						providerEncodingId?: { not: string };
+						state: Claim["state"] | { in: Claim["state"][] };
 					};
 				}) => {
 					const row = claims.find(
 						(claim) =>
 							claim.liveChannelId === where.liveChannelId &&
-							where.state.in.includes(claim.state),
+							(where.liveChannelRunId === undefined ||
+								claim.liveChannelRunId === where.liveChannelRunId) &&
+							(where.action === undefined || claim.action === where.action) &&
+							claim.providerEncodingId !== where.providerEncodingId?.not &&
+							(typeof where.state === "string"
+								? claim.state === where.state
+								: where.state.in.includes(claim.state)),
 					);
 					return row ? { ...row } : null;
 				},

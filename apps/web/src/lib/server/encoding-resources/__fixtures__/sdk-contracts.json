@@ -1,0 +1,901 @@
+[
+  {
+    "kind": "CREATE_CODEC_AAC",
+    "detail": "/encoding/configurations/audio/aac/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_AC3",
+    "detail": "/encoding/configurations/audio/ac3/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_DOLBY_ATMOS",
+    "detail": "/encoding/configurations/audio/dolby-atmos/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_DD",
+    "detail": "/encoding/configurations/audio/dolby-digital/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_DDPLUS",
+    "detail": "/encoding/configurations/audio/dolby-digital-plus/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_EAC3",
+    "detail": "/encoding/configurations/audio/eac3/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_OPUS",
+    "detail": "/encoding/configurations/audio/opus/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_IMSC",
+    "detail": "/encoding/configurations/subtitles/imsc/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_WEBVTT",
+    "detail": "/encoding/configurations/subtitles/webvtt/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_AV1",
+    "detail": "/encoding/configurations/video/av1/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_H264",
+    "detail": "/encoding/configurations/video/h264/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CODEC_VP9",
+    "detail": "/encoding/configurations/video/vp9/{configuration_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_AUDIO_MIX_INPUT_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/audio-mix/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/audio-mix"
+  },
+  {
+    "kind": "CREATE_CONCATENATION_INPUT_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/concatenation/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/concatenation"
+  },
+  {
+    "kind": "CREATE_DOLBY_ATMOS_INPUT_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/dolby-atmos/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/dolby-atmos"
+  },
+  {
+    "kind": "CREATE_DOLBY_VISION_INPUT_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/dolby-vision/{dolby_vision_input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/dolby-vision"
+  },
+  {
+    "kind": "CREATE_FILE_INPUT_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/file/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/file"
+  },
+  {
+    "kind": "CREATE_INGEST_INPUT_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/ingest/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/ingest"
+  },
+  {
+    "kind": "CREATE_DOLBY_VISION_METADATA_INPUT_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/sidecar/dolby-vision-metadata-ingest/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/sidecar/dolby-vision-metadata-ingest"
+  },
+  {
+    "kind": "CREATE_TRIMMING_H264_PICTURE_TIMING",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/trimming/h264-picture-timing/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/trimming/h264-picture-timing"
+  },
+  {
+    "kind": "CREATE_TRIMMING_TIME_BASED",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/trimming/time-based/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/trimming/time-based"
+  },
+  {
+    "kind": "CREATE_TRIMMING_TIMECODE_TRACK",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/trimming/timecode-track/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/trimming/timecode-track"
+  },
+  {
+    "kind": "CREATE_KEYFRAME",
+    "detail": "/encoding/encodings/{encoding_id}/keyframes/{keyframe_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/keyframes"
+  },
+  {
+    "kind": "CREATE_MUXING_CHUNKED_TEXT",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/chunked-text/{muxing_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/muxings/chunked-text"
+  },
+  {
+    "kind": "CREATE_MUXING_CMAF",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/cmaf/{muxing_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/muxings/cmaf"
+  },
+  {
+    "kind": "CREATE_MUXING_FMP4",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/muxings/fmp4"
+  },
+  {
+    "kind": "CREATE_MUXING_MP4",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/muxings/mp4"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_MOV",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/progressive-mov/{muxing_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/muxings/progressive-mov"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_TS",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/muxings/progressive-ts"
+  },
+  {
+    "kind": "CREATE_MUXING_PROGRESSIVE_WEBM",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/progressive-webm/{muxing_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/muxings/progressive-webm"
+  },
+  {
+    "kind": "CREATE_MUXING_TEXT",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/text/{muxing_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/muxings/text"
+  },
+  {
+    "kind": "CREATE_MUXING_TS",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/ts/{muxing_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/muxings/ts"
+  },
+  {
+    "kind": "CREATE_MUXING_WEBM",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/webm/{muxing_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/muxings/webm"
+  },
+  {
+    "kind": "CREATE_BURN_IN_SRT",
+    "detail": "/encoding/encodings/{encoding_id}/streams/{stream_id}/burn-in-subtitles/srt/{subtitle_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "stream_id": "streamId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/streams/{stream_id}/burn-in-subtitles/srt"
+  },
+  {
+    "kind": "CREATE_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/streams/{stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/streams"
+  },
+  {
+    "kind": "CREATE_STREAM_HDR_DOLBY_VISION",
+    "detail": "/encoding/encodings/{encoding_id}/streams/{stream_id}/hdr/dolby-vision/{hdr_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "stream_id": "streamId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/streams/{stream_id}/hdr/dolby-vision"
+  },
+  {
+    "kind": "CREATE_SPRITE",
+    "detail": "/encoding/encodings/{encoding_id}/streams/{stream_id}/sprites/{sprite_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "stream_id": "streamId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/streams/{stream_id}/sprites"
+  },
+  {
+    "kind": "CREATE_THUMBNAIL",
+    "detail": "/encoding/encodings/{encoding_id}/streams/{stream_id}/thumbnails/{thumbnail_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "stream_id": "streamId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/streams/{stream_id}/thumbnails"
+  },
+  {
+    "kind": "CREATE_FILTER_AUDIO_VOLUME",
+    "detail": "/encoding/filters/audio-volume/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_CROP",
+    "detail": "/encoding/filters/crop/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_DEINTERLACE",
+    "detail": "/encoding/filters/deinterlace/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_DENOISE_HQDN3D",
+    "detail": "/encoding/filters/denoise-hqdn3d/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_EBU_R128_SINGLE_PASS",
+    "detail": "/encoding/filters/ebu-r128-single-pass/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_ROTATE",
+    "detail": "/encoding/filters/rotate/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_SCALE",
+    "detail": "/encoding/filters/scale/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_TEXT",
+    "detail": "/encoding/filters/text/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_UNSHARP",
+    "detail": "/encoding/filters/unsharp/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_WATERMARK",
+    "detail": "/encoding/filters/watermark/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_INPUT_AKAMAI_NETSTORAGE",
+    "detail": "/encoding/inputs/akamai-netstorage/{input_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_INPUT_AZURE",
+    "detail": "/encoding/inputs/azure/{input_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_INPUT_GCS",
+    "detail": "/encoding/inputs/gcs/{input_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_INPUT_GCS_SERVICE_ACCOUNT",
+    "detail": "/encoding/inputs/gcs-service-account/{input_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_INPUT_GENERIC_S3",
+    "detail": "/encoding/inputs/generic-s3/{input_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_INPUT_HLS_LIVE",
+    "detail": "/encoding/inputs/hls/{input_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_INPUT_HTTPS",
+    "detail": "/encoding/inputs/https/{input_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_INPUT_REDUNDANT_RTMP",
+    "detail": "/encoding/inputs/redundant-rtmp/{input_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_INPUT_S3",
+    "detail": "/encoding/inputs/s3/{input_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_INPUT_SRT",
+    "detail": "/encoding/inputs/srt/{input_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_INPUT_ZIXI",
+    "detail": "/encoding/inputs/zixi/{input_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_MANIFEST_DASH",
+    "detail": "/encoding/manifests/dash/{manifest_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_DASH_ADAPTATION_SET_AUDIO",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/audio/{adaptationset_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/audio"
+  },
+  {
+    "kind": "CREATE_DASH_ADAPTATION_SET_IMAGE",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/image/{adaptationset_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/image"
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_CHUNKED_TEXT",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/chunked-text/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/chunked-text"
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_CMAF",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/cmaf/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/cmaf"
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_FMP4",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4"
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_IMSC",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/imsc/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/imsc"
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_MP4",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/mp4/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/mp4"
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_PROGRESSIVE_WEBM",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/progressive-webm/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/progressive-webm"
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_SPRITE",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/sprite/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/sprite"
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_VTT",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/vtt/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/vtt"
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_WEBM",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/webm/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/webm"
+  },
+  {
+    "kind": "CREATE_DASH_ADAPTATION_SET_SUBTITLE",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/subtitle/{adaptationset_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/subtitle"
+  },
+  {
+    "kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/video/{adaptationset_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/video"
+  },
+  {
+    "kind": "CREATE_DASH_PERIOD",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}",
+    "parents": {
+      "manifest_id": "manifestId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods"
+  },
+  {
+    "kind": "CREATE_DASH_PERIOD_XML",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/custom-xml-elements/{custom_xml_element_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/custom-xml-elements"
+  },
+  {
+    "kind": "CREATE_MANIFEST_HLS",
+    "detail": "/encoding/manifests/hls/{manifest_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_HLS_AUDIO_MEDIA",
+    "detail": "/encoding/manifests/hls/{manifest_id}/media/audio/{media_id}",
+    "parents": {
+      "manifest_id": "manifestId"
+    },
+    "collection": "/encoding/manifests/hls/{manifest_id}/media/audio"
+  },
+  {
+    "kind": "CREATE_HLS_CLOSED_CAPTIONS_MEDIA",
+    "detail": "/encoding/manifests/hls/{manifest_id}/media/closed-captions/{media_id}",
+    "parents": {
+      "manifest_id": "manifestId"
+    },
+    "collection": "/encoding/manifests/hls/{manifest_id}/media/closed-captions"
+  },
+  {
+    "kind": "CREATE_HLS_SUBTITLES_MEDIA",
+    "detail": "/encoding/manifests/hls/{manifest_id}/media/subtitles/{media_id}",
+    "parents": {
+      "manifest_id": "manifestId"
+    },
+    "collection": "/encoding/manifests/hls/{manifest_id}/media/subtitles"
+  },
+  {
+    "kind": "CREATE_HLS_VIDEO_MEDIA",
+    "detail": "/encoding/manifests/hls/{manifest_id}/media/video/{media_id}",
+    "parents": {
+      "manifest_id": "manifestId"
+    },
+    "collection": "/encoding/manifests/hls/{manifest_id}/media/video"
+  },
+  {
+    "kind": "CREATE_HLS_VTT_MEDIA",
+    "detail": "/encoding/manifests/hls/{manifest_id}/media/vtt/{media_id}",
+    "parents": {
+      "manifest_id": "manifestId"
+    },
+    "collection": "/encoding/manifests/hls/{manifest_id}/media/vtt"
+  },
+  {
+    "kind": "CREATE_HLS_STREAM_INFO",
+    "detail": "/encoding/manifests/hls/{manifest_id}/streams/{stream_id}",
+    "parents": {
+      "manifest_id": "manifestId"
+    },
+    "collection": "/encoding/manifests/hls/{manifest_id}/streams"
+  },
+  {
+    "kind": "CREATE_HLS_IFRAME_PLAYLIST",
+    "detail": "/encoding/manifests/hls/{manifest_id}/streams/{stream_id}/iframe/{iframe_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "stream_id": "streamInfoId"
+    },
+    "collection": "/encoding/manifests/hls/{manifest_id}/streams/{stream_id}/iframe"
+  },
+  {
+    "kind": "CREATE_MANIFEST_SMOOTH",
+    "detail": "/encoding/manifests/smooth/{manifest_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_SMOOTH_REPRESENTATION_MP4",
+    "detail": "/encoding/manifests/smooth/{manifest_id}/representations/mp4/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId"
+    },
+    "collection": "/encoding/manifests/smooth/{manifest_id}/representations/mp4"
+  },
+  {
+    "kind": "CREATE_OUTPUT_AKAMAI_MSL",
+    "detail": "/encoding/outputs/akamai-msl/{output_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_OUTPUT_AKAMAI_NETSTORAGE",
+    "detail": "/encoding/outputs/akamai-netstorage/{output_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_OUTPUT_AZURE",
+    "detail": "/encoding/outputs/azure/{output_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_OUTPUT_GCS",
+    "detail": "/encoding/outputs/gcs/{output_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_OUTPUT_GCS_SERVICE_ACCOUNT",
+    "detail": "/encoding/outputs/gcs-service-account/{output_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_OUTPUT_GENERIC_S3",
+    "detail": "/encoding/outputs/generic-s3/{output_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_OUTPUT_LIVE_MEDIA_INGEST",
+    "detail": "/encoding/outputs/live-media-ingest/{output_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_OUTPUT_MOQ",
+    "detail": "/encoding/outputs/moq/{output_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_OUTPUT_S3",
+    "detail": "/encoding/outputs/s3/{output_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_OUTPUT_SFTP",
+    "detail": "/encoding/outputs/sftp/{output_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_DRM_CENC",
+    "muxingKind": "FMP4",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/cenc/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DRM_CENC",
+    "muxingKind": "MP4",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/drm/cenc/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DRM_CENC",
+    "muxingKind": "WEBM",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/webm/{muxing_id}/drm/cenc/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DRM_FAIRPLAY",
+    "muxingKind": "FMP4",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/fairplay/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DRM_FAIRPLAY",
+    "muxingKind": "TS",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/ts/{muxing_id}/drm/fairplay/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DRM_SPEKE",
+    "muxingKind": "FMP4",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/speke/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_FMP4",
+    "protectedVariant": "fmp4-rep",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4/drm/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4/drm"
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_MP4",
+    "protectedVariant": "mp4-rep",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/mp4/drm/{representation_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/mp4/drm"
+  },
+  {
+    "kind": "CREATE_DASH_CONTENT_PROTECTION",
+    "protectedVariant": "adaptation",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/contentprotection/{contentprotection_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/contentprotection"
+  },
+  {
+    "kind": "CREATE_DASH_CONTENT_PROTECTION",
+    "protectedVariant": "fmp4",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4/{representation_id}/contentprotection/{contentprotection_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId",
+      "representation_id": "representationId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4/{representation_id}/contentprotection"
+  },
+  {
+    "kind": "CREATE_DASH_CONTENT_PROTECTION",
+    "protectedVariant": "fmp4-drm",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4/drm/{representation_id}/contentprotection/{contentprotection_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId",
+      "representation_id": "representationId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4/drm/{representation_id}/contentprotection"
+  },
+  {
+    "kind": "CREATE_DASH_CONTENT_PROTECTION",
+    "protectedVariant": "webm",
+    "detail": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/webm/{representation_id}/contentprotection/{contentprotection_id}",
+    "parents": {
+      "manifest_id": "manifestId",
+      "period_id": "periodId",
+      "adaptationset_id": "adaptationSetId",
+      "representation_id": "representationId"
+    },
+    "collection": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/webm/{representation_id}/contentprotection"
+  },
+  {
+    "kind": "CREATE_SMOOTH_CONTENT_PROTECTION",
+    "protectedVariant": "smooth",
+    "detail": "/encoding/manifests/smooth/{manifest_id}/contentprotection/{protection_id}",
+    "parents": {
+      "manifest_id": "manifestId"
+    },
+    "collection": "/encoding/manifests/smooth/{manifest_id}/contentprotection"
+  },
+  {
+    "kind": "CREATE_DRM_CENC",
+    "muxingKind": "PROGRESSIVE_WEBM",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/progressive-webm/{muxing_id}/drm/cenc/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DRM_FAIRPLAY",
+    "muxingKind": "PROGRESSIVE_TS",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}/drm/fairplay/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DRM_SPEKE",
+    "muxingKind": "MP4",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/drm/speke/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DRM_SPEKE",
+    "muxingKind": "TS",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/ts/{muxing_id}/drm/speke/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DRM_SPEKE",
+    "muxingKind": "WEBM",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/webm/{muxing_id}/drm/speke/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DRM_SPEKE",
+    "muxingKind": "PROGRESSIVE_TS",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}/drm/speke/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_DRM_SPEKE",
+    "muxingKind": "PROGRESSIVE_WEBM",
+    "detail": "/encoding/encodings/{encoding_id}/muxings/progressive-webm/{muxing_id}/drm/speke/{drm_id}",
+    "parents": {
+      "encoding_id": "encodingId",
+      "muxing_id": "muxingId"
+    }
+  },
+  {
+    "kind": "CREATE_FILTER_ENHANCED_DEINTERLACE",
+    "detail": "/encoding/filters/enhanced-deinterlace/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_CONFORM",
+    "detail": "/encoding/filters/conform/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_INTERLACE",
+    "detail": "/encoding/filters/interlace/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_ENHANCED_WATERMARK",
+    "detail": "/encoding/filters/enhanced-watermark/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_DOLBY_LOUDNESS",
+    "detail": "/encoding/filters/dolby-loudness/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_FILTER_AUDIO_MIX",
+    "detail": "/encoding/filters/audio-mix/{filter_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_CEA608_INPUT_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/captions/cea608/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/captions/cea608"
+  },
+  {
+    "kind": "CREATE_CEA708_INPUT_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/captions/cea708/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/captions/cea708"
+  },
+  {
+    "kind": "CREATE_DVB_SUBTITLE_INPUT_STREAM",
+    "detail": "/encoding/encodings/{encoding_id}/input-streams/subtitles/dvb-subtitle/{input_stream_id}",
+    "parents": {
+      "encoding_id": "encodingId"
+    },
+    "collection": "/encoding/encodings/{encoding_id}/input-streams/subtitles/dvb-subtitle"
+  }
+]

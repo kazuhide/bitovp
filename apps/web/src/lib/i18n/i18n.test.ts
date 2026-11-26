@@ -163,7 +163,8 @@ describe("catalogue parity", () => {
 		// HDR10+, HE-AAC, and notification delivery states.
 		// The recorded muxing information view adds five short labels.
 		// The Encoding account inventory and operation ledger add short labels.
-		pinWithDriftAid(short.size, 3620, "short");
+		// Codec and filter inventory adds three unique Japanese labels.
+		pinWithDriftAid(short.size, 3623, "short");
 	});
 
 	/**

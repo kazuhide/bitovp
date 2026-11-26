@@ -445,7 +445,7 @@ describe("native Encoding resources through the installed SDK", () => {
 	])("rejects a mismatched configuration type (%s %s)", async (kind, suffix) => {
 		const transport = mockTransport({});
 		expect((await GET(request(kind, suffix))).status).toBe(400);
-		expect(getAccount).not.toHaveBeenCalled();
+		expect(revealForEncoding).not.toHaveBeenCalled();
 		expect(transport).not.toHaveBeenCalled();
 	});
 

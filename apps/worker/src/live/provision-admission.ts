@@ -223,29 +223,48 @@ export async function recordRetainedScheduledStart(
 	retained: { id: string; state: string },
 	at: Date,
 ): Promise<boolean> {
+	const owned = {
+		...start,
+		action: "START",
+		status: "FIRED",
+		outcome: "PENDING",
+		liveChannel: { liveEffectFenceVersion: start.startAdmissionFenceVersion },
+	} as const;
+	// Retention may evict the job before the next bounded recovery pass.
+	const failure =
+		retained.state === "failed"
+			? ({
+					outcome: "UNKNOWN",
+					outcomeAt: at,
+					outcomeNote:
+						"The original Live startup job exhausted its deliveries.",
+					outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+					outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+					outcomeEvidenceAt: at,
+				} as const)
+			: undefined;
 	const { count } = await prisma.liveSchedule.updateMany({
 		where: {
-			...start,
-			action: "START",
-			status: "FIRED",
-			outcome: "PENDING",
+			...owned,
 			dispatchedAt: null,
-			liveChannel: { liveEffectFenceVersion: start.startAdmissionFenceVersion },
+			OR: [{ dispatchJobId: null }, { dispatchJobId: retained.id }],
 		},
 		data: {
 			dispatchedAt: at,
 			dispatchJobId: retained.id,
-			// Retention may evict the job before the bounded recovery scan. Keep
-			// the terminal observation with the handoff so it is never replayed.
-			...(retained.state === "failed" && {
-				outcome: "UNKNOWN",
-				outcomeAt: at,
-				outcomeNote: "The original Live startup job exhausted its deliveries.",
-				outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
-				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
-				outcomeEvidenceAt: at,
-			}),
+			...failure,
 		},
 	});
-	return count === 1;
+	if (count || !failure) return count === 1;
+	// A prior or concurrent observer may already have stamped the same job.
+	// Preserve that handoff time while saving the new terminal observation.
+	const updated = await prisma.liveSchedule.updateMany({
+		where: {
+			...owned,
+			dispatchedAt: { not: null },
+			dispatchJobId: retained.id,
+		},
+		data: failure,
+	});
+	return updated.count === 1;
 }

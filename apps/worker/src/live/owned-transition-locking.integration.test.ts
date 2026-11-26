@@ -63,7 +63,10 @@ import {
 	createProviderLifecycleReconciler,
 	type RunLifecycleRow,
 } from "./provider-lifecycle";
-import { resolveProvisionAdmission } from "./provision-admission";
+import {
+	recordRetainedScheduledStart,
+	resolveProvisionAdmission,
+} from "./provision-admission";
 import { commitProvisionEnd } from "./provision-outcome";
 import {
 	createStrandedRunReconciler,
@@ -105,6 +108,54 @@ function instrumentTransactions(
 			return typeof value === "function" ? value.bind(target) : value;
 		},
 	});
+}
+
+/** Fail the retirement transaction after the worker observes one exact queue failure. */
+function refuseProvisionRetirement(
+	prisma: AppPrismaClient,
+	liveChannelId: string,
+) {
+	return instrumentTransactions(
+		prisma,
+		async (tx) =>
+			new Proxy(tx, {
+				get(client, key) {
+					if (key !== "liveChannel") return Reflect.get(client, key);
+					return new Proxy(client.liveChannel, {
+						get(delegate, method) {
+							if (method !== "updateMany") return Reflect.get(delegate, method);
+							return async (
+								args: Parameters<typeof delegate.updateMany>[0],
+							) => {
+								if (
+									args?.where?.id === liveChannelId &&
+									args.data.status === "ERROR"
+								)
+									throw new Error("provision retirement unavailable");
+								return delegate.updateMany(args);
+							};
+						},
+					});
+				},
+			}),
+	);
+}
+
+async function expectFailedProvisionRetirement(
+	recover: (at: Date) => Promise<void>,
+	at: Date,
+) {
+	for (let page = 0; page < 10; page++) {
+		try {
+			await recover(at);
+		} catch (error) {
+			expect(error).toMatchObject({
+				message: "provision retirement unavailable",
+			});
+			return;
+		}
+	}
+	throw new Error("Recovery did not attempt to retire this provision");
 }
 
 async function backendPid(tx: AppTransactionClient) {
@@ -1860,12 +1911,14 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				),
 			).resolves.toBeNull();
 			const at = new Date(heldAt.getTime() + 600_000);
+			const failedAt = new Date(at.getTime() + 1_000);
+			let state = "waiting";
 			const readStartJob = async (id: string) =>
 				id === legacyId
 					? {
 							data: { action: "provision", liveChannelId: f.channel.id },
 							timestamp: heldAt.getTime() + 50,
-							getState: async () => "failed",
+							getState: async () => state,
 						}
 					: undefined;
 			const enqueue = vi.fn(async (..._input: [LiveChannelJob, string]) => {});
@@ -1886,7 +1939,47 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).resolves.toMatchObject({
 				dispatchedAt: at,
 				dispatchJobId: legacyId,
+				outcome: "PENDING",
+			});
+			const start = {
+				id: admitted.id,
+				liveChannelId: f.channel.id,
+				liveChannelRunId: f.run.id,
+				startAdmissionFenceVersion: 0,
+			};
+			await expect(
+				recordRetainedScheduledStart(
+					tenant,
+					start,
+					{ id: `${legacyId}-start-0`, state: "failed" },
+					failedAt,
+				),
+			).resolves.toBe(false);
+			await expect(
+				recordRetainedScheduledStart(
+					tenant,
+					{ ...start, liveChannelRunId: randomUUID() },
+					{ id: legacyId, state: "failed" },
+					failedAt,
+				),
+			).resolves.toBe(false);
+			state = "failed";
+			await expectFailedProvisionRetirement(
+				createExhaustedProvisionRecovery(
+					refuseProvisionRetirement(tenant, f.channel.id),
+					readStartJob,
+					enqueue,
+				),
+				failedAt,
+			);
+			await expect(
+				tenant.liveSchedule.findUniqueOrThrow({ where: { id: admitted.id } }),
+			).resolves.toMatchObject({
+				dispatchedAt: at,
+				dispatchJobId: legacyId,
 				outcome: "UNKNOWN",
+				outcomeEvidenceAt: failedAt,
+				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
 			});
 			// Retention can evict the failed job before the next recovery page.
 			const recover = createExhaustedProvisionRecovery(
@@ -1894,7 +1987,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				async () => undefined,
 				enqueue,
 			);
-			for (let i = 0; i < 10; i++) await recover(at);
+			for (let i = 0; i < 10; i++) await recover(failedAt);
 			await expect(
 				tenant.liveChannel.findUniqueOrThrow({ where: { id: f.channel.id } }),
 			).resolves.toMatchObject({ status: "ERROR" });
@@ -2109,10 +2202,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 			if (kind === "initial")
 				await tenant.liveChannelRun.delete({ where: { id: f.run.id } });
+			const scheduleId = randomUUID();
 			const schedule =
 				kind === "scheduled"
 					? await tenant.liveSchedule.create({
 							data: {
+								id: scheduleId,
 								liveChannelId: f.channel.id,
 								liveChannelRunId: f.run.id,
 								action: "START",
@@ -2120,6 +2215,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 								fireAt: now,
 								firedAt: now,
 								dispatchedAt: now,
+								dispatchJobId: `sched-${scheduleId}-start-${generation}`,
 								startAdmissionFenceVersion: generation,
 							},
 						})
@@ -2136,14 +2232,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					if (key === id) data = value;
 				},
 			);
-			const recover = createExhaustedProvisionRecovery(
-				tenant,
-				async (key) =>
-					key === id && data
-						? { data, getState: async () => state }
-						: undefined,
-				add,
-			);
+			const readJob = async (key: string) =>
+				key === id && data ? { data, getState: async () => state } : undefined;
+			const recover = createExhaustedProvisionRecovery(tenant, readJob, add);
 			for (let i = 0; i < 10 && !data; i++) await recover(new Date());
 			expect(data).toMatchObject({
 				liveChannelId: f.channel.id,
@@ -2152,7 +2243,28 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				...(kind === "scheduled" ? { provisionFenceVersion: generation } : {}),
 			});
 			state = "failed";
+			if (schedule) {
+				const failedAt = new Date();
+				await expectFailedProvisionRetirement(
+					createExhaustedProvisionRecovery(
+						refuseProvisionRetirement(tenant, f.channel.id),
+						readJob,
+						add,
+					),
+					failedAt,
+				);
+				await expect(
+					tenant.liveSchedule.findUniqueOrThrow({ where: { id: schedule.id } }),
+				).resolves.toMatchObject({
+					dispatchJobId: id,
+					dispatchedAt: now,
+					outcome: "UNKNOWN",
+					outcomeEvidenceAt: failedAt,
+				});
+				data = undefined;
+			}
 			for (let i = 0; i < 10; i++) await recover(new Date());
+			if (schedule) expect(data).toBeUndefined();
 			expect(
 				await tenant.liveChannel.findUniqueOrThrow({
 					where: { id: f.channel.id },

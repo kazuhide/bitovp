@@ -153,16 +153,19 @@ export function createExhaustedProvisionRecovery(
 					id = `${source}-provision-${row.id}-${run.id}-${generation}`;
 				}
 			}
+			const start =
+				scheduledStartId && run
+					? {
+							id: scheduledStartId,
+							liveChannelId: row.id,
+							liveChannelRunId: run.id,
+							startAdmissionFenceVersion: generation,
+						}
+					: null;
 			let job = await readOwnedJob(id);
 			let retained: Awaited<ReturnType<typeof readRetainedScheduledStart>> =
 				null;
-			if (!job && scheduledStartId && run) {
-				const start = {
-					id: scheduledStartId,
-					liveChannelId: row.id,
-					liveChannelRunId: run.id,
-					startAdmissionFenceVersion: generation,
-				};
+			if (!job && start) {
 				retained = await readRetainedScheduledStart(
 					prisma,
 					readOwnedJob,
@@ -171,7 +174,8 @@ export function createExhaustedProvisionRecovery(
 				if (retained) {
 					id = retained.id;
 					job = retained.job;
-					await recordRetainedScheduledStart(prisma, start, retained, at);
+					if (retained.state !== "failed")
+						await recordRetainedScheduledStart(prisma, start, retained, at);
 				}
 			}
 			const state = retained?.state ?? (await job?.getState());
@@ -194,16 +198,30 @@ export function createExhaustedProvisionRecovery(
 				const original =
 					retained?.original ??
 					(await identifyProvisionJob(prisma, row.id, id, job));
-				if (original)
-					await recordExpiredProvisionFailure(
-						prisma,
-						row.id,
-						error,
-						new Date(at.getTime() - PROVISION_LEASE_MS),
-						at,
-						original.admission,
-						scheduledStartScheduleId(id, original.data.provisionFenceVersion),
-					);
+				if (!original) continue;
+				if (
+					start &&
+					(!("runId" in original.admission) ||
+						original.admission.runId !== start.liveChannelRunId ||
+						original.admission.generation !==
+							start.startAdmissionFenceVersion ||
+						!(await recordRetainedScheduledStart(
+							prisma,
+							start,
+							{ id, state },
+							at,
+						)))
+				)
+					continue;
+				await recordExpiredProvisionFailure(
+					prisma,
+					row.id,
+					error,
+					new Date(at.getTime() - PROVISION_LEASE_MS),
+					at,
+					original.admission,
+					scheduledStartScheduleId(id, original.data.provisionFenceVersion),
+				);
 			} else await reenqueue(data, id);
 		}
 	};

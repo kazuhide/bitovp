@@ -107,6 +107,7 @@ import {
 	isRunBoundStopJob,
 	recordDeadFeederJob,
 	recordDeadJobScheduleOutcomes,
+	recordFinalProvisionFailure,
 	recordFinalRestartFailure,
 	recordFinalStopFailure,
 	releaseDeadStageClaim,
@@ -119,15 +120,11 @@ import {
 	createAbandonedProbeSweep,
 	createProbeBatchProcessor,
 } from "./live/probe-runner";
-import { resolveProvisionAdmission } from "./live/provision-admission";
 import {
 	ABANDONED_LEASE_SWEEP_MS,
 	reconcileAbandonedLeases,
 } from "./live/provision-lease";
-import {
-	createStrandedRunReconciler,
-	recordExpiredProvisionFailure,
-} from "./live/reconcile-stranded-runs";
+import { createStrandedRunReconciler } from "./live/reconcile-stranded-runs";
 import { createUncertainStopReconciler } from "./live/reconcile-uncertain-stops";
 import { createRunHeartbeatSummarizer } from "./live/run-heartbeat-summary";
 import { reconcileStartupCancellations } from "./live/startup-cancel";
@@ -146,7 +143,6 @@ import {
 	createLiveChannelProcessor,
 	createLiveHeartbeatSweep,
 	type LiveChannelDeps,
-	PROVISION_LEASE_MS,
 } from "./orchestrator/live-processor";
 import { makeWorkerSdk } from "./orchestrator/make-sdk";
 import {
@@ -159,7 +155,6 @@ import {
 } from "./orchestrator/stop-remote-encodings";
 import { createResetCleanupSweep } from "./reset/cleanup";
 import { resetCleanupProvider } from "./reset/provider";
-import { scheduledStartScheduleId } from "./scheduler/schedule-outcome";
 import {
 	createScheduleSweep,
 	DEFAULT_START_GRACE_MINUTES,
@@ -1897,8 +1892,6 @@ function startQueueWorker(
 							action?: string;
 							attemptId?: string;
 							liveChannelRunId?: string;
-							plannedLiveChannelRunId?: string;
-							provisionFenceVersion?: number;
 							encodingId?: string;
 					  }
 					| undefined;
@@ -1910,40 +1903,13 @@ function startQueueWorker(
 					job?.name !== HEARTBEAT_SWEEP_JOB &&
 					liveAction === "provision"
 				) {
-					const liveChannelId = liveJob?.liveChannelId;
-					if (
-						liveChannelId &&
-						liveJob &&
-						(job?.finishedOn != null ||
-							(job?.attemptsMade ?? 0) >= (job?.opts.attempts ?? 1))
-					) {
-						const admission = await resolveProvisionAdmission(
-							prisma,
-							liveChannelId,
-							liveJob,
-							job?.id,
-							job?.timestamp,
-						);
-						const at = new Date();
-						if (admission)
-							await recordExpiredProvisionFailure(
-								prisma,
-								liveChannelId,
-								redactSecrets(failureMessage),
-								new Date(at.getTime() - PROVISION_LEASE_MS),
-								at,
-								admission,
-								scheduledStartScheduleId(
-									job?.id,
-									liveJob.provisionFenceVersion,
-								),
-							).catch((updateErr) =>
-								console.error(
-									"[worker:liveChannel] failed to mark channel/run ERROR:",
-									updateErr,
-								),
-							);
-					}
+					await recordFinalProvisionFailure(prisma, job, failureMessage).catch(
+						(updateErr) =>
+							console.error(
+								"[worker:liveChannel] failed to record exhausted startup:",
+								updateErr,
+							),
+					);
 				}
 				if (
 					key === "liveChannel" &&

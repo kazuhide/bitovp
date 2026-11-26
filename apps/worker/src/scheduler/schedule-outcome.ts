@@ -164,6 +164,7 @@ export type ScheduleOutcomeTarget =
 				liveChannelId: string;
 				liveChannelRunId?: string;
 				startAdmissionFenceVersion?: number | null;
+				dispatchJobId?: string;
 			};
 	  }
 	| {
@@ -190,11 +191,14 @@ function whereOf(target: ScheduleOutcomeTarget): Prisma.LiveScheduleWhereInput {
 		return { feederSessionId: target.feederSessionId };
 	}
 	if ("scheduledStart" in target) {
-		const start = target.scheduledStart;
+		const { dispatchJobId, ...start } = target.scheduledStart;
 		return {
 			...start,
 			action: "START",
 			status: "FIRED",
+			...(dispatchJobId && {
+				OR: [{ dispatchJobId: null }, { dispatchJobId }],
+			}),
 			...(target.requireFailedAiring
 				? {
 						liveChannel: {

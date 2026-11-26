@@ -6,6 +6,7 @@ import {
 	isFinalStopFailure,
 	recordDeadFeederJob,
 	recordDeadJobScheduleOutcomes,
+	recordFinalProvisionFailure,
 	recordFinalStopFailure,
 	releaseDeadStageClaim,
 } from "./dead-job-outcome";
@@ -43,6 +44,72 @@ const MANUAL_STOP_JOB = {
 		},
 	},
 } as const;
+
+describe("scheduled START final-delivery recovery", () => {
+	const at = new Date("2026-11-26T12:00:00Z");
+	const job = {
+		id: `sched-${SCHEDULE_ID}`,
+		data: { liveChannelId: CHANNEL, action: "provision" },
+		attemptsMade: 5,
+		opts: { attempts: 5 },
+		timestamp: at.getTime(),
+	};
+
+	function failedProjection(receiptCount: number) {
+		const updateMany = vi
+			.fn()
+			.mockResolvedValueOnce({ count: 0 })
+			.mockResolvedValueOnce({ count: receiptCount });
+		const transaction = vi.fn(async () => {
+			throw new Error("retirement rolled back");
+		});
+		const prisma = {
+			liveSchedule: {
+				findFirst: vi.fn(async () => ({
+					liveChannelRunId: RUN,
+					startAdmissionFenceVersion: 7,
+					liveChannel: {
+						origin: "MANAGED",
+						liveEffectFenceVersion: 7,
+						legacyAdmissionFenceVersion: 7,
+						runs: [{ id: RUN, legacyProvisionAdmissionAt: at }],
+					},
+				})),
+				updateMany,
+			},
+			$transaction: transaction,
+		} as unknown as AppPrismaClient;
+		return { prisma, updateMany, transaction };
+	}
+
+	it("saves an exact migrated legacy failure before a rollback can lose retirement", async () => {
+		const { prisma, updateMany, transaction } = failedProjection(1);
+		await expect(
+			recordFinalProvisionFailure(prisma, job, "queue worker lost", at),
+		).rejects.toThrow("retirement rolled back");
+		expect(updateMany).toHaveBeenLastCalledWith({
+			where: expect.objectContaining({
+				id: SCHEDULE_ID,
+				liveChannelRunId: RUN,
+				startAdmissionFenceVersion: 7,
+				dispatchJobId: job.id,
+			}),
+			data: expect.objectContaining({ outcome: "UNKNOWN" }),
+		});
+		expect(updateMany.mock.invocationCallOrder[1]).toBeLessThan(
+			transaction.mock.invocationCallOrder[0] ?? 0,
+		);
+	});
+
+	it("does not retire a START replaced by a different queue receipt", async () => {
+		const { prisma, updateMany, transaction } = failedProjection(0);
+		await expect(
+			recordFinalProvisionFailure(prisma, job, "queue worker lost", at),
+		).resolves.toBe(false);
+		expect(updateMany).toHaveBeenCalledTimes(2);
+		expect(transaction).not.toHaveBeenCalled();
+	});
+});
 
 describe("manual STOP final-delivery projection", () => {
 	it("projects only the final failed attempt", () => {
@@ -242,6 +309,7 @@ describe("deadJobScheduleWrites (ledger #238)", () => {
 					scheduledStart: {
 						id: SCHEDULE,
 						liveChannelId: CHANNEL,
+						dispatchJobId: `sched-${SCHEDULE}-start-9`,
 						liveChannelRunId: RUN,
 						startAdmissionFenceVersion: 9,
 					},

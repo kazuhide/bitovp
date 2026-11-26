@@ -23,6 +23,12 @@ import {
 	scheduledStartScheduleId,
 } from "../scheduler/schedule-outcome";
 import { recordScheduledStopHandoff } from "../scheduler/stop-handoff";
+import {
+	recordRetainedScheduledStart,
+	resolveProvisionAdmission,
+} from "./provision-admission";
+import { PROVISION_LEASE_MS } from "./provision-lease";
+import { recordExpiredProvisionFailure } from "./reconcile-stranded-runs";
 
 /**
  *  — what a liveChannel job that died OUTSIDE its processor means
@@ -72,6 +78,7 @@ export type DeadLiveJob =
 			data?: unknown;
 			attemptsMade?: number;
 			finishedOn?: number;
+			timestamp?: number;
 			opts?: { attempts?: number };
 	  }
 	| undefined;
@@ -122,6 +129,61 @@ function isTerminalDelivery(job: DeadLiveJob): boolean {
 			? Math.max(1, Math.floor(configured))
 			: 1;
 	return (job?.attemptsMade ?? 0) >= attempts;
+}
+
+export async function recordFinalProvisionFailure(
+	prisma: AppPrismaClient,
+	job: DeadLiveJob,
+	message: string,
+	at = new Date(),
+): Promise<boolean> {
+	if (!job || !isTerminalDelivery(job)) return false;
+	const parsed = liveChannelJobSchema.safeParse(job.data);
+	if (
+		!parsed.success ||
+		parsed.data.action !== "provision" ||
+		parsed.data.params ||
+		parsed.data.effect
+	)
+		return false;
+	const data = parsed.data;
+	const admission = await resolveProvisionAdmission(
+		prisma,
+		data.liveChannelId,
+		data,
+		job.id,
+		job.timestamp,
+	);
+	if (!admission) return false;
+	const scheduleId = scheduledStartScheduleId(
+		job.id,
+		data.provisionFenceVersion,
+	);
+	if (scheduleId && job.id && "runId" in admission) {
+		// Save the exact terminal evidence before attempting to retire the
+		// channel. A failed retirement must not enable replay after eviction.
+		const recorded = await recordRetainedScheduledStart(
+			prisma,
+			{
+				id: scheduleId,
+				liveChannelId: data.liveChannelId,
+				liveChannelRunId: admission.runId,
+				startAdmissionFenceVersion: admission.generation,
+			},
+			{ id: job.id, state: "failed" },
+			at,
+		);
+		if (!recorded) return false;
+	}
+	return recordExpiredProvisionFailure(
+		prisma,
+		data.liveChannelId,
+		redactSecrets(message),
+		new Date(at.getTime() - PROVISION_LEASE_MS),
+		at,
+		admission,
+		scheduleId,
+	);
 }
 
 /** RESTART may only retire the exact PROVISIONING admission it stranded. */
@@ -631,6 +693,7 @@ export function deadJobScheduleWrites(
 						scheduledStart: {
 							id,
 							liveChannelId: data.liveChannelId,
+							dispatchJobId: job?.id,
 							...(data.plannedLiveChannelRunId
 								? { liveChannelRunId: data.plannedLiveChannelRunId }
 								: {}),

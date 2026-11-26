@@ -1,11 +1,16 @@
+import { createHash } from "node:crypto";
 import {
 	type EncodingPlan,
 	encodingPlanSchema,
+	instantiateTemplatePlan,
 	templateSourceSites,
 } from "@bitovp/core";
 import { samplePresetPlan } from "@bitovp/core/presets";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { onlineManager } from "@tanstack/react-query";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createSubmissionClient } from "@/lib/creation-submission";
+import { canonicalCreateRequestJson } from "@/lib/creation-submission-contract";
 import { renderWithOperatorSession as renderWithQuery } from "@/test/render";
 import { LaunchDialog } from "./launch-dialog";
 
@@ -24,6 +29,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 afterEach(() => {
+	onlineManager.setOnline(true);
 	apiFetch.mockReset();
 	routerPush.mockReset();
 	vi.useRealTimers();
@@ -511,4 +517,196 @@ it("reuses the creation key when a lost Quick Launch is reopened with the final 
 	expect(JSON.parse(String(submissions[0]?.body))).toEqual(
 		JSON.parse(String(submissions[1]?.body)),
 	);
+});
+
+it("submits the exact Quick Launch settings clicked while offline", async () => {
+	const plan = encodingPlanSchema.parse(
+		samplePresetPlan("fixed-bitrate-hls-on-aws"),
+	);
+	const [first] = templateSourceSites(plan);
+	if (!first) throw new Error("Missing source");
+	apiFetch.mockImplementation(async (url: string) =>
+		url.startsWith("/api/presets/")
+			? detailFor(plan)
+			: url === "/api/encoding-jobs"
+				? { id: ID }
+				: [],
+	);
+	renderWithQuery(<LaunchDialog presetId={ID} onClose={() => {}} />);
+	const field = await screen.findByLabelText(first.siteId);
+	const prefix = screen.getByLabelText(/output prefix/i);
+	const launch = screen.getByRole("button", { name: /create job/i });
+	await waitFor(() => expect(launch).toBeEnabled());
+	fireEvent.change(field, { target: { value: "input/clicked.mxf" } });
+	fireEvent.change(prefix, { target: { value: "clicked-prefix" } });
+	act(() => onlineManager.setOnline(false));
+	fireEvent.click(launch);
+	fireEvent.change(field, { target: { value: "input/later.mxf" } });
+	fireEvent.change(prefix, { target: { value: "later-prefix" } });
+	act(() => onlineManager.setOnline(true));
+	await waitFor(() => expect(routerPush).toHaveBeenCalledOnce());
+	const call = apiFetch.mock.calls.find(
+		([url]) => url === "/api/encoding-jobs",
+	);
+	expect(JSON.parse(String(call?.[1].body)).plan).toMatchObject({
+		ingest: expect.arrayContaining([
+			expect.objectContaining({
+				key: first.siteId,
+				inputPath: "input/clicked.mxf",
+			}),
+		]),
+		muxings: expect.arrayContaining([
+			expect.objectContaining({
+				destination: expect.objectContaining({
+					path: expect.stringMatching(/^clicked-prefix\//),
+				}),
+			}),
+		]),
+	});
+	expect(call?.[1].headers["X-BitOVP-Create-Session"]).toBe('["org","user"]');
+});
+
+it.each([
+	false,
+	true,
+])("replays a lost 1.3.5 Quick Launch using its original request identity (protected source: %s)", async (protectSource) => {
+	const parsed = encodingPlanSchema.parse(
+		samplePresetPlan("fixed-bitrate-hls-on-aws"),
+	);
+	const [first] = parsed.ingest;
+	if (!first) throw new Error("Missing source");
+	const sourcePath = "safe/replacement.mp4";
+	if (protectSource) {
+		parsed.inputs = parsed.inputs.map((input) =>
+			input.key === first.inputKey
+				? {
+						key: input.key,
+						kind: "HTTPS",
+						host: "media.invalid",
+						name: input.name,
+					}
+				: input,
+		);
+		first.inputPath = "private/original.mp4?ticket=protected-preset";
+	}
+	const {
+		hdr10PlusStreams: _hdr,
+		captionStreams: _captions,
+		...presetBody
+	} = parsed;
+	const sources = Object.fromEntries(
+		templateSourceSites(parsed).map((site) => {
+			const input = parsed.inputs.find((row) => row.key === site.inputKey);
+			return [
+				site.siteId,
+				{
+					objectKey:
+						protectSource && site.siteId === first.key
+							? sourcePath
+							: site.currentPath,
+					...(input && "bucket" in input && "credentialId" in input
+						? { bucket: input.bucket, credentialId: input.credentialId }
+						: {}),
+				},
+			];
+		}),
+	);
+	const submissions: RequestInit[] = [];
+	const oldClient = createSubmissionClient(
+		["org", "user", "vod", `template:${ID}:3`],
+		{
+			storage: sessionStorage,
+			send: async (_url, init) => {
+				submissions.push(init);
+				throw new Error("Lost response");
+			},
+		},
+	);
+	const seed = oldClient.getSeed();
+	const previous = {
+		presetBody,
+		sources,
+		templateName: "hardened-hls",
+		outputPrefixTemplate: "previous/{uuid}",
+		name: "Existing launch",
+		presetId: ID,
+		presetRevision: 3,
+		renderedAt: seed.createdAt,
+	};
+	await expect(
+		oldClient.submit(previous, (pending) => {
+			const result = instantiateTemplatePlan({
+				...previous,
+				now: new Date(previous.renderedAt),
+				uuid: pending.nonce,
+			});
+			if (!result.ok) throw new Error("Invalid legacy fixture");
+			const {
+				hdr10PlusStreams: _hdr,
+				captionStreams: _captions,
+				...plan
+			} = result.plan;
+			return { plan, presetId: ID, presetRevision: 3 };
+		}),
+	).rejects.toThrow("Lost response");
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+		if (url.startsWith("/api/presets/")) {
+			return detailFor(
+				protectSource
+					? {
+							...presetBody,
+							ingest: parsed.ingest.map((stream) =>
+								stream === first ? { ...stream, inputPath: "" } : stream,
+							),
+							withheldSourcePaths: [
+								[{ collection: "ingest", index: 0, field: "inputPath" }],
+							],
+						}
+					: presetBody,
+			);
+		}
+		if (url === "/api/encoding-jobs" && init) {
+			submissions.push(init);
+			return { id: ID };
+		}
+		return [];
+	});
+	renderWithQuery(<LaunchDialog presetId={ID} onClose={() => {}} />);
+	if (protectSource) {
+		fireEvent.change(await screen.findByLabelText(first.key), {
+			target: { value: sourcePath },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /use replacement/i }));
+	}
+	const launch = await screen.findByRole("button", { name: /create job/i });
+	await waitFor(() => expect(launch).toBeEnabled());
+	fireEvent.change(screen.getByLabelText(/output prefix/i), {
+		target: { value: previous.outputPrefixTemplate },
+	});
+	fireEvent.change(screen.getByLabelText(/job name/i), {
+		target: { value: previous.name },
+	});
+	fireEvent.click(launch);
+	await waitFor(() => expect(routerPush).toHaveBeenCalledOnce());
+	expect(submissions).toHaveLength(2);
+	expect(new Headers(submissions[0]?.headers).get("Idempotency-Key")).toBe(
+		new Headers(submissions[1]?.headers).get("Idempotency-Key"),
+	);
+	const original: unknown = JSON.parse(String(submissions[0]?.body));
+	if (protectSource) {
+		expect(submissions[1]?.method).toBe("GET");
+		expect(submissions[1]?.body).toBeUndefined();
+		expect(
+			new Headers(submissions[1]?.headers).get(
+				"X-BitOVP-Create-Request-Digest",
+			),
+		).toBe(
+			createHash("sha256")
+				.update(canonicalCreateRequestJson(original))
+				.digest("hex"),
+		);
+	} else {
+		expect(submissions[1]?.method).toBe("POST");
+		expect(JSON.parse(String(submissions[1]?.body))).toEqual(original);
+	}
 });

@@ -1,6 +1,11 @@
 import { encodingPlanSchema, INTERNAL_HEVC_V2_BCF_VERSION } from "@bitovp/core";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import {
+	draftFingerprint,
+	draftKey,
+	writeWizardDraft,
+} from "@/lib/wizard-draft";
 import p1AudioCopy from "@/test/fixtures/p1-audio-copy.json";
 import p1VideoCopy from "@/test/fixtures/p1-video-copy.json";
 import { renderWithOperatorSession as renderWithQuery } from "@/test/render";
@@ -63,6 +68,7 @@ const sourceState: WizardState = {
 const plan = buildPlan(sourceState);
 beforeEach(() => {
 	vi.clearAllMocks();
+	localStorage.clear();
 	apiFetch.mockImplementation(async (url: string) =>
 		url === `/api/encoding-jobs/${ID}` ? { name: "Copied source", plan } : [],
 	);
@@ -563,23 +569,54 @@ it.each([
 	).toBe(true);
 });
 
-it("replaces a protected HTTPS source in the native copy form and submits only its replacement", async () => {
+it.each([
+	false,
+	true,
+])("replaces a protected HTTPS source and recovers a legacy copy draft if present (%s)", async (legacy) => {
 	const first = sourceState.inputFiles[0];
 	if (!first) throw new Error("Missing input file");
-	const remotePlan = encodingPlanSchema.parse(
-		buildPlan({
-			...sourceState,
-			inputFiles: [
-				{
-					...first,
-					kind: "HTTPS",
-					credentialId: "",
-					bucket: "media.example",
-					path: "original.mp4",
-				},
-			],
-		}),
-	);
+	const remote = {
+		...sourceState,
+		inputFiles: [
+			{
+				...first,
+				kind: "HTTPS" as const,
+				credentialId: "",
+				bucket: "media.example",
+				path: "original.mp4?ticket=PRIVATE_FIXTURE",
+			},
+		],
+	};
+	const releasedPlan = buildPlan(remote);
+	const remotePlan = encodingPlanSchema.parse(releasedPlan);
+	if (legacy) {
+		writeWizardDraft(
+			draftKey(
+				["org", "user"],
+				"vod",
+				`job:${ID}:${draftFingerprint(releasedPlan)}`,
+			),
+			"vod",
+			{
+				...remote,
+				name: "Recovered editorial change",
+			},
+			0,
+		);
+		writeWizardDraft(
+			draftKey(
+				["elsewhere", "user"],
+				"vod",
+				`job:${ID}:${draftFingerprint(releasedPlan)}`,
+			),
+			"vod",
+			{
+				...remote,
+				name: "Other organization draft",
+			},
+			0,
+		);
+	}
 	const projected = {
 		...remotePlan,
 		ingest: remotePlan.ingest.map((row) => ({ ...row, inputPath: "" })),
@@ -604,7 +641,11 @@ it("replaces a protected HTTPS source in the native copy form and submits only i
 	expect(screen.queryByRole("button", { name: /start encoding/i })).toBeNull();
 	fireEvent.change(field, { target: { value: "copy/replaced.mp4" } });
 	fireEvent.click(screen.getByRole("button", { name: /use replacement/i }));
-	await screen.findByRole("textbox", { name: /job name/i });
+	const name = await screen.findByRole("textbox", { name: /job name/i });
+	if (legacy) {
+		fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+		expect(name).toHaveValue("Recovered editorial change");
+	}
 	fireEvent.click(screen.getByRole("button", { name: /^8\. Review$/ }));
 	fireEvent.click(screen.getByRole("button", { name: /start encoding$/i }));
 	await waitFor(() =>
@@ -619,6 +660,7 @@ it("replaces a protected HTTPS source in the native copy form and submits only i
 	expect(encodingPlanSchema.parse(JSON.parse(submission[1].body).plan)).toEqual(
 		encodingPlanSchema.parse({
 			...remotePlan,
+			...(legacy && { name: "Recovered editorial change" }),
 			ingest: remotePlan.ingest.map((row) => ({
 				...row,
 				inputPath: "copy/replaced.mp4",

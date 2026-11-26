@@ -1548,25 +1548,53 @@ export function restoreVodWizardDraft(
 			"bucket",
 			"region",
 		] as const;
-		value = {
-			...value,
-			inputFiles: value.inputFiles.map((saved: unknown) => {
-				if (!draftRecord(saved) || saved.path !== "") return saved;
-				const replacement = base.inputFiles.find((row) =>
-					sameInput.every((field) => row[field] === saved[field]),
-				);
-				if (
-					!replacement ||
-					!replacementPaths.some(
-						(path) =>
-							path.inputKey === replacement.inputKey &&
-							path.path === replacement.path,
-					)
+		const repairedFiles = new Set<string>();
+		const inputFiles = value.inputFiles.map((saved: unknown) => {
+			if (!draftRecord(saved) || saved.path !== "") return saved;
+			const replacement = base.inputFiles.find((row) =>
+				sameInput.every((field) => row[field] === saved[field]),
+			);
+			if (
+				!replacement ||
+				!replacementPaths.some(
+					(path) =>
+						path.inputKey === replacement.inputKey &&
+						path.path === replacement.path,
 				)
-					return saved;
-				return { ...saved, path: replacement.path };
-			}),
-		};
+			)
+				return saved;
+			repairedFiles.add(replacement.key);
+			return { ...saved, path: replacement.path };
+		});
+		const sources = value.sources;
+		if (draftRecord(sources) && Array.isArray(sources.hdr10PlusStreams)) {
+			const hdr10PlusStreams = sources.hdr10PlusStreams.map(
+				(saved: unknown) => {
+					if (
+						!draftRecord(saved) ||
+						typeof saved.videoInputFile !== "string" ||
+						!repairedFiles.has(saved.videoInputFile)
+					)
+						return saved;
+					// Reopening sourced a new picture. The cached sidecar only describes
+					// the old picture removed by the draft's privacy filter.
+					const replacement = base.sources?.hdr10PlusStreams?.find(
+						(row) =>
+							row.key === saved.key &&
+							row.videoInputFile === saved.videoInputFile,
+					);
+					return {
+						...saved,
+						metadataInputPath: replacement?.metadataInputPath ?? "",
+					};
+				},
+			);
+			value = {
+				...value,
+				sources: { ...sources, hdr10PlusStreams },
+				inputFiles,
+			};
+		} else value = { ...value, inputFiles };
 	}
 	return value === null
 		? restoreMetadata(base, draft.value)
@@ -1587,6 +1615,56 @@ const envelope = z
 			? record.kind === "live"
 			: record.step <= 7 && (record.version === 1 || record.kind === "vod"),
 	);
+
+/** A protected projection changes the old plan fingerprint. The copied job
+ * itself still identifies the same draft family within one account. */
+export function copiedJobDraftSlot(
+	identity: [string, string],
+	jobId: string,
+	canonicalKey: string,
+	storage: Pick<Storage, "getItem" | "key" | "length">,
+	now = Date.now(),
+) {
+	function savedAt(slot: string) {
+		try {
+			const raw = storage.getItem(slot);
+			if (!raw || raw.length > WIZARD_DRAFT_MAX_SIZE) return;
+			const record = envelope.parse(JSON.parse(raw));
+			if (
+				record.kind === "vod" &&
+				record.savedAt <= now &&
+				now - record.savedAt < WIZARD_DRAFT_TTL &&
+				draftRecord(record.value)
+			)
+				return record.savedAt;
+		} catch {
+			// Inspection never overwrites a slot owned by another open form.
+		}
+	}
+	const prefix = draftKey(identity, "vod", `job:${jobId}:`).slice(0, -2);
+	try {
+		if (
+			savedAt(canonicalKey) !== undefined ||
+			savedAt(`${canonicalKey}:working`) !== undefined
+		)
+			return canonicalKey;
+		let newest = { key: canonicalKey, savedAt: -Infinity };
+		for (let index = 0; index < storage.length; index++) {
+			const slot = storage.key(index);
+			if (
+				!slot?.startsWith(prefix) ||
+				!/^[a-f\d]{1,8}"\](?::working)?$/u.test(slot.slice(prefix.length))
+			)
+				continue;
+			const time = savedAt(slot);
+			if (time !== undefined && time > newest.savedAt)
+				newest = { key: slot.replace(/:working$/u, ""), savedAt: time };
+		}
+		return newest.key;
+	} catch {
+		return canonicalKey;
+	}
+}
 // Version 2 separates packaging from manifests in the Live navigation only.
 const LEGACY_LIVE_STEPS = [0, 1, 2, 3, 6, 5, 7, 8] as const;
 export function discardWizardDraft(key: string, storage?: DraftStorage) {

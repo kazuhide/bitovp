@@ -101,6 +101,7 @@ const prismaMock = {
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
 		tenant: {
+			organizationId: "org",
 			actor: `user:${aisaOwnerId}`,
 			actorUserId: aisaOwnerId,
 			effectiveUserId: aisaOwnerId,
@@ -1789,6 +1790,17 @@ describe("ordinary GUI create retries", () => {
 			body: JSON.stringify(body),
 		});
 	}
+	it("rejects a paused creation bound to a different operator in the same organization", async () => {
+		const request = keyedRequest({ plan: withAccount() });
+		request.headers.set("X-BitOVP-Create-Session", '["org","clicked"]');
+		const response = await POST(request);
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			details: { code: "CREATE_SESSION_CHANGED" },
+		});
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
 	it("recovers a lost create response without creating or enqueuing a second resource", async () => {
 		const body = { plan: withAccount() };
 		await POST(keyedRequest(body));

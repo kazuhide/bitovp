@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { verificationRequestSha256 } from "@bitovp/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { canonicalCreateRequestJson } from "@/lib/creation-submission-contract";
 
 const profileFindMany = vi.fn(async (): Promise<unknown[]> => []);
 const create = vi.fn();
@@ -85,6 +87,14 @@ const prismaMock = {
 
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: {
+			organizationId: "org",
+			actor: "user:current",
+			actorUserId: "current",
+			effectiveUserId: "current",
+			role: "OPERATOR",
+			isImpersonating: false,
+		},
 		prisma: prismaMock,
 		bitmovinAccounts: { get: getAccount },
 		// : rail 3b's resolver. These five route tests are the
@@ -1107,6 +1117,57 @@ describe("ordinary GUI create retries", () => {
 			body: JSON.stringify(body),
 		});
 	}
+	it("refuses creation when another operator now owns the same organization's session", async () => {
+		const request = keyedRequest({ plan: planWithAccount() });
+		request.headers.set("X-BitOVP-Create-Session", '["org","clicked"]');
+		const response = await POST(request);
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			details: { code: "CREATE_SESSION_CHANGED" },
+		});
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+		const current = keyedRequest({ plan: planWithAccount() });
+		current.headers.set("X-BitOVP-Create-Session", '["org","current"]');
+		expect((await POST(current)).status).toBe(201);
+	});
+	it("looks up legacy creation receipts without creating a job when the key is absent", async () => {
+		const body = { plan: planWithAccount() };
+		const digest = createHash("sha256")
+			.update(canonicalCreateRequestJson(body))
+			.digest("hex");
+		const replay = new Request("http://test/api/encoding-jobs", {
+			headers: {
+				"Idempotency-Key": "gui-request-1",
+				"X-BitOVP-Create-Request-Digest": digest,
+				"X-BitOVP-Create-Session": '["org","current"]',
+			},
+		});
+		expect((await GET(replay)).status).toBe(404);
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+		expect((await POST(keyedRequest(body))).status).toBe(201);
+		findUnique.mockResolvedValue({
+			id: "00000000-0000-4000-8000-0000000000aa",
+			status: "QUEUED",
+		});
+		const accepted = await GET(replay);
+		expect(accepted.status).toBe(200);
+		expect(accepted.headers.get("Cache-Control")).toBe("private, no-store");
+		expect(await accepted.json()).toMatchObject({
+			id: "00000000-0000-4000-8000-0000000000aa",
+			replayed: true,
+		});
+		replay.headers.set("X-BitOVP-Create-Request-Digest", "a".repeat(64));
+		expect(await (await GET(replay)).json()).toMatchObject({
+			details: { code: "CREATE_REQUEST_CONFLICT" },
+		});
+		replay.headers.set("X-BitOVP-Create-Session", '["org","clicked"]');
+		expect(await (await GET(replay)).json()).toMatchObject({
+			details: { code: "CREATE_SESSION_CHANGED" },
+		});
+		expect(queueAdd).toHaveBeenCalledTimes(1);
+	});
 	it("replays Quick Launch across empty HDR and caption defaults and rejects edited plans", async () => {
 		presetFindFirst.mockResolvedValueOnce({ id: PRESET_ID });
 		const previous = {

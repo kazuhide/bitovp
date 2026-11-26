@@ -28,7 +28,8 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ### Fixed
 
 - Retain newer VOD and Live draft edits during session refreshes and avoid restoring revisions already submitted in another tab.
-- Retry Quick Launch with the same creation key when the effective template settings match.
+- Retry Quick Launch with the original creation key when the effective settings match, including pending launches from 1.3.5.
+- Keep the VOD and Live Quick Launch settings and operator that initiated a request when the browser resumes it after going offline.
 - Require matching HDR10+ metadata when replacing a withheld picture and retain both source roles when the original job is deleted.
 - Protect private VOD source locations and keep output format summaries available in Compare.
 

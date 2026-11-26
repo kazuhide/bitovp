@@ -632,6 +632,9 @@ export function VodWizard({
 	const draftSource = presetKey === undefined ? fresh : draftBase.current;
 	const draft = useWizardDraft({
 		kind: "vod",
+		legacyCopiedJobId: replacement.resolvedPaths?.length
+			? copiedJob?.id
+			: undefined,
 		context:
 			imported || jsonLoadedForEditing
 				? null

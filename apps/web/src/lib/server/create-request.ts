@@ -1,6 +1,12 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { AppPrismaClient } from "@bitovp/db";
+import type { AuthenticatedContext } from "../auth/tenancy";
+import {
+	CREATE_SESSION_CHANGED,
+	CREATE_SESSION_HEADER,
+	canonicalCreateRequestJson,
+} from "../creation-submission-contract";
 import { jsonError } from "./http";
 
 export type CreateRequestKind = "VOD_JOB" | "LIVE_CHANNEL" | "LIBRARY_EDIT";
@@ -20,21 +26,37 @@ export class CreateRequestUniqueConflictError extends Error {
 	}
 }
 
-/** Object member order is not request identity; array order still is. */
-function canonicalJson(value: unknown): string {
-	if (value === null || typeof value !== "object") {
-		const encoded = JSON.stringify(value);
-		if (encoded === undefined)
-			throw new Error("Create requests must contain JSON values");
-		return encoded;
+/** Compare a browser's click-time binding with the authenticated request. */
+export function changedCreationSession(
+	req: Request,
+	tenant?: AuthenticatedContext,
+) {
+	const expected = req.headers.get(CREATE_SESSION_HEADER);
+	if (expected === null) return undefined;
+	if (
+		tenant &&
+		!tenant.isImpersonating &&
+		(tenant.role === "ADMIN" || tenant.role === "OPERATOR")
+	) {
+		const principal =
+			tenant.actor === "session"
+				? "main:password"
+				: tenant.actor === "none"
+					? "main:none"
+					: tenant.actorUserId &&
+							tenant.actorUserId === tenant.effectiveUserId &&
+							tenant.actor === `user:${tenant.actorUserId}`
+						? tenant.actorUserId
+						: null;
+		if (
+			principal &&
+			expected === JSON.stringify([tenant.organizationId, principal])
+		)
+			return undefined;
 	}
-	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-	const record = value as Record<string, unknown>;
-	return `{${Object.keys(record)
-		.sort()
-		.filter((key) => record[key] !== undefined)
-		.map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-		.join(",")}}`;
+	return jsonError(409, "The creation session has changed", {
+		code: CREATE_SESSION_CHANGED,
+	});
 }
 
 /** Hash the accepted request before account defaults or time-dependent derivation. */
@@ -61,7 +83,7 @@ export function createRequestIdentity(
 	return {
 		requestKey,
 		requestSha256: createHash("sha256")
-			.update(canonicalJson(acceptedBody))
+			.update(canonicalCreateRequestJson(acceptedBody))
 			.digest("hex"),
 	};
 }

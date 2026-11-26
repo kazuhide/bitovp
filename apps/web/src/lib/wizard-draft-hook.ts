@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "./auth/use-session";
 import {
+	copiedJobDraftSlot,
 	discardWizardDraft,
 	draftIdentity,
 	draftKey,
@@ -28,12 +29,14 @@ function matchesDraft(
 export function useWizardDraft({
 	kind,
 	context,
+	legacyCopiedJobId,
 	value,
 	step,
 	onRestore,
 }: {
 	kind: WizardDraftKind;
 	context: string | null;
+	legacyCopiedJobId?: string;
 	value: unknown;
 	step: number;
 	onRestore: (draft: WizardDraft) => void;
@@ -53,22 +56,52 @@ export function useWizardDraft({
 	if (identityKey && !boundIdentity.current)
 		boundIdentity.current = identityKey;
 	// Never migrate a mounted user's form to another user's/organization's draft.
-	const key =
+	const canonicalKey =
 		identity && identityKey === boundIdentity.current && context !== null
 			? draftKey(identity, kind, context)
 			: null;
+	const [copySlot, setCopySlot] = useState<{
+		canonicalKey: string;
+		key: string;
+	}>();
+	const key = legacyCopiedJobId
+		? copySlot?.canonicalKey === canonicalKey
+			? copySlot.key
+			: null
+		: canonicalKey;
+	useEffect(() => {
+		if (!legacyCopiedJobId || !canonicalKey || !identityKey) return;
+		setCopySlot((current) =>
+			current?.canonicalKey === canonicalKey
+				? current
+				: {
+						canonicalKey,
+						key: copiedJobDraftSlot(
+							JSON.parse(identityKey),
+							legacyCopiedJobId,
+							canonicalKey,
+							localStorage,
+						),
+					},
+		);
+	}, [legacyCopiedJobId, canonicalKey, identityKey]);
 	const currentKey = useRef(key);
 	currentKey.current = key;
 	// An in-flight submission may finish while the same bound user refreshes.
 	// This scope is used only for completing that submission's local draft.
 	const completionKey = useRef<string | null>(null);
-	completionKey.current =
+	const completionContext =
 		session.status === "success" &&
 		cachedIdentity &&
 		JSON.stringify(cachedIdentity) === boundIdentity.current &&
 		context !== null
 			? draftKey(cachedIdentity, kind, context)
 			: null;
+	completionKey.current = legacyCopiedJobId
+		? copySlot?.canonicalKey === completionContext
+			? copySlot.key
+			: null
+		: completionContext;
 	const mounted = useRef(false);
 	useEffect(() => {
 		mounted.current = true;

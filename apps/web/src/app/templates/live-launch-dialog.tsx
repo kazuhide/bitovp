@@ -5,7 +5,7 @@ import {
 	rebaseDestinations,
 	renderTemplateOutputPrefix,
 } from "@bitovp/core";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { useCreationSubmission } from "@/lib/creation-submission-hook";
 import { localizedCustomerError } from "@/lib/customer-error";
 import type { MessageKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n/context";
+import { useWizardSubmission } from "@/lib/wizard-submission-hook";
 import {
 	EMPTY_SCHEDULE_DRAFT,
 	type ScheduleDraft,
@@ -108,8 +109,8 @@ export function LiveLaunchDialog({
 			}),
 		[prefixTemplate, detail.data?.name, creation.seed],
 	);
-	const launch = useMutation({
-		mutationFn: () => {
+	const launch = useWizardSubmission(
+		() => {
 			if (!detail.data || !plan || !creation.seed) {
 				throw new Error("not loaded");
 			}
@@ -131,7 +132,7 @@ export function LiveLaunchDialog({
 			});
 			if (prefix === "") {
 				setPrefixError(t("templates.livePrefixEmpty"));
-				return Promise.resolve(null);
+				return async () => null;
 			}
 			setPrefixError(null);
 			const intent = {
@@ -144,32 +145,37 @@ export function LiveLaunchDialog({
 				presetRevision: detail.data.revision,
 				renderedAt: creation.seed.createdAt,
 			};
-			return creation.submit<{ id: string }>(intent, (seed, snapshot) => {
-				const frozen = snapshot as typeof intent;
-				const stablePrefix = renderTemplateOutputPrefix(frozen.prefixTemplate, {
-					objectKey: "",
-					templateName: frozen.templateName,
-					now: new Date(frozen.renderedAt),
-					uuid: seed.nonce,
+			return () =>
+				creation.submit<{ id: string }>(intent, (seed, snapshot) => {
+					const frozen = snapshot as typeof intent;
+					const stablePrefix = renderTemplateOutputPrefix(
+						frozen.prefixTemplate,
+						{
+							objectKey: "",
+							templateName: frozen.templateName,
+							now: new Date(frozen.renderedAt),
+							uuid: seed.nonce,
+						},
+					);
+					const rebased = liveChannelPlanSchema.parse(
+						rebaseDestinations(frozen.plan, stablePrefix),
+					);
+					return {
+						plan: { ...rebased, name: frozen.name },
+						...(frozen.schedule ? { schedule: frozen.schedule } : {}),
+						presetId: frozen.presetId,
+						presetRevision: frozen.presetRevision,
+					};
 				});
-				const rebased = liveChannelPlanSchema.parse(
-					rebaseDestinations(frozen.plan, stablePrefix),
-				);
-				return {
-					plan: { ...rebased, name: frozen.name },
-					...(frozen.schedule ? { schedule: frozen.schedule } : {}),
-					presetId: frozen.presetId,
-					presetRevision: frozen.presetRevision,
-				};
-			});
 		},
-		onSuccess: (channel) => {
+		() => undefined,
+		(channel) => {
 			if (channel) {
 				onClose();
 				router.push(`/live/${channel.id}`);
 			}
 		},
-	});
+	);
 
 	const launchFailure = launch.error ?? creation.seedError;
 	const launchFailureKey =

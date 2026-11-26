@@ -7,10 +7,16 @@ import type { SessionDto } from "./auth/dto";
 import { SESSION_QUERY_KEY, useSession } from "./auth/use-session";
 import {
 	type CreationBody,
+	type CreationCompatibility,
 	type CreationSeed,
 	CreationSubmissionError,
 	createSubmissionClient,
+	creationErrorCode,
 } from "./creation-submission";
+import {
+	CREATE_SESSION_CHANGED,
+	CREATE_SESSION_HEADER,
+} from "./creation-submission-contract";
 import { useT } from "./i18n/context";
 import { draftIdentity, type WizardDraftKind } from "./wizard-draft";
 
@@ -82,7 +88,11 @@ export function useCreationSubmission(
 	return {
 		seed,
 		seedError,
-		async submit<T>(intent: unknown, buildBody?: CreationBody): Promise<T> {
+		async submit<T>(
+			intent: unknown,
+			buildBody?: CreationBody,
+			compatibility?: CreationCompatibility,
+		): Promise<T> {
 			// A paused request keeps its clicked scope; authorize it again with
 			// the verified session in effect when transport actually resumes.
 			const current = verified.current;
@@ -104,6 +114,7 @@ export function useCreationSubmission(
 			try {
 				return await createSubmissionClient([...current, kind, context], {
 					storage: sessionStorage,
+					headers: { [CREATE_SESSION_HEADER]: JSON.stringify(current) },
 					beforeSend: () => {
 						if (
 							currentScope.current !== expectedScope ||
@@ -114,8 +125,10 @@ export function useCreationSubmission(
 								t("creationSubmission.sessionUnavailable"),
 							);
 					},
-				}).submit<T>(intent, buildBody);
+				}).submit<T>(intent, buildBody, compatibility);
 			} catch (error) {
+				if (creationErrorCode(error) === CREATE_SESSION_CHANGED)
+					throw new ApiError(409, t("creationSubmission.sessionUnavailable"));
 				if (error instanceof CreationSubmissionError)
 					throw new ApiError(
 						409,

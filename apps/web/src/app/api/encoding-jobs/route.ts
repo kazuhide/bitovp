@@ -12,10 +12,16 @@ import type { EncodingJobStatus, Prisma } from "@bitovp/db";
 import { listVmafCloudProfiles } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+	CREATE_REQUEST_DIGEST_HEADER,
+	CREATE_REQUEST_NOT_FOUND,
+	CREATE_SESSION_HEADER,
+} from "@/lib/creation-submission-contract";
 import { actorFrom } from "@/lib/server/audit";
 import { getServerContext } from "@/lib/server/context";
 import {
 	type CreateRequestIdentity,
+	changedCreationSession,
 	createRequestConflictResponse,
 	createRequestGoneResponse,
 	createRequestIdentity,
@@ -146,6 +152,8 @@ const querySchema = z.object({
 
 /** Lean projection (never plan/stepLog/snapshots in lists — schema contract). */
 export async function GET(req: Request) {
+	const digest = req.headers.get(CREATE_REQUEST_DIGEST_HEADER);
+	if (digest !== null) return readCreationReceipt(req, digest);
 	const url = new URL(req.url);
 	const parsed = querySchema.safeParse({
 		limit: url.searchParams.get("limit") ?? undefined,
@@ -243,7 +251,7 @@ function verificationKeyResponse(
 async function ordinaryCreateReplay(
 	prisma: Awaited<ReturnType<typeof getServerContext>>["prisma"],
 	identity: CreateRequestIdentity,
-	matchesHistoricalDigest: (digest: string) => boolean,
+	matchesHistoricalDigest?: (digest: string) => boolean,
 ) {
 	const receipt = await lookupCreateRequest(
 		prisma,
@@ -267,6 +275,36 @@ async function ordinaryCreateReplay(
 		},
 		{ status: 200 },
 	);
+}
+
+/** A GET can recover an old Quick Launch even during a mixed-version rollout. */
+async function readCreationReceipt(req: Request, digest: string) {
+	const requestKey = req.headers.get("Idempotency-Key");
+	if (
+		!req.headers.has(CREATE_SESSION_HEADER) ||
+		!requestKey ||
+		!/^[A-Za-z0-9._:-]{1,200}$/u.test(requestKey) ||
+		!/^[a-f\d]{64}$/u.test(digest)
+	)
+		return jsonError(400, "Invalid creation receipt lookup");
+	try {
+		const ctx = await getServerContext();
+		const changed = changedCreationSession(req, ctx.tenant);
+		if (changed) return changed;
+		const replay = await ordinaryCreateReplay(ctx.prisma, {
+			requestKey,
+			requestSha256: digest,
+		});
+		const response =
+			replay ??
+			jsonError(404, "The creation request has not been accepted", {
+				code: CREATE_REQUEST_NOT_FOUND,
+			});
+		response.headers.set("Cache-Control", "private, no-store");
+		return response;
+	} catch (err) {
+		return routeError(err);
+	}
 }
 
 /**
@@ -312,6 +350,8 @@ export async function POST(req: Request) {
 	}
 	try {
 		const ctx = await getServerContext();
+		const changed = changedCreationSession(req, ctx.tenant);
+		if (changed) return changed;
 		if (ordinaryIdentity) {
 			ordinaryContext = ctx;
 			const replay = await ordinaryCreateReplay(

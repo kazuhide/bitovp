@@ -528,3 +528,40 @@ it("requires new HDR10+ metadata when recovering a withheld picture", () => {
 		],
 	});
 });
+
+it("recovers a withheld burn-in subtitle by rendition key after the rows are reordered", () => {
+	const original = {
+		renditions: [
+			{
+				key: "primary",
+				burnInSrt: {
+					inputKey: "web",
+					inputPath: "sub.srt?ticket=PRIVATE_FIXTURE",
+				},
+			},
+			{
+				key: "alternate",
+				burnInSrt: { inputKey: "web", inputPath: "alt.srt" },
+			},
+		],
+	};
+	const projected = {
+		renditions: [
+			{
+				key: "alternate",
+				burnInSrt: { inputKey: "web", inputPath: "alt.srt" },
+			},
+			{ key: "primary", burnInSrt: { inputKey: "web", inputPath: "" } },
+		],
+	};
+	const recovery = withheldPlanSources(
+		markWithheldPlanSources(original, projected),
+	);
+	expect(recovery?.labels).toEqual(["primary:burnInSrt"]);
+	expect(recovery?.fill(["new.srt"])).toMatchObject({
+		renditions: [
+			{ key: "alternate", burnInSrt: { inputPath: "alt.srt" } },
+			{ key: "primary", burnInSrt: { inputPath: "new.srt" } },
+		],
+	});
+});

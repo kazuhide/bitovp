@@ -544,6 +544,46 @@ it("keeps the replacement entered on reopen when the draft omitted its prior URL
 	expect(restored.inputFiles.map((row) => row.path)).toEqual([input.path, ""]);
 });
 
+it("retains both parts of the HDR10+ replacement when restoring a draft without its old picture", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const [main] = base.inputFiles;
+	if (!main) throw new Error("Missing primary file");
+	base.inputFiles = [{ ...main, path: "fresh/take.mxf" }];
+	base.sources = {
+		hdr10PlusStreams: [
+			{
+				key: "picture",
+				videoInputFile: main.key,
+				metadataInputPath: "fresh/take.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	const earlier = {
+		...base,
+		inputFiles: [{ ...main, path: "/clips:day@camera/take.mxf" }],
+		sources: {
+			hdr10PlusStreams: [
+				{
+					key: "picture",
+					videoInputFile: main.key,
+					metadataInputPath: "earlier/take.json",
+					selectionMode: "AUTO" as const,
+				},
+			],
+		},
+	};
+	const value = projectWizardDraft("vod", earlier);
+	expect(value.inputFiles).toMatchObject([{ path: "" }]);
+	const restored = restoreVodWizardDraft(base, { step: 2, value }, [
+		{ inputKey: main.inputKey, path: "fresh/take.mxf" },
+		{ inputKey: main.inputKey, path: "fresh/take.json" },
+	]);
+	expect(buildPlan(restored).hdr10PlusStreams).toMatchObject([
+		{ videoInputPath: "fresh/take.mxf", metadataInputPath: "fresh/take.json" },
+	]);
+});
+
 it("retains gains and attachment while a numbered Audio Mix source is awaiting its position", () => {
 	const base = structuredClone(DEFAULT_WIZARD_STATE);
 	const audio = base.audios[0];

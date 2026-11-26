@@ -1,9 +1,21 @@
 import { z } from "zod";
-import { apiFetch } from "./api";
+import { ApiError, apiFetch } from "./api";
+import {
+	CREATE_REQUEST_DIGEST_HEADER,
+	CREATE_REQUEST_NOT_FOUND,
+	canonicalCreateRequestJson,
+} from "./creation-submission-contract";
 
 type SubmissionStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 export type CreationSeed = { createdAt: number; nonce: string };
 export type CreationBody = (seed: CreationSeed, snapshot: unknown) => unknown;
+export type CreationCompatibility = {
+	legacy?: {
+		intent: unknown;
+		request(seed: CreationSeed): { body: unknown; replayOnly: boolean };
+		lookupWithheldPreset?: boolean;
+	};
+};
 export class CreationSubmissionError extends Error {
 	constructor(readonly reason: "storage" | "pendingLimit" | "response") {
 		super(reason);
@@ -15,6 +27,7 @@ const pendingSchema = baseSchema.extend({
 	digest: z.string().regex(/^[a-f0-9]{64}$/),
 	nonce: z.string().regex(/^[a-f0-9]{32}$/),
 	requestKey: z.string().regex(/^[A-Za-z0-9._:-]{1,200}$/),
+	format: z.literal("effective-template").optional(),
 });
 const stateSchema = z.object({
 	version: z.literal(1),
@@ -23,6 +36,7 @@ const stateSchema = z.object({
 	pending: z.array(pendingSchema).max(100),
 });
 type SubmissionState = z.infer<typeof stateSchema>;
+type PendingCreation = z.infer<typeof pendingSchema>;
 const inFlight = new WeakMap<object, Map<string, Promise<unknown>>>();
 
 function canonicalJson(value: unknown): string {
@@ -48,6 +62,12 @@ async function sha256(value: string) {
 	).join("");
 }
 
+export function creationErrorCode(error: unknown) {
+	if (!(error instanceof ApiError)) return undefined;
+	const details = z.object({ code: z.string() }).safeParse(error.details);
+	return details.success ? details.data.code : undefined;
+}
+
 /** Persist only request digests and random seed metadata, never plans or credentials.
  * Each browser tab owns its session storage; independent tabs create independent intents.
  */
@@ -57,10 +77,12 @@ export function createSubmissionClient(
 		storage,
 		send = apiFetch,
 		beforeSend,
+		headers = {},
 	}: {
 		storage: SubmissionStorage;
 		send?: (path: string, init: RequestInit) => Promise<unknown>;
 		beforeSend?: () => void;
+		headers?: Record<string, string>;
 	},
 ) {
 	const storageKey = `bitovp.creation-intent:${JSON.stringify(scope)}`;
@@ -84,6 +106,25 @@ export function createSubmissionClient(
 			throw new CreationSubmissionError("storage");
 		}
 	}
+	async function sendRequest(
+		receipt: PendingCreation,
+		body: unknown,
+		replayOnly = false,
+	) {
+		const digest = replayOnly
+			? await sha256(canonicalCreateRequestJson(body))
+			: undefined;
+		beforeSend?.();
+		return send(endpoint, {
+			method: replayOnly ? "GET" : "POST",
+			headers: {
+				...headers,
+				"Idempotency-Key": receipt.requestKey,
+				...(digest && { [CREATE_REQUEST_DIGEST_HEADER]: digest }),
+			},
+			...(replayOnly ? { cache: "no-store" } : { body: JSON.stringify(body) }),
+		});
+	}
 	return {
 		getSeed(): CreationSeed {
 			const state = read();
@@ -100,7 +141,11 @@ export function createSubmissionClient(
 				nonce: state.formSeed.id.replaceAll("-", ""),
 			};
 		},
-		submit<T>(intent: unknown, buildBody?: CreationBody): Promise<T> {
+		submit<T>(
+			intent: unknown,
+			buildBody?: CreationBody,
+			compatibility?: CreationCompatibility,
+		): Promise<T> {
 			try {
 				const serialized = canonicalJson(intent);
 				const flightKey = `${storageKey}:${serialized}`;
@@ -123,6 +168,44 @@ export function createSubmissionClient(
 					let pending = current.pending.find(
 						(entry) => entry.digest === digest,
 					);
+					let build = buildBody;
+					let replayOnly = false;
+					let result: unknown;
+					let foundReplay = false;
+					const older = current.pending.filter((entry) => !entry.format);
+					const legacy = compatibility?.legacy;
+					if (!pending && legacy && older.length) {
+						const legacyDigest = await sha256(canonicalJson(legacy.intent));
+						pending = older.find((entry) => entry.digest === legacyDigest);
+						if (pending) {
+							const request = legacy.request(pending);
+							build = () => request.body;
+							replayOnly = request.replayOnly;
+						} else if (legacy.lookupWithheldPreset) {
+							// A newly protected template can no longer recreate its
+							// old intent digest. Compare its reconstructed wire body
+							// with admitted requests without starting any provider work.
+							let possiblyPending = false;
+							for (const receipt of older) {
+								try {
+									result = await sendRequest(
+										receipt,
+										legacy.request(receipt).body,
+										true,
+									);
+									pending = receipt;
+									foundReplay = true;
+									break;
+								} catch (error) {
+									const code = creationErrorCode(error);
+									if (code === CREATE_REQUEST_NOT_FOUND) possiblyPending = true;
+									else if (code !== "CREATE_REQUEST_CONFLICT") throw error;
+								}
+							}
+							if (!foundReplay && possiblyPending)
+								throw new CreationSubmissionError("response");
+						}
+					}
 					if (!pending) {
 						if (current.pending.length >= 100)
 							throw new CreationSubmissionError("pendingLimit");
@@ -134,19 +217,31 @@ export function createSubmissionClient(
 						if (!pending) {
 							if (current.pending.length >= 100)
 								throw new CreationSubmissionError("pendingLimit");
-							pending = { ...base, digest, requestKey, nonce };
+							pending = {
+								...base,
+								digest,
+								requestKey,
+								nonce,
+								...(compatibility && { format: "effective-template" as const }),
+							};
 							write({ ...current, pending: [...current.pending, pending] });
 						}
 					}
-					const payload = buildBody
-						? buildBody(pending, JSON.parse(serialized))
-						: JSON.parse(serialized);
-					beforeSend?.();
-					const result = await send(endpoint, {
-						method: "POST",
-						headers: { "Idempotency-Key": pending.requestKey },
-						body: JSON.stringify(payload),
-					});
+					if (!foundReplay) {
+						const payload = build
+							? build(pending, JSON.parse(serialized))
+							: JSON.parse(serialized);
+						try {
+							result = await sendRequest(pending, payload, replayOnly);
+						} catch (error) {
+							if (
+								replayOnly &&
+								creationErrorCode(error) === CREATE_REQUEST_NOT_FOUND
+							)
+								throw new CreationSubmissionError("response");
+							throw error;
+						}
+					}
 					if (!z.object({ id: z.uuid() }).safeParse(result).success)
 						throw new CreationSubmissionError("response");
 					flights.delete(flightKey);
@@ -157,7 +252,7 @@ export function createSubmissionClient(
 						const latest = read();
 						latest.pending = latest.pending.filter(
 							(entry) =>
-								entry.digest !== digest ||
+								entry.digest !== pending.digest ||
 								entry.requestKey !== pending.requestKey,
 						);
 						if (!anotherActive && latest.base?.id === pending.id)

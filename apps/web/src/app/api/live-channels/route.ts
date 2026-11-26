@@ -31,11 +31,13 @@ import {
 import type { Prisma } from "@bitovp/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { CREATE_SESSION_HEADER } from "@/lib/creation-submission-contract";
 import { aisaLiveAccessAllowed } from "@/lib/server/aisa-live-access";
 import { actorFrom } from "@/lib/server/audit";
 import { getServerContext, type ServerContext } from "@/lib/server/context";
 import {
 	type CreateRequestIdentity,
+	changedCreationSession,
 	createRequestConflictResponse,
 	createRequestGoneResponse,
 	createRequestIdentity,
@@ -537,10 +539,19 @@ export async function POST(req: Request) {
 	}
 	let ordinaryIdentity: CreateRequestIdentity | undefined;
 	let ordinaryContext: Awaited<ReturnType<typeof getServerContext>> | undefined;
+	if (req.headers.has(CREATE_SESSION_HEADER)) {
+		try {
+			ordinaryContext = await getServerContext();
+			const changed = changedCreationSession(req, ordinaryContext.tenant);
+			if (changed) return changed;
+		} catch (err) {
+			return routeError(err);
+		}
+	}
 	// The AISA gate precedes both replay branches as well as new paid dispatch.
 	if (isAisaManagedLivePlan(body.data.plan)) {
 		try {
-			ordinaryContext = await getServerContext();
+			ordinaryContext ??= await getServerContext();
 			if (!aisaLiveAccessAllowed(ordinaryContext.tenant))
 				return jsonError(404, "Not found");
 		} catch (err) {
@@ -597,7 +608,7 @@ export async function POST(req: Request) {
 	}
 	if (ordinaryIdentity) {
 		try {
-			ordinaryContext = await getServerContext();
+			ordinaryContext ??= await getServerContext();
 			const replay = await ordinaryCreateReplay(
 				ordinaryContext.prisma,
 				ordinaryIdentity,

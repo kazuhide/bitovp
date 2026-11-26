@@ -4,12 +4,13 @@ import {
 	type EncodingPlan,
 	encodingPlanSchema,
 	instantiateTemplatePlan,
+	mapDestinationPaths,
 	type PresetLaunchDefaults,
 	renderTemplateOutputPrefix,
 	type TemplateSourceParam,
 	templateSourceSites,
 } from "@bitovp/core";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { StoragePicker } from "@/components/storage-picker";
@@ -25,6 +26,7 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { useCreationSubmission } from "@/lib/creation-submission-hook";
 import { localizedCustomerError } from "@/lib/customer-error";
 import { useT } from "@/lib/i18n/context";
+import { useWizardSubmission } from "@/lib/wizard-submission-hook";
 import {
 	BROWSABLE_STORAGE_PROVIDERS,
 	storageKindForProvider,
@@ -40,6 +42,34 @@ type PresetDetail = {
 
 const DEFAULT_PREFIX_TEMPLATE = "{template}/{date}-{uuid}";
 const DEFAULT_NAME_TEMPLATE = "{template} {date}";
+
+/** Reconstruct the destination tokens shipped in 1.3.5 for receipt lookup. */
+function legacyOutputPrefix(
+	template: string,
+	plan: EncodingPlan,
+	templateName: string,
+	renderedAt: number,
+	nonce: string,
+) {
+	const path = templateSourceSites(plan)[0]?.currentPath ?? "";
+	const file = path.split("/").pop() ?? path;
+	const dot = file.lastIndexOf(".");
+	const tokens: Record<string, string> = {
+		basename: dot > 0 ? file.slice(0, dot) : file,
+		ext: dot > 0 ? file.slice(dot + 1).toLowerCase() : "",
+		date: new Date(renderedAt).toISOString().slice(0, 10),
+		uuid: nonce,
+		template: templateName,
+	};
+	return template
+		.replace(
+			/\{(basename|ext|date|uuid|template)\}/g,
+			(_, key: string) => tokens[key] ?? "",
+		)
+		.replace(/\/{2,}/g, "/")
+		.replace(/^\//, "")
+		.replace(/\/$/, "");
+}
 
 /**
  * The §4.1 minimal launch form : sources (the ask-list DERIVED
@@ -198,8 +228,8 @@ export function LaunchDialog({
 		creation.seed,
 		plan,
 	]);
-	const launch = useMutation({
-		mutationFn: async () => {
+	const launch = useWizardSubmission(
+		() => {
 			if (!detail.data || !creation.seed || !presetBody) {
 				throw new Error("not loaded");
 			}
@@ -223,7 +253,7 @@ export function LaunchDialog({
 							: i.message,
 					),
 				);
-				return null;
+				return async () => null;
 			}
 			setIssues([]);
 			// A reopened attempt may have reached the same final inputs through
@@ -235,29 +265,93 @@ export function LaunchDialog({
 				presetRevision: detail.data.revision,
 				renderedAt: creation.seed.createdAt,
 			};
-			return creation.submit<{ id: string }>(intent, (seed) => {
+			const oldSources = Object.fromEntries(
+				templateSourceSites(result.plan).map((site) => {
+					const input = result.plan.inputs.find(
+						(entry) => entry.key === site.inputKey,
+					);
+					return [
+						site.siteId,
+						{
+							objectKey: site.currentPath,
+							...(input && "bucket" in input && "credentialId" in input
+								? { bucket: input.bucket, credentialId: input.credentialId }
+								: {}),
+						},
+					];
+				}),
+			);
+			function render(nonce: string) {
 				const rendered = instantiateTemplatePlan({
 					...params,
 					now: new Date(intent.renderedAt),
-					uuid: seed.nonce,
+					uuid: nonce,
 				});
 				if (!rendered.ok)
 					throw new Error("Template parameters changed before submission");
-				return {
-					plan: rendered.plan,
-					presetId: intent.presetId,
-					presetRevision: intent.presetRevision,
-				};
-			});
+				return rendered;
+			}
+			const provenance = {
+				presetId: intent.presetId,
+				presetRevision: intent.presetRevision,
+			};
+			const legacy =
+				result.plan.hdr10PlusStreams.length || result.plan.captionStreams.length
+					? undefined
+					: {
+							lookupWithheldPreset: replacement.resolvedPaths !== undefined,
+							intent: {
+								...params,
+								sources: oldSources,
+								...provenance,
+								renderedAt: intent.renderedAt,
+							},
+							request({ nonce }: { nonce: string }) {
+								const rendered = render(nonce);
+								const {
+									hdr10PlusStreams: _hdr,
+									captionStreams: _captions,
+									...plan
+								} = rendered.plan;
+								const prefix = legacyOutputPrefix(
+									params.outputPrefixTemplate,
+									rendered.plan,
+									params.templateName,
+									intent.renderedAt,
+									nonce,
+								);
+								const replayOnly = prefix !== rendered.outputPrefix;
+								return {
+									body: {
+										...provenance,
+										plan: replayOnly
+											? mapDestinationPaths(
+													plan,
+													(path) =>
+														prefix + path.slice(rendered.outputPrefix.length),
+												)
+											: plan,
+									},
+									replayOnly,
+								};
+							},
+						};
+			return () =>
+				creation.submit<{ id: string }>(
+					intent,
+					(seed) => ({ ...provenance, plan: render(seed.nonce).plan }),
+					{ legacy },
+				);
 		},
-		onSuccess: (created) => {
+		() => undefined,
+		(created) => {
 			if (created) {
 				replacement.clear();
 				onClose();
 				router.push(`/vod/jobs/${created.id}`);
 			}
 		},
-	});
+	);
 
 	const pickerSeedCredential = useMemo(() => {
 		if (pickingSite === null || !plan) {

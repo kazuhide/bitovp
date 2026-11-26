@@ -39,9 +39,9 @@ describe("schema-derived organization enforcement coverage", () => {
 		expect(TENANT_MODEL_RELATIONS).toEqual(relations);
 	});
 	it("classifies every model and forces RLS, immutable ownership and no ambient default for every tenant table", () => {
-		expect(models.length).toBe(68);
+		expect(models.length).toBe(69);
 		const tenant = models.filter((model) => !global.has(model[1] ?? ""));
-		expect(tenant.length).toBe(63);
+		expect(tenant.length).toBe(64);
 		for (const model of tenant) {
 			const name = model[1];
 			expect(model[2], name).toMatch(

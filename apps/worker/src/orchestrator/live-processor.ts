@@ -152,7 +152,7 @@ import {
 	lockProvisionAiring,
 	type ProvisionEnd,
 } from "../live/provision-outcome";
-import type { EmitProductEvent } from "../notify/emitter";
+import { type EmitProductEvent, emitScheduleFired } from "../notify/emitter";
 import {
 	finishResetOwner,
 	type ResetEncodingJournal,
@@ -5616,12 +5616,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			if (claim.status === "STALE_RUN") return "STALE_RUN";
 			if (claim.status === "BUSY") return "PROVISIONING";
 			if (claim.firstHandoff)
-				await deps.emitEvent?.({
-					kind: "SCHEDULE_FIRED",
-					scheduleId: scheduled.id,
-					liveChannelId,
-					path: `/live/${liveChannelId}`,
-				});
+				void emitScheduleFired(
+					{ id: scheduled.id, liveChannelId },
+					deps.emitEvent,
+				);
 			if (claim.status === "RUNNING") return "RUNNING";
 		} else if ((await deps.prisma.liveChannel.updateMany(lease)).count === 0) {
 			// Another worker holds a live lease on this channel.

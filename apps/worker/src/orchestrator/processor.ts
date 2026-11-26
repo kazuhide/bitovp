@@ -187,6 +187,14 @@ export function claimableWhere(
 	return {
 		id: encodingJobId,
 		status: { in: statuses },
+		...attemptLeaseAvailable(now),
+	};
+}
+
+export function attemptLeaseAvailable(
+	now: Date,
+): Pick<ReturnType<typeof claimableWhere>, "OR"> {
+	return {
 		OR: [
 			{ attemptClaimedAt: null },
 			{ attemptClaimedAt: { lt: new Date(now.getTime() - ATTEMPT_LEASE_MS) } },

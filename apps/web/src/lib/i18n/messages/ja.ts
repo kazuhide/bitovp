@@ -5,6 +5,31 @@ const PROVISIONS_AT_CREATE =
 	"チャンネルは作成後すぐに起動準備を始めます。Live Encoding の料金プランによっては、入力送出予定時刻より前にも料金が発生する場合があります";
 
 export const ja = {
+	encodingNative: {
+		title: "Bitmovin Encoding リソース",
+		caption: "Bitmovin Encoding アカウントのリソースを確認します。",
+		resource: "リソース",
+		templates: "テンプレート",
+		watchFolders: "監視フォルダー",
+		inputs: "入力",
+		protocol: "ストレージ・プロトコル",
+		region: "クラウドリージョン",
+		templateType: "テンプレート種別",
+		allTypes: "すべての種別",
+		details: "詳細",
+		statusLabel: "状態",
+		status: { STOPPED: "停止", STARTED: "稼働中", ERROR: "エラー" },
+		created: "作成日時",
+		modified: "更新日時",
+		inputId: "入力 ID",
+		outputs: "出力",
+		outputCount: "出力数",
+		empty: "このページにリソースはありません。",
+		loadFailed: "Bitmovin のリソースを読み込めませんでした。",
+		detailFailed: "リソースの詳細を読み込めませんでした。",
+		pagination: "リソースのページ",
+		range: "{total}件中 {start}〜{end}件",
+	},
 	streamConditions: {
 		title: "入力条件",
 		enabled: "入力条件（設定あり）",

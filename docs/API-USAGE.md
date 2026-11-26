@@ -86,6 +86,7 @@ tests):
   `/api/credentials`, `/api/bitmovin-accounts`, `/api/infrastructure/prewarmed-pools`,
   `/api/live/standby-pools`, settings (including `/api/settings/startup-probes/run`),
   `/api/live-channels/[id]/runs/[runId]/heartbeats/export`,
+  `/api/encoding-native`,
   and `POST /api/per-title-simulator/encodings/import`.
   Refusal: `403 {"error":"This action requires the ADMIN role","minRole":"ADMIN"}`.
   OPERATOR is also required for credential-bearing reads at
@@ -642,6 +643,26 @@ curl -H "Authorization: Bearer $TOKEN" "https://ovp.example.com/api/sample-prese
 curl -H "Authorization: Bearer $TOKEN" https://ovp.example.com/api/presets
 curl -H "Authorization: Bearer $TOKEN" "https://ovp.example.com/api/presets/<id>"   # body included
 ```
+
+### Bitmovin Encoding resource inventory
+
+`GET /api/encoding-native` (ADMIN) reads resources in the saved
+`bitmovinAccountId` (UUID) from the current organization. Set `kind=templates`,
+`kind=watch-folders`, `kind=inputs`, or `kind=outputs`. Inputs and outputs
+require `protocol`, the resource's Bitmovin API type slug, such as
+`s3`, `s3-role-based`, `gcs`, or `srt` (input). The Settings inventory
+shows the available types for each direction. Collection queries accept `offset` (default 0) and
+`limit` (1–100, default 25). Templates also accept `type=VOD` or `type=LIVE`.
+The collection returns `{kind,offset,totalCount,items}`. To read a single
+resource, pass its UUID as `id` instead of pagination and type filters. The
+detail response is `{kind,item}`. Input and output responses also include `protocol`.
+
+Items contain the ID and available name, timestamps, template type or watch
+status. Watch-folder details can include the input ID and output count.
+Input and output metadata includes the cloud region when present.
+Responses are private and `no-store`. Template download URLs, connection credentials,
+storage paths, and provider diagnostics are kept server-side. Missing accounts and details
+return 404. Invalid or failed upstream responses return 502.
 
 ## App name and icon
 

@@ -45,6 +45,12 @@ const CUSTOMER_SURFACE: PageAccessRule = {
  */
 export const PAGE_ACCESS_RULES: readonly PageAccessRule[] = [
 	{
+		prefix: "/settings/encoding-native",
+		audience: "operator",
+		minRole: "ADMIN",
+		reason: "Account-wide Encoding resources require the ADMIN API",
+	},
+	{
 		prefix: "/settings/clip-editing",
 		audience: "operator",
 		minRole: "ADMIN",

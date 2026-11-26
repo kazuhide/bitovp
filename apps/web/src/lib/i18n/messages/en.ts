@@ -27,6 +27,31 @@ const PROVISIONS_AT_CREATE =
 	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
+	encodingNative: {
+		title: "Bitmovin Encoding resources",
+		caption: "Browse resources in a Bitmovin Encoding account.",
+		resource: "Resource",
+		templates: "Templates",
+		watchFolders: "Watch folders",
+		inputs: "Inputs",
+		protocol: "Storage or protocol",
+		region: "Cloud region",
+		templateType: "Template type",
+		allTypes: "All types",
+		details: "Details",
+		statusLabel: "Status",
+		status: { STOPPED: "Stopped", STARTED: "Started", ERROR: "Error" },
+		created: "Created",
+		modified: "Updated",
+		inputId: "Input ID",
+		outputs: "Outputs",
+		outputCount: "Output count",
+		empty: "No resources on this page.",
+		loadFailed: "Could not load resources from Bitmovin.",
+		detailFailed: "Could not load resource details.",
+		pagination: "Resource pages",
+		range: "{start}–{end} of {total}",
+	},
 	streamConditions: {
 		title: "Input conditions",
 		enabled: "Input conditions set",

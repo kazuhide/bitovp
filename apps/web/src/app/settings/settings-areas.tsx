@@ -71,6 +71,11 @@ const AUTOMATION: readonly Area[] = [
 		captionKey: "settingsCatalog.watchCaption",
 	},
 	{
+		titleKey: "encodingNative.title",
+		href: "/settings/encoding-native",
+		captionKey: "encodingNative.caption",
+	},
+	{
 		titleKey: "settingsCatalog.notifications",
 		href: "/settings/notifications",
 		captionKey: "settingsCatalog.notificationsCaption",

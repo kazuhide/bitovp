@@ -48,11 +48,13 @@ export const FEATURES = Object.freeze(
 			id: "submission-idempotency",
 			workspace: "@bitovp/web",
 			directory: "apps/web",
-			description: "VOD and Live creation routes and request identity",
+			description:
+				"VOD, Live and single-pass feeder creation and request identity",
 			files: {
 				"src/lib/server/create-request.test.ts": 11,
 				"src/app/api/encoding-jobs/route.test.ts": 71,
 				"src/app/api/live-channels/route.test.ts": 92,
+				"src/app/api/feeder-sessions/route.test.ts": 47,
 			},
 		},
 		{

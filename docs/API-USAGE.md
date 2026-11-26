@@ -548,6 +548,13 @@ Stop also stops attached feeders. `DELETE /api/live-channels/<id>` removes a sto
 (omitted = `LOOP`). `ONCE` sends the complete copy-compatible H.264/AAC source
 once, preserves its audio tail and edit list, and never restarts after an exit,
 worker takeover, or an uncertain dispatch. It rejects `switchFromActive: true`.
+For `ONCE`, send an `Idempotency-Key` and reuse it with the same request body
+on every retry. First acceptance returns `201`. Replays return `200`, the
+original session ID and `replayed: true`. Changed content returns `409`.
+Deleting the session spends the key permanently and subsequent replays return
+`410`. If queueing returns `503 FEEDER_ENQUEUE_UNCONFIRMED`, retry with the
+same key. A session still waiting to start uses its original queue job ID.
+
 The normal feeder list/detail includes `playbackMode`, `playbackDispatchedAt`
 and `playbackReceipt`; a natural EOF receipt requires exit 0, final progress,
 source duration and the known video frame count. An operator stop has no EOF

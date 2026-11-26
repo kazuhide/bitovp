@@ -2,6 +2,8 @@
 
 `POST /api/feeder-sessions` の `playbackMode` を `ONCE` にすると、指定素材を先頭から末尾まで一度だけ送る。省略時は従来の `LOOP`。通常の認証、tenant、source seal、provider run、owner lease、publisher claim の制御を使用する。
 
+`ONCE` には `Idempotency-Key` ヘッダーが必要。応答を受け取れなかったら同じキーと本文で再試行する。初回は `201`、再試行は同じセッション ID と `replayed: true` を含む `200` を返す。本文が変わった場合は `409`、セッションを削除済みの場合は `410` を返す。キュー投入の応答を確認できず `503` が返った場合も、同じキーで再試行する。セッションが開始待ちなら、元のキュー ID で投入を試みる。
+
 ```json
 {
   "liveChannelId": "<channel UUID>",

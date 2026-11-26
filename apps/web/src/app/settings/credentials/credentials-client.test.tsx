@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { apiFetch } from "@/lib/api";
 import { renderLocalized as renderL } from "@/test/render";
 
 vi.mock("@/lib/auth/use-role-access", () => import("@/test/owner-role-access"));
@@ -64,6 +66,45 @@ describe("the credentials screen's deep link", () => {
 			render(q);
 			expect(screen.queryByRole("dialog"), q).toBeNull();
 		}
+	});
+});
+
+it("renames a stored S3 role without dropping its legacy External ID", async () => {
+	const config = {
+		roleArn: "arn:aws:iam::123456789012:role/bitmovin",
+		externalId: "legacy-dedicated-role-id",
+		region: "ap-northeast-1",
+		publicBaseUrls: { "vod-bucket": "https://cdn.example.com/vod" },
+	};
+	rows.value = [
+		{
+			id: "stored-s3-role",
+			label: "Old role label",
+			provider: "AWS_S3_ROLE_BASED",
+			config,
+			hasSecret: false,
+		},
+	];
+	const user = userEvent.setup();
+	render("");
+	await user.click(await screen.findByRole("button", { name: "Edit" }));
+	const dialog = within(screen.getByRole("dialog"));
+	expect(dialog.queryByRole("textbox", { name: /external id/i })).toBeNull();
+	const label = dialog.getByLabelText("Label");
+	await user.clear(label);
+	await user.type(label, "New role label");
+	await user.click(dialog.getByRole("button", { name: "Save changes" }));
+
+	const request = await waitFor(() => {
+		const call = vi
+			.mocked(apiFetch)
+			.mock.calls.find(([path]) => path === "/api/credentials/stored-s3-role");
+		expect(call?.[1]?.method).toBe("PATCH");
+		return call;
+	});
+	expect(JSON.parse(String(request?.[1]?.body))).toEqual({
+		label: "New role label",
+		config,
 	});
 });
 

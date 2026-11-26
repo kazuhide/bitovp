@@ -168,6 +168,13 @@ export function CredentialForm({
 		>;
 		let parsed: z.ZodSafeParseResult<unknown>;
 		if (isEdit) {
+			if (credential.provider === "AWS_S3_ROLE_BASED") {
+				// Editing replaces the config. Preserve legacy data hidden by the form.
+				const externalId = credential.config.externalId;
+				if (typeof externalId === "string" && externalId.length > 0) {
+					config.externalId = externalId;
+				}
+			}
 			parsed = updateCredentialSchema(provider).safeParse({
 				label: values.label,
 				config,

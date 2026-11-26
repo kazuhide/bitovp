@@ -1531,6 +1531,32 @@ export function legacyVodMetadataOnly(
 			recoverRenditionSettings(base, "vod", draft) === null)
 	);
 }
+
+function copyBurnInFiles(base: WizardState, videos: unknown) {
+	const files = new Map<string, string | null>();
+	for (const video of records(videos)) {
+		const extras = draftRecord(video.extras) ? video.extras : null;
+		const burnIn = extras?.burnInSrt;
+		if (!draftRecord(burnIn) || typeof burnIn.inputFile !== "string") continue;
+		// The generated file key can shift when two replacement paths dedupe.
+		// The rendition key still identifies which subtitle the operator filled.
+		const matches =
+			typeof extras?.key === "string"
+				? base.videos.filter((row) => row.extras?.key === extras.key)
+				: [];
+		const file =
+			matches.length === 1
+				? (matches[0]?.extras?.burnInSrt?.inputFile ?? null)
+				: null;
+		const previous = files.get(burnIn.inputFile);
+		files.set(
+			burnIn.inputFile,
+			previous === undefined || previous === file ? file : null,
+		);
+	}
+	return files;
+}
+
 export function restoreVodWizardDraft(
 	base: WizardState,
 	draft: WizardDraft,
@@ -1541,18 +1567,27 @@ export function restoreVodWizardDraft(
 		: recoverRenditionSettings(base, "vod", draft);
 	if (Array.isArray(value?.inputFiles) && replacementPaths?.length) {
 		const sameInput = [
-			"key",
 			"inputKey",
 			"kind",
 			"credentialId",
 			"bucket",
 			"region",
 		] as const;
+		const burnInFiles = copyBurnInFiles(base, value.videos);
 		const repairedFiles = new Set<string>();
 		const inputFiles = value.inputFiles.map((saved: unknown) => {
-			if (!draftRecord(saved) || saved.path !== "") return saved;
-			const replacement = base.inputFiles.find((row) =>
-				sameInput.every((field) => row[field] === saved[field]),
+			if (
+				!draftRecord(saved) ||
+				typeof saved.key !== "string" ||
+				saved.path !== ""
+			)
+				return saved;
+			const pairedFile = burnInFiles.get(saved.key);
+			const fileKey = pairedFile === undefined ? saved.key : pairedFile;
+			const replacement = base.inputFiles.find(
+				(row) =>
+					row.key === fileKey &&
+					sameInput.every((field) => row[field] === saved[field]),
 			);
 			if (
 				!replacement ||
@@ -1563,7 +1598,7 @@ export function restoreVodWizardDraft(
 				)
 			)
 				return saved;
-			repairedFiles.add(replacement.key);
+			repairedFiles.add(saved.key);
 			return { ...saved, path: replacement.path };
 		});
 		const sources = value.sources;

@@ -32,7 +32,11 @@ export function changedCreationSession(
 	tenant?: AuthenticatedContext,
 ) {
 	const expected = req.headers.get(CREATE_SESSION_HEADER);
-	if (expected === null) return undefined;
+	// Bearer credentials bind themselves to a fixed actor. A cookie session can
+	// change while an older browser bundle still has a pending click in memory.
+	const cookieSession =
+		tenant?.payload?.mode === "users" || tenant?.actor === "session";
+	if (expected === null && !cookieSession) return undefined;
 	if (
 		tenant &&
 		!tenant.isImpersonating &&
@@ -54,7 +58,7 @@ export function changedCreationSession(
 		)
 			return undefined;
 	}
-	return jsonError(409, "The creation session has changed", {
+	return jsonError(409, "Reload the page before creating this resource", {
 		code: CREATE_SESSION_CHANGED,
 	});
 }

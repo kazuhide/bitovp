@@ -85,6 +85,7 @@ const prismaMock = {
 	),
 };
 
+let verifiedUserSession = false;
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
 		tenant: {
@@ -94,6 +95,7 @@ vi.mock("@/lib/server/context", () => ({
 			effectiveUserId: "current",
 			role: "OPERATOR",
 			isImpersonating: false,
+			payload: verifiedUserSession ? { mode: "users" } : undefined,
 		},
 		prisma: prismaMock,
 		bitmovinAccounts: { get: getAccount },
@@ -145,6 +147,7 @@ function postRequest(body: unknown, actor?: string): Request {
 }
 
 beforeEach(() => {
+	verifiedUserSession = false;
 	qcVmafEnabled = true;
 	vi.clearAllMocks();
 	createRequests.clear();
@@ -1117,7 +1120,18 @@ describe("ordinary GUI create retries", () => {
 			body: JSON.stringify(body),
 		});
 	}
+	it("rejects an unbound request from a browser tab left open across the upgrade", async () => {
+		verifiedUserSession = true;
+		const response = await POST(keyedRequest({ plan: planWithAccount() }));
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			details: { code: "CREATE_SESSION_CHANGED" },
+		});
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
 	it("refuses creation when another operator now owns the same organization's session", async () => {
+		verifiedUserSession = true;
 		const request = keyedRequest({ plan: planWithAccount() });
 		request.headers.set("X-BitOVP-Create-Session", '["org","clicked"]');
 		const response = await POST(request);

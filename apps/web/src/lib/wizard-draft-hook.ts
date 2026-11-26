@@ -71,18 +71,21 @@ export function useWizardDraft({
 		: canonicalKey;
 	useEffect(() => {
 		if (!legacyCopiedJobId || !canonicalKey || !identityKey) return;
+		let slot = canonicalKey;
+		try {
+			slot = copiedJobDraftSlot(
+				JSON.parse(identityKey),
+				legacyCopiedJobId,
+				canonicalKey,
+				localStorage,
+			);
+		} catch {
+			// The browser can deny even access to the storage object.
+		}
 		setCopySlot((current) =>
 			current?.canonicalKey === canonicalKey
 				? current
-				: {
-						canonicalKey,
-						key: copiedJobDraftSlot(
-							JSON.parse(identityKey),
-							legacyCopiedJobId,
-							canonicalKey,
-							localStorage,
-						),
-					},
+				: { canonicalKey, key: slot },
 		);
 	}, [legacyCopiedJobId, canonicalKey, identityKey]);
 	const currentKey = useRef(key);

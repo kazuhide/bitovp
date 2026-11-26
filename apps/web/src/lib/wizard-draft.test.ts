@@ -544,6 +544,64 @@ it("keeps the replacement entered on reopen when the draft omitted its prior URL
 	expect(restored.inputFiles.map((row) => row.path)).toEqual([input.path, ""]);
 });
 
+it("keeps each burn-in replacement with its rendition when two paths now refer to the same file", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const primary = base.inputFiles[0];
+	const video = base.videos[0];
+	if (!primary || !video) throw new Error("Missing video fixture");
+	const source = {
+		kind: "HTTPS" as const,
+		inputKey: "captions",
+		credentialId: "",
+		bucket: "media.invalid",
+	};
+	const first = { ...source, key: "captions", path: "subtitles/first.srt" };
+	const second = {
+		...source,
+		key: "captions-2",
+		path: "subtitles/old.srt?ticket=OLD_FIXTURE",
+	};
+	const third = { ...source, key: "captions-3", path: "subtitles/third.srt" };
+	const rendition = (key: string, inputFile: string) => ({
+		...video,
+		extras: { key, burnInSrt: { inputFile } },
+	});
+	const saved = projectWizardDraft("vod", {
+		...base,
+		inputFiles: [primary, first, second, third],
+		videos: [
+			rendition("first", first.key),
+			rendition("second", second.key),
+			rendition("third", third.key),
+		],
+	});
+	expect(saved.inputFiles).toMatchObject([
+		{},
+		{ path: first.path },
+		{ path: "" },
+		{ path: third.path },
+	]);
+	const newThirdPath = "subtitles/third-replacement.srt";
+	base.inputFiles = [
+		primary,
+		first,
+		{ ...third, key: second.key, path: newThirdPath },
+	];
+	base.videos = [
+		rendition("first", first.key),
+		rendition("second", first.key),
+		rendition("third", second.key),
+	];
+	const restored = restoreVodWizardDraft(base, { step: 2, value: saved }, [
+		{ inputKey: source.inputKey, path: first.path },
+		{ inputKey: source.inputKey, path: newThirdPath },
+	]);
+	const restoredSecondFile = restored.videos[1]?.extras?.burnInSrt?.inputFile;
+	expect(
+		restored.inputFiles.find((file) => file.key === restoredSecondFile)?.path,
+	).toBe(first.path);
+});
+
 it("retains both parts of the HDR10+ replacement when restoring a draft without its old picture", () => {
 	const base = structuredClone(DEFAULT_WIZARD_STATE);
 	const [main] = base.inputFiles;

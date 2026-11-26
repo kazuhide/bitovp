@@ -98,6 +98,7 @@ const prismaMock = {
 	auditLog: { create: vi.fn(async () => ({})) },
 };
 
+let verifiedUserSession = false;
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
 		tenant: {
@@ -108,6 +109,7 @@ vi.mock("@/lib/server/context", () => ({
 			role: "ADMIN",
 			actorRole: "ADMIN",
 			isImpersonating: false,
+			payload: verifiedUserSession ? { mode: "users" } : undefined,
 		},
 		prisma: prismaMock,
 		bitmovinAccounts: { get: getAccount },
@@ -234,6 +236,7 @@ function postRequest(body: unknown, actor?: string): Request {
 }
 
 beforeEach(() => {
+	verifiedUserSession = false;
 	vi.clearAllMocks();
 	vi.stubEnv("BITOVP_AISA_LIVE_PREVIEW_USER_ID", aisaOwnerId);
 	createRequests.clear();
@@ -1790,7 +1793,18 @@ describe("ordinary GUI create retries", () => {
 			body: JSON.stringify(body),
 		});
 	}
+	it("rejects an unbound request from a browser tab left open across the upgrade", async () => {
+		verifiedUserSession = true;
+		const response = await POST(keyedRequest({ plan: withAccount() }));
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			details: { code: "CREATE_SESSION_CHANGED" },
+		});
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
 	it("rejects a paused creation bound to a different operator in the same organization", async () => {
+		verifiedUserSession = true;
 		const request = keyedRequest({ plan: withAccount() });
 		request.headers.set("X-BitOVP-Create-Session", '["org","clicked"]');
 		const response = await POST(request);

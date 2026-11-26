@@ -36,6 +36,28 @@ beforeEach(() => {
 	session.data.isImpersonating = false;
 });
 afterEach(() => vi.useRealTimers());
+it("opens a copied VOD job when the browser denies access to local storage", () => {
+	const storage = vi
+		.spyOn(window, "localStorage", "get")
+		.mockImplementation(() => {
+			throw new DOMException("Local storage disabled", "SecurityError");
+		});
+	try {
+		const hook = renderHook(() =>
+			useWizardDraft({
+				kind: "vod",
+				context: "job:copied:abc",
+				legacyCopiedJobId: "copied",
+				value,
+				step: 1,
+				onRestore: vi.fn(),
+			}),
+		);
+		expect(hook.result.current.available).toBe(false);
+	} finally {
+		storage.mockRestore();
+	}
+});
 it("offers manual restoration without replacing a saved draft with fresh defaults", () => {
 	writeWizardDraft(key, "vod", value, 4);
 	const restore = vi.fn();

@@ -1,4 +1,9 @@
-import { liveChannelPlanSchema } from "@bitovp/core";
+import {
+	encodingPlanSchema,
+	liveChannelPlanSchema,
+	markWithheldPlanSources,
+	withheldPlanSources,
+} from "@bitovp/core";
 import { applyVodInputFavorite, planToWizardState } from "@bitovp/core/wizard";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
@@ -603,6 +608,140 @@ it("keeps each burn-in replacement with its rendition when two paths now refer t
 	expect(
 		restored.inputFiles.find((file) => file.key === restoredSecondFile)?.path,
 	).toBe(first.path);
+});
+
+it.each([
+	["generated", ["v1080", "v720", "v540"]],
+	["same resolution", ["v1080_2000k_h264", "v1080_2000k_h265", "v1080_1000k"]],
+	["explicit", ["analysis", "preview", "program"]],
+] as const)("restores protected copy burn-in paths with %s rendition keys", (mode, keys) => {
+	const original = structuredClone(DEFAULT_WIZARD_STATE);
+	const [main] = original.inputFiles;
+	if (!main) throw new Error("Missing primary file");
+	const credentialId = "1f8edfe4-fc30-4a9a-89e3-a3e89d5245df";
+	original.name = "Caption copy";
+	original.accountId = "0f8edfe4-fc30-4a9a-89e3-a3e89d5245df";
+	original.output = { ...original.output, credentialId, bucket: "output" };
+	original.inputFiles = [
+		{ ...main, credentialId, bucket: "media", path: "picture.mp4" },
+		...keys.map((key, index) => ({
+			key: `captions-${index}`,
+			inputKey: "captions",
+			kind: "HTTPS" as const,
+			credentialId: "",
+			bucket: "media.example",
+			path: `subtitles/${key}.srt?ticket=PRIVATE_FIXTURE`,
+		})),
+	];
+	original.videos = keys.map((key, index) => ({
+		height: mode === "same resolution" ? 1080 : [1080, 720, 540][index]!,
+		bitrate: index === 2 ? 1_000_000 : 2_000_000,
+		codec: index === 1 ? "H265" : "H264",
+		extras: {
+			...(mode === "explicit" && { key }),
+			burnInSrt: { inputFile: `captions-${index}`, characterEncoding: "UTF_8" },
+		},
+	}));
+	const plan = encodingPlanSchema.parse(buildPlan(original));
+	const previous = planToWizardState(
+		plan as unknown as Record<string, unknown>,
+	);
+	expect(previous.videos.map((row) => row.extras?.key)).toEqual(
+		mode === "explicit" ? keys : [undefined, undefined, undefined],
+	);
+	const savedOrder = [...keys].reverse();
+	writeWizardDraft(
+		"copied-captions",
+		"vod",
+		{
+			...previous,
+			name: "Edited caption copy",
+			videos: [...previous.videos].reverse(),
+		},
+		3,
+	);
+	const stored = localStorage.getItem("copied-captions");
+	if (!stored) throw new Error("Expected an autosaved draft");
+	expect(stored).not.toContain("PRIVATE_FIXTURE");
+	// Older saves already have the height, bitrate and codec, but no
+	// explicit key on renditions whose plan used the standard defaults.
+	const legacy = JSON.parse(stored);
+	legacy.version = 1;
+	delete legacy.vodInputOrder;
+	delete legacy.renditionSettings;
+	localStorage.setItem("copied-captions", JSON.stringify(legacy));
+	const draft = readWizardDraft("copied-captions", "vod");
+	if (!draft) throw new Error("Expected the older draft to open");
+
+	const protectedPlan = markWithheldPlanSources(plan, {
+		...plan,
+		renditions: plan.renditions.map((row) =>
+			"burnInSrt" in row && row.burnInSrt
+				? { ...row, burnInSrt: { ...row.burnInSrt, inputPath: "" } }
+				: row,
+		),
+	});
+	const sources = withheldPlanSources(protectedPlan);
+	expect(sources?.labels).toEqual(keys.map((key) => `${key}:burnInSrt`));
+	const shared = "subtitles/shared.srt";
+	const distinct = "subtitles/distinct.srt";
+	const replacementPlan = sources?.fill([shared, shared, distinct]);
+	if (!sources || !replacementPlan) throw new Error("Expected a resolved copy");
+	const base = planToWizardState(
+		encodingPlanSchema.parse(replacementPlan) as unknown as Record<
+			string,
+			unknown
+		>,
+	);
+	expect(
+		base.inputFiles
+			.filter((file) => file.inputKey === "captions")
+			.map((file) => file.path),
+	).toEqual([shared, distinct]);
+	const restored = restoreVodWizardDraft(
+		base,
+		draft,
+		sources.resolvedInputPaths(replacementPlan),
+	);
+	const built = encodingPlanSchema.parse(buildPlan(restored));
+	expect(restored.name).toBe("Edited caption copy");
+	expect(restored.videos.map((row) => row.extras?.key)).toEqual(
+		mode === "explicit" ? savedOrder : [undefined, undefined, undefined],
+	);
+	expect(
+		built.renditions.flatMap((row) =>
+			"burnInSrt" in row && row.burnInSrt
+				? [[row.key, row.burnInSrt.inputPath, row.burnInSrt.characterEncoding]]
+				: [],
+		),
+	).toEqual(
+		savedOrder.map((key) => [
+			key,
+			key === keys[2] ? distinct : shared,
+			"UTF_8",
+		]),
+	);
+	if (mode === "same resolution") {
+		const ambiguous = projectWizardDraft("vod", {
+			...previous,
+			videos: previous.videos.map((row, index) =>
+				index === 1 ? { ...row, codec: "H264" } : row,
+			),
+		});
+		const unresolved = restoreVodWizardDraft(
+			base,
+			{ step: 3, value: ambiguous },
+			sources.resolvedInputPaths(replacementPlan),
+		);
+		expect(
+			unresolved.videos.map(
+				(video) =>
+					unresolved.inputFiles.find(
+						(file) => file.key === video.extras?.burnInSrt?.inputFile,
+					)?.path,
+			),
+		).toEqual(["", "", distinct]);
+	}
 });
 
 it("retains both parts of the HDR10+ replacement when restoring a draft without its old picture", () => {

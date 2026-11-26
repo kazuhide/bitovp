@@ -31,6 +31,7 @@ import {
 import {
 	availableImplicitTrackKey,
 	mainPictureSourceKey,
+	videoKeys,
 	type WizardState,
 } from "@bitovp/core/wizard";
 import { z } from "zod";
@@ -1532,18 +1533,53 @@ export function legacyVodMetadataOnly(
 	);
 }
 
+const draftVideoKeyRows = z.array(
+	z.object({
+		height: z.number().nullable(),
+		bitrate: z.number().nullable(),
+		codec: z.string().optional(),
+		extras: z.object({ key: z.string().optional() }).optional(),
+	}),
+);
+
 function copyBurnInFiles(base: WizardState, videos: unknown) {
 	const files = new Map<string, string | null>();
 	if (!Array.isArray(videos)) return files;
-	for (const video of videos.filter(draftRecord)) {
+	const saved = draftVideoKeyRows.safeParse(videos);
+	const originalKeys = videoKeys(base.videos);
+	const identities = saved.success
+		? videoKeys(saved.data)
+		: videos.map((row) =>
+				draftRecord(row) &&
+				draftRecord(row.extras) &&
+				typeof row.extras.key === "string"
+					? row.extras.key
+					: undefined,
+			);
+	// Several unkeyed Per-Title rows can trade videoN names when reordered.
+	const singlePositionalRow =
+		saved.success &&
+		saved.data.filter((row) => row.height === null).length === 1 &&
+		base.videos.filter((row) => row.height === null).length === 1;
+	for (const [index, video] of videos.entries()) {
+		if (!draftRecord(video)) continue;
 		const extras = draftRecord(video.extras) ? video.extras : null;
 		const burnIn = extras?.burnInSrt;
 		if (!draftRecord(burnIn) || typeof burnIn.inputFile !== "string") continue;
-		// The generated file key can shift when two replacement paths dedupe.
-		// The rendition key still identifies which subtitle the operator filled.
+		// The input file key can shift when protected paths dedupe. Match the
+		// effective rendition key, including defaults omitted by the importer.
+		const key = identities[index];
+		const ambiguousPosition =
+			video.height === null &&
+			extras?.key === undefined &&
+			!singlePositionalRow;
 		const matches =
-			typeof extras?.key === "string"
-				? base.videos.filter((row) => row.extras?.key === extras.key)
+			key &&
+			!ambiguousPosition &&
+			identities.indexOf(key) === identities.lastIndexOf(key)
+				? base.videos.filter(
+						(_, originalIndex) => originalKeys[originalIndex] === key,
+					)
 				: [];
 		const file =
 			matches.length === 1

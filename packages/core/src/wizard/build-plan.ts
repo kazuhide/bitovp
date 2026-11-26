@@ -1356,14 +1356,21 @@ export function hlsDefaultVersion(
 	return hlsVersionForLegs(kinds);
 }
 
-export function videoKeys(videos: WizardVideoRendition[]): string[] {
+export function videoKeys(
+	videos: readonly {
+		height: number | null;
+		bitrate: number | null;
+		codec?: string;
+		extras?: { key?: string };
+	}[],
+): string[] {
 	const heightCounts = new Map<number, number>();
 	// review-342 I2: height, then bitrate, then CODEC. A mixed-codec ladder
 	// asking for the same rung in both codecs ("1080p at 5 Mbit in H264 and
 	// H265") derived one key twice and was stopped by LIVE_DUPLICATE_KEY with
 	// no hint of the cause; the live mixed-codec fixture had to dodge it.
 	const pairCounts = new Map<string, number>();
-	const kbps = (video: WizardVideoRendition) =>
+	const kbps = (video: (typeof videos)[number]) =>
 		Math.round((video.bitrate ?? 0) / 1000);
 	for (const video of videos) {
 		if (video.extras?.key !== undefined || video.height === null) {

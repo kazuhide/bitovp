@@ -1,7 +1,12 @@
 import { createWriteStream } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { extname, join } from "node:path";
-import { redactSecrets, storageInspectJobSchema } from "@bitovp/core";
+import {
+	type AudioCopyIdentity,
+	audioCopyIdentitySchema,
+	redactSecrets,
+	storageInspectJobSchema,
+} from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
 import {
 	type BrowserCredential,
@@ -135,6 +140,7 @@ async function downloadRange(args: {
 	path: string;
 	start: number;
 	end: number;
+	expect?: AudioCopyIdentity;
 }): Promise<RangeRead> {
 	const limit = args.end - args.start + 1;
 	const browser = createBrowserForCredential({
@@ -152,6 +158,7 @@ async function downloadRange(args: {
 			bucket: args.bucket,
 			key: args.key,
 			range: { start: args.start, end: args.end },
+			...(args.expect && { expect: args.expect }),
 		});
 		// mode 0600: the slice holds CUSTOMER media bytes and lands in a shared
 		// workdir (os.tmpdir), where the default 0644 would let any other local
@@ -285,10 +292,34 @@ export function createStorageInspectProcessor(deps: StorageInspectDeps) {
 			await mkdir(deps.workDir, { recursive: true });
 			await rm(path, { force: true });
 			const credential = await deps.resolveCredential(row.credentialId);
+			let identity: AudioCopyIdentity | undefined;
+			if (row.verifyAudioCopy) {
+				const browser = createBrowserForCredential({
+					provider: credential.provider as BrowserCredential["provider"],
+					config: credential.config,
+					secret: credential.secret,
+				});
+				try {
+					const version = audioCopyIdentitySchema.safeParse(
+						await browser.headObject?.({
+							bucket: row.bucket,
+							key: row.objectKey,
+						}),
+					);
+					if (!version.success)
+						throw new InspectError(
+							"Audio copy requires a versioned source object of up to 4 GiB.",
+						);
+					identity = version.data;
+				} finally {
+					browser.dispose?.();
+				}
+			}
 			const head = await downloadRange({
 				credential,
 				bucket: row.bucket,
 				key: row.objectKey,
+				expect: identity,
 				path,
 				start: 0,
 				end: INSPECT_HEAD_BYTES - 1,
@@ -297,7 +328,15 @@ export function createStorageInspectProcessor(deps: StorageInspectDeps) {
 
 			let probe: ProbeResult | undefined;
 			const runProbe = async (): Promise<ProbeResult | undefined> => {
-				const result = await deps.runner.run(deps.ffprobePath, probeArgs(path));
+				const args = probeArgs(path);
+				if (identity)
+					args.unshift(
+						"-format_whitelist",
+						"mov,wav,matroska,aac,mp3",
+						"-protocol_whitelist",
+						"file",
+					);
+				const result = await deps.runner.run(deps.ffprobePath, args);
 				if (result.code !== 0) {
 					return undefined;
 				}
@@ -329,7 +368,8 @@ export function createStorageInspectProcessor(deps: StorageInspectDeps) {
 				// read (a wrong-but-in-range size can still land mid-file bytes —
 				// review of PR #175, S1 — the guard is the bound, not the aim).
 				const size =
-					row.objectSize === null ? undefined : Number(row.objectSize);
+					identity?.size ??
+					(row.objectSize === null ? undefined : Number(row.objectSize));
 				// size <= head: the WHOLE object already arrived in the head slice —
 				// no tail exists, and an offset read is a guaranteed 416 (review of
 				// PR #175, I3: a doomed round-trip under a message claiming an
@@ -345,6 +385,7 @@ export function createStorageInspectProcessor(deps: StorageInspectDeps) {
 						credential,
 						bucket: row.bucket,
 						key: row.objectKey,
+						expect: identity,
 						path,
 						start: tailStart,
 						end: tailStart + INSPECT_TAIL_BYTES - 1,
@@ -379,6 +420,7 @@ export function createStorageInspectProcessor(deps: StorageInspectDeps) {
 				where: { id },
 				data: {
 					status: "FINISHED",
+					...(identity && { sourceIdentity: identity }),
 					probe: redactSecrets(
 						stripProbeScratchPath(probe),
 					) as unknown as Prisma.InputJsonValue,

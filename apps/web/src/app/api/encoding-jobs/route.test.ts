@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { verificationRequestSha256 } from "@bitovp/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { canonicalCreateRequestJson } from "@/lib/creation-submission-contract";
 
 const profileFindMany = vi.fn(async (): Promise<unknown[]> => []);
 const create = vi.fn();
@@ -83,8 +85,18 @@ const prismaMock = {
 	),
 };
 
+let verifiedUserSession = false;
 vi.mock("@/lib/server/context", () => ({
 	getServerContext: () => ({
+		tenant: {
+			organizationId: "org",
+			actor: "user:current",
+			actorUserId: "current",
+			effectiveUserId: "current",
+			role: "OPERATOR",
+			isImpersonating: false,
+			payload: verifiedUserSession ? { mode: "users" } : undefined,
+		},
 		prisma: prismaMock,
 		bitmovinAccounts: { get: getAccount },
 		// : rail 3b's resolver. These five route tests are the
@@ -135,6 +147,7 @@ function postRequest(body: unknown, actor?: string): Request {
 }
 
 beforeEach(() => {
+	verifiedUserSession = false;
 	qcVmafEnabled = true;
 	vi.clearAllMocks();
 	createRequests.clear();
@@ -432,6 +445,35 @@ describe("POST /api/encoding-jobs", () => {
 		expect(create).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		"videoInputPath",
+		"metadataInputPath",
+	] as const)("refuses a URL in HDR10+ %s before creating a job", async (field) => {
+		const res = await POST(
+			postRequest({
+				plan: {
+					...plan,
+					bitmovin: { ...(plan.bitmovin as object), accountId: ACCOUNT_ID },
+					hdr10PlusStreams: [
+						{
+							key: "hdr",
+							inputKey: "main",
+							videoInputPath: "masters/video.mxf",
+							metadataInputPath: "masters/scene.json",
+							[field]: "https://example.test/path?example=sample",
+						},
+					],
+				},
+			}),
+		);
+		expect(res.status).toBe(400);
+		const body = await res.text();
+		expect(body).toContain("storage object path");
+		expect(body).not.toContain("example.test");
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+
 	it("rejects plans without a bitmovin account id", async () => {
 		const res = await POST(postRequest({ plan }));
 		expect(res.status).toBe(400);
@@ -546,6 +588,32 @@ describe("POST /api/encoding-jobs", () => {
 });
 
 describe("GET /api/encoding-jobs", () => {
+	it.each([
+		"https:/fixture:synthetic'quote@fixture.invalid/picture",
+		"//fixture:synthetic space@fixture.invalid/picture",
+	])("withholds complete private provider diagnostic %s in the job list", async (path) => {
+		findMany.mockResolvedValueOnce([
+			{
+				id: "1",
+				status: "ERROR",
+				error: "Could not read " + path,
+			},
+			{ id: "2", status: "ERROR", error: "Encoder could not start" },
+			{
+				id: "3",
+				status: "ERROR",
+				error:
+					"Could not read https://fixture.invalid/video?\nkey=PRIVATE_LIST_SAMPLE",
+			},
+		]);
+		const res = await GET(new Request("http://test/api/encoding-jobs"));
+		expect(res.status).toBe(200);
+		expect((await res.json()).items).toMatchObject([
+			{ id: "1", error: "[withheld]" },
+			{ id: "2", error: "Encoder could not start" },
+			{ id: "3", error: "[withheld]" },
+		]);
+	});
 	it("returns a lean paginated projection (incl. the new list columns)", async () => {
 		findMany.mockResolvedValueOnce([{ id: "1", name: "x", status: "QUEUED" }]);
 		const res = await GET(new Request("http://test/api/encoding-jobs"));
@@ -1052,6 +1120,105 @@ describe("ordinary GUI create retries", () => {
 			body: JSON.stringify(body),
 		});
 	}
+	it("rejects an unbound request from a browser tab left open across the upgrade", async () => {
+		verifiedUserSession = true;
+		const response = await POST(keyedRequest({ plan: planWithAccount() }));
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			details: { code: "CREATE_SESSION_CHANGED" },
+		});
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+	});
+	it("refuses creation when another operator now owns the same organization's session", async () => {
+		verifiedUserSession = true;
+		const request = keyedRequest({ plan: planWithAccount() });
+		request.headers.set("X-BitOVP-Create-Session", '["org","clicked"]');
+		const response = await POST(request);
+		expect(response.status).toBe(409);
+		expect(await response.json()).toMatchObject({
+			details: { code: "CREATE_SESSION_CHANGED" },
+		});
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+		const current = keyedRequest({ plan: planWithAccount() });
+		current.headers.set("X-BitOVP-Create-Session", '["org","current"]');
+		expect((await POST(current)).status).toBe(201);
+	});
+	it("looks up legacy creation receipts without creating a job when the key is absent", async () => {
+		const body = { plan: planWithAccount() };
+		const digest = createHash("sha256")
+			.update(canonicalCreateRequestJson(body))
+			.digest("hex");
+		const replay = new Request("http://test/api/encoding-jobs", {
+			headers: {
+				"Idempotency-Key": "gui-request-1",
+				"X-BitOVP-Create-Request-Digest": digest,
+				"X-BitOVP-Create-Session": '["org","current"]',
+			},
+		});
+		expect((await GET(replay)).status).toBe(404);
+		expect(create).not.toHaveBeenCalled();
+		expect(queueAdd).not.toHaveBeenCalled();
+		expect((await POST(keyedRequest(body))).status).toBe(201);
+		findUnique.mockResolvedValue({
+			id: "00000000-0000-4000-8000-0000000000aa",
+			status: "QUEUED",
+		});
+		const accepted = await GET(replay);
+		expect(accepted.status).toBe(200);
+		expect(accepted.headers.get("Cache-Control")).toBe("private, no-store");
+		expect(await accepted.json()).toMatchObject({
+			id: "00000000-0000-4000-8000-0000000000aa",
+			replayed: true,
+		});
+		replay.headers.set("X-BitOVP-Create-Request-Digest", "a".repeat(64));
+		expect(await (await GET(replay)).json()).toMatchObject({
+			details: { code: "CREATE_REQUEST_CONFLICT" },
+		});
+		replay.headers.set("X-BitOVP-Create-Session", '["org","clicked"]');
+		expect(await (await GET(replay)).json()).toMatchObject({
+			details: { code: "CREATE_SESSION_CHANGED" },
+		});
+		expect(queueAdd).toHaveBeenCalledTimes(1);
+	});
+	it("replays Quick Launch across empty HDR and caption defaults and rejects edited plans", async () => {
+		presetFindFirst.mockResolvedValueOnce({ id: PRESET_ID });
+		const previous = {
+			plan: planWithAccount(),
+			presetId: PRESET_ID,
+			presetRevision: 3,
+		};
+		const first = await POST(keyedRequest(previous));
+		expect(first.status).toBe(201);
+		findUnique.mockResolvedValue({
+			id: "00000000-0000-4000-8000-0000000000aa",
+			status: "QUEUED",
+		});
+		const restored = {
+			...previous,
+			plan: { ...previous.plan, hdr10PlusStreams: [] },
+		};
+		for (const plan of [
+			restored.plan,
+			{ ...previous.plan, captionStreams: [] },
+			{ ...restored.plan, captionStreams: [] },
+		]) {
+			const same = await POST(keyedRequest({ ...restored, plan }));
+			expect(same.status).toBe(200);
+			expect(await same.json()).toMatchObject({ replayed: true });
+		}
+		for (const plan of [
+			{ ...restored.plan, name: "another cut" },
+			{ ...restored.plan, hdr10PlusStreams: [{ key: "different" }] },
+			{ ...restored.plan, captionStreams: [{ key: "captions" }] },
+		]) {
+			expect((await POST(keyedRequest({ ...restored, plan }))).status).toBe(
+				409,
+			);
+		}
+		expect(queueAdd).toHaveBeenCalledTimes(1);
+	});
 	it("recovers a lost create response without creating or enqueuing a second resource", async () => {
 		const body = { plan: planWithAccount() };
 		await POST(keyedRequest(body));

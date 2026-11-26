@@ -533,7 +533,8 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		).toBe(false);
 		// Encoding experiments add ten guarded routes with thirteen handlers.
 		// Instance Redis memory adds one guarded platform-owner GET.
-		expect(guarded.length).toBe(214);
-		expect(methods.length).toBe(296);
+		// Recorded VOD and Live resources each expose GET, POST and DELETE.
+		expect(guarded.length).toBe(216);
+		expect(methods.length).toBe(302);
 	});
 });

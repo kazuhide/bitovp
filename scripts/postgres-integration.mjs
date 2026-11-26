@@ -34,7 +34,7 @@ export const GROUPS = [
 		directory: "packages/db",
 		files: {
 			"src/runtime-role.integration.test.ts": 1,
-			"src/tenant-db.integration.test.ts": 9,
+			"src/tenant-db.integration.test.ts": 10,
 			"src/tenant-legacy-migration.integration.test.ts": 1,
 			"src/create-request.integration.test.ts": 7,
 			"src/transaction-options.integration.test.ts": 6,
@@ -50,6 +50,7 @@ export const GROUPS = [
 		workspace: "@bitovp/web",
 		directory: "apps/web",
 		files: {
+			"src/lib/server/encoding-resources/removal.integration.test.ts": 135,
 			"src/lib/server/create-request.integration.test.ts": 3,
 			"src/app/api/feeder-sessions/route.integration.test.ts": 2,
 			"src/lib/server/vod-input-previews.integration.test.ts": 11,
@@ -72,6 +73,8 @@ export const GROUPS = [
 		workspace: "@bitovp/worker",
 		directory: "apps/worker",
 		files: {
+			"src/library/capture-sweep.integration.test.ts": 1,
+			"src/library/input-capture.integration.test.ts": 1,
 			"src/alerts/engine-locking.integration.test.ts": 3,
 			"src/live/poll-transition-locking.integration.test.ts": 10,
 			"src/live/owned-transition-locking.integration.test.ts": 246,

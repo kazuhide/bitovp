@@ -1,3 +1,20 @@
+import {
+	hasPrivateStorageLocator,
+	isHdr10PlusObjectPath,
+	isProviderDiagnosticList,
+	isProviderDiagnosticText,
+	publicStorageDiagnostic,
+} from "../plan/hdr-source-paths";
+import {
+	hasRecordedObjectInput,
+	objectInputReceipts,
+	recordedStorageFields,
+} from "../plan/object-input-path";
+
+import { maskUrlUserinfo, REDACTED } from "./url-userinfo";
+
+export { maskUrlUserinfo, REDACTED } from "./url-userinfo";
+
 /**
  * Suffix-anchored so reference fields stay readable: `credentialId`,
  * `keyframes` etc. do NOT match, while `apiKey`, `streamKey`,
@@ -31,9 +48,6 @@ const SENSITIVE_SUFFIX =
 const SENSITIVE_EXACT =
 	/^(ask|serviceaccountjson|username|login|publishingpoint|relayurl|playbackurl)$/i;
 
-/** Masks the password of URL userinfo: `scheme://user:pass@host`. */
-const URL_USERINFO = /(\/\/[^/\s:@]+:)[^@/\s]+@/g;
-
 /**
  * Header-tuple detection for the ["name", "value"] array shape. Deliberately
  * NARROWER than isSensitiveKey: the old rule redacted ANY 2-element array
@@ -52,8 +66,6 @@ function isHeaderTupleName(name: string): boolean {
 	);
 }
 
-export const REDACTED = "[REDACTED]";
-
 export function isSensitiveKey(key: string): boolean {
 	return SENSITIVE_SUFFIX.test(key) || SENSITIVE_EXACT.test(key);
 }
@@ -66,13 +78,64 @@ export function isSensitiveKey(key: string): boolean {
  * - passwords embedded in URL userinfo inside string values
  * - header-tuple arrays (["authorization", "Bearer …"])
  */
-export function redactSecrets<T>(value: T): T {
-	return walk(value, new WeakSet()) as T;
+export function redactSecrets<T>(value: T, hdrSource = false): T {
+	return walk(value, new WeakSet(), undefined, hdrSource) as T;
 }
 
-function walk(value: unknown, ancestors: WeakSet<object>): unknown {
+/** Preserve a literal key when the fulfilled provider input and compiled bytes agree. */
+export function redactStepRequest<T>(
+	entry: { kind: string; payload: Record<string, unknown> },
+	request: T,
+	entries: unknown,
+): T {
+	const safe = redactSecrets(
+		request,
+		entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",
+	);
+	const paths = recordedStorageFields(entry.kind);
+	if (
+		!paths.length ||
+		!request ||
+		typeof request !== "object" ||
+		!hasRecordedObjectInput(entry, request, objectInputReceipts(entries))
+	)
+		return safe;
+	if (!safe || typeof safe !== "object") return safe;
+	const result = { ...safe };
+	for (const field of paths) {
+		const value = (request as Record<string, unknown>)[field];
+		if (
+			typeof value === "string" &&
+			value === entry.payload[field] &&
+			!hasPrivateStorageLocator(value, "OBJECT_KEY")
+		)
+			Object.assign(result, { [field]: value });
+	}
+	return result;
+}
+
+function walk(
+	value: unknown,
+	ancestors: WeakSet<object>,
+	key?: string,
+	hdrSource = false,
+	diagnostic = false,
+): unknown {
 	if (typeof value === "string") {
-		return value.replace(URL_USERINFO, `$1${REDACTED}@`);
+		if (diagnostic && (key === undefined || isProviderDiagnosticText(key)))
+			return publicStorageDiagnostic(value);
+		if (key === "inputPath")
+			return hasPrivateStorageLocator(value) ? REDACTED : value;
+		if (key === "videoInputPath" || key === "metadataInputPath") {
+			return (
+				hdrSource
+					? !isHdr10PlusObjectPath(value)
+					: hasPrivateStorageLocator(value)
+			)
+				? REDACTED
+				: value;
+		}
+		return maskUrlUserinfo(value);
 	}
 	if (value === null || typeof value !== "object") {
 		return value;
@@ -87,19 +150,36 @@ function walk(value: unknown, ancestors: WeakSet<object>): unknown {
 	let out: unknown;
 	if (Array.isArray(value)) {
 		if (
+			!diagnostic &&
 			value.length === 2 &&
 			typeof value[0] === "string" &&
 			isHeaderTupleName(value[0])
 		) {
 			out = [value[0], REDACTED];
 		} else {
-			out = value.map((item) => walk(item, ancestors));
+			out = value.map((item) =>
+				walk(item, ancestors, undefined, hdrSource, diagnostic),
+			);
 		}
 	} else {
 		const obj: Record<string, unknown> = {};
+		const fields = value as Record<string, unknown>;
+		const hdr =
+			hdrSource ||
+			fields.type === "HDR10_PLUS" ||
+			fields.kind === "CREATE_HDR10_PLUS_INPUT_STREAM";
 		for (const [key, item] of Object.entries(value)) {
 			Object.defineProperty(obj, key, {
-				value: isSensitiveKey(key) ? REDACTED : walk(item, ancestors),
+				value: isSensitiveKey(key)
+					? REDACTED
+					: walk(
+							item,
+							ancestors,
+							key,
+							hdr || key === "hdr10PlusStreams",
+							key !== "headers" &&
+								(diagnostic || isProviderDiagnosticList(key)),
+						),
 				enumerable: true,
 				writable: true,
 				configurable: true,

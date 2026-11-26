@@ -460,6 +460,26 @@ describe("multiple Live output authoring", () => {
 		next = { ...next, ...addLiveManifest(next, "HLS") };
 		expect(next.manifests.additionalHls?.at(-1)?.key).toBe("hls-3");
 	});
+	it("keeps each mirror until its last explicit DVB subtitle destination is removed", () => {
+		const next = state();
+		const track = {
+			key: "captions",
+			language: "ja",
+			label: "Japanese",
+			packaging: "CHUNKED_TEXT" as const,
+		};
+		for (const key of [next.mirrorKey ?? "mirror-1", "west"]) {
+			next.dvbSubtitles = [
+				{ ...track, destination: { outputKey: key, path: "ja" } },
+				{ ...track, key: "en", destination: { outputKey: key, path: "en" } },
+			];
+			expect(liveOutputReferenced(next, key)).toBe(true);
+			next.dvbSubtitles = next.dvbSubtitles.slice(1);
+			expect(liveOutputReferenced(next, key)).toBe(true);
+			next.dvbSubtitles = [track];
+			expect(liveOutputReferenced(next, key)).toBe(false);
+		}
+	});
 	it("keeps explicit false and reports references before a mirror is removed", () => {
 		const next = state();
 		const additional = required(next.manifests.additionalHls?.[0]);

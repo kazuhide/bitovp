@@ -25,12 +25,14 @@ import {
  */
 
 const getObject = vi.fn();
+const headObject = vi.fn();
 // Only the browser factory is faked — `describeStorageError` / `storageErrorText`
 // stay REAL, because the C20 classification is exactly what is under test.
 vi.mock("@bitovp/storage", async (importActual) => ({
 	...(await importActual<typeof import("@bitovp/storage")>()),
 	createBrowserForCredential: () => ({
 		getObject: (input: unknown) => getObject(input),
+		headObject: (input: unknown) => headObject(input),
 		dispose: () => {},
 	}),
 }));
@@ -49,6 +51,7 @@ function setup(
 		claimCount?: number;
 		runResults?: { code: number | null; stdout: string; stderr: string }[];
 		objectSize?: bigint | null;
+		verifyAudioCopy?: boolean;
 	} = {},
 ) {
 	const row = {
@@ -57,6 +60,7 @@ function setup(
 		bucket: "customer-bucket",
 		objectKey: "masters/movie.mp4",
 		status: opts.status ?? "PENDING",
+		verifyAudioCopy: opts.verifyAudioCopy ?? false,
 		probe: null,
 		bytesRead: null,
 		error: null,
@@ -120,6 +124,43 @@ beforeEach(() => {
 });
 
 describe("storage inspect processor", () => {
+	it("pins both probe windows to the same storage version for an audio copy inspection", async () => {
+		const identity = {
+			etag: '"recorded"',
+			versionId: "version-1",
+			size: 32 * 1024 * 1024,
+		};
+		headObject.mockResolvedValue(identity);
+		const audio = JSON.stringify({
+			streams: [
+				{ index: 0, codec_type: "video", codec_name: "h264" },
+				{ index: 1, codec_type: "audio", codec_name: "mp3" },
+				{ index: 2, codec_type: "audio", codec_name: "aac" },
+			],
+		});
+		const t = setup({
+			verifyAudioCopy: true,
+			runResults: [
+				{ code: 1, stderr: "", stdout: "" },
+				{ code: 0, stderr: "", stdout: audio },
+			],
+		});
+		await expect(
+			t.process({ storageInspectionId: INSPECTION_ID }),
+		).resolves.toMatchObject({ status: "FINISHED" });
+		expect(getObject).toHaveBeenCalledTimes(2);
+		for (const [args] of getObject.mock.calls)
+			expect(args.expect).toEqual(identity);
+		expect(t.updates.at(-1)).toMatchObject({ sourceIdentity: identity });
+	});
+	it("refuses an unversioned object before a passthrough inspection reads any media", async () => {
+		headObject.mockResolvedValue({ etag: '"fixed"', size: 4000 });
+		const t = setup({ verifyAudioCopy: true });
+		await expect(
+			t.process({ storageInspectionId: INSPECTION_ID }),
+		).resolves.toMatchObject({ status: "ERROR" });
+		expect(getObject).not.toHaveBeenCalled();
+	});
 	it("reads a CAPPED head, probes it, and persists the ffprobe JSON", async () => {
 		const t = setup();
 		await expect(

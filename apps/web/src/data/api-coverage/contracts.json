@@ -1,21 +1,21 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-15T22:06:28.243Z",
-		"sdkVersion": "1.288.0",
+		"generatedAt": "2026-11-24T16:57:44.664Z",
+		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
-		"sdkFingerprint": "1a8651b821a3df916423cbec20bc3eb9024937367af3a7ea72e20a90b75e8afd",
+		"sdkFingerprint": "c41d6b1ac49908970ea0181e0f598b23203e4a03dfd7878dde63ffcb9044d236",
 		"method": "sdk-transport-request-contracts-v1",
 		"scope": "encoding",
 		"limitations": "SDK declarations and comments, not the complete server contract. API writeability and conditional acceptance remain unconfirmed. Callable query-builder alternatives are SDK helpers, not wire fields."
 	},
 	"summary": {
-		"totalOperations": 1094,
-		"pathParameters": 1607,
-		"queryParameters": 241,
-		"bodyParameters": 230,
-		"schemas": 787,
-		"properties": 3503
+		"totalOperations": 1098,
+		"pathParameters": 1613,
+		"queryParameters": 242,
+		"bodyParameters": 231,
+		"schemas": 789,
+		"properties": 3517
 	},
 	"operationShards": [
 		{
@@ -24,7 +24,7 @@
 		},
 		{
 			"file": "contracts/operations-encodings-000.json",
-			"sha256": "3b896c9ce082a43d2242828580fd9443543b48d8a70972ed817f9392db07d30f"
+			"sha256": "93350289cf8c8c491e4e309e7342deb74fcb1a7619cda6ef930b7bdcba57ae14"
 		},
 		{
 			"file": "contracts/operations-errordefinitions-000.json",
@@ -82,7 +82,7 @@
 		},
 		{
 			"file": "contracts/schemas-h-000.json",
-			"sha256": "2aa36073cf4c3f3e03394f1f95335d6a94364cd82c9dc1b954c45d83bbbb0a3f"
+			"sha256": "87aaf29259acac06c1de9bfaaab0bcdcd4c4b14a118b06e37cbb345eee4915b4"
 		},
 		{
 			"file": "contracts/schemas-m-000.json",
@@ -106,7 +106,7 @@
 		},
 		{
 			"file": "contracts/schemas-i-000.json",
-			"sha256": "8c1f3348fa3629a8c1bfdd20ea4a3ebc882412bbba264031415d0dd07f1714a2"
+			"sha256": "9eed676f959cd09d593a438c7bd9448a60037248cdfde86acf26aa60f4385607"
 		},
 		{
 			"file": "contracts/schemas-w-000.json",

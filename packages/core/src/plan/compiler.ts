@@ -3,7 +3,9 @@ import {
 	codecAspectRatioControls,
 	codecDetailControls,
 } from "./codec-detail-controls";
+import { filterParametersForPlan } from "./conform-rate";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
+import { heAacConfiguration, isHeAac } from "./he-aac";
 import {
 	type HlsAudioMediaDefaults,
 	hlsAudioLegsByRendition,
@@ -14,11 +16,11 @@ import {
 	hlsVariantUri,
 } from "./hls-media-defaults";
 import { applyManifestDetails } from "./manifest-detail-compiler";
-import { filterParameters } from "./media-filters";
 import {
 	hasMuxedInAudio,
 	isFileOnlyMuxingKind,
 	muxingStreamKeys,
+	physicalMuxingKind,
 } from "./muxing-streams";
 import {
 	isPerTitleRendition,
@@ -81,6 +83,10 @@ export type OperationKind =
 	| "CREATE_FILE_INPUT_STREAM"
 	| "CREATE_DOLBY_ATMOS_INPUT_STREAM"
 	| "CREATE_DOLBY_VISION_INPUT_STREAM"
+	| "CREATE_CEA608_INPUT_STREAM"
+	| "CREATE_CEA708_INPUT_STREAM"
+	| "CREATE_DVB_SUBTITLE_INPUT_STREAM"
+	| "CREATE_HDR10_PLUS_INPUT_STREAM"
 	| "CREATE_DOLBY_VISION_METADATA_INPUT_STREAM"
 	| "CREATE_TRIMMING_TIME_BASED"
 	| "CREATE_TRIMMING_TIMECODE_TRACK"
@@ -92,7 +98,11 @@ export type OperationKind =
 	| "CREATE_CODEC_VP9"
 	| "CREATE_CODEC_AV1"
 	| "CREATE_CODEC_AAC"
+	| "CREATE_CODEC_HE_AAC_V1"
+	| "CREATE_CODEC_HE_AAC_V2"
 	| "CREATE_CODEC_OPUS"
+	| "CREATE_CODEC_PCM"
+	| "CREATE_CODEC_AUDIO_PASSTHROUGH"
 	| "CREATE_CODEC_IMSC"
 	| "CREATE_CODEC_DOLBY_ATMOS"
 	| "CREATE_CODEC_AC3"
@@ -107,6 +117,12 @@ export type OperationKind =
 	| "CREATE_DASH_ADAPTATION_SET_SUBTITLE"
 	| "CREATE_DASH_REPRESENTATION_CHUNKED_TEXT"
 	| "CREATE_DASH_REPRESENTATION_IMSC"
+	| "CREATE_FILTER_ENHANCED_DEINTERLACE"
+	| "CREATE_FILTER_CONFORM"
+	| "CREATE_FILTER_INTERLACE"
+	| "CREATE_FILTER_ENHANCED_WATERMARK"
+	| "CREATE_FILTER_DOLBY_LOUDNESS"
+	| "CREATE_FILTER_AUDIO_MIX"
 	| "CREATE_FILTER_DENOISE_HQDN3D"
 	| "CREATE_FILTER_UNSHARP"
 	| "CREATE_FILTER_CROP"
@@ -127,6 +143,7 @@ export type OperationKind =
 	| "CREATE_MUXING_WEBM"
 	| "CREATE_MUXING_PROGRESSIVE_TS"
 	| "CREATE_MUXING_PROGRESSIVE_MOV"
+	| "CREATE_MUXING_PROGRESSIVE_WAV"
 	| "CREATE_DRM_CENC"
 	| "CREATE_DRM_FAIRPLAY"
 	| "CREATE_DRM_SPEKE"
@@ -243,18 +260,22 @@ function inputStreamStep(
 	key: string,
 	sets: {
 		fileKeys: ReadonlySet<string>;
+		captionKeys: ReadonlySet<string>;
 		dolbyKeys: ReadonlySet<string>;
+		hdr10PlusKeys: ReadonlySet<string>;
 		trimmingKeys: ReadonlySet<string>;
 		concatKeys: ReadonlySet<string>;
 		mixKeys: ReadonlySet<string>;
 	},
 ): string {
+	if (sets.captionKeys.has(key)) return `caption:${key}`;
 	if (sets.fileKeys.has(key)) {
 		return `file:${key}`;
 	}
 	if (sets.dolbyKeys.has(key)) {
 		return `dolby:${key}`;
 	}
+	if (sets.hdr10PlusKeys.has(key)) return `hdr10-plus:${key}`;
 	if (sets.trimmingKeys.has(key)) {
 		return `trim:${key}`;
 	}
@@ -417,13 +438,23 @@ function isVideoCodec(
 }
 
 /** Audio codecs that join audio media/adaptation sets in manifests. */
-function isAudioCodec(
-	rendition: PlanRendition,
-): rendition is Extract<
+function isAudioCodec(rendition: PlanRendition): rendition is Extract<
 	PlanRendition,
-	{ codec: "AAC" | "OPUS" | "DOLBY_ATMOS" | "DDPLUS" | "DD" | "AC3" | "EAC3" }
+	{
+		codec:
+			| "HE_AAC_V1"
+			| "HE_AAC_V2"
+			| "AAC"
+			| "OPUS"
+			| "DOLBY_ATMOS"
+			| "DDPLUS"
+			| "DD"
+			| "AC3"
+			| "EAC3";
+	}
 > {
 	return (
+		isHeAac(rendition.codec) ||
 		rendition.codec === "AAC" ||
 		rendition.codec === "OPUS" ||
 		rendition.codec === "DOLBY_ATMOS" ||
@@ -469,7 +500,12 @@ function streamName(rendition: PlanRendition): string {
 			return rendition.height === null
 				? `Stream ${rendition.codec}`
 				: `Stream ${rendition.codec} ${rendition.height}p`;
+		case "AUDIO_PASSTHROUGH":
+			return `Stream ${rendition.sourceCodec} passthrough`;
+		case "HE_AAC_V1":
+		case "HE_AAC_V2":
 		case "AAC":
+		case "PCM":
 		case "OPUS":
 			return `Stream ${rendition.codec} ${kbps(rendition.bitrate)}`;
 		case "DOLBY_ATMOS":
@@ -498,6 +534,7 @@ const MUXING_LABEL = {
 	// No vendor sample names these two; the label follows the same grammar.
 	PROGRESSIVE_TS: "Progressive TS",
 	PROGRESSIVE_MOV: "Progressive MOV",
+	PROGRESSIVE_WAV: "WAV",
 	// The same grammar again; whether a vendor sample names it was not looked up.
 	PROGRESSIVE_WEBM: "Progressive WebM",
 } as const;
@@ -514,6 +551,8 @@ function muxingName(
 		const identity = rendition.height === null ? "" : ` ${rendition.height}p`;
 		return `Video ${MUXING_LABEL[kind]} Muxing${identity}`;
 	}
+	if (rendition.codec === "AUDIO_PASSTHROUGH")
+		return `Audio ${MUXING_LABEL[kind]} Muxing ${rendition.sourceCodec}`;
 	return `Audio ${MUXING_LABEL[kind]} Muxing ${kbps(rendition.bitrate)}`;
 }
 
@@ -572,6 +611,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 		return latest;
 	});
 	const filterByKey = new Map(plan.filters.map((f) => [f.key, f]));
+	const filterParameters = filterParametersForPlan(plan);
 
 	// Multi-encoding partition (Dolby ladders). Absent plan.encodings ⇒ the
 	// implicit single encoding with the legacy step ids — every pre-PR5
@@ -609,7 +649,14 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 		encOf(renditionByKey.get(renditionKey)?.encodingKey).step;
 
 	// 1. Inputs & outputs
+	const audioCopy = plan.renditions.find(
+		(r) => r.codec === "AUDIO_PASSTHROUGH",
+	);
+	const capturedIngest =
+		audioCopy && plan.ingest.find((i) => i.key === audioCopy.ingestKey);
 	for (const input of plan.inputs) {
+		// The signed HTTPS input is created once the encoding ID exists.
+		if (capturedIngest?.inputKey === input.key) continue;
 		if (input.kind === "S3") {
 			ops.push({
 				step: `input:${input.key}`,
@@ -886,12 +933,17 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 				kind: "CREATE_INGEST_INPUT_STREAM",
 				payload: {
 					inputPath: ingest.inputPath,
+					...(capturedIngest?.key === ingest.key && {
+						requireAudioCapture: true,
+					}),
 					selectionMode: ingest.selectionMode,
 					position: ingest.position,
 				},
 				refs: {
 					encodingId: enc.step,
-					inputId: `input:${ingest.inputKey}`,
+					...(capturedIngest?.key !== ingest.key && {
+						inputId: `input:${ingest.inputKey}`,
+					}),
 				},
 			});
 		}
@@ -911,6 +963,29 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 			});
 		}
 
+		const captionKeys = new Set(
+			plan.captionStreams.map((stream) => stream.key),
+		);
+		for (const {
+			key,
+			inputKey,
+			encodingKey,
+			kind,
+			...payload
+		} of plan.captionStreams) {
+			if (encOf(encodingKey).step !== enc.step) continue;
+			const operations = {
+				CEA608: "CREATE_CEA608_INPUT_STREAM",
+				CEA708: "CREATE_CEA708_INPUT_STREAM",
+				DVB: "CREATE_DVB_SUBTITLE_INPUT_STREAM",
+			} as const;
+			ops.push({
+				step: `caption:${key}`,
+				kind: operations[kind],
+				payload,
+				refs: { encodingId: enc.step, inputId: `input:${inputKey}` },
+			});
+		}
 		const dolbyKeys = new Set(plan.dolbyStreams.map((d) => d.key));
 		for (const dolby of plan.dolbyStreams) {
 			if (encOf(dolby.encodingKey).step !== enc.step) {
@@ -950,6 +1025,24 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 			}
 		}
 
+		const hdr10PlusKeys = new Set(plan.hdr10PlusStreams.map((s) => s.key));
+		for (const stream of plan.hdr10PlusStreams) {
+			if (encOf(stream.encodingKey).step !== enc.step) continue;
+			ops.push({
+				step: `hdr10-plus:${stream.key}`,
+				kind: "CREATE_HDR10_PLUS_INPUT_STREAM",
+				payload: {
+					videoInputPath: stream.videoInputPath,
+					metadataInputPath: stream.metadataInputPath,
+					selectionMode: stream.selectionMode,
+					...(stream.position !== undefined
+						? { position: stream.position }
+						: {}),
+				},
+				refs: { encodingId: enc.step, inputId: `input:${stream.inputKey}` },
+			});
+		}
+
 		// Trimming + concatenation input streams (the modern path). They wrap
 		// ingest/file/dolby (or each other) by sourceKey, so they MUST be emitted
 		// after those streams and before CREATE_STREAM (backward-refs invariant).
@@ -959,7 +1052,9 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 		const mixKeys = new Set(plan.audioMixStreams.map((s) => s.key));
 		const streamSets = {
 			fileKeys,
+			captionKeys,
 			dolbyKeys,
+			hdr10PlusKeys,
 			trimmingKeys,
 			concatKeys,
 			mixKeys,
@@ -1479,6 +1574,45 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 					},
 					refs: {},
 				});
+			} else if (
+				rendition.codec === "HE_AAC_V1" ||
+				rendition.codec === "HE_AAC_V2"
+			) {
+				ops.push({
+					step: `codec:${rendition.key}`,
+					kind: `CREATE_CODEC_${rendition.codec}`,
+					payload: heAacConfiguration(rendition),
+					refs: {},
+				});
+			} else if (
+				rendition.codec === "PCM" ||
+				rendition.codec === "AUDIO_PASSTHROUGH"
+			) {
+				ops.push({
+					step: `codec:${rendition.key}`,
+					kind:
+						rendition.codec === "PCM"
+							? "CREATE_CODEC_PCM"
+							: "CREATE_CODEC_AUDIO_PASSTHROUGH",
+					payload:
+						rendition.codec === "PCM"
+							? {
+									name: rendition.name,
+									bitrate: rendition.bitrate,
+									...(rendition.rate !== undefined && { rate: rendition.rate }),
+									...(rendition.channelLayout && {
+										channelLayout: rendition.channelLayout,
+									}),
+									...(rendition.sampleFormat && {
+										sampleFormat: rendition.sampleFormat,
+									}),
+									...(rendition.presetConfiguration && {
+										presetConfiguration: rendition.presetConfiguration,
+									}),
+								}
+							: { name: rendition.name },
+					refs: {},
+				});
 			} else if (rendition.codec === "AAC" || rendition.codec === "OPUS") {
 				ops.push({
 					step: `codec:${rendition.key}`,
@@ -1667,14 +1801,15 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						step: `filter:${rendition.key}:${attachment.filterKey}`,
 						kind: `CREATE_FILTER_${filter.kind}`,
 						payload:
-							filter.kind === "WATERMARK"
+							filter.kind === "WATERMARK" ||
+							filter.kind === "ENHANCED_WATERMARK"
 								? {
-										...filterParameters(filter),
+										...filterParameters(filter, rendition.encodingKey),
 										imageInput: plan.inputs.find(
 											(i) => i.key === filter.inputKey,
 										),
 									}
-								: filterParameters(filter),
+								: filterParameters(filter, rendition.encodingKey),
 						refs: {},
 					});
 				}
@@ -1874,14 +2009,20 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						},
 						refs: muxingRefs,
 					});
-				} else if (muxing.kind === "PROGRESSIVE_MOV") {
+				} else if (
+					muxing.kind === "PROGRESSIVE_MOV" ||
+					muxing.kind === "PROGRESSIVE_WAV"
+				) {
 					ops.push({
 						step: `muxing:${muxing.key}`,
-						kind: "CREATE_MUXING_PROGRESSIVE_MOV",
+						kind:
+							muxing.kind === "PROGRESSIVE_MOV"
+								? "CREATE_MUXING_PROGRESSIVE_MOV"
+								: "CREATE_MUXING_PROGRESSIVE_WAV",
 						payload: {
 							filename: muxing.filename,
 							...destinationFields,
-							name: muxing.name ?? muxingName("PROGRESSIVE_MOV", primary),
+							name: muxing.name ?? muxingName(muxing.kind, primary),
 						},
 						refs: muxingRefs,
 					});
@@ -1921,7 +2062,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							step: `drm:${drm.key}`,
 							kind: "CREATE_DRM_CENC",
 							payload: {
-								muxingKind: muxing.kind,
+								muxingKind: physicalMuxingKind(muxing),
 								credentialId: drm.credentialId,
 								kid: drm.kid,
 								...(drm.encryptionMode
@@ -1942,7 +2083,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							step: `drm:${drm.key}`,
 							kind: "CREATE_DRM_SPEKE",
 							payload: {
-								muxingKind: muxing.kind,
+								muxingKind: physicalMuxingKind(muxing),
 								credentialId: drm.credentialId,
 								systemIds: drm.systemIds,
 								...(drm.contentId ? { contentId: drm.contentId } : {}),
@@ -1959,7 +2100,7 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							step: `drm:${drm.key}`,
 							kind: "CREATE_DRM_FAIRPLAY",
 							payload: {
-								muxingKind: muxing.kind,
+								muxingKind: physicalMuxingKind(muxing),
 								credentialId: drm.credentialId,
 								iv: drm.iv,
 								uri: drm.uri,

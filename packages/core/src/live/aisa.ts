@@ -54,6 +54,7 @@ type AisaPlanLike = {
 	renditions: readonly unknown[];
 	muxings: readonly unknown[];
 	liveManifests: readonly unknown[];
+	dvbSubtitles?: readonly unknown[];
 	drm?: readonly unknown[];
 	deliveryMirrors?: readonly unknown[];
 	adMarkers?: unknown;
@@ -99,6 +100,7 @@ export function validateAisaManagedLivePlan(plan: AisaPlanLike): PlanIssue[] {
 		"renditions",
 		"muxings",
 		"liveManifests",
+		"dvbSubtitles",
 		"drm",
 		"deliveryMirrors",
 	] as const) {

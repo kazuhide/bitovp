@@ -32,6 +32,12 @@ import {
 	liveHlsEntryUris,
 	selectLiveManifestMuxings,
 } from "../live/compiler";
+import {
+	dvbGroup,
+	dvbSegmentNaming,
+	dvbTracksForManifest,
+	dvbUri,
+} from "../live/dvb-subtitles";
 import { LIVE_MANIFEST_ELEMENT_BUDGET } from "../live/dvr";
 import {
 	liveManifestElementEstimate,
@@ -39,12 +45,14 @@ import {
 } from "../live/manifest-segment-lists";
 import { liveOutputFilenames } from "../live/protection";
 import type { LiveChannelPlan } from "../live/schema";
+import { relativeSegmentPath } from "../plan/compiler";
 import { outputFileKeys, outputStorageKeys } from "../plan/output-files";
 import { type PathPattern, pathPattern, withTrailingSlash } from "./expected";
 import {
 	type ExpectedHlsAdditionalMedia,
 	type ExpectedHlsAudioGroups,
 	expectedHlsAdditionalMedia,
+	expectedHlsWriterResource,
 } from "./manifest-tracks";
 
 /** A live ingest, and whether our own feeder can drive it. */
@@ -104,7 +112,7 @@ export type ExpectedLiveMuxing = {
 	drmKey?: string;
 	drmKind?: "CENC" | "FAIRPLAY" | "SPEKE";
 	streamKey: string;
-	container: "FMP4_SEGMENTED" | "TS_SEGMENTED";
+	container: "FMP4_SEGMENTED" | "TS_SEGMENTED" | "CHUNKED_TEXT";
 	outputKey: string;
 	/** Additional physical aliases and emitted mirrors, for naming checks only. */
 	namingOnlyOutputKeys?: string[];
@@ -148,6 +156,13 @@ export type ExpectedLiveManifest = {
 	hlsAdditionalMedia?: ExpectedHlsAdditionalMedia[];
 	hlsAudioGroups?: ExpectedHlsAudioGroups;
 	dashExternalSubtitles?: { url: string; language: string }[];
+	dashDvbSubtitles?: {
+		key: string;
+		language: string;
+		segmentPath: string;
+		segmentNaming: string;
+		initSegment?: string;
+	}[];
 	/**
 	 * DASH only : the distinct VIDEO codecs this manifest lists,
 	 * in plan order. One AdaptationSet per codec is the contract (C34); the
@@ -369,7 +384,8 @@ export function compileExpectedLiveArtefacts(
 	plan: LiveChannelPlan,
 ): ExpectedLiveArtefacts {
 	const notes: string[] = [];
-	const renditionCount = plan.renditions.length;
+	const renditionCount =
+		plan.renditions.length + (plan.dvbSubtitles?.length ?? 0);
 	// A candidate's own identity must exclude mirrors: a common mirror does not
 	// make unrelated primary buckets or accounts aliases of one another.
 	const aliasesByStorage = new Map<string, string[]>();
@@ -446,6 +462,20 @@ export function compileExpectedLiveArtefacts(
 			});
 		});
 
+	for (const track of plan.dvbSubtitles ?? []) {
+		const aliases = additionalOutputKeys(track.destination.outputKey);
+		muxings.push({
+			muxingKey: `dvb:${track.key}`,
+			streamKey: `dvb:${track.key}`,
+			container: track.packaging === "FMP4" ? "FMP4_SEGMENTED" : "CHUNKED_TEXT",
+			outputKey: track.destination.outputKey,
+			...(aliases.length ? { namingOnlyOutputKeys: aliases } : {}),
+			dir: pathPattern(withTrailingSlash(track.destination.path)),
+			segmentNaming: dvbSegmentNaming(track),
+			segmentLengthSec: track.segmentLength,
+			...(track.packaging === "FMP4" ? { initSegment: "init.mp4" } : {}),
+		});
+	}
 	const manifests: ExpectedLiveManifest[] = plan.liveManifests.map(
 		(manifest) => {
 			const timeshiftSec = manifest.timeshift;
@@ -481,6 +511,31 @@ export function compileExpectedLiveArtefacts(
 							manifest.drmKind,
 						)
 					: [];
+			const tracks = dvbTracksForManifest(plan, manifest);
+			if (manifest.kind === "HLS")
+				for (const track of tracks)
+					additionalMedia.push({
+						type: "SUBTITLES",
+						groupId: dvbGroup(manifest),
+						name: track.label,
+						language: track.language,
+						uri: dvbUri(track),
+						resource: expectedHlsWriterResource(
+							{
+								...plan,
+								muxings: [
+									{
+										key: `dvb:${track.key}`,
+										kind: track.packaging,
+										destination: track.destination,
+										segmentNaming: dvbSegmentNaming(track),
+									},
+								],
+							},
+							`dvb:${track.key}`,
+						),
+						muxingKey: `dvb:${track.key}`,
+					});
 			const externalSubtitles =
 				manifest.kind === "DASH"
 					? (manifest.detailed?.additionalRepresentations ?? []).map(
@@ -517,12 +572,20 @@ export function compileExpectedLiveArtefacts(
 				...new Set(
 					selected
 						.map(({ rendition }) => rendition.codec)
-						.filter((codec) => !["AAC", "DDPLUS", "DD"].includes(codec)),
+						.filter(
+							(codec) =>
+								!["AAC", "HE_AAC_V1", "HE_AAC_V2", "DDPLUS", "DD"].includes(
+									codec,
+								),
+						),
 				),
 			];
 			return {
 				manifestKey: manifest.key,
-				muxingKeys: selected.map(({ muxing }) => muxing.key),
+				muxingKeys: [
+					...selected.map(({ muxing }) => muxing.key),
+					...tracks.map((t) => `dvb:${t.key}`),
+				],
 				...(manifest.drmKind ? { drmKind: manifest.drmKind } : {}),
 				kind: manifest.kind,
 				outputKey: manifest.destination.outputKey,
@@ -538,10 +601,25 @@ export function compileExpectedLiveArtefacts(
 							entryCount: selected.length + additionalMedia.length,
 						}
 					: {}),
+				...(manifest.kind === "DASH" && tracks.length
+					? {
+							dashDvbSubtitles: tracks.map((t) => ({
+								key: t.key,
+								language: t.language,
+								segmentNaming: dvbSegmentNaming(t),
+								...(t.packaging === "FMP4" ? { initSegment: "init.mp4" } : {}),
+								segmentPath: relativeSegmentPath(
+									t.destination.path,
+									manifest.destination.path,
+								),
+							})),
+						}
+					: {}),
 				...(externalSubtitles.length
 					? {
 							dashExternalSubtitles: externalSubtitles,
-							entryCount: selected.length + externalSubtitles.length,
+							entryCount:
+								selected.length + tracks.length + externalSubtitles.length,
 						}
 					: {}),
 				...(manifest.kind === "DASH" && videoCodecs.length > 0

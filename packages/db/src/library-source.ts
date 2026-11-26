@@ -1,16 +1,21 @@
 import { createHash } from "node:crypto";
 import {
 	encodingPlanSchema,
+	hasPrivateStorageLocator,
 	isLibraryFileKind,
 	libraryFileOutputs,
+	libraryHdr10PlusInputs,
+	libraryIngestInputs,
 	libraryPlaybackLinks,
 	librarySnapshotSchema,
+	missingLibraryHdrInputs,
 	publicLibraryQcEvidence,
+	recoverLibraryIngestInputs,
 	redactSecrets,
 	sceneAnalysisLocales,
 } from "@bitovp/core";
 import type { Prisma } from "../generated/client";
-import type { AppPrismaClient } from "./client";
+import type { AppPrismaClient, AppTransactionClient } from "./client";
 
 export class LibrarySourceError extends Error {
 	constructor(
@@ -24,6 +29,74 @@ export class LibrarySourceError extends Error {
 
 function hash(value: unknown): string {
 	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function safeCapturedInput<
+	T extends { path: string; pathKind?: "OBJECT_KEY" | "HTTPS_PATH" },
+>(row: T): T {
+	return hasPrivateStorageLocator(row.path, row.pathKind)
+		? { ...row, path: "" }
+		: row;
+}
+
+/** The caller holds the job lock. Keep a historical source readable when an
+ * authorized local delete clears its job FK before the next capture sweep.
+ * Read the current source under lock and update only its inputs. */
+export async function retainLibraryInputsBeforeJobDeletion(
+	tx: AppTransactionClient,
+	jobId?: string,
+) {
+	const rows = await tx.$queryRaw<
+		{
+			id: string;
+			jobId: string;
+			sourceKey: string;
+			bitmovinEncodingId: string | null;
+			plan: Prisma.JsonValue;
+			snapshot: Prisma.JsonObject;
+		}[]
+	>`
+		SELECT s.id, s."jobId", s."sourceKey", j."bitmovinEncodingId", j.plan, s.snapshot
+		FROM "LibrarySource" s JOIN "EncodingJob" j ON j.id=s."jobId" AND j."organizationId"=s."organizationId"
+		WHERE (${jobId ?? null}::uuid IS NULL OR j.id=${jobId ?? null}::uuid)
+		AND s."originalJobId"=j.id AND s."sourceKind"='VOD_JOB'
+		AND (
+			s.snapshot @? '$.inputs[*] ? (!exists (@.pathKind) && !exists (@.hdr10Plus))'
+			OR j.plan @? '$.hdr10PlusStreams[*]'
+		)
+		ORDER BY s.id FOR UPDATE OF s`;
+	for (const row of rows) {
+		const planHash = hash(row.plan);
+		if (
+			row.snapshot.planHash !== planHash ||
+			row.sourceKey !== hash([row.jobId, row.bitmovinEncodingId, planHash])
+		)
+			continue;
+		const parsed = encodingPlanSchema.safeParse(row.plan),
+			captured = librarySnapshotSchema.safeParse(row.snapshot);
+		if (!parsed.success || !captured.success) continue;
+		const inputs = recoverLibraryIngestInputs(
+			captured.data.inputs,
+			libraryIngestInputs(parsed.data),
+		);
+		const additions = missingLibraryHdrInputs(
+			captured.data.inputs,
+			libraryHdr10PlusInputs(parsed.data),
+		);
+		if (inputs || additions.length)
+			await tx.librarySource.update({
+				where: { id: row.id },
+				data: {
+					snapshot: {
+						...row.snapshot,
+						inputs: [
+							...(inputs?.map(safeCapturedInput) ?? captured.data.inputs),
+							...additions,
+						],
+					} as Prisma.InputJsonObject,
+				},
+			});
+	}
 }
 
 /** Capture and enqueue in one transaction; the row lock orders capture vs deletion. */
@@ -74,6 +147,7 @@ export async function requestLibrarySource(
 			);
 		}
 		const plan = parsed.data;
+		const hdrInputs = libraryHdr10PlusInputs(plan);
 		const locales = plan.aiSceneAnalysis
 			? sceneAnalysisLocales(plan.aiSceneAnalysis.outputLanguageCodes)
 			: [];
@@ -163,6 +237,18 @@ export async function requestLibrarySource(
 		};
 		if (existing) {
 			const snapshot = librarySnapshotSchema.parse(existing.snapshot);
+			// Only the identical plan can supply missing historical HDR inputs.
+			const restoredInputs =
+				snapshot.planHash === planHash
+					? recoverLibraryIngestInputs(
+							snapshot.inputs,
+							libraryIngestInputs(plan),
+						)
+					: undefined;
+			const missingHdr =
+				snapshot.planHash === planHash
+					? missingLibraryHdrInputs(snapshot.inputs, hdrInputs)
+					: [];
 			const expectedFiles =
 				snapshot.planHash === planHash ? libraryFileOutputs(plan) : [];
 			const storedFiles = snapshot.fileOutputs ?? [];
@@ -203,6 +289,8 @@ export async function requestLibrarySource(
 				(upgradeAnalysis ||
 					upgradeLocales ||
 					missingFileLink ||
+					missingHdr.length ||
+					restoredInputs ||
 					fileOutputs?.length) &&
 				existing.state !== "RUNNING"
 			) {
@@ -225,6 +313,15 @@ export async function requestLibrarySource(
 						snapshot: {
 							...(existing.snapshot as Prisma.InputJsonObject),
 							playbackLinks: [...snapshot.playbackLinks, ...additions],
+							...(missingHdr.length || restoredInputs
+								? {
+										inputs: [
+											...(restoredInputs?.map(safeCapturedInput) ??
+												snapshot.inputs),
+											...missingHdr,
+										],
+									}
+								: {}),
 							...(fileOutputs ? { fileOutputs } : {}),
 							...(upgradeAnalysis ? { analysisOutput } : {}),
 						} as Prisma.InputJsonValue,
@@ -273,14 +370,10 @@ export async function requestLibrarySource(
 			name: job.name,
 			planHash,
 			identity: "UNVERIFIED",
-			inputs: plan.ingest
-				.filter((input) => "inputPath" in input)
-				.map((input) => ({
-					name:
-						plan.inputs.find((item) => item.key === input.inputKey)?.name ??
-						input.key,
-					path: input.inputPath,
-				})),
+			inputs: [
+				...libraryIngestInputs(plan).map(safeCapturedInput),
+				...hdrInputs,
+			],
 			playbackLinks: await playbackLinks(),
 			fileOutputs: libraryFileOutputs(plan),
 			qcVerdict: redactSecrets(job.qcVerdict),

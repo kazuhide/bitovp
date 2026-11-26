@@ -70,6 +70,9 @@ describe("redactSecrets", () => {
 		const out = redactSecrets(input);
 		expect(out.url).toBe(`postgresql://bitovp:${REDACTED}@db:5432/app`);
 		expect(out.note).toBe("see https://example.com/path");
+		expect(
+			redactSecrets("source //fixture:private word@example.invalid/path"),
+		).toBe(`source //fixture:${REDACTED}@example.invalid/path`);
 	});
 
 	it("masks header tuples", () => {
@@ -89,6 +92,20 @@ describe("redactSecrets", () => {
 		]);
 	});
 
+	it("handles two provider messages as prose and nested HTTP headers as tuples", () => {
+		const warning = "Read https://storage.invalid/source?sig=fixture-data-key";
+		expect(
+			redactSecrets({
+				messages: ["authorization", "normal progress"],
+				warnings: [
+					{ text: warning, headers: [["x-api-key", "fixture-value"]] },
+				],
+			}),
+		).toEqual({
+			messages: ["authorization", "normal progress"],
+			warnings: [{ text: "[withheld]", headers: [["x-api-key", REDACTED]] }],
+		});
+	});
 	it("does NOT mangle 2-element data arrays whose first item merely ends in a sensitive suffix", () => {
 		// Encoding.labels are plain string lists — ["license", "prod"] is data,
 		// not a header pair (P5 PR-2 review N2: the old rule corrupted step

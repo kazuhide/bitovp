@@ -193,6 +193,19 @@ describe("registerSlateContent", () => {
 		expect(t.row.contentClaimedAt).toBeNull();
 	});
 
+	it("releases registration with a public reason when the SDK quotes a signed object", async () => {
+		const t = makeDeps({});
+		vi.mocked(t.sdk.listLiveInsertableContent).mockRejectedValueOnce(
+			new Error("Source unavailable: clip.mxf?sig=PRIVATE_FIXTURE"),
+		);
+		const result = await registerSlateContent(t.deps, ARGS);
+		expect(result).toEqual({
+			outcome: "RELEASED",
+			reason: "slate registration failed: [withheld]",
+		});
+		expect(t.row.note).toBe(result.outcome === "RELEASED" && result.reason);
+		expect(t.row.contentClaimedAt).toBeNull();
+	});
 	it("an AWS credential with no secret is refused BY NAME and HOLDS the claim — deterministic, like every other refusal (review-223b)", async () => {
 		const t = makeDeps({ secret: {} });
 		const result = await registerSlateContent(t.deps, ARGS);

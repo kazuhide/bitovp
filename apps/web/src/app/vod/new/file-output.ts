@@ -9,7 +9,20 @@ import {
 	UNVERIFIED_MUXING_CODECS,
 } from "@bitovp/core";
 import { normalizeVodInputTimelineDocument } from "@bitovp/core/vod-input-timeline";
-import { draftKeepsText } from "@/lib/wizard-draft";
+import {
+	defaultFileNames,
+	fileExtension,
+	fileJobFolder,
+	typedFileName,
+} from "@/lib/wizard-file-names";
+
+export {
+	defaultFileNames,
+	fileJobFolder,
+	fileStem,
+	typedFileName,
+} from "@/lib/wizard-file-names";
+
 import { AUDIO_CHANNEL_LAYOUTS } from "./audio-channel-layouts";
 import {
 	audioKeys,
@@ -57,14 +70,13 @@ export type FileContainer = {
 function container(
 	kind: "MP4" | "PROGRESSIVE_TS" | "PROGRESSIVE_MOV" | "PROGRESSIVE_WEBM",
 	label: string,
-	extension: string,
 	fallbackName?: string,
 ): FileContainer {
 	const holds: readonly string[] = MUXING_CODEC_MATRIX[kind];
 	return defined({
 		kind,
 		label,
-		extension,
+		extension: fileExtension(kind),
 		video: VIDEO_CODECS.filter((codec) => holds.includes(codec)),
 		audio: AUDIO_CODECS.filter((codec) => holds.includes(codec)),
 		fallbackName,
@@ -74,10 +86,10 @@ function container(
 
 /** Containers the flow offers, with the codecs its screen can configure for each. */
 export const FILE_CONTAINERS: readonly FileContainer[] = [
-	container("MP4", "MP4 (.mp4)", "mp4"),
-	container("PROGRESSIVE_TS", "MPEG-TS (.ts)", "ts", "output.ts"),
-	container("PROGRESSIVE_MOV", "QuickTime (.mov)", "mov", "output.mov"),
-	container("PROGRESSIVE_WEBM", "WebM (.webm)", "webm", "output.webm"),
+	container("MP4", "MP4 (.mp4)"),
+	container("PROGRESSIVE_TS", "MPEG-TS (.ts)", "output.ts"),
+	container("PROGRESSIVE_MOV", "QuickTime (.mov)", "output.mov"),
+	container("PROGRESSIVE_WEBM", "WebM (.webm)", "output.webm"),
 ];
 
 export function fileContainer(
@@ -135,55 +147,6 @@ function settled(value: unknown): unknown {
 function same(a: unknown, b: unknown): boolean {
 	if (isBlank(a) || isBlank(b)) return isBlank(a) && isBlank(b);
 	return JSON.stringify(settled(a)) === JSON.stringify(settled(b));
-}
-
-/**
- * Text a saved draft keeps. A draft drops text that reads as an address or a login,
- * and a file name dropped that way comes back empty: a TS or MOV file would then be
- * written under its container's own name, with nothing said. Both shapes are
- * spelled with ":".
- */
-function keptByDraft(text: string): string {
-	return draftKeepsText(text) ? text : text.replace(/:+/g, "-");
-}
-
-/** The part of a derived file name that comes from the job name. */
-export function fileStem(name: string): string {
-	return keptByDraft(name.trim().replace(/[/\\?#]+/g, "-")) || "output";
-}
-
-/**
- * A name as the format screen takes it. `?` and `#` end the path in a URL, so a file
- * named with one cannot be fetched by its address, and a saved draft drops any text
- * that holds one (`keptByDraft`). A folder in the name is left alone.
- */
-export function typedFileName(name: string): string {
-	return keptByDraft(name.replace(/[?#]+/g, "-"));
-}
-
-/**
- * The name each file gets while nobody has typed one: the job name for the first file,
- * the job name and the height for the rest. All files share one folder, so the names
- * have to differ.
- */
-export function defaultFileNames(
-	name: string,
-	videos: readonly WizardVideoRendition[],
-): string[] {
-	const stem = fileStem(name);
-	const taken = new Set<string>();
-	return videos.map((video, index) => {
-		const extension = fileContainer(video.muxing?.kind)?.extension ?? "mp4";
-		const label =
-			index === 0
-				? stem
-				: `${stem}-${video.height === null ? index + 1 : `${video.height}p`}`;
-		let candidate = `${label}.${extension}`;
-		for (let n = index + 1; taken.has(candidate); n++)
-			candidate = `${label}-${n}.${extension}`;
-		taken.add(candidate);
-		return candidate;
-	});
 }
 
 /**
@@ -521,6 +484,7 @@ export function misreadDolbyStream(
 	if (
 		kind === "VISION_METADATA" ||
 		(state.sources?.fileStreams ?? []).some((file) => file.key === source) ||
+		(state.sources?.captionStreams ?? []).some((s) => s.key === source) ||
 		(track === "video" &&
 			(state.sources?.audioMixStreams ?? []).some((mix) => mix.key === source))
 	)
@@ -721,19 +685,6 @@ export const FILE_OUTPUT_DEFAULT_STATE: WizardState = {
 };
 
 /**
- * The folder, relative to the destination folder, for what a job writes besides its
- * files: the AI Scene Analysis result, the copies the quality check measures and the
- * Kantar report. The files go straight into the destination folder, which other
- * jobs write to as well, and none of the three is named after the job: the result
- * is `analysis.json` unless renamed, and a copy is named by the key of its file's
- * video stream (`v1080.mp4`). Left in the destination folder, the next job would
- * replace them, and a job could be scored on a copy another job wrote.
- */
-export function fileJobFolder(name: string): string {
-	return `${fileStem(name)}/`;
-}
-
-/**
  * Rename the job. What was derived from the old name follows: the file names, and
  * the folder of what the job writes besides them (`fileJobFolder`) wherever that
  * folder is still the derived one.
@@ -769,6 +720,7 @@ export function renameFileJob(
 export type FileEdit = Partial<
 	Pick<
 		WizardVideoRendition,
+		| "conditions"
 		| "height"
 		| "bitrate"
 		| "codec"
@@ -1003,6 +955,7 @@ export function removeFile(
 export type FileAudioEdit = Partial<
 	Pick<
 		WizardAudioRendition,
+		| "conditions"
 		| "codec"
 		| "bitrate"
 		| "rate"
@@ -1093,6 +1046,7 @@ export const FILE_OUTPUT_FIELD_HOME: Record<
 	keyof WizardState,
 	"shown" | FileOutputBlocker
 > = {
+	audioFile: "shown",
 	name: "shown",
 	accountId: "shown",
 	cloudRegion: "shown",
@@ -1337,6 +1291,7 @@ function stripHeldBack(state: WizardState): WizardState {
 }
 
 const VIDEO_FIELDS = [
+	"conditions",
 	"height",
 	"bitrate",
 	"codec",
@@ -1351,6 +1306,7 @@ const VIDEO_FIELDS = [
 	...VIDEO_BOOKKEEPING,
 ];
 const AUDIO_FIELDS = [
+	"conditions",
 	"codec",
 	"bitrate",
 	"rate",
@@ -1381,6 +1337,7 @@ function setsOnly(value: object | undefined, fields: readonly string[]) {
  * Empty means the whole state is visible there.
  */
 export function fileOutputBlockers(state: WizardState): FileOutputBlocker[] {
+	if (state.audioFile) return [];
 	const found = new Set<FileOutputBlocker>();
 	const lifted = unsuspended(state);
 	for (const key of fieldsInUse(lifted)) {

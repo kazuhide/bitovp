@@ -1618,6 +1618,70 @@ describe("live channel provisioning", () => {
 		expect(statusUpdates.at(-1)).toBe("RUNNING");
 	});
 
+	it("carries only safe terminal provider messages into channel, run, queue failure and event", async () => {
+		const h = setup(
+			{},
+			{
+				getEncodingStatus: vi.fn(async () => ({
+					status: "ERROR",
+					messages: [
+						"Read https://storage.invalid/media?token=PRIVATE_FIXTURE",
+						"Ingest refused",
+					],
+				})),
+			},
+		);
+		const emitEvent = vi.fn(async () => {});
+		h.deps.emitEvent = emitEvent;
+		const failure = await h.process({ liveChannelId: CHANNEL_ID }).then(
+			() => "",
+			(err: Error) => err.message,
+		);
+		expect(failure).toContain(
+			"ended ERROR before reaching RUNNING: [withheld]; Ingest refused",
+		);
+		expect(h.row).toMatchObject({ status: "ERROR", error: failure });
+		expect(h.runRows[0]?.stepLog).toEqual(h.row.stepLog);
+		expect(emitEvent).toHaveBeenCalledWith(
+			expect.objectContaining({ kind: "CHANNEL_ERROR", error: failure }),
+		);
+		expect(
+			JSON.stringify([h.row, h.runRows, emitEvent.mock.calls]),
+		).not.toContain("PRIVATE_FIXTURE");
+	});
+
+	it("keeps a rejected startup status read out of queue failure/stack, channel, run and event", async () => {
+		const h = setup(
+			{},
+			{
+				getEncodingStatus: vi
+					.fn()
+					.mockRejectedValue(
+						new Error("Source unavailable: media.mxf?sig=PRIVATE_FIXTURE"),
+					),
+			},
+		);
+		const emitEvent = vi.fn(async () => {});
+		h.deps.emitEvent = emitEvent;
+		const failure: Error = await h.process({ liveChannelId: CHANNEL_ID }).then(
+			() => {
+				throw new Error("expected failure");
+			},
+			(err: Error) => err,
+		);
+		expect(failure.message).toBe("[withheld]");
+		expect(failure.stack).not.toContain("PRIVATE_FIXTURE");
+		expect(h.row).toMatchObject({ status: "ERROR", error: failure.message });
+		expect(emitEvent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				kind: "CHANNEL_ERROR",
+				error: failure.message,
+			}),
+		);
+		expect(
+			JSON.stringify([h.row, h.runRows, emitEvent.mock.calls]),
+		).not.toContain("PRIVATE_FIXTURE");
+	});
 	it("acknowledges cancellation during startup as STOPPED, never RUNNING or CHANNEL_ERROR", async () => {
 		const h = setup(
 			{},
@@ -1738,17 +1802,30 @@ describe("live channel provisioning", () => {
 	});
 
 	it("snapshots the C7 start request onto the await entry, redacted", async () => {
-		const { process, row, sdk } = setup();
+		const warning = "Read https://storage.invalid/source?sig=fixture-data-key";
+		const { process, row, sdk, runRows } = setup(
+			{},
+			{
+				getEncodingStatus: vi.fn(async () => ({
+					status: "RUNNING",
+					messages: [warning, "normal progress"],
+				})),
+			},
+		);
 		await process({ liveChannelId: CHANNEL_ID });
 		expect(sdk.getLiveStartRequest).toHaveBeenCalledWith("bm-live-enc");
 		const entries = row.stepLog as StepLogEntry[];
 		const awaitEntry = entries.find((e) => e.kind === "AWAIT_LIVE_RUNNING");
 		expect(awaitEntry?.response).toMatchObject({
 			status: "RUNNING",
+			messages: ["[withheld]", "normal progress"],
 			// Snapshots stay masked — only the columns carry the values.
 			live: { streamKey: REDACTED, encoderIp: "203.0.113.10" },
 			startRequest: { streamKey: REDACTED },
 		});
+		expect(JSON.stringify([row.stepLog, runRows[0]?.stepLog])).not.toContain(
+			"fixture-data-key",
+		);
 	});
 
 	it("resumes by reusing DONE resource ids when the RTMP input is unchanged", async () => {
@@ -6568,6 +6645,51 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 				"provider: Insertable content does not match the live stream: frame rate",
 			);
 			warn.mockRestore();
+		});
+
+		it("keeps signed provider diagnostics out of slate history, schedule outcome and operator logs", async () => {
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+			try {
+				const harness = setup(runningRow, {
+					listScheduledInsertableContent: erroredEntry,
+					getEncodingMessages: vi.fn(async () => [
+						{
+							type: "ERROR",
+							text: "Read media/scene?auth=PRIVATE_FIXTURE",
+							date: null,
+						},
+						{
+							type: "WARNING",
+							text: "Slates must match video frame rate",
+							date: null,
+						},
+					]),
+				});
+				await fireSlate(harness);
+				const failed = (harness.row.stepLog as StepLogEntry[]).find(
+					(entry) => entry.kind === "SLATE_FAILED",
+				);
+				expect(failed?.payload.providerMessages).toEqual([
+					{ type: "ERROR", text: "[withheld]", date: null },
+					{
+						type: "WARNING",
+						text: "Slates must match video frame rate",
+						date: null,
+					},
+				]);
+				expect(outcomeWrites(harness.liveSchedule)[0]?.data).toMatchObject({
+					outcome: "FAILED",
+				});
+				expect(
+					JSON.stringify([
+						failed,
+						outcomeWrites(harness.liveSchedule),
+						warn.mock.calls,
+					]),
+				).not.toContain("PRIVATE_FIXTURE");
+			} finally {
+				warn.mockRestore();
+			}
 		});
 
 		it("says so when the provider reported no message", async () => {

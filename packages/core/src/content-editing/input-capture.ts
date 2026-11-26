@@ -1,6 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { editingObjectSchema } from "../content-library/editing-storage";
+import {
+	audioCopySourceBinding,
+	audioCopyTrackSchema,
+} from "../plan/audio-file-source";
+import type { EncodingPlan } from "../plan/schema";
 import { canonicalEditingJson } from "./automatic-binding";
 import { editingNormalizationSourceSchema } from "./normalization-evidence";
 
@@ -26,6 +31,35 @@ export const pinnedInputCaptureSchema = z.strictObject({
 	planHash: sha,
 });
 export type PinnedInputCapture = z.infer<typeof pinnedInputCaptureSchema>;
+
+export const pinnedAudioInputSchema = pinnedInputCaptureSchema
+	.omit({ sourceFacts: true, sha256: true })
+	.extend({
+		profile: z.literal("PINNED_AUDIO_INPUT_V1"),
+		inspectionId: z.uuid(),
+		track: audioCopyTrackSchema,
+	});
+export function audioInputCaptureMatchesPlan(
+	plan: EncodingPlan,
+	proof: z.infer<typeof pinnedAudioInputSchema>,
+): boolean {
+	const selected = audioCopySourceBinding(plan);
+	return (
+		!!selected &&
+		selected.inspectionId === proof.inspectionId &&
+		selected.ingestKey === proof.ingestKey &&
+		selected.track.position === proof.track.position &&
+		selected.track.sourceCodec === proof.track.sourceCodec &&
+		selected.storage.credentialId === proof.storage.credentialId &&
+		selected.storage.bucket === proof.storage.bucket &&
+		selected.storage.key === proof.storage.key
+	);
+}
+
+export const providerInputCaptureSchema = z.discriminatedUnion("profile", [
+	pinnedInputCaptureSchema,
+	pinnedAudioInputSchema,
+]);
 
 /** A successful provider GET captured by the importer, never metadata supplied by a client. */
 export const authoritativeAnalysisCaptureSchema = z.strictObject({

@@ -94,6 +94,35 @@ describe("createNotifyProcessor", () => {
 		});
 	});
 
+	it("projects old queued diagnostics before delivering webhook and Slack bodies", async () => {
+		const { deps, fetchImpl } = makeDeps();
+		vi.mocked(deps.prisma.notificationChannel.findMany).mockResolvedValue(
+			["GENERIC_WEBHOOK", "SLACK_WEBHOOK"].map((kind) =>
+				channelRow({
+					kind,
+					rules: [{ events: ["CHANNEL_ERROR"], filter: {} }],
+				}),
+			),
+		);
+		const legacy = {
+			kind: "CHANNEL_ERROR",
+			eventVersion: EVENT_VERSION,
+			occurredAt: "2026-08-12T00:00:00.000Z",
+			link: "https://ovp.example.com/live/channel",
+			liveChannelId: CHANNEL,
+			name: "Main",
+			error: "Download failed at clip.mxf?token=PRIVATE_FIXTURE",
+		};
+		await createNotifyProcessor(deps)({ data: legacy });
+		expect(fetchImpl).toHaveBeenCalledTimes(2);
+		const bodies = fetchImpl.mock.calls.map(([, init]) => String(init.body));
+		for (const body of bodies) {
+			expect(body).toContain("[withheld]");
+			expect(body).not.toContain("PRIVATE_FIXTURE");
+		}
+		expect(legacy.error).toContain("PRIVATE_FIXTURE");
+	});
+
 	it("REFUSES a host outside the allowlist at send time (C22, worker end)", async () => {
 		const { deps, fetchImpl } = makeDeps({
 			egressAllowlist: () => ["slack.com"],

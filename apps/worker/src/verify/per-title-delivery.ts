@@ -106,6 +106,7 @@ function providerMuxingTypes(expected: ExpectedMuxing): string[] {
 		// are what tell the two apart, as they do for the two MP4 containers.)
 		case "PROGRESSIVE_TS":
 		case "PROGRESSIVE_MOV":
+		case "PROGRESSIVE_WAV":
 		case "PROGRESSIVE_WEBM":
 			return [expected.container];
 	}

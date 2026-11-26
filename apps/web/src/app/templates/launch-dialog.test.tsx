@@ -1,12 +1,20 @@
+import { createHash } from "node:crypto";
 import {
 	type EncodingPlan,
 	encodingPlanSchema,
+	instantiateTemplatePlan,
+	markWithheldPlanSources,
+	publicVodSourceProjection,
 	templateSourceSites,
 } from "@bitovp/core";
 import { samplePresetPlan } from "@bitovp/core/presets";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { onlineManager } from "@tanstack/react-query";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithQuery } from "@/test/render";
+import { ApiError } from "@/lib/api";
+import { createSubmissionClient } from "@/lib/creation-submission";
+import { canonicalCreateRequestJson } from "@/lib/creation-submission-contract";
+import { renderWithOperatorSession as renderWithQuery } from "@/test/render";
 import { LaunchDialog } from "./launch-dialog";
 
 const apiFetch = vi.fn();
@@ -24,6 +32,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 afterEach(() => {
+	onlineManager.setOnline(true);
 	apiFetch.mockReset();
 	routerPush.mockReset();
 	vi.useRealTimers();
@@ -59,6 +68,95 @@ function detailFor(body: unknown) {
 }
 
 describe("LaunchDialog (ledger #109 §4.1)", () => {
+	it.each([
+		"hdrpicture",
+		"__proto__",
+		"constructor",
+	])("requires matching JSON after each change of HDR source %s", async (streamKey) => {
+		const base = encodingPlanSchema.parse(
+			samplePresetPlan("fixed-bitrate-hls-on-aws"),
+		);
+		const input = base.inputs[0],
+			output = base.outputs[0];
+		if (!input || !output) throw new Error("Missing sample storage");
+		const body = {
+			planVersion: 1,
+			name: "HDR10+ template",
+			bitmovin: { encoderVersion: "2.294.0" },
+			inputs: base.inputs,
+			outputs: base.outputs,
+			ingest: [],
+			hdr10PlusStreams: [
+				{
+					key: streamKey,
+					inputKey: input.key,
+					videoInputPath: "cut1.mp4",
+					metadataInputPath: "cut1.json",
+				},
+			],
+			renditions: [
+				{
+					key: "hevc",
+					codec: "H265",
+					ingestKey: streamKey,
+					height: 1080,
+					bitrate: 4000000,
+				},
+			],
+			muxings: [
+				{
+					key: "mux",
+					kind: "FMP4",
+					streamKey: "hevc",
+					destination: { outputKey: output.key, path: "video" },
+				},
+			],
+			manifests: [],
+			generation: { timing: "JUST_IN_TIME" },
+		};
+		apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
+			url === `/api/presets/${ID}`
+				? detailFor(body)
+				: init?.method === "POST"
+					? { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee6" }
+					: [],
+		);
+		renderWithQuery(<LaunchDialog presetId={ID} onClose={() => {}} />);
+		const picture = await screen.findByLabelText(streamKey);
+		const metadata = screen.getByLabelText(`${streamKey}:metadata`);
+		const launch = screen.getByRole("button", { name: /Create job/i });
+		await waitFor(() => expect(launch).toBeEnabled());
+		const change = (field: HTMLElement, value: string) =>
+			fireEvent.change(field, { target: { value } });
+		change(picture, "cut2.mp4");
+		fireEvent.click(launch);
+		await screen.findAllByText(/select both the replacement HDR10\+ picture/i);
+		expect(
+			apiFetch.mock.calls.some(([url]) => url === "/api/encoding-jobs"),
+		).toBe(false);
+		change(metadata, "cut2.json");
+		change(picture, "cut3.mp4");
+		fireEvent.click(launch);
+		await waitFor(() => expect(launch).toBeEnabled());
+		expect(
+			apiFetch.mock.calls.some(([url]) => url === "/api/encoding-jobs"),
+		).toBe(false);
+		change(metadata, "cut3.json");
+		fireEvent.click(launch);
+		await waitFor(() =>
+			expect(routerPush).toHaveBeenCalledWith(
+				"/vod/jobs/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee6",
+			),
+		);
+		const post = apiFetch.mock.calls.find(
+			([url]) => url === "/api/encoding-jobs",
+		);
+		if (!post) throw new Error("Missing accepted create");
+		expect(JSON.parse(post[1].body).plan.hdr10PlusStreams[0]).toMatchObject({
+			videoInputPath: "cut3.mp4",
+			metadataInputPath: "cut3.json",
+		});
+	});
 	it("keeps unstructured provider diagnostics out of the creation error", async () => {
 		apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
 			if (url === `/api/presets/${ID}`)
@@ -290,4 +388,385 @@ describe("LaunchDialog (ledger #109 §4.1)", () => {
 			apiFetch.mock.calls.find(([url]) => url === "/api/encoding-jobs"),
 		).toBeUndefined();
 	});
+});
+
+it("asks for the withheld HTTPS source before creating a job and preserves the remaining template", async () => {
+	const body = encodingPlanSchema.parse(
+		samplePresetPlan("fixed-bitrate-hls-on-aws"),
+	);
+	const original = body.ingest[0];
+	if (!original) throw new Error("Missing ingest");
+	const projected = {
+		...body,
+		inputs: body.inputs.map((input) =>
+			input.key === original.inputKey
+				? {
+						key: input.key,
+						kind: "HTTPS",
+						name: input.name,
+						host: "media.example",
+					}
+				: input,
+		),
+		ingest: body.ingest.map((stream, i) =>
+			i === 0 ? { ...stream, inputPath: "" } : stream,
+		),
+		withheldSourcePaths: [
+			[{ collection: "ingest", index: 0, field: "inputPath" }],
+		],
+	};
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
+		url === `/api/presets/${ID}`
+			? detailFor(projected)
+			: init?.method === "POST"
+				? { id: ID }
+				: [],
+	);
+	renderWithQuery(<LaunchDialog presetId={ID} onClose={() => {}} />);
+	const source = await screen.findByLabelText(original.key);
+	expect(source).toHaveValue("");
+	const apply = screen.getByRole("button", { name: /use replacement/i });
+	expect(apply).toBeDisabled();
+	expect(screen.queryByRole("button", { name: /create job/i })).toBeNull();
+	fireEvent.change(source, {
+		target: { value: "new/source.mxf?ticket=private-fixture" },
+	});
+	fireEvent.click(apply);
+	const launch = await screen.findByRole("button", { name: /create job/i });
+	await waitFor(() => expect(launch).toBeEnabled());
+	fireEvent.change(screen.getByLabelText(/output prefix/i), {
+		target: { value: "{basename}-{ext}" },
+	});
+	fireEvent.click(launch);
+	await waitFor(() => expect(routerPush).toHaveBeenCalled());
+	const post = apiFetch.mock.calls.find(
+		([url]) => url === "/api/encoding-jobs",
+	);
+	if (!post) throw new Error("Missing launched job");
+	expect(JSON.parse(post[1].body).plan.ingest).toEqual(
+		body.ingest.map((stream, i) =>
+			i === 0
+				? { ...stream, inputPath: "new/source.mxf?ticket=private-fixture" }
+				: stream,
+		),
+	);
+	const created = JSON.parse(post[1].body).plan;
+	expect(created.muxings[0].destination.path).toMatch(/^source-mxf\//);
+	expect(JSON.stringify(created.muxings)).not.toContain("private-fixture");
+	expect(post[1].body).not.toContain("withheldSourcePaths");
+});
+
+it("reuses the creation key when a lost Quick Launch is reopened with the final replacement", async () => {
+	const body = encodingPlanSchema.parse(
+		samplePresetPlan("fixed-bitrate-hls-on-aws"),
+	);
+	const [first] = body.ingest;
+	if (!first) throw new Error("Missing ingest");
+	const sourceLabel = first.key;
+	const projected = {
+		...body,
+		inputs: body.inputs.map((input) =>
+			input.key === first.inputKey
+				? {
+						key: input.key,
+						kind: "HTTPS",
+						name: input.name,
+						host: "media.invalid",
+					}
+				: input,
+		),
+		ingest: body.ingest.map((stream) =>
+			stream === first ? { ...stream, inputPath: "" } : stream,
+		),
+		withheldSourcePaths: [
+			[{ collection: "ingest", index: 0, field: "inputPath" }],
+		],
+	};
+	const submissions: RequestInit[] = [];
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+		if (url.startsWith("/api/presets/")) return detailFor(projected);
+		if (url === "/api/encoding-jobs" && init) {
+			submissions.push(init);
+			return submissions.length === 1 ? {} : { id: ID };
+		}
+		return [];
+	});
+	async function open(path: string) {
+		const view = renderWithQuery(
+			<LaunchDialog presetId={ID} onClose={() => {}} />,
+		);
+		fireEvent.change(await screen.findByLabelText(sourceLabel), {
+			target: { value: path },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /use replacement/i }));
+		const launch = await screen.findByRole("button", { name: /create job/i });
+		await waitFor(() => expect(launch).toBeEnabled());
+		return { view, launch };
+	}
+	const finalPath = "reels/approved.mxf?ticket=PRIVATE_FIXTURE";
+	const initial = await open("reels/rough.mxf?ticket=PRIVATE_FIXTURE");
+	fireEvent.change(screen.getByLabelText(first.key), {
+		target: { value: finalPath },
+	});
+	fireEvent.click(initial.launch);
+	await waitFor(() => expect(submissions).toHaveLength(1));
+	await waitFor(() => expect(initial.launch).toBeEnabled());
+	initial.view.unmount();
+	const retry = await open(finalPath);
+	fireEvent.click(retry.launch);
+	await waitFor(() => expect(routerPush).toHaveBeenCalledOnce());
+	expect(submissions).toHaveLength(2);
+	expect(submissions[0]?.headers).toEqual(submissions[1]?.headers);
+	expect(JSON.parse(String(submissions[0]?.body))).toEqual(
+		JSON.parse(String(submissions[1]?.body)),
+	);
+});
+
+it("submits the exact Quick Launch settings clicked while offline", async () => {
+	const plan = encodingPlanSchema.parse(
+		samplePresetPlan("fixed-bitrate-hls-on-aws"),
+	);
+	const [first] = templateSourceSites(plan);
+	if (!first) throw new Error("Missing source");
+	apiFetch.mockImplementation(async (url: string) =>
+		url.startsWith("/api/presets/")
+			? detailFor(plan)
+			: url === "/api/encoding-jobs"
+				? { id: ID }
+				: [],
+	);
+	renderWithQuery(<LaunchDialog presetId={ID} onClose={() => {}} />);
+	const field = await screen.findByLabelText(first.siteId);
+	const prefix = screen.getByLabelText(/output prefix/i);
+	const launch = screen.getByRole("button", { name: /create job/i });
+	await waitFor(() => expect(launch).toBeEnabled());
+	fireEvent.change(field, { target: { value: "input/clicked.mxf" } });
+	fireEvent.change(prefix, { target: { value: "clicked-prefix" } });
+	act(() => onlineManager.setOnline(false));
+	fireEvent.click(launch);
+	fireEvent.change(field, { target: { value: "input/later.mxf" } });
+	fireEvent.change(prefix, { target: { value: "later-prefix" } });
+	act(() => onlineManager.setOnline(true));
+	await waitFor(() => expect(routerPush).toHaveBeenCalledOnce());
+	const call = apiFetch.mock.calls.find(
+		([url]) => url === "/api/encoding-jobs",
+	);
+	expect(JSON.parse(String(call?.[1].body)).plan).toMatchObject({
+		ingest: expect.arrayContaining([
+			expect.objectContaining({
+				key: first.siteId,
+				inputPath: "input/clicked.mxf",
+			}),
+		]),
+		muxings: expect.arrayContaining([
+			expect.objectContaining({
+				destination: expect.objectContaining({
+					path: expect.stringMatching(/^clicked-prefix\//),
+				}),
+			}),
+		]),
+	});
+	expect(call?.[1].headers["X-BitOVP-Create-Session"]).toBe('["org","user"]');
+});
+
+it.each([
+	"ordinary",
+	"withheld path",
+	"withheld name",
+	"partially withheld name",
+	"unrecoverable name",
+	"protected original found",
+	"protected original empty",
+	"protected original missing",
+	"protected original mismatch",
+])("safely replays a lost 1.3.5 Quick Launch (%s)", async (scenario) => {
+	const parsed = encodingPlanSchema.parse(
+		samplePresetPlan("fixed-bitrate-hls-on-aws"),
+	);
+	const [first] = parsed.ingest;
+	if (!first) throw new Error("Missing source");
+	const originalPath = "private/original.mp4?ticket=protected-preset";
+	const protectSource = scenario !== "ordinary";
+	const exactProtectedIntent = scenario.startsWith("protected original");
+	const sourcePath =
+		exactProtectedIntent ||
+		scenario === "withheld name" ||
+		scenario === "partially withheld name"
+			? originalPath
+			: "safe/replacement.mp4";
+	if (protectSource) {
+		parsed.inputs = parsed.inputs.map((input) =>
+			input.key === first.inputKey
+				? {
+						key: input.key,
+						kind: "HTTPS",
+						host: "media.invalid",
+						name:
+							scenario === "withheld name"
+								? originalPath
+								: scenario === "partially withheld name" ||
+										scenario === "unrecoverable name"
+									? `Input from ${originalPath}`
+									: input.name,
+					}
+				: input,
+		);
+		first.inputPath = originalPath;
+	}
+	const {
+		hdr10PlusStreams: _hdr,
+		captionStreams: _captions,
+		...presetBody
+	} = parsed;
+	const sources = Object.fromEntries(
+		templateSourceSites(parsed).map((site) => {
+			const input = parsed.inputs.find((row) => row.key === site.inputKey);
+			return [
+				site.siteId,
+				{
+					objectKey:
+						protectSource && site.siteId === first.key
+							? sourcePath
+							: site.currentPath,
+					...(input && "bucket" in input && "credentialId" in input
+						? { bucket: input.bucket, credentialId: input.credentialId }
+						: {}),
+				},
+			];
+		}),
+	);
+	const submissions: RequestInit[] = [];
+	const oldClient = createSubmissionClient(
+		["org", "user", "vod", `template:${ID}:3`],
+		{
+			storage: sessionStorage,
+			send: async (_url, init) => {
+				submissions.push(init);
+				throw new Error("Lost response");
+			},
+		},
+	);
+	const seed = oldClient.getSeed();
+	const previous = {
+		presetBody,
+		sources,
+		templateName: "hardened-hls",
+		outputPrefixTemplate: "previous/{uuid}",
+		name: "Existing launch",
+		presetId: ID,
+		presetRevision: 3,
+		renderedAt: seed.createdAt,
+	};
+	await expect(
+		oldClient.submit(previous, (pending) => {
+			const result = instantiateTemplatePlan({
+				...previous,
+				now: new Date(previous.renderedAt),
+				uuid: pending.nonce,
+			});
+			if (!result.ok) throw new Error("Invalid legacy fixture");
+			const {
+				hdr10PlusStreams: _hdr,
+				captionStreams: _captions,
+				...plan
+			} = result.plan;
+			return { plan, presetId: ID, presetRevision: 3 };
+		}),
+	).rejects.toThrow("Lost response");
+	const original: unknown = JSON.parse(String(submissions[0]?.body));
+	const originalDigest = createHash("sha256")
+		.update(canonicalCreateRequestJson(original))
+		.digest("hex");
+	const projected = publicVodSourceProjection({ body: presetBody }, presetBody);
+	const publicPreset = markWithheldPlanSources(presetBody, projected.body);
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+		if (url.startsWith("/api/presets/")) return detailFor(publicPreset);
+		if (url === "/api/encoding-jobs" && init) {
+			submissions.push(init);
+			if (protectSource && init.method === "GET") {
+				const headers = new Headers(init.headers);
+				if (headers.get("X-BitOVP-Create-Request-Digest") !== originalDigest)
+					throw new ApiError(409, "Receipt digest mismatch", {
+						code: "CREATE_REQUEST_CONFLICT",
+					});
+				if (scenario === "protected original empty") return [];
+				if (scenario === "protected original missing")
+					throw new ApiError(404, "Receipt missing", {
+						code: "CREATE_REQUEST_NOT_FOUND",
+					});
+				if (scenario === "protected original mismatch")
+					throw new ApiError(409, "Accepted digest differs", {
+						code: "CREATE_REQUEST_CONFLICT",
+					});
+			}
+			return { id: ID };
+		}
+		return [];
+	});
+	renderWithQuery(<LaunchDialog presetId={ID} onClose={() => {}} />);
+	if (protectSource) {
+		fireEvent.change(await screen.findByLabelText(first.key), {
+			target: { value: sourcePath },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /use replacement/i }));
+	}
+	const launch = await screen.findByRole("button", { name: /create job/i });
+	await waitFor(() => expect(launch).toBeEnabled());
+	fireEvent.change(screen.getByLabelText(/output prefix/i), {
+		target: { value: previous.outputPrefixTemplate },
+	});
+	fireEvent.change(screen.getByLabelText(/job name/i), {
+		target: { value: previous.name },
+	});
+	fireEvent.click(launch);
+	const originalKey = new Headers(submissions[0]?.headers).get(
+		"Idempotency-Key",
+	);
+	if (exactProtectedIntent) {
+		await waitFor(() => expect(submissions).toHaveLength(2));
+		expect(submissions[1]?.method).toBe("GET");
+		expect(submissions[1]?.body).toBeUndefined();
+		const headers = new Headers(submissions[1]?.headers);
+		expect(headers.get("Idempotency-Key")).toBe(originalKey);
+		expect(headers.get("X-BitOVP-Create-Session")).toBe('["org","user"]');
+		expect(headers.get("X-BitOVP-Create-Request-Digest")).toBe(originalDigest);
+	}
+	if (
+		scenario === "unrecoverable name" ||
+		(exactProtectedIntent && scenario !== "protected original found")
+	) {
+		expect(await screen.findByRole("alert")).toBeInTheDocument();
+		expect(routerPush).not.toHaveBeenCalled();
+		expect(submissions.slice(1)).toEqual([
+			expect.objectContaining({ method: "GET" }),
+		]);
+		const journal = sessionStorage.getItem(
+			`bitovp.creation-intent:${JSON.stringify(["org", "user", "vod", `template:${ID}:3`])}`,
+		);
+		expect(journal).toContain(originalKey);
+		return;
+	}
+	await waitFor(() => expect(routerPush).toHaveBeenCalledOnce());
+	const repeated = submissions.slice(1);
+	expect(repeated.length).toBeGreaterThan(0);
+	for (const { headers } of repeated)
+		expect(new Headers(headers).get("Idempotency-Key")).toBe(originalKey);
+	if (protectSource) {
+		for (const request of repeated) {
+			expect(request.method).toBe("GET");
+			expect(request.body).toBeUndefined();
+			expect(new Headers(request.headers).get("X-BitOVP-Create-Session")).toBe(
+				'["org","user"]',
+			);
+		}
+		expect(
+			new Headers(repeated.at(-1)?.headers).get(
+				"X-BitOVP-Create-Request-Digest",
+			),
+		).toBe(originalDigest);
+	} else {
+		expect(repeated).toHaveLength(1);
+		expect(repeated[0]?.method).toBe("POST");
+		expect(JSON.parse(String(repeated[0]?.body))).toEqual(original);
+	}
 });

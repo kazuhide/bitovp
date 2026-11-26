@@ -3,13 +3,15 @@
 import {
 	type EncodingPlan,
 	encodingPlanSchema,
+	hasPrivateStorageLocator,
 	instantiateTemplatePlan,
+	mapDestinationPaths,
 	type PresetLaunchDefaults,
 	renderTemplateOutputPrefix,
 	type TemplateSourceParam,
 	templateSourceSites,
 } from "@bitovp/core";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { StoragePicker } from "@/components/storage-picker";
@@ -17,10 +19,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+	useWithheldSourceInputs,
+	WithheldSourceInputs,
+} from "@/components/withheld-source-inputs";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useCreationSubmission } from "@/lib/creation-submission-hook";
 import { localizedCustomerError } from "@/lib/customer-error";
 import { useT } from "@/lib/i18n/context";
+import { useWizardSubmission } from "@/lib/wizard-submission-hook";
 import {
 	BROWSABLE_STORAGE_PROVIDERS,
 	storageKindForProvider,
@@ -36,6 +43,81 @@ type PresetDetail = {
 
 const DEFAULT_PREFIX_TEMPLATE = "{template}/{date}-{uuid}";
 const DEFAULT_NAME_TEMPLATE = "{template} {date}";
+
+/** Reconstruct the destination tokens shipped in 1.3.5 for receipt lookup. */
+function legacyOutputPrefix(
+	template: string,
+	plan: EncodingPlan,
+	templateName: string,
+	renderedAt: number,
+	nonce: string,
+) {
+	const path = templateSourceSites(plan)[0]?.currentPath ?? "";
+	const file = path.split("/").pop() ?? path;
+	const dot = file.lastIndexOf(".");
+	const tokens: Record<string, string> = {
+		basename: dot > 0 ? file.slice(0, dot) : file,
+		ext: dot > 0 ? file.slice(dot + 1).toLowerCase() : "",
+		date: new Date(renderedAt).toISOString().slice(0, 10),
+		uuid: nonce,
+		template: templateName,
+	};
+	return template
+		.replace(
+			/\{(basename|ext|date|uuid|template)\}/g,
+			(_, key: string) => tokens[key] ?? "",
+		)
+		.replace(/\/{2,}/g, "/")
+		.replace(/^\//, "")
+		.replace(/\/$/, "");
+}
+
+/** Recover only the name of an HTTPS input with one user-supplied signed path.
+ * This candidate is hashed for the old receipt lookup and is never submitted. */
+function legacyInputNames(
+	raw: unknown,
+	inputs: EncodingPlan["inputs"],
+	resolved: readonly { inputKey: string; path: string }[] = [],
+): EncodingPlan["inputs"] | undefined {
+	if (
+		!resolved.length ||
+		!raw ||
+		typeof raw !== "object" ||
+		!("inputs" in raw) ||
+		!Array.isArray(raw.inputs)
+	)
+		return undefined;
+	const publishedInputs = raw.inputs;
+	let recovered = false;
+	const names = inputs.map((input) => {
+		if (input.kind !== "HTTPS") return input;
+		const inputPaths = new Set(
+			resolved
+				.filter(
+					({ inputKey, path }) =>
+						inputKey === input.key &&
+						hasPrivateStorageLocator(path, "HTTPS_PATH"),
+				)
+				.map(({ path }) => path),
+		);
+		const [signedPath] = inputPaths;
+		if (inputPaths.size !== 1 || !signedPath) return input;
+		const publishedName = publishedInputs.find(
+			(row) => row?.key === input.key,
+		)?.name;
+		if (publishedName !== "" && !input.name.includes("[withheld]"))
+			return input;
+		recovered = true;
+		return {
+			...input,
+			name:
+				publishedName === ""
+					? signedPath
+					: input.name.replaceAll("[withheld]", () => signedPath),
+		};
+	});
+	return recovered ? names : undefined;
+}
 
 /**
  * The §4.1 minimal launch form : sources (the ask-list DERIVED
@@ -53,9 +135,9 @@ export function LaunchDialog({
 }) {
 	const { t } = useT();
 	const router = useRouter();
-	const [overrides, setOverrides] = useState<
-		Record<string, TemplateSourceParam>
-	>({});
+	const [overrides, setOverrides] = useState<Map<string, TemplateSourceParam>>(
+		() => new Map(),
+	);
 	const [prefixTemplate, setPrefixTemplate] = useState(DEFAULT_PREFIX_TEMPLATE);
 	const [name, setName] = useState("");
 	const [pickingSite, setPickingSite] = useState<string | null>(null);
@@ -73,15 +155,70 @@ export function LaunchDialog({
 		presetId !== null && detail.data?.id === presetId,
 	);
 
+	const sourceVersion = detail.data
+		? `${detail.data.id}:${detail.data.revision}`
+		: undefined;
+	const replacement = useWithheldSourceInputs(detail.data?.body, sourceVersion);
+	const presetBody = replacement.body;
 	const plan: EncodingPlan | null = useMemo(() => {
-		if (!detail.data) {
+		if (!presetBody) {
 			return null;
 		}
-		const parsed = encodingPlanSchema.safeParse(detail.data.body);
+		const parsed = encodingPlanSchema.safeParse(presetBody);
 		return parsed.success ? parsed.data : null;
-	}, [detail.data]);
+	}, [presetBody]);
 
 	const sites = useMemo(() => (plan ? templateSourceSites(plan) : []), [plan]);
+
+	function changeSource(siteId: string, next: TemplateSourceParam) {
+		setOverrides((previous) => {
+			const updates = new Map(previous).set(siteId, next);
+			const site = sites.find((item) => item.siteId === siteId);
+			if (!site || !plan?.hdr10PlusStreams.length) return updates;
+			const input = plan.inputs.find((entry) => entry.key === site.inputKey);
+			const originalLocation =
+				input && "bucket" in input && "credentialId" in input
+					? input
+					: undefined;
+			const location =
+				[...previous].find(
+					([key, value]) =>
+						value.bucket !== undefined &&
+						sites.some(
+							(other) =>
+								other.siteId === key && other.inputKey === site.inputKey,
+						),
+				)?.[1] ?? originalLocation;
+			const moved =
+				next.bucket !== undefined &&
+				(next.bucket !== location?.bucket ||
+					next.credentialId !== location?.credentialId);
+			for (const stream of plan.hdr10PlusStreams) {
+				if (stream.inputKey !== site.inputKey) continue;
+				const metadataId = `${stream.key}:metadata`;
+				if (moved && siteId !== stream.key)
+					updates.set(stream.key, { objectKey: "" });
+				if (
+					metadataId !== siteId &&
+					(moved ||
+						(siteId === stream.key &&
+							previous.get(siteId)?.objectKey !== "" &&
+							next.objectKey !==
+								(previous.get(siteId)?.objectKey ?? site.currentPath)))
+				) {
+					const original =
+						next.objectKey === stream.videoInputPath &&
+						!moved &&
+						(!next.bucket ||
+							(next.bucket === originalLocation?.bucket &&
+								next.credentialId === originalLocation?.credentialId));
+					if (original) updates.delete(metadataId);
+					else updates.set(metadataId, { objectKey: "" });
+				}
+			}
+			return updates;
+		});
+	}
 
 	// Seed the form ONCE per opened template, after the async load lands —
 	// state initializers cannot see it (the dialog mounts before the fetch).
@@ -94,7 +231,7 @@ export function LaunchDialog({
 			return;
 		}
 		setSeededFor(`${detail.data.id}:${creation.seed.nonce}`);
-		setOverrides({});
+		setOverrides(new Map());
 		setIssues([]);
 		setPrefixTemplate(
 			detail.data.launchDefaults?.outputPrefixTemplate ??
@@ -120,35 +257,63 @@ export function LaunchDialog({
 	const preview = useMemo(() => {
 		const first = sites[0];
 		const effective = first
-			? (overrides[first.siteId]?.objectKey ?? first.currentPath)
+			? (overrides.get(first.siteId)?.objectKey ?? first.currentPath)
 			: "";
 		return renderTemplateOutputPrefix(prefixTemplate, {
 			objectKey: effective,
+			inputKind: plan?.inputs.find(
+				(resource) => resource.key === first?.inputKey,
+			)?.kind,
 			templateName: detail.data?.name ?? "",
 			now: new Date(creation.seed?.createdAt ?? Date.now()),
 			uuid: "xxxxxxxx",
 		});
-	}, [sites, overrides, prefixTemplate, detail.data?.name, creation.seed]);
-	const launch = useMutation({
-		mutationFn: async () => {
-			if (!detail.data || !creation.seed) {
+	}, [
+		sites,
+		overrides,
+		prefixTemplate,
+		detail.data?.name,
+		creation.seed,
+		plan,
+	]);
+	const launch = useWizardSubmission(
+		() => {
+			if (!detail.data || !creation.seed || !presetBody) {
 				throw new Error("not loaded");
 			}
-			const result = instantiateTemplatePlan({
-				presetBody: detail.data.body,
-				sources: overrides,
+			const params = {
+				presetBody,
+				sources: Object.fromEntries(overrides),
 				outputPrefixTemplate: prefixTemplate,
 				name,
 				templateName: detail.data.name,
+			};
+			const result = instantiateTemplatePlan({
+				...params,
 				now: new Date(0),
 				uuid: "xxxxxxxx",
 			});
 			if (!result.ok) {
-				setIssues(result.issues.map((i) => i.message));
-				return null;
+				setIssues(
+					result.issues.map((i) =>
+						i.code === "HDR10PLUS_PAIR_REQUIRED"
+							? t("templates.hdrPairRequired")
+							: i.message,
+					),
+				);
+				return async () => null;
 			}
 			setIssues([]);
-			const sources = Object.fromEntries(
+			// A reopened attempt may have reached the same final inputs through
+			// a different series of replacements. The effective plan binds the retry.
+			const intent = {
+				plan: result.plan,
+				outputPrefixTemplate: prefixTemplate,
+				presetId: detail.data.id,
+				presetRevision: detail.data.revision,
+				renderedAt: creation.seed.createdAt,
+			};
+			const oldSources = Object.fromEntries(
 				templateSourceSites(result.plan).map((site) => {
 					const input = result.plan.inputs.find(
 						(entry) => entry.key === site.inputKey,
@@ -164,39 +329,89 @@ export function LaunchDialog({
 					];
 				}),
 			);
-			const intent = {
-				presetBody: detail.data.body,
-				sources,
-				outputPrefixTemplate: prefixTemplate,
-				name,
-				templateName: detail.data.name,
-				presetId: detail.data.id,
-				presetRevision: detail.data.revision,
-				renderedAt: creation.seed.createdAt,
-			};
-			return creation.submit<{ id: string }>(intent, (seed, snapshot) => {
-				const frozen = snapshot as typeof intent;
+			function render(nonce: string) {
 				const rendered = instantiateTemplatePlan({
-					...frozen,
-					now: new Date(frozen.renderedAt),
-					uuid: seed.nonce,
+					...params,
+					now: new Date(intent.renderedAt),
+					uuid: nonce,
 				});
 				if (!rendered.ok)
 					throw new Error("Template parameters changed before submission");
-				return {
-					plan: rendered.plan,
-					presetId: frozen.presetId,
-					presetRevision: frozen.presetRevision,
-				};
-			});
+				return rendered;
+			}
+			const provenance = {
+				presetId: intent.presetId,
+				presetRevision: intent.presetRevision,
+			};
+			const restoredInputs = legacyInputNames(
+				detail.data.body,
+				result.plan.inputs,
+				replacement.resolvedPaths,
+			);
+			const legacy =
+				result.plan.hdr10PlusStreams.length || result.plan.captionStreams.length
+					? undefined
+					: {
+							lookupWithheldPreset: replacement.resolvedPaths !== undefined,
+							intent: {
+								...params,
+								sources: oldSources,
+								...provenance,
+								renderedAt: intent.renderedAt,
+							},
+							request({ nonce }: { nonce: string }) {
+								const rendered = render(nonce);
+								const {
+									hdr10PlusStreams: _hdr,
+									captionStreams: _captions,
+									...plan
+								} = rendered.plan;
+								const prefix = legacyOutputPrefix(
+									params.outputPrefixTemplate,
+									rendered.plan,
+									params.templateName,
+									intent.renderedAt,
+									nonce,
+								);
+								const replayOnly = prefix !== rendered.outputPrefix;
+								function requestBody(inputs?: EncodingPlan["inputs"]) {
+									const candidate = inputs ? { ...plan, inputs } : plan;
+									return {
+										...provenance,
+										plan: replayOnly
+											? mapDestinationPaths(
+													candidate,
+													(path) =>
+														prefix + path.slice(rendered.outputPrefix.length),
+												)
+											: candidate,
+									};
+								}
+								return {
+									body: requestBody(),
+									...(restoredInputs && {
+										restoredNameBody: requestBody(restoredInputs),
+									}),
+									replayOnly,
+								};
+							},
+						};
+			return () =>
+				creation.submit<{ id: string }>(
+					intent,
+					(seed) => ({ ...provenance, plan: render(seed.nonce).plan }),
+					{ legacy },
+				);
 		},
-		onSuccess: (created) => {
+		() => undefined,
+		(created) => {
 			if (created) {
+				replacement.clear();
 				onClose();
 				router.push(`/vod/jobs/${created.id}`);
 			}
 		},
-	});
+	);
 
 	const pickerSeedCredential = useMemo(() => {
 		if (pickingSite === null || !plan) {
@@ -229,6 +444,7 @@ export function LaunchDialog({
 				"creationSubmission.storageUnavailable",
 				"creationSubmission.pendingLimit",
 				"creationSubmission.responseUnavailable",
+				"creationSubmission.legacyReceiptUnavailable",
 			] as const
 		).find(
 			(key) =>
@@ -241,6 +457,7 @@ export function LaunchDialog({
 			onOpenChange={(open) => {
 				if (!open) {
 					setSeededFor(null);
+					replacement.clear();
 					onClose();
 				}
 			}}
@@ -249,6 +466,12 @@ export function LaunchDialog({
 		>
 			{detail.isPending ? (
 				<p className="text-xs text-zinc-500">{t("templates.loading")}</p>
+			) : replacement.pending ? (
+				<WithheldSourceInputs
+					key={sourceVersion}
+					sources={replacement.pending}
+					onResolve={replacement.resolve}
+				/>
 			) : !plan ? (
 				<p className="text-rose-400 text-sm">{t("templates.notAPlan")}</p>
 			) : (
@@ -258,7 +481,7 @@ export function LaunchDialog({
 							{t("templates.sources")}
 						</h3>
 						{sites.map((site) => {
-							const override = overrides[site.siteId];
+							const override = overrides.get(site.siteId);
 							return (
 								<div
 									key={site.siteId}
@@ -272,9 +495,12 @@ export function LaunchDialog({
 										htmlFor={`tpl-src-${site.siteId}`}
 										label={site.siteId}
 										hint={
-											override
-												? t("templates.sourceMoved")
-												: t("templates.sourceOriginal")
+											override?.objectKey === "" &&
+											site.list === "hdr10PlusStreams"
+												? t("templates.hdrPairRequired")
+												: override
+													? t("templates.sourceMoved")
+													: t("templates.sourceOriginal")
 										}
 										trailing={
 											providersForSite(site.inputKey).length > 0 ? (
@@ -292,13 +518,10 @@ export function LaunchDialog({
 											id={`tpl-src-${site.siteId}`}
 											value={override?.objectKey ?? site.currentPath}
 											onChange={(e) =>
-												setOverrides((prev) => ({
-													...prev,
-													[site.siteId]: {
-														...prev[site.siteId],
-														objectKey: e.target.value,
-													},
-												}))
+												changeSource(site.siteId, {
+													...overrides.get(site.siteId),
+													objectKey: e.target.value,
+												})
 											}
 										/>
 									</Field>
@@ -340,7 +563,7 @@ export function LaunchDialog({
 						</ul>
 					) : null}
 					{launch.isError || creation.seedError ? (
-						<p className="text-rose-400 text-xs">
+						<p role="alert" className="text-rose-400 text-xs">
 							{localizedCustomerError(t, launchFailure, launchFailureKey)}
 						</p>
 					) : null}
@@ -373,10 +596,11 @@ export function LaunchDialog({
 				onClose={() => setPickingSite(null)}
 				onSelect={({ credentialId, bucket, path }) => {
 					if (pickingSite !== null) {
-						setOverrides((prev) => ({
-							...prev,
-							[pickingSite]: { objectKey: path, bucket, credentialId },
-						}));
+						changeSource(pickingSite, {
+							objectKey: path,
+							bucket,
+							credentialId,
+						});
 					}
 					setPickingSite(null);
 				}}

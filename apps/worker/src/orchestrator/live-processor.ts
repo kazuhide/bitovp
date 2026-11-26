@@ -67,6 +67,7 @@ import {
 	priorRollManifestFiles,
 	projectMoqTaskHistory,
 	providerUnknownPastGrace,
+	publicStorageDiagnostic,
 	readLiveAutoShutdownUpdate,
 	redactSecrets,
 	resolveLiveToVodTarget,
@@ -114,6 +115,7 @@ import {
 	unconfirmedRtmpEncoders,
 	wasLiveStopAcknowledged,
 } from "@bitovp/db";
+import { UnrecoverableError } from "bullmq";
 import {
 	heartbeatIngestMedia,
 	type MediaAttributes,
@@ -249,6 +251,7 @@ export type LiveChannelDeps = {
 	wakeSleep?(ms: number, interestedIds: () => string[]): Promise<void>;
 	prisma: AppPrismaClient;
 	revealBitmovinAccount(accountId: string): Promise<{
+		resourceScopeVersion?: string;
 		apiKey: string;
 		tenantOrgId: string | null;
 	}>;
@@ -817,7 +820,7 @@ async function emitChannelEvent(
 			kind,
 			liveChannelId,
 			name,
-			error: error ?? "channel error",
+			error: publicStorageDiagnostic(error ?? "channel error"),
 			path,
 		});
 		return;
@@ -1178,16 +1181,17 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 	}
 
 	async function markError(liveChannelId: string, message: string) {
+		const error = publicStorageDiagnostic(message);
 		await deps.prisma.liveChannel.update({
 			where: { id: liveChannelId },
-			data: { status: "ERROR", error: redactSecrets(message) },
+			data: { status: "ERROR", error },
 		});
 		// Dual-write : the run carries its own terminal state.
 		await runs.mirror(liveChannelId, {
 			status: "ERROR",
-			error: redactSecrets(message),
+			error,
 		});
-		await emitChannel("CHANNEL_ERROR", liveChannelId, redactSecrets(message));
+		await emitChannel("CHANNEL_ERROR", liveChannelId, error);
 	}
 
 	/**
@@ -1823,7 +1827,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				const crossedSendBoundary =
 					effect?.crossedSendBoundary === true || observedPriorSend;
 				if (effect) {
-					const error = redactSecrets(message);
+					const error = redactSecrets(publicStorageDiagnostic(message));
 					const at = new Date(deps.now());
 					const recorded = await recordLiveStopFailure(
 						deps.prisma,
@@ -1929,7 +1933,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				message: string,
 			): Promise<boolean> => {
 				if (!(await restartEffectIsCurrent())) return false;
-				const error = redactSecrets(message);
+				const error = redactSecrets(publicStorageDiagnostic(message));
 				// The assertion above checks the claim token/run/provider/expiry. This
 				// write is the second, atomic half: STOP may win immediately after that
 				// read, so ERROR itself must CAS the exact generation and restart state.
@@ -3539,7 +3543,9 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 					 * this whole path exists to remove.
 					 */
 					status: verdict === "CONFIRMED" ? "DONE" : "FAILED",
-					...(verdict === "CONFIRMED" ? {} : { error: verdictNote }),
+					...(verdict === "CONFIRMED"
+						? {}
+						: { error: publicStorageDiagnostic(verdictNote) }),
 					startedAt: closedAt,
 					finishedAt: closedAt,
 				} as StepLogEntry;
@@ -3582,7 +3588,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 						: verdict === "FAILED"
 							? "FAILED"
 							: "UNKNOWN",
-					redactSecrets(verdictNote),
+					publicStorageDiagnostic(verdictNote),
 					new Date(deps.now()),
 					verdict === "CONFIRMED"
 						? "SLATE_ARMED"
@@ -6166,6 +6172,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		let taskHistory: ReturnType<typeof projectMoqTaskHistory>;
 		let sdk: SdkOps;
 		let accountId: string;
+		let resourceAccount: StepLogEntry["resourceAccount"];
 		// , live half: same lifecycle as the VOD processor's pair —
 		// set at step start, cleared on success AND in the catch.
 		let stampStep: string | undefined;
@@ -6195,6 +6202,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			accountId = resolvedAccountId;
 			resetOwner.accountId = accountId;
 			const account = await deps.revealBitmovinAccount(accountId);
+			resourceAccount = account.resourceScopeVersion
+				? { id: accountId, version: account.resourceScopeVersion }
+				: undefined;
 			sdk = deps.makeSdk({
 				...(isAisaManagedLivePlan(plan)
 					? {
@@ -6365,7 +6375,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			if (taskHistory.moq) sdk = withMoqTaskStatus(sdk);
 			resetOwner.sdk = sdk;
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "setup failed";
+			const message = publicStorageDiagnostic(
+				err instanceof Error ? err.message : "setup failed",
+			);
 			// Fenced like every other write past the claim (review-336 C2): a
 			// worker that stalled inside revealBitmovinAccount past the lease
 			// window and then failed must not stamp its stale ERROR over a
@@ -6519,10 +6531,11 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						generation: ownerGeneration,
 					};
 				}
-				const reason =
+				const reason = publicStorageDiagnostic(
 					verdict.lifecycle === "TERMINAL"
 						? (verdict.reason ?? "the provider reports the encoding ended")
-						: `Provision refused: ${verdict.refusal} (${verdict.reason})`;
+						: `Provision refused: ${verdict.refusal} (${verdict.reason})`,
+				);
 				if (!verdict.channelLanded) {
 					// UNKNOWN, an already-terminalised run, or a channel pointer
 					// that drifted: the channel still holds this lease, so it
@@ -6536,11 +6549,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					if (!verdict.terminalised) {
 						// The reconciler emits when IT terminalises; this arm is the
 						// one with no emit yet.
-						await emitChannel(
-							"CHANNEL_ERROR",
-							liveChannelId,
-							redactSecrets(reason),
-						);
+						await emitChannel("CHANNEL_ERROR", liveChannelId, reason);
 					}
 				}
 				heldAt = null;
@@ -7313,6 +7322,8 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					entry.finishedAt = deps.now();
 					entry.resourceId = result.resourceId;
 					delete entry.adoptExistingOnly;
+					if (result.resourceId && resourceAccount)
+						entry.resourceAccount = resourceAccount;
 					entry.request = redactSecrets(result.request);
 					const providerBarrierEvidence =
 						typeof entry.response === "object" &&
@@ -7378,13 +7389,15 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 							? err
 							: new ProvisionLeaseLostError(liveChannelId);
 					}
-					const message = err instanceof Error ? err.message : "step failed";
+					const message = publicStorageDiagnostic(
+						err instanceof Error ? err.message : "step failed",
+					);
 					if (err instanceof LiveEncodingCanceled) {
 						// The await condition was not reached. Preserve the provider's
 						// response, but do not mark the channel or startup sample ERROR.
 						entry.status = "FAILED";
 						entry.finishedAt = deps.now();
-						entry.error = redactSecrets(message);
+						entry.error = message;
 						entry.response = redactSecrets(err.task);
 						await persist(entries);
 						const run =
@@ -7432,12 +7445,12 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					}
 					entry.status = "FAILED";
 					entry.finishedAt = deps.now();
-					entry.error = redactSecrets(message);
+					entry.error = message;
 					// One channel = ONE encoding: no stop-siblings here (the VOD
 					// multi-encoding ladder concern does not exist for live).
 					await persist(entries, {
 						status: "ERROR",
-						error: redactSecrets(message),
+						error: message,
 					});
 					//  PR1: provisional failure sample (create-if-absent;
 					// the reconciler re-covers a write this dying job loses).
@@ -7447,11 +7460,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						entry.step,
 						currentRunId,
 					);
-					await emitChannel(
-						"CHANNEL_ERROR",
-						liveChannelId,
-						redactSecrets(message),
-					);
+					await emitChannel("CHANNEL_ERROR", liveChannelId, message);
 					throw err;
 				}
 			}
@@ -7653,10 +7662,14 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				);
 				throw err;
 			}
-			const message = err instanceof Error ? err.message : "finalize failed";
+			const message = redactSecrets(
+				publicStorageDiagnostic(
+					err instanceof Error ? err.message : "finalize failed",
+				),
+			);
 			const failed = {
 				status: "ERROR",
-				error: redactSecrets(message),
+				error: message,
 			} as const;
 			if (!(await projectProvisionEnd(failed))) return "PROVISIONING";
 			//  PR1: finalize deaths are startup failures too.
@@ -7666,7 +7679,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				"finalize",
 				currentRunId,
 			);
-			await emitChannel("CHANNEL_ERROR", liveChannelId, redactSecrets(message));
+			await emitChannel("CHANNEL_ERROR", liveChannelId, message);
 			throw err;
 		}
 		return "RUNNING";
@@ -7726,7 +7739,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		return true;
 	}
 
-	return async function process(
+	async function processLiveJob(
 		jobData: unknown,
 		queueJobId?: string,
 		firstQueueDelivery = false,
@@ -8340,6 +8353,24 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 				const exhaustive: never = job.action;
 				throw new Error(`Unknown live channel action ${String(exhaustive)}`);
 			}
+		}
+	}
+	return async (
+		...args: Parameters<typeof processLiveJob>
+	): Promise<LiveChannelResult> => {
+		try {
+			return await processLiveJob(...args);
+		} catch (error) {
+			// BullMQ persists the thrown message and stack before the failed-job
+			// handler runs. Keep the original exception for ordinary control flow.
+			const message = error instanceof Error ? error.message : String(error);
+			const publicMessage = publicStorageDiagnostic(message);
+			if (message !== publicMessage) {
+				if (error instanceof UnrecoverableError)
+					throw new UnrecoverableError(publicMessage);
+				throw new Error(publicMessage);
+			}
+			throw error;
 		}
 	};
 }

@@ -17,6 +17,98 @@ beforeEach(() => {
 });
 
 describe("GET /api/audit-logs", () => {
+	it.each([
+		"//fixture.invalid/media/file.json?token=PRIVATE_AUDIT_FIXTURE",
+		"https://fixture.invalid/media?\nkey=PRIVATE_AUDIT_FIXTURE",
+		"//fixture:PRIVATE_AUDIT_FIXTURE space@fixture.invalid/video",
+		"https:/fixture:PRIVATE_AUDIT_FIXTURE'quote@fixture.invalid/picture",
+	])("withholds historical native HDR paths in audit records and diagnostic-only summaries", async (privatePath) => {
+		const path = "/encoding/encodings/encoder/input-streams/hdr10-plus",
+			error = "Could not read " + privatePath;
+		const row = {
+			id: ID,
+			path,
+			actor: "worker",
+			error,
+			statusCode: 400,
+			request: {
+				metadataInputPath: privatePath,
+				videoInputPath: "assets/safe.mxf",
+			},
+			response: { message: error },
+		};
+		findMany.mockResolvedValueOnce([
+			{
+				id: row.id,
+				path: row.path,
+				actor: row.actor,
+				error: row.error,
+				statusCode: row.statusCode,
+			},
+		]);
+		const listResponse = await list(new Request("http://test/api/audit-logs"));
+		expect(await listResponse.text()).not.toContain("PRIVATE_AUDIT_FIXTURE");
+		findUnique.mockResolvedValueOnce(row);
+		const detailResponse = await detail(new Request("http://test"), {
+			params: Promise.resolve({ id: ID }),
+		});
+		expect(detailResponse.status).toBe(200);
+		const publicRow = await detailResponse.json();
+		expect(JSON.stringify(publicRow)).not.toContain("PRIVATE_AUDIT_FIXTURE");
+		expect(publicRow.request.videoInputPath).toBe("assets/safe.mxf");
+	});
+	it("withholds unverified Dolby Vision locators from historical audit details", async () => {
+		const videoInputPath =
+			"\u0001//test:PRIVATE_AUDIT_SAMPLE@fixture.invalid/media";
+		findUnique.mockResolvedValueOnce({
+			id: ID,
+			path: "/encoding/encodings/enc/input-streams/dolby-vision",
+			actor: "worker",
+			request: {
+				videoInputPath,
+				metadataInputPath: "///private-account@fixture.invalid/take",
+			},
+			response: { message: videoInputPath },
+		});
+		const response = await detail(new Request("http://test"), {
+			params: Promise.resolve({ id: ID }),
+		});
+		expect(response.status).toBe(200);
+		const safe = await response.json();
+		expect(safe.request).toEqual({
+			videoInputPath: "[REDACTED]",
+			metadataInputPath: "[REDACTED]",
+		});
+		expect(JSON.stringify(safe)).not.toMatch(
+			/PRIVATE_AUDIT_SAMPLE|private-account/,
+		);
+	});
+	it("withholds signed start errors on historical list and detail reads", async () => {
+		const row = {
+			id: ID,
+			actor: "worker",
+			path: "/encoding/encodings/fixture/start",
+			statusCode: 400,
+			error:
+				"Provider rejected https://fixture.invalid/foo?signature=START_LIST_FIXTURE",
+			request: { encodingMode: "STANDARD" },
+			response: {
+				shortMessage: "https://fixture.invalid/foo?sig=STATUS_FIXTURE",
+			},
+		};
+		findMany.mockResolvedValueOnce([row]);
+		findUnique.mockResolvedValueOnce(row);
+		const summary = await list(new Request("http://test/api/audit-logs"));
+		const single = await detail(new Request("http://test"), {
+			params: Promise.resolve({ id: ID }),
+		});
+		expect((await summary.json()).items[0].error).toBe("[withheld]");
+		expect(await single.json()).toMatchObject({
+			error: "[withheld]",
+			request: { encodingMode: "STANDARD" },
+			response: { shortMessage: "[withheld]" },
+		});
+	});
 	it("withholds legacy webhook exception strings while retaining failure status and other actors", async () => {
 		findMany.mockResolvedValueOnce([
 			{

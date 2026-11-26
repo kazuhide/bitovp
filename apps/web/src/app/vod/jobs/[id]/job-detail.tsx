@@ -11,11 +11,12 @@ import {
 	renditionSummaries,
 	stepLogSchema,
 	storageSummaries,
+	withheldPlanSources,
 } from "@bitovp/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	JobAnalysisPanel,
 	useJobAnalysis,
@@ -94,6 +95,24 @@ type VmafJobsPage = { items: VmafJobListItem[]; nextCursor?: string };
 
 type DetailTab = "overview" | "resources";
 
+/** Selectors group files by their exact path. Distinguish private sources for
+ * display only and prevent a real object from matching a private group's key. */
+function parseOverview(raw: unknown) {
+	const withheld = withheldPlanSources(raw);
+	const privatePaths = new Set<string>();
+	if (!withheld)
+		return { plan: encodingPlanSchema.safeParse(raw), privatePaths };
+	const wire = JSON.stringify(raw);
+	for (let index = 1; privatePaths.size < withheld.labels.length; index++) {
+		const key = `bitovp-display-source-${index}`;
+		if (!wire.includes(JSON.stringify(key))) privatePaths.add(key);
+	}
+	return {
+		plan: encodingPlanSchema.safeParse(withheld.fill([...privatePaths])),
+		privatePaths,
+	};
+}
+
 export function JobDetail({
 	id,
 	player,
@@ -126,9 +145,11 @@ export function JobDetail({
 				: false,
 	});
 	const qcVmafEnabled = useQcVmafEnabled();
-	const parsedAnalysisPlan = encodingPlanSchema.safeParse(job.data?.plan);
-	const analysisEnabled =
-		parsedAnalysisPlan.success && !!parsedAnalysisPlan.data.aiSceneAnalysis;
+	const { plan, privatePaths } = useMemo(
+		() => parseOverview(job.data?.plan),
+		[job.data?.plan],
+	);
+	const analysisEnabled = plan.success && !!plan.data.aiSceneAnalysis;
 	const analysis = useJobAnalysis(
 		id,
 		analysisEnabled || job.data?.status === "FINISHED",
@@ -281,7 +302,6 @@ export function JobDetail({
 	}
 
 	const row = job.data;
-	const plan = encodingPlanSchema.safeParse(row.plan);
 	const entries = stepLogSchema.safeParse(row.stepLog);
 	const links = row.playbackLinks ?? [];
 	/**
@@ -444,6 +464,7 @@ export function JobDetail({
 						) : null}
 						<SaveAsTemplateButton
 							kind="FULL_PLAN"
+							sourceId={row.id}
 							plan={row.plan}
 							defaultName={row.name}
 						/>
@@ -776,6 +797,7 @@ export function JobDetail({
 									) : null}
 									<InputFilesPanel
 										files={detail.inputFiles}
+										privatePaths={privatePaths}
 										credentialRefs={credentialRefs}
 									/>
 									<StoragePanel
@@ -850,7 +872,11 @@ export function JobDetail({
 						</TabsContent>
 						<TabsContent value="resources" className="mt-0">
 							{entries.success ? (
-								<ResourcesTab entries={entries.data} />
+								<ResourcesTab
+									entries={entries.data}
+									jobId={id}
+									plan={row.plan}
+								/>
 							) : (
 								<p className="mt-2 text-sm text-zinc-500">
 									{t("jobDetail.stepLogUnavailable")}

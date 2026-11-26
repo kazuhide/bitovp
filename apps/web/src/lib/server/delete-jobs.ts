@@ -1,6 +1,9 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import type { AppPrismaClient } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	retainLibraryInputsBeforeJobDeletion,
+} from "@bitovp/db";
 import {
 	isActiveVmafStatus,
 	VMAF_STATUSES,
@@ -9,6 +12,7 @@ import {
 import { isActiveJobStatus, JOB_STATUSES, type JobStatus } from "../job-status";
 import { writeAuditLog } from "./audit";
 import type { ServerContext } from "./context";
+import { isPendingResourceRemovalConflict } from "./http";
 import {
 	assertNoJobEvidenceReferences,
 	countJobEvidenceReferences,
@@ -201,6 +205,7 @@ export async function deleteEncodingJobLocally(
 			await tx.$queryRaw`SELECT id FROM "EncodingJob" WHERE id = ${id}::uuid FOR UPDATE`;
 			await assertNoJobEvidenceReferences(tx, [id]);
 			await assertAisaSnapshotCaptured(tx, [id]);
+			await retainLibraryInputsBeforeJobDeletion(tx, id);
 			// Re-assert inside the tx: a report that entered PENDING between the
 			// read above and here must not be deleted out from under the scorer.
 			const stillScoring = await tx.vmafJob.count({
@@ -229,6 +234,14 @@ export async function deleteEncodingJobLocally(
 			return vmafJobs.count;
 		});
 	} catch (err) {
+		if (isPendingResourceRemovalConflict(err)) {
+			return {
+				ok: false,
+				code: "ACTIVE",
+				message:
+					"A provider resource removal is pending. Check its status in this job’s Resources tab before deleting the job.",
+			};
+		}
 		// A deferred FK can discover a receipt committed outside this transaction's
 		// snapshot. The transaction is rolled back before this tenant-scoped reread.
 		let retained = err instanceof JobLibraryEvidenceRequired ? err : undefined;

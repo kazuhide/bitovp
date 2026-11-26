@@ -1,5 +1,10 @@
 import "server-only";
-import { hashEditingEvidence, pinnedInputCaptureSchema } from "@bitovp/core";
+import {
+	audioInputCaptureMatchesPlan,
+	encodingPlanSchema,
+	hashEditingEvidence,
+	providerInputCaptureSchema,
+} from "@bitovp/core";
 import {
 	authorizeInputCaptureRequest,
 	inputCaptureUnauthorized,
@@ -50,7 +55,7 @@ export async function servePinnedInputCapture(
 			row.proofHash !== hashEditingEvidence(row.proof)
 		)
 			return head(hidden());
-		const result = pinnedInputCaptureSchema.safeParse(row.proof);
+		const result = providerInputCaptureSchema.safeParse(row.proof);
 		if (!result.success) return head(hidden());
 		const proof = result.data;
 		if (
@@ -74,6 +79,11 @@ export async function servePinnedInputCapture(
 			!["RUNNING", "FINISHED", "AWAITING_QC", "QC_FAILED"].includes(job.status)
 		)
 			return head(hidden());
+		if (proof.profile === "PINNED_AUDIO_INPUT_V1") {
+			const plan = encodingPlanSchema.safeParse(job.plan);
+			if (!plan.success || !audioInputCaptureMatchesPlan(plan.data, proof))
+				return head(hidden());
+		}
 		const target = {
 			credentialId: proof.storage.credentialId,
 			bucket: proof.storage.bucket,

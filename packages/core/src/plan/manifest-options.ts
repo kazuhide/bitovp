@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+	boundedConditionTree,
+	conditionTreeLimits,
+} from "./bounded-condition-tree";
 
 const key = z.string().min(1);
 const nonnegativeInteger = z.number().int().min(0);
@@ -244,47 +248,24 @@ const recursiveManifestConditionSchema: z.ZodType<ManifestCondition> = z.lazy(
 			}),
 			z.strictObject({
 				type: z.literal("AND"),
-				conditions: z.array(recursiveManifestConditionSchema).min(1).max(32),
+				conditions: z
+					.array(recursiveManifestConditionSchema)
+					.min(1)
+					.max(conditionTreeLimits.children),
 			}),
 			z.strictObject({
 				type: z.literal("OR"),
-				conditions: z.array(recursiveManifestConditionSchema).min(1).max(32),
+				conditions: z
+					.array(recursiveManifestConditionSchema)
+					.min(1)
+					.max(conditionTreeLimits.children),
 			}),
 		]),
 );
-export const manifestConditionSchema = z.preprocess((value, ctx) => {
-	const pending: { value: unknown; depth: number }[] = [{ value, depth: 0 }];
-	let nodes = 0;
-	while (pending.length) {
-		const next = pending.pop();
-		if (!next) break;
-		if (++nodes > 128 || next.depth > 8) {
-			ctx.addIssue({
-				code: "custom",
-				message:
-					"Manifest conditions support at most 128 nodes and 8 nested groups",
-			});
-			return z.NEVER;
-		}
-		if (
-			next.value &&
-			typeof next.value === "object" &&
-			"conditions" in next.value &&
-			Array.isArray(next.value.conditions)
-		) {
-			if (next.value.conditions.length > 32) {
-				ctx.addIssue({
-					code: "custom",
-					message: "Each condition group supports at most 32 conditions",
-				});
-				return z.NEVER;
-			}
-			for (const child of next.value.conditions)
-				pending.push({ value: child, depth: next.depth + 1 });
-		}
-	}
-	return value;
-}, recursiveManifestConditionSchema);
+export const manifestConditionSchema = boundedConditionTree(
+	recursiveManifestConditionSchema,
+	"Manifest conditions",
+);
 export const defaultDashPeriodSchema = z.strictObject({
 	encodingKeys: z.array(key).min(1).max(64),
 	adaptationSets: z.array(manifestConditionSchema).max(64).optional(),

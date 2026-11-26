@@ -26,6 +26,7 @@ export type StepPrefix =
 	| "ingest"
 	| "file"
 	| "dolby"
+	| "hdr10-plus"
 	| "concat"
 	| "audioMix"
 	| "trim"

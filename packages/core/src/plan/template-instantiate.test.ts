@@ -9,6 +9,10 @@ import {
 	templateSourceSites,
 } from "./template-instantiate";
 import { planHasErrors, validatePlan } from "./validate";
+import {
+	markWithheldPlanSources,
+	withheldPlanSources,
+} from "./withheld-source-paths";
 
 const dir = join(__dirname, "__fixtures__");
 const FIXTURES = readdirSync(dir)
@@ -437,6 +441,27 @@ describe("instantiateTemplatePlan — semantics and refusals", () => {
 });
 
 describe("renderTemplateOutputPrefix — token contract", () => {
+	it.each([
+		["HTTPS", "https://operator:PRIVATE_FIXTURE@media.invalid", "demo/-"],
+		["S3", "https://operator:PRIVATE_FIXTURE@media.invalid", "demo/-"],
+		["HTTPS", "//operator:PRIVATE_FIXTURE@media.invalid", "demo/-"],
+		[
+			"HTTPS",
+			"https:/operator:PRIVATE_FIXTURE@media.invalid/media/Source.MXF",
+			"demo/Source-mxf",
+		],
+		["HTTPS", "in/Source.MXF?ticket=PRIVATE_FIXTURE", "demo/Source-mxf"],
+	])("derives destination tokens from the URL path alone (%s, %s)", (inputKind, objectKey, expected) => {
+		const result = renderTemplateOutputPrefix("demo/{basename}-{ext}", {
+			objectKey,
+			inputKind,
+			templateName: "test",
+			now: NOW,
+			uuid: UUID,
+		});
+		expect(result).toBe(expected);
+	});
+
 	it("renders the five tokens and leaves unknown ones verbatim", () => {
 		const rendered = renderTemplateOutputPrefix(
 			"{template}/{date}/{uuid}/{basename}.{ext}/{rule}",
@@ -465,3 +490,78 @@ describe("renderTemplateOutputPrefix — token contract", () => {
 });
 
 type TemplateSite = ReturnType<typeof templateSourceSites>[number];
+
+it("requires new HDR10+ metadata when recovering a withheld picture", () => {
+	const original = {
+		hdr10PlusStreams: [
+			{
+				key: "picture",
+				inputKey: "input",
+				videoInputPath:
+					"https://fixture.invalid/source.mxf?ticket=PRIVATE_FIXTURE",
+				metadataInputPath: "source.json",
+			},
+			{
+				key: "independent",
+				inputKey: "input",
+				videoInputPath: "other.mxf",
+				metadataInputPath: "source.json",
+			},
+		],
+	};
+	const projected = structuredClone(original);
+	const [picture] = projected.hdr10PlusStreams;
+	if (!picture) throw new Error("Missing picture");
+	picture.videoInputPath = "";
+	const inputs = withheldPlanSources(
+		markWithheldPlanSources(original, projected),
+	);
+	expect(inputs?.labels).toEqual(["picture", "picture:metadata"]);
+	expect(inputs?.fill(["replacement.mxf"])).toBeNull();
+	expect(inputs?.fill(["replacement.mxf", "replacement.json"])).toMatchObject({
+		hdr10PlusStreams: [
+			{
+				videoInputPath: "replacement.mxf",
+				metadataInputPath: "replacement.json",
+			},
+			{ videoInputPath: "other.mxf", metadataInputPath: "source.json" },
+		],
+	});
+});
+
+it("recovers a withheld burn-in subtitle by rendition key after the rows are reordered", () => {
+	const original = {
+		renditions: [
+			{
+				key: "primary",
+				burnInSrt: {
+					inputKey: "web",
+					inputPath: "sub.srt?ticket=PRIVATE_FIXTURE",
+				},
+			},
+			{
+				key: "alternate",
+				burnInSrt: { inputKey: "web", inputPath: "alt.srt" },
+			},
+		],
+	};
+	const projected = {
+		renditions: [
+			{
+				key: "alternate",
+				burnInSrt: { inputKey: "web", inputPath: "alt.srt" },
+			},
+			{ key: "primary", burnInSrt: { inputKey: "web", inputPath: "" } },
+		],
+	};
+	const recovery = withheldPlanSources(
+		markWithheldPlanSources(original, projected),
+	);
+	expect(recovery?.labels).toEqual(["primary:burnInSrt"]);
+	expect(recovery?.fill(["new.srt"])).toMatchObject({
+		renditions: [
+			{ key: "alternate", burnInSrt: { inputPath: "alt.srt" } },
+			{ key: "primary", burnInSrt: { inputPath: "new.srt" } },
+		],
+	});
+});

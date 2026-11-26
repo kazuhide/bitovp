@@ -611,6 +611,26 @@ export const liveChannelPlanSchema = z
 			.min(1)
 			.optional(),
 		ingest: z.array(liveIngestSchema),
+		/** Absolute track positions within the live transport stream, OCR to WebVTT. */
+		dvbSubtitles: z
+			.array(
+				z.strictObject({
+					key: refKey,
+					inputPath: z.string().min(1),
+					position: z.number().int().min(0).max(2147483647),
+					language: z
+						.string()
+						.min(1)
+						.max(64)
+						.regex(/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/),
+					label: z.string().trim().min(1).max(256),
+					packaging: z.enum(["CHUNKED_TEXT", "FMP4"]),
+					segmentLength: z.number().positive(),
+					destination: destinationSchema,
+				}),
+			)
+			.max(64)
+			.optional(),
 		/**
 		 * Same rendition union as VOD. validateLiveChannel narrows it to the
 		 * live encoder's support matrix (H264/H265 + AAC/DD/DDPLUS, STANDARD

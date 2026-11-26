@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render as rtlRender } from "@testing-library/react";
 import type { ReactNode } from "react";
+import type { SessionDto } from "@/lib/auth/dto";
+import { SESSION_QUERY_KEY } from "@/lib/auth/use-session";
 import type { Locale } from "@/lib/i18n";
 import { LocaleProvider } from "@/lib/i18n/context";
 
@@ -67,4 +69,24 @@ export function renderWithQuery(node: ReactNode, locale: Locale = "en") {
 	// (e.g. that a mutation invalidated the right key) instead of stubbing
 	// `window.location` — added for the capture-button invalidation .
 	return { ...withRewrap(rtlRender(wrap(node)), wrap), client };
+}
+
+export const OPERATOR_SESSION: SessionDto = {
+	mode: "users",
+	configured: true,
+	authenticated: true,
+	loginKind: "password-form",
+	organizationId: "org",
+	effectiveUserId: "user",
+	role: "OPERATOR",
+};
+
+/** Pair a test's verified session observer with the cache read at submission. */
+export function renderWithOperatorSession(
+	node: ReactNode,
+	locale: Locale = "en",
+) {
+	const view = renderWithQuery(node, locale);
+	view.client.setQueryData<SessionDto>(SESSION_QUERY_KEY, OPERATOR_SESSION);
+	return view;
 }

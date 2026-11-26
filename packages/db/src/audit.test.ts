@@ -22,6 +22,69 @@ function fakePrisma() {
 }
 
 describe("writeAuditLog — actor persistence (the headline of #81 PR2)", () => {
+	it("persists the exact HDR object and a public diagnostic without signed input data", async () => {
+		const { prisma, create } = fakePrisma();
+		const videoInputPath = "inputs//day: take @cam.mov";
+		await writeAuditLog(prisma, {
+			method: "POST",
+			path: "/encoding/encodings/fixture/input-streams/hdr10-plus",
+			actor: "worker",
+			request: { videoInputPath },
+			error:
+				"Unable to read https://fixture.invalid/other?\nsig=PRIVATE_AUDIT_EXAMPLE",
+		});
+		expect(create.mock.calls[0]?.[0].data).toMatchObject({
+			request: { videoInputPath },
+			error: "[withheld]",
+		});
+	});
+	it("keeps a literal filename and withholds an unverified query in the standalone Dolby audit", async () => {
+		const { prisma, create } = fakePrisma();
+		const request = {
+			videoInputPath: "reels:day/Scene&key=take#2.mxf",
+			metadataInputPath: "dv/meta.xml?version=2",
+		};
+		await writeAuditLog(prisma, {
+			method: "POST",
+			path: "/encoding/encodings/demo/input-streams/dolby-vision",
+			actor: "worker",
+			request,
+			response: request,
+		});
+		expect(create.mock.calls[0]?.[0].data).toMatchObject({
+			request: {
+				videoInputPath: request.videoInputPath,
+				metadataInputPath: "[REDACTED]",
+			},
+			response: {
+				videoInputPath: request.videoInputPath,
+				metadataInputPath: "[REDACTED]",
+			},
+		});
+	});
+	it("withholds ambiguous network authorities in an audit without storage provenance", async () => {
+		const { prisma, create } = fakePrisma();
+		const request = {
+			videoInputPath: "///reels@day/take.mxf",
+			metadataInputPath:
+				"\u0001ht\ntps://fixture:AUDIT_PRIVATE@fixture.invalid/meta.xml",
+		};
+		await writeAuditLog(prisma, {
+			method: "POST",
+			path: "/encoding/encodings/demo/input-streams/dolby-vision",
+			actor: "worker",
+			request,
+			response: request,
+		});
+		const safe = {
+			videoInputPath: "[REDACTED]",
+			metadataInputPath: "[REDACTED]",
+		};
+		expect(create.mock.calls[0]?.[0].data).toMatchObject({
+			request: safe,
+			response: safe,
+		});
+	});
 	it("a provided actor reaches prisma.auditLog.create verbatim", async () => {
 		const { prisma, create } = fakePrisma();
 		await writeAuditLog(prisma, {

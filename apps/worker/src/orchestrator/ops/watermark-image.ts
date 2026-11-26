@@ -71,7 +71,7 @@ export async function signWatermarkImage(
 			client,
 			new GetObjectCommand({
 				Bucket: input.bucket,
-				Key: path.replace(/^\/+/, ""),
+				Key: path,
 			}),
 			{ expiresIn: 604800 },
 		);

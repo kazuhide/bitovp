@@ -330,11 +330,15 @@ export async function verifyLiveChannel(
 					"manifest",
 					"The configured HLS media identity was not observed",
 				);
-				if (media.type === "VIDEO" && media.uri)
+				if (
+					(media.type === "VIDEO" ||
+						media.resource?.container === "CHUNKED_TEXT") &&
+					media.uri
+				)
 					report.skip(
 						`${id}:additional-media:${index}:playlist`,
 						"manifest",
-						"The configured video media playlist was not observed",
+						"The configured media playlist was not observed",
 					);
 			}
 			if (m.hlsAudioGroups)
@@ -342,6 +346,12 @@ export async function verifyLiveChannel(
 					`${id}:audio-group-selection`,
 					"manifest",
 					"The configured audio-group priority selection was not observed",
+				);
+			for (const track of m.dashDvbSubtitles ?? [])
+				report.skip(
+					`${id}:dvb-subtitle:${track.key}:representation`,
+					"manifest",
+					"The configured segmented subtitle representation was not observed",
 				);
 			const count =
 				m.dashExternalSubtitles?.length ??

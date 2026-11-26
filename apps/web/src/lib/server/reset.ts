@@ -7,6 +7,7 @@ import {
 	type AppPrismaClient,
 	liveChannelAccountId,
 	type Prisma,
+	retainLibraryInputsBeforeJobDeletion,
 } from "@bitovp/db";
 import { RESET_RETAINED_EXPERIMENT_MODELS } from "@/lib/reset-selection";
 import { assertAisaSnapshotCaptured } from "./delete-jobs";
@@ -81,6 +82,8 @@ export const RESET_PRESERVES = [
 	"liveStopNotification",
 	// A stale create retry must remain spent after its resource is reset.
 	"createRequest",
+	// Pending receipts protect the original job or run. Resolved receipts are immutable history.
+	"encodingResourceRemoval",
 	...RESET_RETAINED_EXPERIMENT_MODELS,
 	"librarySource",
 	"sceneAnalysisRevision",
@@ -1373,6 +1376,7 @@ export async function deleteOperationalData(
 				await tx.$queryRaw`SELECT id FROM "EncodingJob" ORDER BY id FOR UPDATE`;
 				await assertNoJobEvidenceReferences(tx);
 				await assertAisaSnapshotCaptured(tx);
+				await retainLibraryInputsBeforeJobDeletion(tx);
 				// Match owned Live transitions before deleting any child rows. Lock all
 				// visible channels in a stable order, then recheck admission and stop proof.
 				await tx.$queryRaw`SELECT id FROM "LiveChannel" ORDER BY id FOR UPDATE`;

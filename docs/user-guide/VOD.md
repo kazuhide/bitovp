@@ -12,6 +12,9 @@ Open `/vod/jobs`, choose the create action, and follow `/vod/new`:
 
 New configurations start with region `AUTO`, which lets Bitmovin select a
 region. Review the selected account and any saved or copied region settings.
+The new VOD wizard defaults to Encoder `2.294.0` (Beta). Saved account defaults,
+drafts, and imported plans retain their selected version; use `STABLE` if you
+need the current stable encoder instead.
 
 1. **Basics:** name, Bitmovin account, region, encoder version, and encoding mode.
 2. **Sources:** choose stored media and identify the video, audio, and subtitle tracks.
@@ -67,8 +70,47 @@ or first provide a physical source file containing the combined edit. Ordinary
 independent AV inputs without concatenation and single-track outputs are unaffected.
 
 Drafts are saved in this browser for seven days, separately by user, organization,
-and creation source. Secret values, URLs, DRM settings, filters, and imported JSON
-are excluded. Review omitted settings and output destinations after restoring.
+and creation source. VOD drafts keep filter settings, including image object paths and audio channel gains.
+Secrets, URLs, DRM settings, text-overlay content and imported JSON are excluded. Review omitted settings and output destinations after restoring.
+
+## Audio-only files
+
+In **Export files**, select one source file. Open **Format → Export audio only** and choose the track you want to deliver. Track 1 is the first audio track in the source.
+
+| Format | Source and output | Minimum Encoder version |
+|---|---|---|
+| Convert to PCM WAV | Select the track, sample rate, mono or stereo, and 16-, 24- or 32-bit signed little-endian samples. | 2.203.0 |
+| Copy original AAC | Progressive MP4/M4A or MOV | 2.200.0 for MP4, 2.201.0 for MOV |
+| Copy original PCM | Progressive MOV or WAV, for 16-, 24- or 32-bit signed little-endian PCM | 2.200.0 for MOV, 2.202.0 for WAV |
+
+For copying, choose **Inspect source tracks** and select a verified track. Choose a versioned S3-compatible or GCS object of up to 4 GiB. Changing the input requires a new inspection. The Encoder reads the same inspected version even if another object is uploaded to that key. Copies take a single unedited track. Trimming, concatenation, filters and mixing require re-encoding. **Review** shows the output filename and destination. Plan JSON retains the track selection for this source.
+
+Administrators must configure the same `BITOVP_CAPTURE_INPUT_SECRET` of at least 32 characters and an Encoder-reachable `BITOVP_CAPTURE_INPUT_BASE_URL` on Web and Worker for audio copying. [Encoder release history](https://developer.bitmovin.com/encoding/docs/encoder-22000-22490)
+
+## HDR10+ input for HEVC
+
+HDR10+ is a VOD HEVC (H.265) feature introduced in Encoder `2.294.0` (Beta) and
+[REST API `1.289.0`](https://developer.bitmovin.com/encoding/docs/rest-api-services-12500-12990#12890).
+Execution requires Encoder `2.294.0` or later and public API SDK `1.289.0` or
+later, which exposes the HDR10+ input-stream API.
+
+1. In **Sources**, select the HDR10 video file and choose **Add HDR10+ video**.
+2. Set **HDR10+ metadata JSON path** to the matching JSON file on the video's
+   same input storage and bucket. Use the metadata field or its browser; do not
+   add the JSON as another video input file.
+3. In **Ladder**, select the resulting HDR10+ stream as the source of an H.265
+   rendition. Keep `AUTO` for automatic video-track selection, or choose an
+   explicit supported selection mode and position.
+
+Select the HDR10+ resource directly on the HEVC rendition. The trimming and concatenation input APIs accept other input-stream types.
+
+When you change the video file or its storage, select the matching JSON again. Watch folders discover one object at a time. Submit paired HDR10+ assets through the VOD wizard.
+
+The input timeline cannot currently be combined with HDR10+ in this application;
+use the video source directly. This is an application limitation, not a general
+Bitmovin restriction. HDR10+ is not a Live input option or an H.265 dynamic-range
+dropdown value. See the [input-stream reference](https://developer.bitmovin.com/encoding/reference/postencodingencodingsinputstreamshdr10plusbyencodingid)
+and [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
 
 ## Fixed ladders and Per-Title
 
@@ -106,12 +148,19 @@ controls apply to the final codec. Legacy CRF/x265 settings are not automaticall
 translated. Switching codecs preserves conflicting settings until you explicitly
 remove them and pass validation.
 
+For media with embedded captions, open **Sources → Streams → Add embedded captions** and select the media file. CEA-608 offers CC1 and CC3. CEA-708 accepts service numbers 1–63 and uses service 1 when left blank. For DVB, choose automatic selection or a zero-based position among all tracks or subtitle tracks. Under **Ladder → Subtitle tracks**, assign that source to a WebVTT rendition. Choose the text file output for a sidecar or segmented WebVTT for HLS. Each selection extracts one track at its original timestamps.
+
 - **IMSC subtitles:** select a TTML source, IMSC codec, and `.ttml` output. Use
   WebVTT for HLS subtitles.
+- **HE-AAC audio** is available for segmented fMP4 with HLS or DASH. Select HE-AAC v1 for up to 128,000 bps or v2 for up to 64,000 bps. A blank sample rate, layout, or signaling uses the encoder default. Only v2 offers explicit parametric-stereo signaling (`EXPLICIT_PS`). [Bitmovin codec configuration](https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsaudioheaacv2)
 - **Opus audio:** package as WebM for compatible DASH playback. Use a separate
   compatible audio rendition when also producing HLS.
 - **Filters:** add a filter and assign it to the intended stream's filter chain.
-  HQDN3D removes noise; Unsharp sharpens or blurs.
+  Enhanced Deinterlace and Interlace control field processing. Conform requires the same target frame rate on every audio and video stream in an encoding, with any explicit video frame rate matching. Use Conform on encodings with ordinary audio and video inputs. Captions, subtitle streams and Dolby Atmos file inputs, including trimmed Atmos files, are incompatible.
+  Enhanced Watermark takes an image from input storage. Set one horizontal and one vertical offset. Optional dimensions are at least one pixel or 0.1–100 percent.
+  On audio renditions, Audio Mix maps input channels and gains to numbered outputs. Place Audio Mix before volume and loudness filters. Use ordinary audio inputs, including when trimming or concatenating files. Dolby Atmos files bypass the mix. Select a matching codec layout. The layout selector disables speaker mappings the encoder changes.
+  Dolby Loudness requires Encoder 2.282.0 or newer and a supported audio codec. Leave audio/video sync unset and Kantar off. Use Dolby Loudness separately from Audio Volume and EBU R128 single-pass. Use Plan JSON to export a plan with Dolby Loudness.
+  HQDN3D removes noise and Unsharp sharpens or blurs.
 - **CMAF muxing:** the dedicated muxing supports H.264/AAC with DASH
   TEMPLATE/TIMELINE. Choose fMP4 for HLS and the supported DRM paths.
 
@@ -165,3 +214,18 @@ provider readback confirms termination. A created or unknown provider state, or
 a failed stop or readback, leaves that confirmation pending.
 
 See [supported features and limits](../BITMOVIN-API-COVERAGE.md) for more restrictions.
+
+
+## Inspect or remove a provider resource
+
+Open a job’s **Resources** tab, expand **Inspect provider resources** and select a recorded step. Details are read from the provider using the job’s original account. Where available, the collection view lists resources under the selected parent. If the account binding or resource history cannot be verified, the saved job history is still available.
+
+Select a recorded fMP4, MP4, TS, Progressive TS, WebM or Progressive WebM muxing to see its DRM systems. Progressive TS also exposes ID3 tags. Choose a type, then open a row to see its public details or check whether its metadata identifies this job. The general DRM list shows the entries the provider returned. Choose a specific DRM system to browse further pages.
+
+For protected DASH or Smooth manifests, select the representation or content-protection creation step to inspect the recorded provider resource and its collection. BitOVP checks the manifest hierarchy and the encoding, muxing and DRM references saved by that step.
+
+For DRM configurations created by this job, select the individual CENC, FairPlay or SPEKE creation step to inspect its ownership stamp.
+
+An operator can choose **Remove from provider** for a resource created by a finished job. For a failed or canceled job, bitovp also requires confirmation that its encoding stopped. Type the displayed resource ID to confirm. A resource used by another recorded execution cannot be removed through this control. A job cannot resume its old graph after a confirmed removal. To encode again, create a new job.
+
+If the provider response is lost, open the same resource and choose **Check removal**. A confirmed absence finishes the pending removal. If the resource still exists, the operator can review it and explicitly retry. The original job is retained while an outcome is pending.

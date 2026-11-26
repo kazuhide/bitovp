@@ -5,6 +5,7 @@ import {
 } from "@bitovp/core";
 import { ObjectVersionMismatchError } from "@bitovp/storage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import audioPlan from "../../../../../../../../packages/core/src/testing/verified-audio-copy.plan.json";
 
 const mocks = vi.hoisted(() => ({
 	context: vi.fn(),
@@ -73,6 +74,47 @@ function receipt() {
 		proofHash: hashEditingEvidence(value),
 	};
 }
+it.each([
+	"/take.mov",
+	"take.mov",
+])("serves a retained audio receipt only for the exact requested object (%s)", async (key) => {
+	const { sha256: _hash, sourceFacts: _facts, ...shared } = proof();
+	const value = {
+		...shared,
+		ingestKey: "audio",
+		planHash: hashEditingEvidence(audioPlan),
+		storage: { ...shared.storage, key },
+		profile: "PINNED_AUDIO_INPUT_V1",
+		inspectionId: id(10),
+		track: { position: 1, sourceCodec: "AAC" },
+	};
+	mocks.receipt.mockResolvedValue({
+		...receipt(),
+		proof: value,
+		proofHash: hashEditingEvidence(value),
+	});
+	mocks.job.mockResolvedValue({
+		id: id(3),
+		organizationId: id(1),
+		bitmovinEncodingId: id(4),
+		plan: audioPlan,
+		status: "RUNNING",
+	});
+	const result = await call(request("GET", { range: "bytes=0-7" }));
+	if (key !== "/take.mov") {
+		expect(result.status).toBe(404);
+		expect(mocks.object).not.toHaveBeenCalled();
+		return;
+	}
+	expect(result.status).toBe(206);
+	expect((await result.arrayBuffer()).byteLength).toBe(8);
+	expect(mocks.object).toHaveBeenCalledWith(
+		expect.objectContaining({
+			key,
+			expect: expect.objectContaining({ versionId: "fixed-version" }),
+		}),
+	);
+});
 function authorization(
 	org = id(1),
 	receiptId = id(2),

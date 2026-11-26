@@ -490,6 +490,28 @@ describe("recordDeadJobScheduleOutcomes", () => {
 		expect(written).not.toContain("hunter2");
 	});
 
+	it("projects retained provider failure text before persisting a scheduled START outcome", async () => {
+		const updateMany = vi.fn(async (_args: unknown) => ({ count: 1 }));
+		const prisma = {
+			liveSchedule: { updateMany },
+		} as unknown as AppPrismaClient;
+		await recordDeadJobScheduleOutcomes(
+			prisma,
+			{ data: { liveChannelId: CHANNEL, action: "provision" } },
+			"Unable to read media.mxf?token=PRIVATE_FIXTURE",
+			new Date(),
+		);
+		expect(updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					outcomeNote: expect.stringContaining("[withheld]"),
+				}),
+			}),
+		);
+		expect(JSON.stringify(updateMany.mock.calls)).not.toContain(
+			"PRIVATE_FIXTURE",
+		);
+	});
 	it("writes nothing at all for a job that closes no row", async () => {
 		const updateMany = vi.fn(async () => ({ count: 1 }));
 		const prisma = {

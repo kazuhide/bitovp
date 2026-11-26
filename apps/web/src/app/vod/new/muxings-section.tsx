@@ -3,8 +3,11 @@
 import {
 	type CredentialSummaryWire,
 	isFileOnlyMuxingKind,
+	isHeAac,
 	MUXING_CODEC_MATRIX,
 	muxingKindCarriesAudio,
+	physicalMuxingKind,
+	VOD_DRM_MUXINGS,
 } from "@bitovp/core";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -76,7 +79,7 @@ const FILE_KIND_LABEL: Partial<Record<WizardMuxingKind, MessageKey>> = {
 	PROGRESSIVE_MOV: "vodTimeline.singleMov",
 	PROGRESSIVE_WEBM: "vodTimeline.singleWebm",
 };
-const SUBTITLE_KINDS: WizardMuxingKind[] = ["CHUNKED_TEXT"];
+const SUBTITLE_KINDS: WizardMuxingKind[] = ["CHUNKED_TEXT", "TEXT"];
 
 /**
  * The containers offered for a video rendition of this codec.
@@ -367,10 +370,12 @@ function MuxingEditor({
 	// stream — one predicate, shared with `buildPlan` and the audio reconciler,
 	// so the picker cannot offer a relation the builder would drop.
 	const kindCanMux = muxingKindCarriesAudio(kind);
-	// A whole-file container is never a manifest leg and has no DRM route: the
-	// validator refuses an encryption row on it, so the form does not offer one.
 	const fileOnly = isFileOnlyMuxingKind(kind);
-	const drmOffered = kind !== "CMAF" && !fileOnly;
+	const physicalKind = physicalMuxingKind({ ...muxing, kind });
+	const drmKinds = (
+		Object.keys(VOD_DRM_MUXINGS) as WizardDrmRow["kind"][]
+	).filter((k) => VOD_DRM_MUXINGS[k].includes(physicalKind));
+	const drmOffered = drmKinds.length > 0;
 	/**
 	 * The selection, resolved against the renditions that CURRENTLY exist.
 	 *
@@ -595,29 +600,20 @@ function MuxingEditor({
 					))}
 					{drmOffered ? (
 						<div className="flex gap-1">
-							<Button
-								variant="secondary"
-								size="sm"
-								onClick={() => drm.add("CENC", muxingKey)}
-							>
-								{t("wizard.addCenc")}
-							</Button>
-							<Button
-								variant="secondary"
-								size="sm"
-								onClick={() => drm.add("FAIRPLAY", muxingKey)}
-							>
-								{t("wizard.addFairplay")}
-							</Button>
-							{kind === "FMP4" ? (
+							{drmKinds.map((drmKind) => (
 								<Button
+									key={drmKind}
 									variant="secondary"
 									size="sm"
-									onClick={() => drm.add("SPEKE", muxingKey)}
+									onClick={() => drm.add(drmKind, muxingKey)}
 								>
-									+ SPEKE
+									{drmKind === "CENC"
+										? t("wizard.addCenc")
+										: drmKind === "FAIRPLAY"
+											? t("wizard.addFairplay")
+											: "+ SPEKE"}
 								</Button>
-							) : null}
+							))}
 						</div>
 					) : null}
 				</Collapsible>
@@ -888,22 +884,24 @@ export function MuxingsSection({
 						label={`audio · ${audio.codec ?? "AAC"}`}
 						muxingKey={key}
 						kinds={
-							audio.codec === "OPUS"
-								? ["WEBM"]
-								: audio.codec === "EAC3"
-									? ["FMP4", "MP4"]
-									: audio.codec === undefined || audio.codec === "AAC"
-										? AUDIO_KINDS
-										: AUDIO_KINDS.filter(
-												(kind) =>
-													kind !== "CMAF" &&
-													// A whole file is offered where its row of the
-													// table holds the codec, as to a video row.
-													(!isFileOnlyMuxingKind(kind) ||
-														MUXING_CODEC_MATRIX[kind].includes(
-															audio.codec ?? "AAC",
-														)),
-											)
+							isHeAac(audio.codec)
+								? ["FMP4"]
+								: audio.codec === "OPUS"
+									? ["WEBM"]
+									: audio.codec === "EAC3"
+										? ["FMP4", "MP4"]
+										: audio.codec === undefined || audio.codec === "AAC"
+											? AUDIO_KINDS
+											: AUDIO_KINDS.filter(
+													(kind) =>
+														kind !== "CMAF" &&
+														// A whole file is offered where its row of the
+														// table holds the codec, as to a video row.
+														(!isFileOnlyMuxingKind(kind) ||
+															MUXING_CODEC_MATRIX[kind].includes(
+																audio.codec ?? "AAC",
+															)),
+												)
 						}
 						derivedPath={audioMuxingRelPath(audio, key)}
 						drm={drm}

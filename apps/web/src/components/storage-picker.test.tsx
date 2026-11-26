@@ -78,6 +78,60 @@ function renderPicker(
 }
 
 describe("StoragePicker — seed on open", () => {
+	it("lists only the new fixed location on reopen with a stale cache", async () => {
+		const { apiFetch } = await import("@/lib/api");
+		const picker = (open: boolean, bucket: string) => (
+			<StoragePicker
+				open={open}
+				mode="object"
+				providers={["AWS_S3"]}
+				fixedLocation={{ credentialId: "s3-1", bucket }}
+				onSelect={vi.fn()}
+				onClose={vi.fn()}
+			/>
+		);
+		const view = renderWithQuery(picker(true, "previous"));
+		await screen.findByText("movie.mp4");
+		view.rerender(picker(false, "previous"));
+		vi.mocked(apiFetch).mockClear();
+		view.rerender(picker(true, "current"));
+		await screen.findByText("movie.mp4");
+		expect(
+			vi
+				.mocked(apiFetch)
+				.mock.calls.map(([url]) => url)
+				.filter((url) => url.includes("/storage/objects")),
+		).toEqual(["/api/credentials/s3-1/storage/objects?bucket=current"]);
+	});
+	it("locks metadata browsing to the video's existing input location", async () => {
+		const onSelect = vi.fn();
+		const { apiFetch } = await import("@/lib/api");
+		vi.mocked(apiFetch).mockClear();
+		renderPicker({
+			fixedLocation: { credentialId: "s3-1", bucket: "my-bucket" },
+			initialCredentialId: "other-credential",
+			initialBucket: "other-bucket",
+			onSelect,
+		});
+		await screen.findByText("movie.mp4");
+		expect(screen.getByLabelText("Credential")).toBeDisabled();
+		expect(screen.getByLabelText("Credential")).toHaveValue("s3-1");
+		expect(screen.getByLabelText("Bucket")).toHaveValue("my-bucket");
+		expect(screen.getByLabelText("Bucket")).toHaveAttribute("readonly");
+		expect(screen.queryByLabelText("Bucket name (manual)")).toBeNull();
+		await userEvent.click(screen.getByRole("button", { name: "Use as input" }));
+		expect(onSelect).toHaveBeenCalledWith({
+			credentialId: "s3-1",
+			bucket: "my-bucket",
+			path: "masters/movie.mp4",
+		});
+		expect(
+			vi
+				.mocked(apiFetch)
+				.mock.calls.some(([url]) => String(url).includes("/storage/buckets")),
+		).toBe(false);
+	});
+
 	it("opens pre-scoped to the given credential and bucket (never re-asks)", async () => {
 		renderPicker({ initialCredentialId: "s3-1", initialBucket: "my-bucket" });
 		// Credentials load → the seeded credential option exists and is selected.

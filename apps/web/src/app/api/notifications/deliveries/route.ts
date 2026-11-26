@@ -1,3 +1,4 @@
+import { publicStorageDiagnostic } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { getServerContext } from "@/lib/server/context";
 import { routeError } from "@/lib/server/http";
@@ -62,7 +63,9 @@ export async function GET() {
 					occurredAt: job.data?.occurredAt ?? null,
 					link: job.data?.link ?? null,
 					attemptsMade: job.attemptsMade ?? 0,
-					failedReason: failed ? (job.failedReason ?? null) : null,
+					failedReason: failed
+						? (publicStorageDiagnostic(job.failedReason) ?? null)
+						: null,
 					sortTime: job.finishedOn ?? 0,
 				})),
 				...stops.map((stop) => ({
@@ -72,7 +75,7 @@ export async function GET() {
 					occurredAt: stop.occurredAt.toISOString(),
 					link: `/live/${stop.channelId}`,
 					attemptsMade: stop.failures + (failed ? 0 : 1),
-					failedReason: stop.failureReason,
+					failedReason: publicStorageDiagnostic(stop.failureReason) ?? null,
 					sortTime: stop.finishedAt?.getTime() ?? 0,
 				})),
 			];

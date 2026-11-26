@@ -5,6 +5,94 @@ const PROVISIONS_AT_CREATE =
 	"チャンネルは作成後すぐに起動準備を始めます。Live Encoding の料金プランによっては、入力送出予定時刻より前にも料金が発生する場合があります";
 
 export const ja = {
+	streamConditions: {
+		title: "入力条件",
+		enabled: "入力条件（設定あり）",
+		add: "条件を追加",
+		remove: "この条件を削除",
+		rule: "判定条件",
+		attribute: "入力の属性",
+		comparison: "比較",
+		value: "値",
+		group: "一致条件",
+		all: "すべて満たす（AND）",
+		any: "いずれかを満たす（OR）",
+		and: "さらに条件を満たす（AND）",
+		or: "別の条件でも許可（OR）",
+		yes: "はい",
+		no: "いいえ",
+		attributes: {
+			INPUTSTREAM: "選択位置にストリームがある",
+			STREAMCOUNT: "ストリーム数",
+			VIDEOSTREAMCOUNT: "映像トラック数",
+			AUDIOSTREAMCOUNT: "音声トラック数",
+			DURATION: "長さ（秒）",
+			WIDTH: "幅（ピクセル）",
+			HEIGHT: "高さ（ピクセル）",
+			BITRATE: "ビットレート（bps）",
+			FPS: "フレームレート（fps）",
+			ASPECTRATIO: "アスペクト比",
+			ROTATION: "回転角度（度）",
+			SAMPLERATE: "サンプルレート（Hz）",
+			LANGUAGE: "言語",
+			CHANNELFORMAT: "チャンネル数",
+			CHANNELLAYOUT: "チャンネルレイアウト",
+			HEARINGIMPAIRED: "聴覚障害者向け字幕フラグ",
+			STREAMID: "ストリーム ID / パケット識別子",
+		},
+	},
+	liveDvb: {
+		title: "DVB 字幕",
+		add: "DVB 字幕トラックを追加",
+		help: "MPEG-TS に含まれる画像字幕を OCR でテキスト化します。入力ストリームの位置を 0 から数えて指定してください。",
+		position: "入力ストリームの位置",
+		language: "言語タグ",
+		label: "字幕名",
+		packaging: "WebVTT の配信形式",
+		chunked: "分割 WebVTT（HLS・DASH）",
+		fmp4: "fMP4 内の WebVTT（DASH）",
+		remove: "字幕トラックを削除",
+		transport:
+			"DVB 字幕には MPEG-TS を含む SRT、Zixi または HLS 入力を指定してください。",
+	},
+	providerResources: {
+		muxingChildren: "このマクシングの DRM・ID3",
+		chooseType: "種類を選択",
+		allDrm: "すべての DRM 方式",
+		allId3: "すべての ID3 タグ",
+		drmPrefix:
+			"プロバイダーが返した先頭 {count} 件を表示しています。DRM 方式を選ぶと、その方式の全ページを参照できます。",
+		childChanged:
+			"選択した項目を確認できませんでした。一覧を再読み込みしてください。",
+		linked: "プロバイダー一覧内の対象リソース",
+		metadata: "所有情報",
+		remove: "プロバイダーから削除",
+		confirm:
+			"プロバイダー上のリソースを削除します。VODを再実行するには新しいジョブが必要になる場合があります。確認のため {id} を入力してください。",
+		verify: "削除結果を確認",
+		unconfirmed: "削除結果を確認できていません。",
+		present: "プロバイダー上にリソースが残っています。",
+		removed: "リソースの削除または不存在を確認しました。",
+		removeBlocked:
+			"削除できません。処理状況と他のジョブからの参照を確認してください。",
+		removeFailed:
+			"削除結果を確認できません。記録された状態を再確認してください。",
+
+		title: "プロバイダーのリソースを確認",
+		resource: "リソース",
+		choose: "作成履歴から選択",
+		detail: "リソースの詳細",
+		siblings: "同じ親に属するリソース",
+		loading: "リソースを読み込み中…",
+		missing: "このリソースは利用できません。",
+		changed: "リソースまたは作成時のアカウントを確認できませんでした。",
+		failed: "リソースを取得できませんでした。",
+		empty: "この実行には参照できるリソースの作成履歴がありません。",
+		emptyPage: "このページにリソースはありません。",
+		range: "{total} 件中 {from}〜{to} 件",
+		previous: "前のページ",
+		next: "次のページ",
+	},
 	outputCompare: {
 		title: "出力を比較",
 		pickTwo: "VOD 一覧で完了したジョブを二つか三つ選び、出力を比較できます。",
@@ -702,11 +790,13 @@ export const ja = {
 		path: "出力パス",
 		pathHelp: "選択した出力先で、マニフェストを保存するフォルダーです。",
 		referenced:
-			"この複製先を削除するには、先に録画やマニフェストの出力先を変更するか、その設定を削除してください。",
+			"この複製先を削除するには、ここに保存する録画やマニフェストの出力先を変更し、ここに書き込むDVB字幕トラックを削除してください。",
 	},
 	creationSubmission: {
 		responseUnavailable:
 			"作成結果を受信できませんでした。フォームを変更せずに再試行すると、同じジョブやチャンネルの結果を確認できます。",
+		legacyReceiptUnavailable:
+			"再試行の前に、VOD ジョブの一覧で前回の作成結果を確認してください。",
 		sessionUnavailable:
 			"セッションを確認できませんでした。このページを再読み込みしてからジョブやチャンネルを作成してください。",
 		storageUnavailable:
@@ -799,6 +889,27 @@ export const ja = {
 		hint: "このブラウザに保存されます。",
 	},
 	vodFlow: {
+		audioTemplateUnavailable:
+			"検査済みの入力と音声トラックを保持するには、プラン JSON を書き出してください。",
+		exportAudio: "音声のみ書き出す",
+		returnVideo: "映像ファイルに戻る",
+		audioFileFormat: "音声ファイル形式",
+		convertPcm: "PCM WAV に変換",
+		copyAudio: "元の音声をそのままコピー",
+		audioTrack: "音声トラック",
+		audioRate: "サンプリング周波数（Hz）",
+		audioChannels: "チャンネル",
+		sampleFormat: "サンプル形式",
+		audioContainer: "音声コンテナ",
+		audioFilename: "音声ファイル名",
+		inspectAudio: "入力の音声トラックを検査",
+		chooseAudioTrack: "音声トラックを選択",
+		audioNeedsStorage:
+			"入力に、バージョンが有効な S3 または GCS のオブジェクトを選択してください。",
+		audioInspectionFailed:
+			"入力を確認できませんでした。オブジェクトのバージョンを確認し、再度検査してください。",
+		audioNoTracks:
+			"対応する AAC または PCM の音声トラックが見つかりませんでした。",
 		label: "作成するもの",
 		streaming: "配信用にパッケージする",
 		file: "ファイルを書き出す",
@@ -2437,6 +2548,9 @@ export const ja = {
 		chainIngest: "Ingest {mode} 位置 {position}",
 		chainFile: "ファイル {type}",
 		chainDolby: "Dolby {kind} {detail}",
+		chainHdr10PlusVideoAuto: "HDR10+ 動画 (AUTO)",
+		chainHdr10PlusVideo: "HDR10+ 動画 ({mode} 位置 {position})",
+		chainHdr10PlusMetadata: "HDR10+ JSON メタデータ",
 		chainTrim: "入力クリップ {kind}",
 		chainConcat: "連結 位置 {position}",
 		chainConcatMain: "連結 位置 {position}(メイン)",
@@ -2516,6 +2630,7 @@ export const ja = {
 		collapseRowNamed: "{rendition} の詳細を隠す",
 		collapseRow: "詳細を隠す",
 		inputFiles: "入力ファイル",
+		withheldInputPath: "入力パスは非公開",
 		deletedCredential: "削除済みの認証情報",
 		storageIo: "ストレージ入出力",
 		storageInputs: "読み込み元",
@@ -3626,6 +3741,10 @@ export const ja = {
 	},
 	heartbeat: {
 		stream: "ストリーム",
+		aspectRatio: "アスペクト比",
+		audioChannels: "音声チャンネル数",
+		audioChannelFormat: "チャンネル構成",
+		initialMetadata: "アスペクト比と音声チャンネル情報は初回接続時の値です。",
 		type: "種類",
 		codec: "コーデック",
 		resolution: "解像度",
@@ -5105,6 +5224,8 @@ export const ja = {
 			"Per-Titleでは動画プレイリスト名を個別指定できません。この指定を消し、マニフェストのビットレートから生成される名前を使ってください。",
 		onDemandDrmTemplateUnavailable:
 			"OnDemand MP4 DRMのYAML出力は利用できません。DRMを維持するにはプランJSONを保存するか、このアプリから実行してください。",
+		dolbyLoudnessTemplateUnavailable:
+			"Dolby Loudness は Encoding Template に定義されていません。プラン JSON を使用してください。",
 		spekeTemplateUnavailable: "SPEKE設定はプランJSONで保存できます。",
 		spekeOtherSystems: "その他のシステムID（任意）",
 		spekeProvider: "SPEKE鍵プロバイダー",
@@ -5253,8 +5374,16 @@ export const ja = {
 			"AUTO・ON には Encoder 2.291.0 以降が必要です。対応するバージョンを指定するか、細部の保持を OFF にしてください。",
 		av1DetailPreservationVersionUnresolved:
 			"AUTO・ON には Encoder 2.291.0 以降が必要です。別名から対応バージョンを特定できないため、対応する数値バージョンを指定してください。",
-		encoderVersion2292Help:
-			"Encoder 2.292.0 は Beta 版です。安定版を使う場合は STABLE を選択してください。",
+		encoderVersion2294Help:
+			"Encoder 2.294.0 は Beta 版です。安定版を使う場合は STABLE を選択してください。",
+		addHdr10PlusStream: "HDR10+ 動画を追加",
+		hdr10PlusMetadataPath: "HDR10+ メタデータ JSON パス",
+		hdr10PlusMetadataHelp:
+			"動画と同じ入力ストレージ・バケットにある HDR10+ JSON サイドカーを選択し、このストリームを H.265 レンディションの入力に指定します。",
+		embeddedCaptionTimelineConflict:
+			"元のタイムコードで字幕を抽出します。タイムラインで編集する場合は、埋め込み字幕ソースを削除してください。",
+		hdr10PlusTimelineConflict:
+			"HDR10+ は動画ソースを直接使用します。このアプリでは入力タイムラインとの併用にまだ対応していません。通常の入力へ切り替えるか、HDR10+ ストリームを削除してください。",
 		av1DetailPreservationOff: "OFF — 通常のエンコード",
 		av1DetailPreservationAuto: "AUTO — 解像度に応じて適用",
 		av1DetailPreservationOn: "ON — 全レンディションに適用",
@@ -5301,6 +5430,9 @@ export const ja = {
 		change: "変更",
 		channelLayout: "チャンネルレイアウト",
 		channelName: "チャンネル名",
+		heAacSignaling: "シグナリング",
+		heAacBitrateLimit: "上限 {bps} bps",
+		heAacConfigName: "音声構成名",
 		clEnumEmptyClStereo: "CL_* 列挙:空欄 = CL_STEREO",
 		clientManifest: "クライアントマニフェスト",
 		closedCaptions: "クローズドキャプション",
@@ -5701,7 +5833,7 @@ export const ja = {
 			"S3 の認証情報を選ぶと、ストレージの参照画面が開きます",
 		selectionMode: "選択モード",
 		separateDolbyVisionMetadataSidecarEmptyEmbed:
-			"Dolby Vision メタデータの別サイドカー。空欄 = 埋め込み",
+			"動画と同じ入力ストレージの Dolby Vision XML ファイルを選択します。埋め込みメタデータを使う場合は空欄にします。",
 		serverManifest: "サーバーマニフェスト",
 		serverUrl: "サーバー URL",
 		set: "設定済み",
@@ -5956,6 +6088,8 @@ export const ja = {
 		removeKeyframeN: "キーフレーム {n} を削除",
 		removeManifestN: "マニフェスト {n} を削除",
 		removeSourceN: "ソース {n} を削除",
+		sourceUsedBeforeRemoval:
+			"このストリームを参照している項目で別の入力を選んでください。",
 		removeStreamKey: "ストリーム {key} を削除",
 		removeSubtitleN: "字幕 {n} を削除",
 		removeTrimmingStreamN: "入力クリップ {n} を削除",
@@ -6108,12 +6242,22 @@ export const ja = {
 		you: "あなた",
 	},
 	wizardDraft: {
+		retainedSettings: "旧形式の下書きの設定を確認できます。",
+		legacyWatermarks:
+			"この旧形式の下書きでは、映像の通常のウォーターマークのみ保存されました。その他のフィルターの編集内容はエンコード開始前に確認してください。",
+		legacyRenditions:
+			"この旧形式の下書きではフィルターやレンディションの設定を一部復元できません。元の設定に名前とラベルだけを反映できます。その他の保存済み設定はダウンロードして確認できます。",
+		restoreMetadata: "名前とラベルを復元",
+		downloadSettings: "保存済み設定をダウンロード",
 		available: "保存済みの下書きがあります",
 		restore: "復元",
 		discard: "破棄",
-		help: "このブラウザに7日間保存します。秘密値・URL・DRM・フィルタ設定・インポートしたJSONは保存しません。開始前に確認してください。",
+		help: "このブラウザに7日間保存します。VOD のフィルター設定（画像のオブジェクトパスや音声ゲインなど）も保存します。秘密値・URL・DRM・テキストオーバーレイの内容・読み込んだ JSON は除外します。",
 	},
 	templates: {
+		protectedInputHint:
+			"元の入力パスは非公開です。この設定で使う入力パスを指定してください。",
+		useReplacementInputs: "指定した入力パスを使用",
 		savedDeliveryHeading: "保存済みの配信プリセット",
 		emptyDelivery:
 			"保存済みの配信プリセットはありません。下の配信仕様をインポートすると保存できます。",
@@ -6151,6 +6295,8 @@ export const ja = {
 		notAPlan:
 			"このテンプレートの本文は有効なエンコーディングプランではありません。",
 		sources: "素材",
+		hdrPairRequired:
+			"差し替える HDR10+ 映像と、その映像に対応する JSON メタデータの両方を選択してください。",
 		sourceOriginal:
 			"テンプレートの元パスです。そのままなら同じ素材で再実行します。",
 		sourceMoved: "今回の実行用に変更されています。",
@@ -6665,7 +6811,7 @@ export const ja = {
 		trimASourceInputStreamToA:
 			"ソース入力ストリームを部分区間に切り出します(開始リクエストの trimming とは独立した、現行の入力ストリーム方式です)。レンディションは「配置と追加設定」で選択してクリップ結果を読み込みます。",
 		ts: "TS",
-		tsHlsOnlyAacOnly: "TS = HLS 専用、AAC 専用",
+		tsHlsOnlyAacOnly: "TS の HLS では AAC-LC または HE-AAC 音声を選べます。",
 		tsHlsOnlyH264Only: "TS = HLS 専用、H264 専用",
 		type: "種類",
 		unsetApiDefaultsToTheSegmentDuration:

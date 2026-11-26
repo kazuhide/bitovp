@@ -1,4 +1,5 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { renderLocalized as renderL } from "@/test/render";
 import { HeartbeatPanel } from "./heartbeat-panel";
@@ -11,6 +12,64 @@ const base = {
 	},
 	deltas: {},
 };
+
+describe("HeartbeatPanel first-connection metadata", () => {
+	it.each([
+		[
+			"en",
+			"Aspect ratio",
+			"Audio channels",
+			"Channel layout",
+			"Aspect ratio and audio channel metadata are captured at first connection.",
+		],
+		[
+			"ja",
+			"アスペクト比",
+			"音声チャンネル数",
+			"チャンネル構成",
+			"アスペクト比と音声チャンネル情報は初回接続時の値です。",
+		],
+	] as const)("renders reported metadata and its capture semantics in %s", async (locale, ratioLabel, countLabel, layoutLabel, caption) => {
+		renderL(
+			<HeartbeatPanel
+				nowMs={Date.parse(base.at)}
+				lastHeartbeat={{
+					...base,
+					raw: {
+						...base.raw,
+						ingest: {
+							...base.raw.ingest,
+							streams: [
+								{ streamId: "v", mediaType: "video", aspectRatio: "16:9" },
+								{
+									streamId: "a",
+									mediaType: "audio",
+									numberOfAudioChannels: 2,
+									audioChannelFormat: "stereo",
+								},
+							],
+						},
+					},
+				}}
+			/>,
+			locale,
+		);
+		for (const label of [ratioLabel, countLabel, layoutLabel]) {
+			expect(
+				screen.getByRole("columnheader", { name: label }),
+			).toBeInTheDocument();
+		}
+		expect(screen.queryByText(caption)).toBeNull();
+		await userEvent.click(screen.getByRole("button"));
+		expect(screen.getByText(caption)).toBeInTheDocument();
+		expect(
+			within(screen.getByRole("row", { name: /video/ })).getByText("16:9"),
+		).toBeInTheDocument();
+		const audio = within(screen.getByRole("row", { name: /audio/ }));
+		expect(audio.getByText("2")).toBeInTheDocument();
+		expect(audio.getByText("stereo")).toBeInTheDocument();
+	});
+});
 
 describe("HeartbeatPanel events section", () => {
 	it("does not interpret omitted or withheld events as an empty healthy event history", () => {

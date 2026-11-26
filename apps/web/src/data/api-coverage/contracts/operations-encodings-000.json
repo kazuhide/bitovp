@@ -510,7 +510,7 @@
 					"type": { "kind": "string" },
 					"sdkEvidence": {
 						"file": "encoding/encodings/inputStreams/InputStreamsApi.d.ts",
-						"line": 43
+						"line": 45
 					}
 				},
 				{
@@ -522,13 +522,13 @@
 					"type": { "kind": "string" },
 					"sdkEvidence": {
 						"file": "encoding/encodings/inputStreams/InputStreamsApi.d.ts",
-						"line": 43
+						"line": 45
 					}
 				}
 			],
 			"sdkEvidence": {
 				"file": "encoding/encodings/inputStreams/InputStreamsApi.d.ts",
-				"line": 43
+				"line": 45
 			}
 		},
 		{
@@ -545,7 +545,7 @@
 					"type": { "kind": "string" },
 					"sdkEvidence": {
 						"file": "encoding/encodings/inputStreams/InputStreamsApi.d.ts",
-						"line": 51
+						"line": 53
 					}
 				},
 				{
@@ -569,13 +569,13 @@
 					},
 					"sdkEvidence": {
 						"file": "encoding/encodings/inputStreams/InputStreamsApi.d.ts",
-						"line": 51
+						"line": 53
 					}
 				}
 			],
 			"sdkEvidence": {
 				"file": "encoding/encodings/inputStreams/InputStreamsApi.d.ts",
-				"line": 51
+				"line": 53
 			}
 		},
 		{
@@ -1651,6 +1651,160 @@
 			],
 			"sdkEvidence": {
 				"file": "encoding/encodings/inputStreams/file/FileApi.d.ts",
+				"line": 46
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.inputStreams.hdr10Plus.create",
+			"path": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus",
+			"httpVerb": "POST",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
+						"line": 22
+					}
+				},
+				{
+					"name": "hdr10PlusInputStream",
+					"parameterIndex": 1,
+					"location": "body",
+					"binding": "direct",
+					"optional": true,
+					"type": {
+						"ref": "models/Hdr10PlusInputStream.d.ts#Hdr10PlusInputStream"
+					},
+					"sdkEvidence": {
+						"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
+						"line": 22
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
+				"line": 22
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.inputStreams.hdr10Plus.delete",
+			"path": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus/{hdr10_plus_input_stream_id}",
+			"httpVerb": "DELETE",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
+						"line": 30
+					}
+				},
+				{
+					"name": "hdr10PlusInputStreamId",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "hdr10_plus_input_stream_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
+						"line": 30
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
+				"line": 30
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.inputStreams.hdr10Plus.get",
+			"path": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus/{hdr10_plus_input_stream_id}",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
+						"line": 38
+					}
+				},
+				{
+					"name": "hdr10PlusInputStreamId",
+					"parameterIndex": 1,
+					"location": "path",
+					"wireName": "hdr10_plus_input_stream_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
+						"line": 38
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
+				"line": 38
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.inputStreams.hdr10Plus.list",
+			"path": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus",
+			"httpVerb": "GET",
+			"parameters": [
+				{
+					"name": "encodingId",
+					"parameterIndex": 0,
+					"location": "path",
+					"wireName": "encoding_id",
+					"optional": false,
+					"type": { "kind": "string" },
+					"sdkEvidence": {
+						"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
+						"line": 46
+					}
+				},
+				{
+					"name": "queryParameters",
+					"parameterIndex": 1,
+					"location": "query",
+					"binding": "sdk-query-builder",
+					"optional": true,
+					"type": {
+						"kind": "union",
+						"variants": [
+							{
+								"ref": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusInputStreamListQueryParams.d.ts#Hdr10PlusInputStreamListQueryParams"
+							},
+							{
+								"kind": "function",
+								"type": "(q: Hdr10PlusInputStreamListQueryParamsBuilder) => Hdr10PlusInputStreamListQueryParamsBuilder",
+								"scope": "SDK callable helper; not wire fields"
+							}
+						]
+					},
+					"sdkEvidence": {
+						"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
+						"line": 46
+					}
+				}
+			],
+			"sdkEvidence": {
+				"file": "encoding/encodings/inputStreams/hdr10Plus/Hdr10PlusApi.d.ts",
 				"line": 46
 			}
 		},

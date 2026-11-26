@@ -246,7 +246,7 @@ Opening a wizard, loading a template, or copying an existing job's settings does
 
 While configuring a plan, use its preview to check the input and output destinations, renditions, and resources to be created. A rendition is one output with its own resolution, bitrate, or other characteristics. After changing a plan, check the updated output paths and warnings rather than relying on an earlier review.
 
-Browser drafts do not save every setting. They are kept for 7 days and are separated by user, organization, and creation context. Secrets, URLs, DRM, filters, imported JSON, and similar settings are excluded. After restoring a draft, fill in the omitted settings before running it.
+Browser drafts do not save every setting. They are kept for 7 days and are separated by user, organization, and creation context. VOD drafts retain filter settings, including image object paths and audio channel gains. Secrets, URLs, DRM, text-overlay content and imported JSON are excluded. After restoring a draft, fill in the omitted settings before running it.
 
 ### Reading status
 
@@ -319,7 +319,7 @@ Jobs started from a preset, a saved template, or a copied job open the 8-step sc
 
 ### Basic settings and input files
 
-Choose a name that identifies the job. New configurations start with region `AUTO`, which lets Bitmovin select a region. Select a specific region when required, and check any saved account or copied settings. New VOD jobs start with Encoder `2.292.0` (Beta). Saved and imported version choices are retained. The `STABLE` and `BETA` aliases follow Bitmovin releases; pin an explicit version when reproducing a run or using a version-specific feature.
+Choose a name that identifies the job. New configurations start with region `AUTO`, which lets Bitmovin select a region. Select a specific region when required, and check any saved account or copied settings. New VOD jobs start with Encoder `2.294.0` (Beta). Saved account defaults, drafts and imported version choices are retained. The `STABLE` and `BETA` aliases follow Bitmovin releases; pin an explicit version when reproducing a run or using a version-specific feature.
 
 In "Sources", specify the input file's credentials, bucket, and path. For supported destinations, use "Browse storage…" to select from a list. Enter paths directly for destinations that do not support browsing. For HTTPS inputs, provide a URL from which the source can be retrieved.
 
@@ -347,7 +347,7 @@ Presets and templates are starting points. After loading one, adapt the account,
 
 If plan JSON includes settings that the form cannot represent, keep it in JSON editing mode to preserve the original content. Avoid forcing it into the form and losing settings; check the validation results instead.
 
-Drafts are stored in the current browser for 7 days. They are separated by user, organization, and creation context. Secrets, URLs, DRM, filters, imported JSON, and similar settings are excluded. After restoring a draft, check omitted settings and output destinations. A draft does not replace a shared template or a complete configuration backup.
+Drafts are stored in the current browser for 7 days. They are separated by user, organization, and creation context. VOD drafts retain filter settings, including image object paths and audio channel gains. Secrets, URLs, DRM, text-overlay content and imported JSON are excluded. After restoring a draft, check omitted settings and output destinations. A draft does not replace a shared template or a complete configuration backup.
 
 ## 5. Advanced VOD settings
 
@@ -370,6 +370,12 @@ Use "Add input clip" to encode only part of an input. Trimming methods include t
 4. If you use multiple encodings, also check the encoding assigned to each rendition.
 
 Check the concatenation order, the units for padding before and after each source, and the correspondence between video and audio. Dolby Vision and Dolby Atmos inputs require their metadata or dedicated streams in addition to the video or audio media itself.
+
+**HDR10+ for VOD HEVC:** In Sources, select the HDR10 video file and choose **Add HDR10+ video**. Enter the matching **HDR10+ metadata JSON path** on the video's same input storage and bucket. The JSON belongs in that field, not as a second video input. In Ladder, select the new HDR10+ stream as the source of an H.265 rendition. The application's input timeline cannot currently be combined with this source; use the video directly. HDR10+ is not a Live input option or a dynamic-range dropdown value.
+
+When you change the video file or its storage, select the matching JSON again. For HDR10+ jobs, use the VOD wizard to submit both files together. Watch folders discover one object at a time.
+
+HDR10+ requires Encoder `2.294.0` (Beta) or later and public API SDK `1.289.0` or later for the [REST API `1.289.0` input-stream feature](https://developer.bitmovin.com/encoding/docs/rest-api-services-12500-12990#12890). See the [input-stream reference](https://developer.bitmovin.com/encoding/reference/postencodingencodingsinputstreamshdr10plusbyencodingid) and [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
 
 ### Video codecs and quality settings
 
@@ -410,6 +416,8 @@ For audio, choose a suitable codec such as AAC, Opus, Dolby Digital, Dolby Digit
 
 AAC, AC3 and EAC3 provide an optional cutoff frequency in Hz: the highest audio frequency passed by the encoder. Blank uses the API default. The cutoff cannot exceed half the sample rate. AC3/EAC3 use their own configuration endpoints; they are distinct choices from Dolby Digital/Dolby Digital Plus, whose API models do not expose this setting. For VOD, native AC3/EAC3 can use fMP4 or progressive MP4; AC3 also supports unencrypted TS. AC3/EAC3 audio in encrypted TS is rejected before submission. Live retains AAC and the existing Dolby Digital choices; cutoff is available for Live AAC.
 
+Open **Input conditions** on a rendition to select an input attribute, comparison and value. Use **Require another condition (AND)** to require both rules, or **Allow an alternative (OR)** to accept either. For example, require an input height of at least 1080 pixels before creating a 1080p output. For stream IDs you can enter a decimal value or a hexadecimal PID such as `0x101`. VOD supports duration in seconds and audio/video bitrate in bps.
+
 The ladder's `AUDIOSTREAMCOUNT > 0` guard creates audio only when the input contains an audio stream. Use it when handling files without audio. This is different from a file that contains an audio stream whose content is silent.
 
 Distinguish subtitle tracks for delivery from subtitles burned into the video. IMSC uses a TTML source and `.ttml` output. HLS subtitles use WebVTT. "Burn in SRT subtitles" draws subtitles into the video, so they cannot be hidden during playback like a separate subtitle track.
@@ -430,6 +438,11 @@ Define a filter with "Add filter", then assign it to the target rendition with "
 | Volume and EBU R128 | Volume, loudness, and peak targets. Distinguish %, dB, LUFS, and dBTP. |
 | HQDN3D | Luma and chroma noise reduction in the spatial and temporal dimensions |
 | Unsharp | Sharpening or blurring through processing area and strength |
+| Enhanced Deinterlace and Interlace | Field order and output mode, with optional vertical low-pass filtering for Interlace |
+| Conform | Apply the same target fps to every video and audio stream in the encoding. An explicit video rate must match. Captions, subtitle streams and Dolby Atmos file inputs are incompatible. |
+| Enhanced Watermark | Image from input storage, position, dimensions, and opacity from 0 to 1 |
+| Audio Mix | Choose the speaker layout and gains for each output. Place Audio Mix before volume and loudness processing. Dolby Atmos file inputs bypass the mix. |
+| Dolby Loudness | Target loudness in LKFS, maximum true peak in dBTP, and dialogue detection for supported audio codecs. Use separately from Audio Volume and EBU R128 single-pass. |
 
 The Scale filter preserves the source aspect ratio when only one dimension is set, and the source dimensions when both are blank. Set both parts of the pixel aspect ratio or leave both blank. Its algorithm controls this filter's scaling; rendition output dimensions remain a separate setting. See the [Scale filter reference](https://developer.bitmovin.com/encoding/reference/postencodingfiltersscale).
 
@@ -452,6 +465,8 @@ Packaging combines encoded streams into files or segments. To create more than o
 Avoid having a video variant that already carries audio also reference an external group for that same audio. When turning off "Standalone container", check that the required audio is carried in video containers. Use Opus in supported WebM/DASH configurations; if you also generate HLS, provide another supported audio output. Do not confuse dedicated CMAF with fMP4 when using HLS or the applicable DRM configurations.
 
 Configure DRM on the target container. Depending on whether you use CENC, FairPlay, or SPEKE, specify key credentials, KID, PSSH, IV, license URI, and related values. KID identifies a key; PSSH is DRM initialization information used mainly in manifests. Secret content keys are stored in credentials, and the plan holds references to them.
+
+In the VOD wizard, SPEKE supports fMP4, MP4, MPEG-TS, progressive TS, WebM and progressive WebM. A standalone progressive TS file can also use FairPlay, and a standalone progressive WebM file can use CENC. Save a BitOVP preset or export Plan JSON to reuse SPEKE with its stored credential. Encoding-template YAML for progressive FairPlay and CENC includes the encrypted destination and a content-key placeholder.
 
 For SPEKE, select the key provider and DRM systems. A Content ID is generated if omitted. Matching Content ID and KID values request the same keys. A FairPlay IV is 32 hexadecimal characters. Check that the encryption scheme, license service configuration, and player support agree.
 
@@ -778,6 +793,8 @@ Live encoding continuously processes incoming video and audio and writes output 
 
 Figure 7-1. Live ladder settings in the demo. The screen uses sample settings.
 
+For a transport stream delivered over SRT, Zixi or HLS, open **Ladder → DVB subtitles**. Add one row for each bitmap subtitle track. Enter its zero-based position in the input, its language tag and the display name viewers should see. Choose **Segmented WebVTT** for clear HLS or DASH, or **WebVTT in fMP4** for clear DASH. Encrypted manifests exclude these unencrypted subtitles. The encoder applies OCR to the incoming pictures. The Live wizard writes each track to its own subtitle folder under the channel’s storage output. Saving a Live template or restoring a browser draft retains the tracks. Actual text accuracy depends on the incoming pictures. The Live HD assessment uses the existing input and ladder rules. Fixed-price eligibility for DVB OCR has not been separately verified. [Bitmovin Encoder 2.51.0 release notes](https://developer.bitmovin.com/encoding/docs/encoder-2500-2990)
+
 Settings outside the Live HD conditions produce a Custom Live warning. In addition to this assessment, check the account's eligibility and the provider's acceptance. As with VOD, copying settings or loading a plan does not start a new broadcast. Use JSON editing for settings that cannot be represented in the form. After restoring a draft, also check the settings excluded from draft storage.
 
 ### Input protocols and connection direction
@@ -880,6 +897,8 @@ Figure 8-1. Live monitoring in the demo. The states and charts use sample data, 
 
 HLS output monitoring is separate from channel state and input heartbeat observations. Do not apply the HLS observation indicator to a DASH-only output. Generated Akamai links also require a separate delivery check.
 
+Encoder `2.294.0` and later calculate Live HLS `BANDWIDTH` and `AVERAGE-BANDWIDTH` from produced bitrate, with a floor at the configured bitrate. This is encoder behavior; bitovp does not rewrite the playlist values. VOD manifests are unchanged. See the [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
+
 To preview `PRIVATE` S3 output in Live, you need a delivery URL the browser can play. In the storage credential's **Public base URLs (optional)**, an administrator maps each bucket to an existing delivery service's base URL (for example, a CDN), one `bucket = base URL` entry per line, and configures delivery authentication and CORS for browser access. Open **Show every manifest URL** to check each link or the reason a URL is unavailable. HLS output monitoring uses saved storage credentials, while the preview loads the delivery URL directly; verify output updates and actual playback separately.
 
 ### Heartbeat and history
@@ -887,6 +906,8 @@ To preview `PRIVATE` S3 output in Live, you need a delivery URL the browser can 
 Heartbeat information provides periodic checks of input and encoding activity. On supported versions, the application registers signed Push notifications and prefers them while they are fresh. Otherwise, it uses fresh information retrieved from the provider. Missing Push notifications alone do not establish input loss.
 
 The administrator-configured default Push interval is 20 seconds; zero disables registration. The interval is fixed for each broadcast run. The screen shows the last receipt time, provider sample time, receive rate, frame rate and events. Do not mistake delayed information or a duplicate delivery for a new input sample.
+
+The stream table also shows aspect ratio, audio channel count and channel layout when populated by Encoder `2.294.0` or later. These values describe the **first input connection**, not continuously remeasured input properties. Missing, malformed or unrecognized values remain `—`; these fields alone do not establish input health.
 
 Detailed history separates receipt time from sample time. Polling history is retained for 7 days while polling continues, and ended broadcast runs retain a summary. Stale data is not evidence that the encoder has stopped. `HEARTBEAT_STALE` is an alert about missing monitoring information.
 
@@ -1169,6 +1190,8 @@ This screen is for checking usage, not a replacement for invoices or incident mo
 
 Use "Content Library" to find completed VOD jobs and their analysis, then organize them with titles and tags. VIEWER can browse the library; registration, editing, and retries require OPERATOR or higher.
 
+The Library hides relative HTTPS paths that contain a query, which can grant private access even when its parameter has an unfamiliar name. It displays the exact object key when the capture or the original job identifies a storage input. A historical query path with no surviving input information appears blank.
+
 | Term | Stored information | Purpose |
 |---|---|---|
 | Source | An import record containing a completed job, output locations, playback metadata, analysis results, and related information | Identify the processing result being referenced |
@@ -1231,6 +1254,12 @@ Search, extension filters, and pagination have limits on the range they retrieve
 Use "Inspect" on an object to examine its media structure. The processing service reads part of the actual file and examines its media information. This does not create an encoding, but it does make storage read requests. Inspection reads up to 8 MB from the beginning and, when needed, up to 4 MB of additional data including the end of the file, for a maximum of 12 MB.
 
 Once inspection moves from queued or running to complete, review the container, duration, video and audio streams, resolution, frame rate, audio channels, and other reported properties. Reopening the inspection shows the latest saved result; up to 20 historical results are available. Whole-file bitrate is not calculated from this result because estimating it from a partial read can be misleading. Missing information or an error can be caused by permissions, header placement, or the read limit as well as file damage. Successful inspection does not verify decoding of the entire file, audio/video synchronization, or actual playback.
+
+### Inspect and delete provider resources
+
+Open **Resources** on a VOD job or select a run in the Live channel history. Select a creation step to retrieve its resource from the original Bitmovin account. Some resource types also list entries under the same parent.
+
+Live runs provide read-only access to recorded resources. For a terminal VOD job, an operator can confirm an individual deletion by entering the displayed resource ID. BitOVP checks ownership, references from other runs and whether the job has finished. If the response is interrupted, reopen the resource to check its deletion status. Start a new VOD job to encode again after deleting one of its resources.
 
 ## 14. Templates and automation
 

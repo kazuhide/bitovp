@@ -173,6 +173,8 @@ export type MediaProbe = {
 	durationSec?: number;
 	bitrateBps?: number;
 	audioCodec?: string;
+	audioProfile?: string;
+	audioStreamCount?: number;
 	audioChannels?: number;
 	audioSampleRate?: number;
 	/** The AUDIO stream's own bitrate in bps — for the exact-topology check (row 272). */
@@ -213,6 +215,7 @@ export type ParsedHls = {
 		 * row per (video muxing × group), and only AUDIO tells them apart.
 		 */
 		audio?: string;
+		subtitles?: string;
 	}[];
 	/**
 	 * Rendition groups (audio/subtitles) declared by EXT-X-MEDIA. `name` is the
@@ -257,6 +260,13 @@ export type ParsedDash = {
 		periodIndex?: number;
 		/** Concrete image references expanded by the DASH parser, including inherited templates. */
 		imageUris?: string[];
+		/** Concrete object addresses after DASH template, list and BaseURL expansion. */
+		subtitleSegments?: {
+			media: string;
+			init?: string;
+			mediaRange?: { offset?: number; length?: number };
+			initRange?: { offset?: number; length?: number };
+		}[];
 		baseUrl?: string;
 		language?: string;
 		id?: string;
@@ -630,6 +640,9 @@ async function verifyMuxing(
 	const wholeFile =
 		muxing.container === "PROGRESSIVE_TS" ||
 		muxing.container === "PROGRESSIVE_MOV" ||
+		muxing.container === "PROGRESSIVE_WAV" ||
+		(muxing.container === "MP4_PROGRESSIVE" &&
+			muxing.audio?.singleTrackFile === true) ||
 		muxing.container === "PROGRESSIVE_WEBM";
 	const single =
 		wholeFile ||
@@ -706,29 +719,40 @@ async function verifyMuxing(
 					listed.size > 0,
 					`Subtitle file contains ${listed.size} bytes`,
 				);
+			const webVtt = muxing.text?.codec === "WEBVTT";
+			const check = `${id}:file-${webVtt ? "webvtt" : "xml"}`;
 			if (listed?.size !== undefined && listed.size > MAX_SUBTITLE_XML_BYTES) {
 				report.fail(
-					`${id}:file-xml`,
+					check,
 					"muxing",
-					"Subtitle XML exceeds the 8 MiB verification limit",
+					"Subtitle file exceeds the 8 MiB verification limit",
 				);
 			} else {
 				try {
-					const validation = validateSubtitleXml(
-						await deps.readText(outputFor(hit as string), hit as string),
+					const content = await deps.readText(
+						outputFor(hit as string),
+						hit as string,
 					);
-					report.assert(
-						`${id}:file-xml`,
-						"muxing",
-						validation.valid,
-						validation.detail,
-					);
+					if (webVtt) {
+						const header = content.split(/[\r\n]/, 1)[0] ?? "";
+						const valid =
+							Buffer.byteLength(content, "utf8") <= MAX_SUBTITLE_XML_BYTES &&
+							/^\uFEFF?WEBVTT(?:[ \t].*)?$/u.test(header) &&
+							!header.includes("-->");
+						report.assert(
+							check,
+							"muxing",
+							valid,
+							valid
+								? "Subtitle file has a WebVTT signature"
+								: "Expected a WebVTT signature within the 8 MiB limit",
+						);
+					} else {
+						const validation = validateSubtitleXml(content);
+						report.assert(check, "muxing", validation.valid, validation.detail);
+					}
 				} catch {
-					report.fail(
-						`${id}:file-xml`,
-						"muxing",
-						"Subtitle XML could not be read",
-					);
+					report.fail(check, "muxing", "Subtitle file could not be read");
 				}
 			}
 			return;
@@ -1388,6 +1412,8 @@ function rfcCodecPrefixes(codec: string): string[] {
 			return ["av01"];
 		case "OPUS":
 			return ["opus"];
+		case "HE_AAC_V1":
+		case "HE_AAC_V2":
 		case "AAC":
 			return ["mp4a"]; // AAC-LC / HE / HEv2 all mp4a.40.*
 		case "DD":
@@ -1404,6 +1430,16 @@ function rfcCodecPrefixes(codec: string): string[] {
 
 /** Whether an RFC 6381 codec string belongs to the plan codec's family. */
 function rfcCodecMatches(rfc: string, codec: string): boolean {
+	// Backward-compatible signaling can advertise the underlying LC/SBR object
+	// type. Full HE profile verification uses the decoded stream's profile.
+	if (codec === "HE_AAC_V1" || codec === "HE_AAC_V2") {
+		const token = rfc.trim().toLowerCase();
+		return (
+			token === "mp4a.40.2" ||
+			token === "mp4a.40.5" ||
+			(codec === "HE_AAC_V2" && token === "mp4a.40.29")
+		);
+	}
 	const prefixes = rfcCodecPrefixes(codec);
 	if (prefixes.length === 0) {
 		return false;
@@ -1420,8 +1456,12 @@ function ffprobeAudioCodecsOf(codec: string): string[] | undefined {
 	switch (codec) {
 		case "OPUS":
 			return ["opus"];
+		case "HE_AAC_V1":
+		case "HE_AAC_V2":
 		case "AAC":
 			return ["aac"];
+		case "PCM":
+			return ["pcm_s16le", "pcm_s24le", "pcm_s32le"];
 		case "DD":
 		case "AC3":
 			return ["ac3"];
@@ -1448,6 +1488,7 @@ function channelCountFor(layout: string): number | undefined {
 		MONO: 1,
 		CL_MONO: 1,
 		CL_STEREO: 2,
+		STEREO: 2,
 		CL_SURROUND: 3,
 		CL_4_0: 4,
 		CL_5_0_BACK: 5,
@@ -1618,6 +1659,21 @@ async function verifyMediaProperties(
 
 	if (muxing.audio) {
 		const audio = muxing.audio;
+		if (audio.singleTrackFile) {
+			if (probe.audioStreamCount === undefined)
+				report.skip(
+					`${id}:audio-stream-count`,
+					"rendition",
+					"Audio stream count is unavailable",
+				);
+			else
+				report.assert(
+					`${id}:audio-stream-count`,
+					"rendition",
+					probe.audioStreamCount === 1 && !probe.videoCodec,
+					`Expected one audio stream and no video; found ${probe.audioStreamCount} audio stream(s), video ${probe.videoCodec ?? "absent"}`,
+				);
+		}
 		report.assert(
 			`${id}:audio-present`,
 			"rendition",
@@ -1629,7 +1685,9 @@ async function verifyMediaProperties(
 		// alone. Emitted as assert-or-skip so the id is a function of the plan, not
 		// of what ffprobe happened to read.
 		{
-			const want = ffprobeAudioCodecsOf(audio.codec);
+			const want = audio.sampleFormat
+				? [`pcm_${audio.sampleFormat.toLowerCase()}`]
+				: ffprobeAudioCodecsOf(audio.codec);
 			if (probe.audioCodec === undefined) {
 				report.skip(
 					`${id}:audio-codec`,
@@ -1651,31 +1709,52 @@ async function verifyMediaProperties(
 				);
 			}
 		}
+		if (audio.codec === "HE_AAC_V1" || audio.codec === "HE_AAC_V2") {
+			const expectedProfile =
+				audio.codec === "HE_AAC_V1" ? "HE-AAC" : "HE-AACv2";
+			const actual = probe.audioProfile;
+			if (actual && actual.toLowerCase() !== "unknown") {
+				report.assert(
+					`${id}:audio-profile`,
+					"rendition",
+					actual.toLowerCase() === expectedProfile.toLowerCase(),
+					`Audio profile ${expectedProfile} — ffprobe reports ${actual}`,
+				);
+			} else {
+				report.skip(
+					`${id}:audio-profile`,
+					"rendition",
+					`ffprobe did not identify the ${expectedProfile} profile`,
+				);
+			}
+		}
 		// BITRATE within a band, a FAIL outside it (row 272). 128k delivered at
 		// 64k is ratio 0.5 — below AUDIO_BITRATE_LOW.
-		if (probe.audioBitrateBps === undefined) {
-			report.skip(
-				`${id}:audio-bitrate`,
-				"rendition",
-				`the plan targets ${audio.bitrate} bps but ffprobe reported no audio bitrate, so it could not be scored`,
-			);
-		} else {
-			const ratio = probe.audioBitrateBps / audio.bitrate;
-			report.assert(
-				`${id}:audio-bitrate`,
-				"rendition",
-				ratio >= AUDIO_BITRATE_LOW && ratio <= AUDIO_BITRATE_HIGH,
-				`audio bitrate within [${AUDIO_BITRATE_LOW}×, ${AUDIO_BITRATE_HIGH}×] of ${audio.bitrate} — measured ${probe.audioBitrateBps} (${ratio.toFixed(2)}×)`,
-			);
+		if (audio.bitrate !== undefined) {
+			if (probe.audioBitrateBps === undefined) {
+				report.skip(
+					`${id}:audio-bitrate`,
+					"rendition",
+					`the plan targets ${audio.bitrate} bps but ffprobe reported no audio bitrate, so it could not be scored`,
+				);
+			} else {
+				const ratio = probe.audioBitrateBps / audio.bitrate;
+				report.assert(
+					`${id}:audio-bitrate`,
+					"rendition",
+					ratio >= AUDIO_BITRATE_LOW && ratio <= AUDIO_BITRATE_HIGH,
+					`audio bitrate within [${AUDIO_BITRATE_LOW}×, ${AUDIO_BITRATE_HIGH}×] of ${audio.bitrate} — measured ${probe.audioBitrateBps} (${ratio.toFixed(2)}×)`,
+				);
+			}
 		}
-		if (probe.audioSampleRate !== undefined) {
+		if (audio.sampleRate !== undefined && probe.audioSampleRate !== undefined) {
 			report.assert(
 				`${id}:audio-rate`,
 				"rendition",
 				probe.audioSampleRate === audio.sampleRate,
 				`sample rate ${audio.sampleRate} — ${probe.audioSampleRate}`,
 			);
-		} else {
+		} else if (audio.sampleRate !== undefined) {
 			// A missing OBSERVATION is a SKIP, not silence: the expectation exists,
 			// so a vanished check is the fifth quiet state this engine forbids.
 			report.skip(

@@ -2,6 +2,7 @@
 // re-exported. Construct clients via createPrismaClient/getPrisma (which
 // enforce a global omit on ciphertext columns) and reach secrets only
 // through the stores.
+
 export type * from "../generated/client";
 export type {
 	AisaLiveImportOutcome,
@@ -77,7 +78,11 @@ export {
 	getPreparedNormalizationReceipt,
 	LibraryNormalizationClockError,
 } from "./library-normalization-clock";
-export { LibrarySourceError, requestLibrarySource } from "./library-source";
+export {
+	LibrarySourceError,
+	requestLibrarySource,
+	retainLibraryInputsBeforeJobDeletion,
+} from "./library-source";
 export type {
 	LiveEffectAction,
 	LiveEffectBeginInput,
@@ -185,6 +190,7 @@ export {
 	projectingMany,
 	projectSelected,
 } from "./test-helpers";
+export { resolveInspectedAudioSource } from "./verified-audio-source";
 export * from "./vmaf-profiles";
 export type { VmafTriggerKind } from "./vmaf-trigger-key";
 export {

@@ -6,7 +6,7 @@ import type { BitmovinAccountDto } from "@/app/settings/bitmovin/types";
 import { DEFAULT_WIZARD_STATE } from "@/app/vod/new/build-plan";
 import { VodWizard } from "@/app/vod/new/wizard";
 import { draftKey, writeWizardDraft } from "@/lib/wizard-draft";
-import { renderWithQuery } from "@/test/render";
+import { renderWithOperatorSession as renderWithQuery } from "@/test/render";
 
 const { apiFetch } = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock("@/lib/api", async (original) => ({

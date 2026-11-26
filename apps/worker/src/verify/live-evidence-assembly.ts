@@ -343,7 +343,10 @@ function originLeg(
 				: undefined;
 		const additional =
 			manifest.hlsAdditionalMedia?.findIndex(
-				(media) => media.type === "VIDEO" && media.uri === m.muxingKey,
+				(media) =>
+					(media.type === "VIDEO" && media.uri === m.muxingKey) ||
+					(media.resource?.container === "CHUNKED_TEXT" &&
+						media.muxingKey === m.muxingKey),
 			) ?? -1;
 		const checks =
 			additional >= 0
@@ -353,15 +356,25 @@ function originLeg(
 						),
 					)
 				: undefined;
-		const bound =
-			additional < 0 ||
-			(checks?.some(
-				(check) => check.id.endsWith(":binding") && check.verdict === "PASS",
-			) === true &&
-				checks.some(
-					(check) => check.id.endsWith(":objects") && check.verdict === "PASS",
-				) &&
-				!checks.some((check) => check.verdict === "FAIL"));
+		const dvb = manifest.dashDvbSubtitles?.find(
+			(t) => `dvb:${t.key}` === m.muxingKey,
+		);
+		const bound = dvb
+			? file?.referenceChecks?.some(
+					(c) =>
+						c.id ===
+							`live:manifest:${manifest.manifestKey}:dvb-subtitle:${dvb.key}:representation` &&
+						c.verdict === "PASS",
+				) === true
+			: additional < 0 ||
+				(checks?.some(
+					(check) => check.id.endsWith(":binding") && check.verdict === "PASS",
+				) === true &&
+					checks.some(
+						(check) =>
+							check.id.endsWith(":objects") && check.verdict === "PASS",
+					) &&
+					!checks.some((check) => check.verdict === "FAIL"));
 		return {
 			id: m.muxingKey,
 			requiresInit:
@@ -374,7 +387,9 @@ function originLeg(
 			missing: bound
 				? []
 				: [
-						"The additional VIDEO child's actual references were not verified against its configured writer",
+						m.muxingKey.startsWith("dvb:")
+							? "The configured subtitle track was not verified in this manifest"
+							: "The additional VIDEO child's actual references were not verified against its configured writer",
 					],
 		};
 	});

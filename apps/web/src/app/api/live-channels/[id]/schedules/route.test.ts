@@ -234,6 +234,83 @@ describe("GET /schedules", () => {
 		expect(scheduleFindMany.mock.calls).toHaveLength(2);
 	});
 
+	it("preserves the converted slate's confirmed object name and stereo assumption on history reads", async () => {
+		const source = {
+			credentialId: CHANNEL_ID,
+			bucket: "media",
+			key: "slates/bumper@2026.mp4",
+		};
+		const output =
+			"media/slates/bumper@2026.mp4.normalized-1920x1080-30000_1001-48000-2ch.ts";
+		const prefix =
+			"slate content registered (prepared-id); converted to MPEG-TS 1920x1080 30000/1001 fps, AAC 48000 Hz 2ch to match the live input (container) → ";
+		const suffix =
+			"; channel count assumed stereo (the live input reports none)";
+		const row = {
+			id: "s1",
+			action: "SLATE_IN",
+			status: "FIRED",
+			insertableContentId: "prepared-id",
+			slateSource: source,
+			note: prefix + output + suffix,
+			outcomeNote: "error for https://operator@example.test",
+			error: null,
+		};
+		const otherOutput = `delivery/live/slates/${output}`;
+		const rows = [
+			row,
+			{ ...row, note: prefix + otherOutput + suffix },
+			{
+				...row,
+				slateSource: { ...source, key: "//slates/bumper?cut@2026.mp4" },
+				note: prefix + otherOutput.replace("bumper@", "bumper?cut@") + suffix,
+			},
+			{ ...row, note: prefix + output.replace("@2026", "@different") + suffix },
+			{ ...row, note: `${prefix + output}?auth=fake` },
+			{ ...row, insertableContentId: "other" },
+			{ ...row, note: `${prefix}https://name@example.test/${output}` },
+			{
+				...row,
+				slateSource: {
+					...source,
+					key: "https://name@example.test/bumper@2026.mp4",
+				},
+			},
+		];
+		scheduleFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce(rows);
+		const res = await GET(new Request("http://test"), ctx());
+		const actual = (await res.json()) as typeof rows;
+		expect(actual.map((r) => r.note)).toEqual([
+			row.note,
+			prefix + otherOutput + suffix,
+			rows[2]?.note,
+			...rows.slice(3).map(() => "[withheld]"),
+		]);
+		expect(actual.every((r) => r.outcomeNote === "[withheld]")).toBe(true);
+	});
+
+	it("withholds a signed provider diagnostic in a retained schedule outcome", async () => {
+		const row = {
+			id: "s1",
+			status: "FIRED",
+			outcome: "FAILED",
+			outcomeNote: "Read media/copy?auth=PRIVATE_FIXTURE",
+			note: "slate registration failed: read other.mxf?token=PRIVATE_FIXTURE",
+			error: "failed to probe other.mxf?token=PRIVATE_FIXTURE",
+		};
+		scheduleFindMany.mockResolvedValueOnce([]).mockResolvedValueOnce([row]);
+		const res = await GET(new Request("http://test"), ctx());
+		expect(await res.json()).toEqual([
+			{
+				...row,
+				note: "[withheld]",
+				error: "[withheld]",
+				outcomeNote: "[withheld]",
+			},
+		]);
+		expect(row.outcomeNote).toContain("PRIVATE_FIXTURE");
+	});
+
 	/**
 	 * rev367 S-2 — a switch row carries its staged session's LIVE phase. The
 	 * row's own `readyAt` is a write-once record ("first became ready"); a

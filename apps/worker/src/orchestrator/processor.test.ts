@@ -149,6 +149,7 @@ function setup(
 	const row: Record<string, unknown> = {
 		id: JOB_ID,
 		status: "QUEUED",
+		cancelRequested: false,
 		plan,
 		stepLog: initStepLog(compilePlan(plan)),
 		bitmovinAccountId: null,
@@ -204,6 +205,38 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("orchestrator processor", () => {
+	it("persists the exact caption key from its executed S3 input", async () => {
+		const inputPath = "archive/scene.ts?key=wide";
+		const plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		const source = plan.inputs[0];
+		if (source?.kind !== "S3") throw Error("Missing S3 input fixture");
+		plan.captionStreams = [
+			{
+				key: "captions",
+				inputKey: source.key,
+				inputPath,
+				kind: "CEA608",
+				channel: "CC1",
+			},
+		];
+		const h = setup({ plan, stepLog: initStepLog(compilePlan(plan)) });
+		await expect(h.processor({ encodingJobId: JOB_ID })).resolves.toMatchObject(
+			{ status: "FINISHED" },
+		);
+		const history = h.row.stepLog as StepLogEntry[];
+		const producer = history.find(
+			(entry) => entry.step === `input:${source.key}`,
+		);
+		expect(producer?.resourceId).toBeTruthy();
+		expect(
+			history.find((entry) => entry.step === "caption:captions")?.request,
+		).toMatchObject({ inputPath, refs: { inputId: producer?.resourceId } });
+		expect(h.sdk.createCea608InputStream).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({ inputPath, inputId: producer?.resourceId }),
+		);
+	});
 	it.each([
 		false,
 		true,
@@ -824,6 +857,26 @@ describe("orchestrator processor", () => {
 		expect(errorUpdate?.doneSteps).toBeGreaterThan(0);
 	});
 
+	it("persists useful task warnings while withholding private storage locations from finished step snapshots", async () => {
+		const { processor, row } = setup(
+			{},
+			{
+				getEncodingStatus: async () => ({
+					status: "FINISHED",
+					messages: [
+						"Local warning",
+						"Diagnostics at https://fixture.invalid/encoder?sig=FIXTURE_WARNING_VALUE",
+					],
+				}),
+			},
+		);
+		await processor({ encodingJobId: JOB_ID });
+		const entries = row.stepLog as StepLogEntry[];
+		const snapshots = JSON.stringify(entries.map((e) => e.response));
+		expect(snapshots).toContain("Local warning");
+		expect(snapshots).toContain("[withheld]");
+		expect(snapshots).not.toContain("FIXTURE_WARNING_VALUE");
+	});
 	it("invokes the onVodFinished hook once after FINISHED with the parsed plan", async () => {
 		const onVodFinished = vi.fn(async () => {});
 		const { processor, row } = setup({}, {}, onVodFinished);
@@ -1144,6 +1197,48 @@ describe("orchestrator processor", () => {
 			expect(ranRunning).toBe(false);
 		});
 
+		it.each([
+			false,
+			true,
+		])("honors accepted cancel with a retired HDR declaration, concurrent=%s", async (late) => {
+			const plan = {
+				...basePlan,
+				bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
+				hdr10PlusStreams: [
+					{
+						key: "hdr",
+						inputKey: "in",
+						videoInputPath: "picture.mxf",
+						metadataInputPath: "picture.mxf",
+					},
+				],
+			};
+			const { processor, row, sdk, updateMany, emitted } = setup(
+				{
+					plan,
+					status: "RUNNING",
+					cancelRequested: !late,
+					stepLog: midRunLog(),
+					bitmovinEncodingId: "bm-enc",
+				},
+				{ getEncodingStatus: vi.fn(async () => ({ status: "RUNNING" })) },
+			);
+			if (late) {
+				const apply = updateMany.getMockImplementation();
+				if (!apply) throw new Error("missing update seam");
+				updateMany.mockImplementation(async (args) => {
+					if (args.data.status === "ERROR") row.cancelRequested = true;
+					return apply(args);
+				});
+			}
+			expect(await processor({ encodingJobId: JOB_ID })).toMatchObject({
+				status: "CANCELED",
+			});
+			expect(row.status).toBe("CANCELED");
+			expect(emitted.map((e) => e.kind)).toEqual(["JOB_CANCELED"]);
+			expect(sdk.stopEncoding).toHaveBeenCalledWith("bm-enc");
+			expect(sdk.createEncoding).not.toHaveBeenCalled();
+		});
 		// (b) cancel before a mid-run step, with a running encoding -> CANCELED +
 		// stopEncoding called for that encoding.
 		it("cancels before the next step and stops the running encoding", async () => {
@@ -1526,6 +1621,92 @@ describe("orchestrator processor", () => {
 			});
 		});
 	});
+});
+
+it("persists and emits only the public provider failure diagnostic", async () => {
+	const { processor, row, updates, emitted } = setup(
+		{},
+		{
+			createEncoding: vi.fn(async () => {
+				throw new Error(
+					"Provider input https://fixture.invalid/input?\nkey=PRIVATE_STEP_SAMPLE",
+				);
+			}),
+		},
+	);
+	await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow(
+		"[withheld]",
+	);
+	expect(row).toMatchObject({ status: "ERROR", error: "[withheld]" });
+	expect(row.stepLog).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ status: "FAILED", error: "[withheld]" }),
+		]),
+	);
+	expect(emitted).toContainEqual(
+		expect.objectContaining({ kind: "JOB_ERROR", error: "[withheld]" }),
+	);
+	expect(JSON.stringify(updates)).not.toContain("PRIVATE_STEP_SAMPLE");
+});
+
+it("executes and records the same literal Dolby Vision key on the selected S3 input", async () => {
+	const plan = structuredClone(basePlan);
+	plan.bitmovin.accountId = ACCOUNT_ID;
+	const key = "reels/take.mxf?auth=review";
+	plan.dolbyStreams = [
+		{ kind: "VISION", key: "vision", inputKey: "main", videoInputPath: key },
+	];
+	const { processor, sdk, row } = setup({
+		plan,
+		stepLog: initStepLog(compilePlan(plan)),
+	});
+	await processor({ encodingJobId: JOB_ID });
+	const entries = row.stepLog as StepLogEntry[];
+	const producer = entries.find((entry) => entry.step === "input:main");
+	const consumer = entries.find((entry) => entry.step === "dolby:vision");
+	expect(sdk.createDolbyVisionInputStream).toHaveBeenCalledWith(
+		"bm-encoding",
+		expect.objectContaining({
+			inputId: producer?.resourceId,
+			videoInputPath: key,
+		}),
+	);
+	expect(consumer).toMatchObject({
+		status: "DONE",
+		request: {
+			videoInputPath: key,
+			refs: { inputId: producer?.resourceId, encodingId: "bm-encoding" },
+		},
+	});
+	expect(consumer?.response).toEqual({ id: consumer?.resourceId });
+});
+
+it("rejects a queued unsupported HDR10+ trim before provider access", async () => {
+	const p = structuredClone(basePlan);
+	p.bitmovin = {
+		...p.bitmovin,
+		accountId: ACCOUNT_ID,
+		encoderVersion: "2.294.0",
+	};
+	const [input] = p.inputs;
+	if (!input) throw new Error("Missing fixture input");
+	p.hdr10PlusStreams = [
+		{
+			key: "hdr",
+			inputKey: input.key,
+			videoInputPath: "source.mxf",
+			metadataInputPath: "meta.json",
+			selectionMode: "AUTO",
+		},
+	];
+	p.trimmingStreams = [
+		{ key: "trim", kind: "TIME_BASED", sourceKey: "hdr", duration: 3 },
+	];
+	const { processor, row, deps, sdk } = setup({ plan: p });
+	await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow(/HDR10/);
+	expect(row.status).toBe("ERROR");
+	expect(deps.revealBitmovinAccount).not.toHaveBeenCalled();
+	expect(sdk.createEncoding).not.toHaveBeenCalled();
 });
 
 describe("VMAF model capability — refuse BEFORE any Bitmovin resource (review-234 I1)", () => {

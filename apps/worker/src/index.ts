@@ -16,6 +16,7 @@ import {
 	parseIngressConfig,
 	parseSecretEgressAllowlist,
 	parseStorageEndpointAllowlist,
+	publicStorageDiagnostic,
 	QUEUE_NAMES,
 	type QueueKey,
 	REGISTRATION_RECONCILE_INTERVAL_MS,
@@ -42,6 +43,7 @@ import {
 	getIdentityPrisma,
 	listVmafCloudProfiles,
 	recordUnrestrictedEgress,
+	resolveInspectedAudioSource,
 	TENANT_ORGANIZATION,
 } from "@bitovp/db";
 import type { BrowserCredential } from "@bitovp/storage";
@@ -940,14 +942,9 @@ const processorDeps: LiveChannelDeps = {
 	wakeSleep,
 	enqueueFeederJob: (job) => enqueueFeederJob(feederQueue, job),
 	async revealBitmovinAccount(accountId) {
-		const account = await bitmovinAccounts.get(accountId);
-		if (!account) {
-			throw new Error("Bitmovin account no longer exists");
-		}
-		return {
-			apiKey: await bitmovinAccounts.revealApiKey(accountId),
-			tenantOrgId: account.tenantOrgId,
-		};
+		const access = await bitmovinAccounts.revealForEncoding(accountId);
+		if (!access) throw new Error("Bitmovin account no longer exists");
+		return access;
 	},
 	async resolveCredential(credentialId) {
 		const credential = await credentials.get(credentialId);
@@ -991,8 +988,21 @@ const processorDeps: LiveChannelDeps = {
 const orchestrate = tenantService(() =>
 	createOrchestratorProcessor({
 		...processorDeps,
-		validateInputPreparation: (plan) =>
-			verifyInputTimelinePreparation({
+		validateInputPreparation: async (plan) => {
+			if (plan.renditions.some((r) => r.codec === "AUDIO_PASSTHROUGH")) {
+				if (
+					!process.env.BITOVP_CAPTURE_INPUT_BASE_URL ||
+					(process.env.BITOVP_CAPTURE_INPUT_SECRET?.length ?? 0) < 32
+				)
+					throw new Error("INPUT_CAPTURE_CONFIGURATION_INVALID");
+				await resolveInspectedAudioSource(
+					prisma,
+					requireOrganizationId(),
+					plan,
+				);
+				return;
+			}
+			await verifyInputTimelinePreparation({
 				plan,
 				organizationId: requireOrganizationId(),
 				allowExpired: true,
@@ -1003,7 +1013,8 @@ const orchestrate = tenantService(() =>
 					editingShutdownController.signal,
 					AbortSignal.timeout(120_000),
 				]),
-			}),
+			});
+		},
 		captureIngestInput: createEncodingInputCapture({
 			prisma,
 			browserFor: editingBrowserFor,
@@ -2085,10 +2096,11 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 	});
 	worker.on("failed", (job, err) => {
 		if (!job) return;
+		const failureMessage = publicStorageDiagnostic(err.message);
 		const handled = consumeTenantJob(
 			key,
 			async (job) => {
-				console.error(`[worker:${key}] job ${job?.id} failed:`, err.message);
+				console.error(`[worker:${key}] job ${job?.id} failed:`, failureMessage);
 				// A job can die outside the processor (stalled twice, lock lost).
 				// Without this, the row wedges in QUEUED/RUNNING and /retry 409s.
 				if (key === "orchestrator") {
@@ -2117,7 +2129,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 								// window nobody is renewing.
 								data: {
 									status: "ERROR",
-									error: redactSecrets(err.message),
+									error: redactSecrets(failureMessage),
 									attemptClaimedAt: null,
 								},
 							})
@@ -2194,7 +2206,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 							await recordExpiredProvisionFailure(
 								prisma,
 								liveChannelId,
-								redactSecrets(err.message),
+								redactSecrets(failureMessage),
 								new Date(at.getTime() - PROVISION_LEASE_MS),
 								at,
 								admission,
@@ -2215,7 +2227,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					await recordFinalRestartFailure(
 						prisma,
 						job,
-						err.message,
+						failureMessage,
 						new Date(),
 						emitEvent,
 					).catch((updateErr) =>
@@ -2229,7 +2241,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					await recordFinalStopFailure(
 						prisma,
 						job,
-						err.message,
+						failureMessage,
 						emitEvent,
 					).catch((updateErr) =>
 						console.error(
@@ -2268,7 +2280,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 								data: {
 									status: "ERROR",
 									error: redactSecrets(
-										`scheduled feeder job died: ${err.message}`,
+										`scheduled feeder job died: ${failureMessage}`,
 									),
 								},
 							})
@@ -2302,7 +2314,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 					await recordDeadJobScheduleOutcomes(
 						prisma,
 						job,
-						err.message,
+						failureMessage,
 						new Date(),
 					);
 				}
@@ -2329,7 +2341,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 						await releaseDeadLiveToVodIfFinal(
 							prisma,
 							{ liveChannelId, liveChannelRunId, encodingId, attemptId },
-							err.message,
+							failureMessage,
 							new Date(),
 							() => job.getState(),
 						).catch((updateErr) =>
@@ -2346,7 +2358,7 @@ const workers = (Object.keys(handlers) as QueueKey[]).map((key) => {
 				// trigger of the orphan-ffmpeg case, and 's emit instrument
 				// could not see that because its population never included this file.
 				if (key === "feederManager") {
-					await recordDeadFeederJob({ prisma, emitEvent }, job, err.message);
+					await recordDeadFeederJob({ prisma, emitEvent }, job, failureMessage);
 				}
 			},
 			{ reserveFeederStopSlot: false, enforceActive: false },

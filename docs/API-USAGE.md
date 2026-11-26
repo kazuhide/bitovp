@@ -221,6 +221,10 @@ Keys accept 1–200 letters, digits, periods, underscores, colons, or hyphens.
 Requests without this header retain the existing behavior: each accepted request
 creates new work.
 
+Use a BitOVP bearer token for programmatic creation. The web console also binds
+each creation request to the signed-in operator. Reload a console tab opened
+before an upgrade if it asks you to refresh before retrying a creation.
+
 In the examples below, set `CREATE_KEY` to a key generated once for that intended
 creation. Preserve it for retries; replace it before creating new work.
 

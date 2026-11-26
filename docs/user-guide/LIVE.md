@@ -18,6 +18,10 @@ region. Review the selected account and any saved or copied region settings.
    Pseudo-live is a feeder that sends stored files to an input, not a separate
    encoder input type.
 3. In **Ladder**, configure video/audio renditions and their codec settings.
+   Open **Input conditions** on a rendition to apply an AND/OR rule to the source.
+   For example, require a minimum input height or match an audio language. Frame
+   rate accepts a decimal or a fraction such as `30000/1001`. Duration and input
+   bitrate are available for VOD only.
 4. In **Output**, choose storage or a delivery service, paths, and optional mirrors.
 5. In **Packaging**, choose each track's container, bundled audio, file settings,
    shared segment length, optional encryption, and MP4 archive.
@@ -56,6 +60,13 @@ starting position. Blank uses the provider default, which can add latency.
 DASH suggested presentation delay and minimum update period use milliseconds in
 the form and are converted to API seconds. DVR retains a playback window; its
 manifest-element budget is checked rather than silently clamped.
+
+With Encoder `2.294.0` or later, Live HLS multivariant playlists derive
+`BANDWIDTH` and `AVERAGE-BANDWIDTH` from produced bitrate, with the configured
+bitrate as a floor. The encoder supplies this correction; bitovp does not rewrite
+the values. VOD manifests are unchanged. See the [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
+
+Ordinary Live supports HE-AAC v1 (up to 128,000 bps) and v2 (up to 64,000 bps) with segmented fMP4 for HLS/DASH, or TS for HLS. The Live HD encoding option, dedicated CMAF muxings, MP4 archive and MoQ retain their existing codec requirements. A saved template keeps each track’s profile, optional sample rate, channel layout and signaling. [Bitmovin Live muxing support](https://bitmovin.com/wp-content/uploads/2023/09/Product-Support-Matrix-ENCODING-Live-Muxings.pdf)
 
 ## Experimental MoQ delivery
 
@@ -252,6 +263,12 @@ provider sample time; delayed or duplicate delivery is not a new input sample.
 Polling history is kept for seven days while a channel is polled; ended runs
 retain a summary. See [Operations](../OPERATIONS.md#heartbeat-history).
 
+Encoder `2.294.0` (Beta) adds populated input aspect ratio, audio channel count,
+and channel layout to the stream table. These describe the **first input
+connection**, not a new measurement at every heartbeat. Missing, malformed, or
+unrecognized values remain unavailable (`—`); a displayed format does not
+establish current input health. See the [Encoder release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
+
 If provider monitoring stops responding, a configured `HEARTBEAT_STALE` rule
 opens once after its freshness grace and resolves when fresh polling recovers.
 This indicates missing monitoring data; it does not confirm an input disconnect
@@ -385,3 +402,10 @@ A terminal provider encoding cannot restart. Broadcasting the channel again
 creates a new run and encoding; insertable content is registered for that run.
 Copy settings opens the wizard without starting work. See
 [Troubleshooting](./TROUBLESHOOTING.md) if state or cleanup remains uncertain.
+
+
+## Inspect a run’s provider resources
+
+Open the channel’s run history and expand **Inspect provider resources** for the airing you want. Select a recorded step to read its details or, where supported, the provider collection under the same parent. Recorded resources on Live runs are read-only. Adopted channels and AISA runs support inspection according to their access rules.
+
+Select a recorded muxing in the airing to view its DRM systems, or the ID3 tags of a Progressive TS muxing. The list is scoped to its original encoding, muxing and provider account. Open a row to verify the type, timestamps and available metadata stamp.

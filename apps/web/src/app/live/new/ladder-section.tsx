@@ -1,6 +1,6 @@
 "use client";
 
-import { CODEC_OPTIONS } from "@bitovp/core";
+import { CODEC_OPTIONS, HE_AAC_MAX_BITRATE, isHeAac } from "@bitovp/core";
 import { AUDIO_CHANNEL_LAYOUTS } from "@/app/vod/new/audio-channel-layouts";
 import {
 	audioKeys,
@@ -9,6 +9,12 @@ import {
 	videoMuxingRelPath,
 } from "@/app/vod/new/build-plan";
 import { AudioCutoffEditor } from "@/app/vod/new/codec-detail-editor";
+import {
+	audioCodecLabel,
+	audioProfileTransition,
+	HeAacSignalingField,
+	readAudioRate,
+} from "@/app/vod/new/he-aac-fields";
 import { HlsVideoUriField } from "@/app/vod/new/hls-video-uri-field";
 import {
 	audioCopyLabel,
@@ -20,6 +26,7 @@ import {
 	H264AdvancedEditor,
 	H265AdvancedEditor,
 } from "@/app/vod/new/rendition-editors";
+import { StreamConditionEditor } from "@/app/vod/new/stream-condition-editor";
 import { Collapsible } from "@/app/vod/new/wizard-fields";
 import { Field, FieldRowAction } from "@/components/ui/field";
 import { Input, SelectNative } from "@/components/ui/input";
@@ -374,6 +381,13 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									</button>
 								</FieldRowAction>
 							</div>
+							<StreamConditionEditor
+								idBase={`lw-v-${index}-condition`}
+								media="video"
+								live
+								value={video.conditions}
+								onChange={(conditions) => patchVideo(index, { conditions })}
+							/>
 							<div className="max-w-md">
 								<HlsVideoUriField
 									id={`lw-v-${index}-hls-video-uri`}
@@ -472,12 +486,22 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									onChange={(e) =>
 										patchAudio(index, {
 											codec: e.target.value as LiveAudioRendition["codec"],
+											...audioProfileTransition(e.target.value, audio),
+											...(isHeAac(e.target.value) && audio.container === "CMAF"
+												? { container: "FMP4", cmaf: undefined }
+												: {}),
 											cutoffFrequency: undefined,
 											channelLayout: undefined,
 										})
 									}
 								>
 									<option value="AAC">AAC</option>
+									<option value="HE_AAC_V1">
+										{audioCodecLabel("HE_AAC_V1")}
+									</option>
+									<option value="HE_AAC_V2">
+										{audioCodecLabel("HE_AAC_V2")}
+									</option>
 									<option value="DDPLUS">{t("ui.dolbyDigital")}</option>
 									<option value="DD">{t("ui.dolbyDigital2")}</option>
 								</SelectNative>
@@ -485,11 +509,24 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 							<div className="min-w-28 flex-1">
 								<Field
 									label={t("wizard.bitrateBps")}
+									help={
+										isHeAac(audio.codec)
+											? t("wizard.heAacBitrateLimit", {
+													bps: HE_AAC_MAX_BITRATE[audio.codec],
+												})
+											: undefined
+									}
 									htmlFor={`lw-a-${index}-bitrate`}
 								>
 									<Input
 										id={`lw-a-${index}-bitrate`}
 										type="number"
+										min={1}
+										max={
+											isHeAac(audio.codec)
+												? HE_AAC_MAX_BITRATE[audio.codec]
+												: undefined
+										}
 										value={audio.bitrate}
 										onChange={(e) =>
 											patchAudio(index, {
@@ -511,10 +548,14 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									<Input
 										id={`lw-a-${index}-rate`}
 										type="number"
-										value={audio.rate}
+										step={isHeAac(audio.codec) ? "any" : undefined}
+										value={audio.rate ?? ""}
+										placeholder={
+											isHeAac(audio.codec) ? t("wizard.default") : undefined
+										}
 										onChange={(e) =>
 											patchAudio(index, {
-												rate: Math.max(0, Math.round(Number(e.target.value))),
+												rate: readAudioRate(audio.codec, e.target.value),
 											})
 										}
 									/>
@@ -524,7 +565,9 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 								<Field
 									label={t("wizard.channelLayout")}
 									htmlFor={`lw-a-${index}-layout`}
-									tooltip={t("ui.emptyClStereo")}
+									tooltip={
+										isHeAac(audio.codec) ? undefined : t("ui.emptyClStereo")
+									}
 								>
 									<SelectNative
 										id={`lw-a-${index}-layout`}
@@ -553,6 +596,29 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 									</SelectNative>
 								</Field>
 							</div>
+							{isHeAac(audio.codec) ? (
+								<HeAacSignalingField
+									id={`lw-a-${index}-signaling`}
+									codec={audio.codec}
+									value={audio.signaling}
+									onChange={(signaling) => patchAudio(index, { signaling })}
+								/>
+							) : null}
+							{isHeAac(audio.codec) ? (
+								<Field
+									htmlFor={`lw-a-${index}-name`}
+									label={t("wizard.heAacConfigName")}
+								>
+									<Input
+										id={`lw-a-${index}-name`}
+										value={audio.name ?? ""}
+										placeholder={aKeys[index]}
+										onChange={(e) =>
+											patchAudio(index, { name: e.target.value || undefined })
+										}
+									/>
+								</Field>
+							) : null}
 							{audio.codec === "AAC" ? (
 								<AudioCutoffEditor
 									id={`lw-a-${index}-cutoff`}
@@ -580,6 +646,13 @@ export function LiveLadderSection({ state, onPatch }: LadderSectionProps) {
 								</button>
 							</FieldRowAction>
 							<div className="w-full">
+								<StreamConditionEditor
+									idBase={`lw-a-${index}-condition`}
+									media="audio"
+									live
+									value={audio.conditions}
+									onChange={(conditions) => patchAudio(index, { conditions })}
+								/>
 								<Collapsible summary={t("wizard.advanced")}>
 									<LiveInputFields
 										idBase={`lw-a-${index}`}

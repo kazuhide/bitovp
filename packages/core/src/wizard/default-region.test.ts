@@ -5,11 +5,11 @@ import { buildPlan, DEFAULT_WIZARD_STATE } from "./build-plan";
 import { planToWizardState } from "./plan-to-wizard";
 
 describe("new VOD encoder region", () => {
-	it("uses AUTO and pins new VOD forms to Encoder 2.292.0", () => {
+	it("uses AUTO and pins new VOD forms to Encoder 2.294.0", () => {
 		expect(DEFAULT_WIZARD_STATE.cloudRegion).toBe("AUTO");
 		expect(buildPlan(DEFAULT_WIZARD_STATE).bitmovin).toMatchObject({
 			cloudRegion: "AUTO",
-			encoderVersion: "2.292.0",
+			encoderVersion: "2.294.0",
 		});
 	});
 
@@ -18,6 +18,7 @@ describe("new VOD encoder region", () => {
 		"BETA",
 		"2.287.0",
 		"2.291.0",
+		"2.292.0",
 		"custom-version",
 	])("keeps the imported encoder %s", (encoderVersion) => {
 		const plan = buildPlan(DEFAULT_WIZARD_STATE);

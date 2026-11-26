@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithQuery } from "@/test/render";
+import { renderWithOperatorSession as renderWithQuery } from "@/test/render";
 import { LiveLaunchDialog } from "./live-launch-dialog";
 
 const apiFetch = vi.fn();

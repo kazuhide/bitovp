@@ -395,6 +395,7 @@ export function summarizePlanSections(
 		["encodings", raw.encodings],
 		["ingest", raw.ingest],
 		["fileStreams", raw.fileStreams],
+		["captionStreams", raw.captionStreams],
 		["dolbyStreams", raw.dolbyStreams],
 		["filters", raw.filters],
 		["renditions", raw.renditions],

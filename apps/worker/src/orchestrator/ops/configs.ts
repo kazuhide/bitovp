@@ -2,6 +2,10 @@ import {
 	Ac3AudioConfiguration,
 	Ac3ChannelLayout,
 	Eac3AudioConfiguration,
+	HeAacV1AudioConfiguration,
+	HeAacV1Signaling,
+	HeAacV2AudioConfiguration,
+	HeAacV2Signaling,
 } from "@bitmovin/api-sdk";
 import { codecDetailWireControls } from "@bitovp/core";
 /**
@@ -49,6 +53,11 @@ import {
 	MvPredictionMode,
 	OpusAudioConfiguration,
 	OpusChannelLayout,
+	PassthroughAudioConfiguration,
+	PcmAudioConfiguration,
+	PcmChannelLayout,
+	PcmPresetConfiguration,
+	PcmSampleFormat,
 	PixelFormat,
 	PresetConfiguration,
 	ProfileH264,
@@ -85,6 +94,8 @@ export function createConfigOps(
 	| "createH265Config"
 	| "createVp9Config"
 	| "createAv1Config"
+	| "createHeAacV1Config"
+	| "createHeAacV2Config"
 	| "createAacConfig"
 	| "createAc3Config"
 	| "createEac3Config"
@@ -92,6 +103,8 @@ export function createConfigOps(
 	| "createDolbyDigitalPlusConfig"
 	| "createDolbyDigitalConfig"
 	| "createWebVttConfig"
+	| "createPcmConfig"
+	| "createPassthroughAudioConfig"
 	| "createOpusConfig"
 	| "createImscConfig"
 	| "getCodecConfigDetail"
@@ -439,6 +452,68 @@ export function createConfigOps(
 			).then(id);
 		},
 
+		createHeAacV1Config: (p) =>
+			audited(
+				"POST",
+				"/encoding/configurations/audio/he-aac-v1",
+				p,
+				() =>
+					api.encoding.configurations.audio.heAacV1.create(
+						new HeAacV1AudioConfiguration({
+							name: p.name,
+							bitrate: p.bitrate,
+							rate: p.rate,
+							channelLayout:
+								p.channelLayout === undefined
+									? undefined
+									: sdkEnumValue(
+											AacChannelLayout,
+											p.channelLayout,
+											"AacChannelLayout",
+										),
+							signaling:
+								p.signaling === undefined
+									? undefined
+									: sdkEnumValue(
+											HeAacV1Signaling,
+											p.signaling,
+											"HeAacV1Signaling",
+										),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createHeAacV2Config: (p) =>
+			audited(
+				"POST",
+				"/encoding/configurations/audio/he-aac-v2",
+				p,
+				() =>
+					api.encoding.configurations.audio.heAacV2.create(
+						new HeAacV2AudioConfiguration({
+							name: p.name,
+							bitrate: p.bitrate,
+							rate: p.rate,
+							channelLayout:
+								p.channelLayout === undefined
+									? undefined
+									: sdkEnumValue(
+											AacChannelLayout,
+											p.channelLayout,
+											"AacChannelLayout",
+										),
+							signaling:
+								p.signaling === undefined
+									? undefined
+									: sdkEnumValue(
+											HeAacV2Signaling,
+											p.signaling,
+											"HeAacV2Signaling",
+										),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
 		createAacConfig: (p) =>
 			audited(
 				"POST",
@@ -576,6 +651,45 @@ export function createConfigOps(
 				(r) => ({ id: r.id }),
 			).then(id),
 
+		createPcmConfig: (p) =>
+			audited(
+				"POST",
+				"/encoding/configurations/audio/pcm",
+				p,
+				() =>
+					api.encoding.configurations.audio.pcm.create(
+						new PcmAudioConfiguration({
+							...p,
+							sampleFormat: optEnum(
+								PcmSampleFormat,
+								p.sampleFormat,
+								"PcmSampleFormat",
+							),
+							channelLayout: optEnum(
+								PcmChannelLayout,
+								p.channelLayout,
+								"PcmChannelLayout",
+							),
+							presetConfiguration: optEnum(
+								PcmPresetConfiguration,
+								p.presetConfiguration,
+								"PcmPresetConfiguration",
+							),
+						}),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
+		createPassthroughAudioConfig: (p) =>
+			audited(
+				"POST",
+				"/encoding/configurations/audio/passthrough",
+				p,
+				() =>
+					api.encoding.configurations.audio.passthrough.create(
+						new PassthroughAudioConfiguration({ name: p.name }),
+					),
+				(r) => ({ id: r.id }),
+			).then(id),
 		createOpusConfig: (p) =>
 			audited(
 				"POST",

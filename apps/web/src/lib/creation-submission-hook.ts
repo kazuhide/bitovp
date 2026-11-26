@@ -1,16 +1,31 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "./api";
-import { useSession } from "./auth/use-session";
+import type { SessionDto } from "./auth/dto";
+import { SESSION_QUERY_KEY, useSession } from "./auth/use-session";
 import {
 	type CreationBody,
+	type CreationCompatibility,
 	type CreationSeed,
 	CreationSubmissionError,
 	createSubmissionClient,
 } from "./creation-submission";
+import {
+	CREATE_SESSION_CHANGED,
+	CREATE_SESSION_HEADER,
+	creationErrorCode,
+} from "./creation-submission-contract";
 import { useT } from "./i18n/context";
 import { draftIdentity, type WizardDraftKind } from "./wizard-draft";
+
+const submissionMessages = {
+	response: "creationSubmission.responseUnavailable",
+	pendingLimit: "creationSubmission.pendingLimit",
+	storage: "creationSubmission.storageUnavailable",
+	legacyReceipt: "creationSubmission.legacyReceiptUnavailable",
+} as const;
 
 export function useCreationSubmission(
 	kind: WizardDraftKind,
@@ -20,10 +35,12 @@ export function useCreationSubmission(
 	// The page gate can populate a fresh cache before this form mounts. Its
 	// observer still needs its own completed read before it can bind identity.
 	const session = useSession({ refetchOnMount: "always" });
+	const queryClient = useQueryClient();
 	const { t } = useT();
 	const identity =
 		session.status === "success" &&
 		session.isFetchedAfterMount &&
+		session.fetchStatus !== "paused" &&
 		!session.isFetching
 			? draftIdentity(session.data)
 			: null;
@@ -31,6 +48,9 @@ export function useCreationSubmission(
 	const boundIdentity = useRef<string | null>(null);
 	if (identityKey && !boundIdentity.current)
 		boundIdentity.current = identityKey;
+	const owner = boundIdentity.current;
+	const verified = useRef(identity);
+	verified.current = identity;
 	const currentScope = useRef<string | null>(null);
 	const scopeKey = identity
 		? JSON.stringify([...identity, kind, context])
@@ -61,11 +81,37 @@ export function useCreationSubmission(
 		prepared?.scopeKey === seedScopeKey ? (prepared.seed ?? null) : null;
 	const seedError =
 		prepared?.scopeKey === seedScopeKey ? (prepared.error ?? null) : null;
+	function sessionStillVerified(verifiedOwner: string | null) {
+		// TanStack resumes mutations before paused queries and before React
+		// necessarily commits an observer update. Read the live query here.
+		const state = queryClient.getQueryState<SessionDto>(SESSION_QUERY_KEY);
+		return (
+			state?.status === "success" &&
+			state.fetchStatus === "idle" &&
+			!state.isInvalidated &&
+			JSON.stringify(draftIdentity(state.data)) === verifiedOwner
+		);
+	}
 	return {
 		seed,
 		seedError,
-		async submit<T>(intent: unknown, buildBody?: CreationBody): Promise<T> {
-			if (!identity || identityKey !== boundIdentity.current)
+		async submit<T>(
+			intent: unknown,
+			buildBody?: CreationBody,
+			compatibility?: CreationCompatibility,
+		): Promise<T> {
+			// A paused request keeps its clicked scope; authorize it again with
+			// the verified session in effect when transport actually resumes.
+			const current = verified.current;
+			const expectedScope = current
+				? JSON.stringify([...current, kind, context])
+				: null;
+			if (
+				!current ||
+				JSON.stringify(current) !== owner ||
+				expectedScope !== currentScope.current ||
+				!sessionStillVerified(owner)
+			)
 				throw new ApiError(409, t("creationSubmission.sessionUnavailable"));
 			if (prepareSeed && !seed)
 				throw (
@@ -73,28 +119,25 @@ export function useCreationSubmission(
 					new ApiError(409, t("creationSubmission.sessionUnavailable"))
 				);
 			try {
-				return await createSubmissionClient([...identity, kind, context], {
+				return await createSubmissionClient([...current, kind, context], {
 					storage: sessionStorage,
+					headers: { [CREATE_SESSION_HEADER]: JSON.stringify(current) },
 					beforeSend: () => {
-						if (currentScope.current !== scopeKey)
+						if (
+							currentScope.current !== expectedScope ||
+							!sessionStillVerified(owner)
+						)
 							throw new ApiError(
 								409,
 								t("creationSubmission.sessionUnavailable"),
 							);
 					},
-				}).submit<T>(intent, buildBody);
+				}).submit<T>(intent, buildBody, compatibility);
 			} catch (error) {
+				if (creationErrorCode(error) === CREATE_SESSION_CHANGED)
+					throw new ApiError(409, t("creationSubmission.sessionUnavailable"));
 				if (error instanceof CreationSubmissionError)
-					throw new ApiError(
-						409,
-						t(
-							error.reason === "response"
-								? "creationSubmission.responseUnavailable"
-								: error.reason === "pendingLimit"
-									? "creationSubmission.pendingLimit"
-									: "creationSubmission.storageUnavailable",
-						),
-					);
+					throw new ApiError(409, t(submissionMessages[error.reason]));
 				if (error instanceof DOMException && error.name === "SecurityError")
 					throw new ApiError(409, t("creationSubmission.storageUnavailable"));
 				throw error;

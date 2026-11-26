@@ -143,6 +143,12 @@ describe("bitmovinProxyError", () => {
 });
 
 describe("bitmovinErrorMessage", () => {
+	it("projects only provider shortMessage content while retaining HTTP classification", async () => {
+		const error = sdkError(409, "Read storage/take?auth=PRIVATE_FIXTURE");
+		const res = bitmovinProxyError(error);
+		expect(res.status).toBe(409);
+		expect((await res.json()).error).toBe("Bitmovin: [withheld]");
+	});
 	it("prefers the API's own shortMessage, truncated", () => {
 		expect(bitmovinErrorMessage(sdkError(409, "x".repeat(400)))).toBe(
 			`Bitmovin: ${"x".repeat(300)}`,

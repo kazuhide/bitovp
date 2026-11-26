@@ -8,6 +8,7 @@ import { HelpOverlay } from "@/components/ui/help-overlay";
 import { Input, SelectNative } from "@/components/ui/input";
 import { type Translator, useT } from "@/lib/i18n/context";
 import {
+	implicitTrackKeys,
 	remapEncodingKeyRefs,
 	type WizardConcatenationStream,
 	type WizardInputFile,
@@ -15,7 +16,9 @@ import {
 	type WizardState,
 	type WizardStreamSelectionMode,
 	type WizardTrimmingStream,
+	wizardInputStorage,
 } from "./build-plan";
+import { EmbeddedCaptionSources } from "./embedded-caption-sources";
 import { GcsRegionControl, StorageLocation } from "./storage-location";
 import {
 	blankStream,
@@ -25,7 +28,10 @@ import {
 	type InputFileOption,
 	inputFileOptions,
 	inputKindForProvider,
+	nextSharedKey,
+	removalCapturesSource,
 	removeStream,
+	sourceGraphPatch,
 	sourceStreamKeys,
 	streamTypeLabel,
 	UNIFIED_STREAM_TYPES,
@@ -145,23 +151,6 @@ const HTTPS_SOURCE = "__https__";
 /** Whether an input kind's location can be browsed via the StoragePicker. */
 function inputKindIsBrowsable(kind: WizardInputFile["kind"]): boolean {
 	return kind !== "AZURE" && kind !== "HTTPS";
-}
-
-/** Next free `<prefix>N` key across the whole shared input-stream namespace. */
-function nextSharedKey(sources: WizardSources, prefix: string): string {
-	const taken = new Set<string>([
-		...(sources.tracks ?? []).map((t) => t.key),
-		...(sources.fileStreams ?? []).map((s) => s.key),
-		...(sources.dolbyStreams ?? []).map((s) => s.key),
-		...(sources.trimmingStreams ?? []).map((s) => s.key),
-		...(sources.audioMixStreams ?? []).map((s) => s.key),
-		...(sources.concatenationStreams ?? []).map((s) => s.key),
-	]);
-	let n = 1;
-	while (taken.has(`${prefix}${n}`)) {
-		n += 1;
-	}
-	return `${prefix}${n}`;
 }
 
 /** "Bucket" / "Container" / "Host" depending on the input storage kind. */
@@ -341,7 +330,8 @@ export function InputFilesEditor({
 							onChange={(region) =>
 								onPatch({
 									inputFiles: files.map((entry) =>
-										entry.inputKey === file.inputKey
+										entry.inputKey === file.inputKey &&
+										wizardInputStorage(entry) === wizardInputStorage(file)
 											? { ...entry, region }
 											: entry,
 									),
@@ -354,6 +344,7 @@ export function InputFilesEditor({
 			<Button
 				variant="secondary"
 				size="sm"
+				hidden={Boolean(state.audioFile)}
 				onClick={() => {
 					const key = freshKey();
 					onPatch({
@@ -391,6 +382,8 @@ function StreamRow({
 	onChange,
 	onConvert,
 	onRemove,
+	removeDisabledReason,
+	onBrowseMetadata,
 }: {
 	row: UnifiedStream;
 	idBase: string;
@@ -399,6 +392,8 @@ function StreamRow({
 	onChange: (next: UnifiedStream) => void;
 	onConvert: (type: UnifiedStream["type"]) => void;
 	onRemove: () => void;
+	removeDisabledReason?: string;
+	onBrowseMetadata?: () => void;
 }) {
 	const { t } = useT();
 	const fileSelect = (
@@ -467,6 +462,29 @@ function StreamRow({
 						(next) => onChange({ ...row, metadataInputFile: next }),
 					)
 				: null}
+			{row.type === "HDR10_PLUS" ? (
+				<Field
+					label={t("wizard.hdr10PlusMetadataPath")}
+					htmlFor={`${idBase}-hdr10plus-metadata`}
+					help={t("wizard.hdr10PlusMetadataHelp")}
+					trailing={
+						onBrowseMetadata ? (
+							<Button variant="secondary" size="sm" onClick={onBrowseMetadata}>
+								{t("wizard.browseStorage")}
+							</Button>
+						) : undefined
+					}
+				>
+					<Input
+						id={`${idBase}-hdr10plus-metadata`}
+						value={row.metadataInputPath ?? ""}
+						placeholder="metadata/hdr10plus.json"
+						onChange={(event) =>
+							onChange({ ...row, metadataInputPath: event.target.value })
+						}
+					/>
+				</Field>
+			) : null}
 
 			<Collapsible summary={t("wizard.advanced")}>
 				{row.type === "ATMOS" ? (
@@ -487,7 +505,7 @@ function StreamRow({
 						</SelectNative>
 					</Field>
 				) : null}
-				{row.type === "INGEST" ? (
+				{row.type === "INGEST" || row.type === "HDR10_PLUS" ? (
 					<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 						<Field label={t("wizard.selectionMode")} htmlFor={`${idBase}-mode`}>
 							<SelectNative
@@ -497,32 +515,47 @@ function StreamRow({
 									onChange({
 										...row,
 										selectionMode: e.target.value as WizardStreamSelectionMode,
+										...(row.type === "HDR10_PLUS" && e.target.value === "AUTO"
+											? { position: undefined }
+											: {}),
 									})
 								}
 							>
-								{SELECTION_MODES.map((mode) => (
+								{SELECTION_MODES.filter(
+									(mode) =>
+										row.type !== "HDR10_PLUS" || mode !== "AUDIO_RELATIVE",
+								).map((mode) => (
 									<option key={mode} value={mode}>
 										{mode}
 									</option>
 								))}
 							</SelectNative>
 						</Field>
-						<Field label={t("wizard.position")} htmlFor={`${idBase}-pos`}>
-							<Input
-								id={`${idBase}-pos`}
-								type="number"
-								value={row.position ?? 0}
-								onChange={(e) =>
-									onChange({
-										...row,
-										position: Math.max(
-											0,
-											Math.round(Number(e.target.value) || 0),
-										),
-									})
-								}
-							/>
-						</Field>
+						{row.type !== "HDR10_PLUS" ||
+						row.selectionMode !== "AUTO" ||
+						row.position !== undefined ? (
+							<Field label={t("wizard.position")} htmlFor={`${idBase}-pos`}>
+								<Input
+									id={`${idBase}-pos`}
+									type="number"
+									value={row.position ?? (row.type === "HDR10_PLUS" ? "" : 0)}
+									onChange={(e) =>
+										onChange({
+											...row,
+											position:
+												row.type === "HDR10_PLUS"
+													? e.target.value === ""
+														? undefined
+														: Number(e.target.value)
+													: Math.max(
+															0,
+															Math.round(Number(e.target.value) || 0),
+														),
+										})
+									}
+								/>
+							</Field>
+						) : null}
 					</div>
 				) : null}
 				{encodingKeys.length > 0 ? (
@@ -533,7 +566,9 @@ function StreamRow({
 						onChange={(encodingKey) => onChange({ ...row, encodingKey })}
 					/>
 				) : null}
-				{row.type !== "INGEST" && row.type !== "ATMOS" ? (
+				{row.type !== "INGEST" &&
+				row.type !== "ATMOS" &&
+				row.type !== "HDR10_PLUS" ? (
 					<p className="text-xs text-zinc-600">
 						{t("wizardX.noExtraOptionsFor", {
 							label: streamTypeLabel(row.type),
@@ -545,6 +580,7 @@ function StreamRow({
 			<RowRemoveButton
 				label={t("wizardX.removeStreamKey", { key: idBase })}
 				onClick={onRemove}
+				disabledReason={removeDisabledReason}
 			/>
 		</div>
 	);
@@ -560,12 +596,14 @@ type SourcesSectionProps = {
 	 * neither step, so a row added here could only be refused.
 	 */
 	fileView?: boolean;
+	onBrowseHdr10PlusMetadata?: (key: string) => void;
 };
 
 export function SourcesSection({
 	state,
 	onPatch,
 	fileView = false,
+	onBrowseHdr10PlusMetadata,
 }: SourcesSectionProps) {
 	const { t } = useT();
 	const sources = state.sources ?? {};
@@ -579,15 +617,24 @@ export function SourcesSection({
 	const usesImplicitAudio = state.audios.some(
 		(a) => (a.extras?.source ?? "") === "",
 	);
-	const patchSources = (next: WizardSources) => onPatch({ sources: next });
+	const implicit = implicitTrackKeys(sources);
+	const patchSources = (next: WizardSources, renamed?: [string, string]) =>
+		onPatch(sourceGraphPatch(state, { sources: next }, renamed));
 	const renameStream = (from: string, to: string, next: WizardSources) => {
+		if (
+			to !== from &&
+			(to === "video" ||
+				to === "audio" ||
+				to === implicit.video ||
+				to === implicit.audio)
+		)
+			return;
 		const keys = [
 			...flattenStreams(sources).map((row) => row.key),
+			...(sources.captionStreams ?? []).map((s) => s.key),
 			...(sources.trimmingStreams ?? []).map((row) => row.key),
 			...(sources.audioMixStreams ?? []).map((s) => s.key),
 			...(sources.concatenationStreams ?? []).map((row) => row.key),
-			"video",
-			"audio",
 		];
 		if (
 			!from ||
@@ -598,34 +645,7 @@ export function SourcesSection({
 			patchSources(next);
 			return;
 		}
-		const mapRendition = <T extends { extras?: { source?: string } }>(
-			row: T,
-		): T =>
-			row.extras?.source === from
-				? { ...row, extras: { ...row.extras, source: to } }
-				: row;
-		onPatch({
-			videos: state.videos.map(mapRendition),
-			audios: state.audios.map(mapRendition),
-			sources: {
-				...next,
-				audioMixStreams: next.audioMixStreams?.map((mix) => ({
-					...mix,
-					audioMixChannels: mix.audioMixChannels.map((c) =>
-						c.sourceKey === from ? { ...c, sourceKey: to } : c,
-					),
-				})),
-				trimmingStreams: next.trimmingStreams?.map((row) =>
-					row.sourceKey === from ? { ...row, sourceKey: to } : row,
-				),
-				concatenationStreams: next.concatenationStreams?.map((row) => ({
-					...row,
-					sources: row.sources.map((source) =>
-						source.sourceKey === from ? { ...source, sourceKey: to } : source,
-					),
-				})),
-			},
-		});
+		patchSources(next, [from, to]);
 	};
 
 	// Editing the partition cascades through every encodingKey ref so the
@@ -666,7 +686,9 @@ export function SourcesSection({
 	return (
 		<div className="space-y-4">
 			<Collapsible
-				summary={t("wizardX.streamsCount", { count: streams.length })}
+				summary={t("wizardX.streamsCount", {
+					count: streams.length + (sources.captionStreams?.length ?? 0),
+				})}
 				help={t("ui.everySourceBeyondTheImplicitVideoAudio")}
 			>
 				{usesImplicitAudio ? (
@@ -711,6 +733,16 @@ export function SourcesSection({
 
 				{streams.map((row) => {
 					const idBase = `wz-stream-${row.origin}-${row.index}`;
+					const videoFile = state.inputFiles.find(
+						(file) => file.key === row.inputFile,
+					);
+					const canBrowseMetadata =
+						row.type === "HDR10_PLUS" &&
+						!!videoFile?.credentialId &&
+						!!videoFile.bucket &&
+						["S3", "GENERIC_S3", "GCS", "GCS_SERVICE_ACCOUNT"].includes(
+							videoFile.kind,
+						);
 					return (
 						<StreamRow
 							// The React key intentionally carries row.key so the row
@@ -722,7 +754,12 @@ export function SourcesSection({
 							idBase={idBase}
 							inputFiles={inputFiles}
 							encodingKeys={encodingKeys}
-							onChange={(next) => patchSources(writeStream(sources, next))}
+							onChange={(next) => {
+								const updated = writeStream(sources, next);
+								if (next.key !== row.key)
+									renameStream(row.key, next.key, updated);
+								else patchSources(updated);
+							}}
 							onConvert={(type) => {
 								const nextSources = convertStreamType(sources, row, type);
 								// Converting to WEBVTT moves the stream out of the video/audio
@@ -741,9 +778,36 @@ export function SourcesSection({
 								}
 							}}
 							onRemove={() => patchSources(removeStream(sources, row))}
+							removeDisabledReason={
+								removalCapturesSource(
+									state,
+									removeStream(sources, row),
+									row.key,
+								)
+									? t("wizardX.sourceUsedBeforeRemoval")
+									: undefined
+							}
+							onBrowseMetadata={
+								canBrowseMetadata && onBrowseHdr10PlusMetadata
+									? () => onBrowseHdr10PlusMetadata(row.key)
+									: undefined
+							}
 						/>
 					);
 				})}
+				<EmbeddedCaptionSources
+					streams={sources.captionStreams ?? []}
+					files={inputFiles.filter(
+						(f) =>
+							state.inputFiles.find((source) => source.key === f.key)
+								?.purpose !== "FILTER_IMAGE",
+					)}
+					encodings={encodingKeys}
+					nextKey={nextSharedKey(sources, "caption")}
+					onChange={(captionStreams) =>
+						patchSources({ ...sources, captionStreams })
+					}
+				/>
 
 				<div className="flex flex-wrap items-center gap-2">
 					<Button
@@ -751,7 +815,23 @@ export function SourcesSection({
 						size="sm"
 						onClick={() =>
 							patchSources(
-								blankStream(sources, "INGEST", state.inputFiles[0]?.key),
+								blankStream(
+									sources,
+									"HDR10_PLUS",
+									state.inputFiles[0]?.key,
+									state,
+								),
+							)
+						}
+					>
+						{t("wizard.addHdr10PlusStream")}
+					</Button>
+					<Button
+						variant="secondary"
+						size="sm"
+						onClick={() =>
+							patchSources(
+								blankStream(sources, "INGEST", state.inputFiles[0]?.key, state),
 							)
 						}
 					>
@@ -762,7 +842,7 @@ export function SourcesSection({
 						size="sm"
 						onClick={() =>
 							patchSources(
-								blankStream(sources, "WEBVTT", state.inputFiles[0]?.key),
+								blankStream(sources, "WEBVTT", state.inputFiles[0]?.key, state),
 							)
 						}
 					>
@@ -773,7 +853,7 @@ export function SourcesSection({
 						size="sm"
 						onClick={() =>
 							patchSources(
-								blankStream(sources, "ATMOS", state.inputFiles[0]?.key),
+								blankStream(sources, "ATMOS", state.inputFiles[0]?.key, state),
 							)
 						}
 					>
@@ -1207,6 +1287,18 @@ function TrimmingStreamsSection({
 						) : null}
 						<RowRemoveButton
 							label={t("wizardX.removeTrimmingStreamN", { n: index + 1 })}
+							disabledReason={
+								removalCapturesSource(
+									state,
+									{
+										...sources,
+										trimmingStreams: trims.filter((_, i) => i !== index),
+									},
+									trim.key,
+								)
+									? t("wizardX.sourceUsedBeforeRemoval")
+									: undefined
+							}
 							onClick={() =>
 								patchSources({
 									...sources,
@@ -1227,8 +1319,11 @@ function TrimmingStreamsSection({
 							...trims,
 							{
 								kind: "TIME_BASED",
-								key: nextSharedKey(sources, "trim"),
-								sourceKey: state.videos.length > 0 ? "video" : "",
+								key: nextSharedKey(sources, "trim", state),
+								sourceKey:
+									state.videos.length > 0
+										? implicitTrackKeys(sources).video
+										: "",
 							},
 						],
 					})
@@ -1540,6 +1635,18 @@ function ConcatenationStreamsSection({
 						) : null}
 						<RowRemoveButton
 							label={t("wizardX.removeConcatenationStreamN", { n: index + 1 })}
+							disabledReason={
+								removalCapturesSource(
+									state,
+									{
+										...sources,
+										concatenationStreams: concats.filter((_, i) => i !== index),
+									},
+									concat.key,
+								)
+									? t("wizardX.sourceUsedBeforeRemoval")
+									: undefined
+							}
 							onClick={() =>
 								patchSources({
 									...sources,
@@ -1559,7 +1666,7 @@ function ConcatenationStreamsSection({
 						concatenationStreams: [
 							...concats,
 							{
-								key: nextSharedKey(sources, "concat"),
+								key: nextSharedKey(sources, "concat", state),
 								sources: [{ sourceKey: "", isMain: true, position: 0 }],
 							},
 						],

@@ -58,6 +58,12 @@ export {
 	editingOutputSchema,
 	editingRenderProfileSchema,
 } from "./content-library/editing-storage";
+export {
+	libraryHdr10PlusInputs,
+	libraryIngestInputs,
+	missingLibraryHdrInputs,
+	recoverLibraryIngestInputs,
+} from "./content-library/hdr-inputs";
 export { sceneAnalysisLocales } from "./content-library/languages";
 export {
 	libraryFileOutputs,
@@ -118,7 +124,7 @@ export {
 	parseEncryptedSecret,
 	serializeEncryptedSecret,
 } from "./crypto/aes-gcm";
-export { REDACTED, redactSecrets } from "./crypto/redact";
+export { REDACTED, redactSecrets, redactStepRequest } from "./crypto/redact";
 export type { EncryptedSecret, SecretCipher } from "./crypto/types";
 export { MasterKeyConfigError, SecretDecryptError } from "./crypto/types";
 export type { Env } from "./env";
@@ -391,6 +397,7 @@ export {
 	evaluateMediaAttributes,
 	FRAME_RATE_EPSILON,
 	formatFrameRate,
+	heartbeatAudioChannels,
 	heartbeatIngestMedia,
 	MEDIA_ATTRIBUTE,
 	MEDIA_ATTRIBUTE_NAMES,
@@ -628,6 +635,7 @@ export {
 	slateNormalizedKey,
 	slateProbeFacts,
 } from "./live/slate-normalize";
+export { publicSlateRegistrationNote } from "./live/slate-registration-note";
 export type {
 	AutoLeadResolution,
 	ResolvedStartupRegion,
@@ -690,6 +698,7 @@ export {
 	akamaiMsl5InitSegmentName,
 	akamaiMslSegmentNaming,
 } from "./plan/akamai-msl-constraint";
+export * from "./plan/audio-file-source";
 export {
 	AUDIO_MIX_CHANNEL_TYPES,
 	AUDIO_MIX_LAYOUTS,
@@ -698,6 +707,7 @@ export {
 	audioMixPreset,
 	audioMixStreamSchema,
 } from "./plan/audio-mix";
+export { conditionTreeLimits } from "./plan/bounded-condition-tree";
 export type {
 	AV1DetailControls,
 	DetailCodec,
@@ -779,13 +789,36 @@ export {
 	SecretEgressConfigError,
 	StorageEndpointBlockedError,
 } from "./plan/egress";
+export { VOD_FIXTURES } from "./plan/fixtures";
+export {
+	hasPrivateStorageLocator,
+	isHdr10PlusAuditPath,
+	isHdr10PlusObjectPath,
+	publicHdrSourceProjection,
+	publicStorageDiagnostic,
+	publicVodSourceProjection,
+	type StoragePathProvenance,
+} from "./plan/hdr-source-paths";
 /**
  * The VOD acceptance corpus, exported so a test OUTSIDE this package can derive
  * its population from the registry instead of from a directory listing plus a
  * floor. `fixture-registry.test.ts` set-equals this against the `.plan.json`
  * files on disk, so anything that equals it is transitively the whole corpus.
  */
-export { VOD_FIXTURES } from "./plan/fixtures";
+export { checkHdr10PlusPlan, hdr10PlusSourceKeys } from "./plan/hdr10-plus";
+export {
+	HE_AAC_CODECS,
+	HE_AAC_MAX_BITRATE,
+	HE_AAC_V1_SIGNALING,
+	HE_AAC_V2_SIGNALING,
+	type HeAacCodec,
+	type HeAacSignaling,
+	type HeAacV1Config,
+	type HeAacV2Config,
+	heAacV1ConfigSchema,
+	heAacV2ConfigSchema,
+	isHeAac,
+} from "./plan/he-aac";
 export {
 	inputStreamDependencies,
 	inputStreamLeaves,
@@ -815,8 +848,15 @@ export {
 	FILE_ONLY_MUXING_KINDS,
 	isFileOnlyMuxingKind,
 	muxingKindCarriesAudio,
+	physicalMuxingKind,
+	VOD_DRM_MUXINGS,
 } from "./plan/muxing-streams";
-export { outputStorageKeys } from "./plan/output-files";
+export {
+	isObjectStorageInput,
+	objectInputReceipts,
+	vodObjectPathFields,
+} from "./plan/object-input-path";
+export { outputFileKeys, outputStorageKeys } from "./plan/output-files";
 export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";
 export { findCapReachingMaximumStep } from "./plan/per-title-cap-reach";
 export {
@@ -944,12 +984,14 @@ export {
 } from "./plan/saved-plan-compatibility";
 export type {
 	Acl,
+	CaptionStream,
 	ConcatenationSource,
 	ConcatenationStream,
 	EncodingPlan,
 	EncodingPlanInput,
 	H265V2PerceptualQualityModeConfig,
 	H265V2QualityControls,
+	Hdr10PlusStream,
 	PaddingSequence,
 	PlanInput,
 	PlanMuxing,
@@ -963,15 +1005,18 @@ export {
 	AV1_DYNAMIC_RANGE_FORMATS,
 	aacRenditionSchema,
 	aclSchema,
+	captionStreamSchema,
 	concatenationSourceSchema,
 	concatenationStreamSchema,
 	DEFAULT_VMAF_MODEL,
+	deinterlaceFilterSchema,
 	destinationSchema,
 	encodingPlanSchema,
 	generationTimingSchema,
 	h264RenditionSchema,
 	h265V2PerceptualQualityModeConfigSchema,
 	h265V2QualityControlsSchema,
+	hdr10PlusStreamSchema,
 	hlsVersionSchema,
 	imscRenditionSchema,
 	ingestStreamSchema,
@@ -1023,6 +1068,16 @@ export {
 	stepStatusSchema,
 } from "./plan/steplog";
 export type {
+	StreamCondition,
+	StreamConditionLeaf,
+	StreamConditionMedia,
+} from "./plan/stream-conditions";
+export {
+	allowedStreamOperators,
+	availableStreamAttributes,
+	streamConditionOperators,
+} from "./plan/stream-conditions";
+export type {
 	EncodingJobCreateData,
 	SubmitEncodingJobDeps,
 	SubmitOutcome,
@@ -1073,6 +1128,10 @@ export {
 	watchSelfIntersectionIssues,
 	watchTemplateIssues,
 } from "./plan/watch-instantiate";
+export {
+	markWithheldPlanSources,
+	withheldPlanSources,
+} from "./plan/withheld-source-paths";
 export type {
 	PlaybackCorsRule,
 	PlaybackCorsVerdict,

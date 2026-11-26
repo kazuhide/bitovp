@@ -1,7 +1,12 @@
+import { librarySnapshotSchema } from "@bitovp/core";
 import { describe, expect, it, vi } from "vitest";
 import planFixture from "../../core/src/plan/__fixtures__/ai-scene-analysis-passthrough-test.plan.json";
 import type { AppPrismaClient } from "./client";
-import { LibrarySourceError, requestLibrarySource } from "./library-source";
+import {
+	LibrarySourceError,
+	requestLibrarySource,
+	retainLibraryInputsBeforeJobDeletion,
+} from "./library-source";
 
 function setup(overrides = {}) {
 	const job = {
@@ -60,6 +65,90 @@ function setup(overrides = {}) {
 	return { job, tx, prisma };
 }
 
+it("retains the HDR input roles even when job deletion runs before the capture sweep", async () => {
+	const plan = {
+		...planFixture,
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				inputKey: "main",
+				videoInputPath: "picture.mxf",
+				metadataInputPath: "metadata.json",
+			},
+		],
+	};
+	const { job, prisma, tx } = setup({ plan });
+	const source = await requestLibrarySource(prisma, job.id);
+	const complete = librarySnapshotSchema.parse(source.snapshot);
+	const old = {
+		...complete,
+		inputs: complete.inputs.filter((i) => !i.hdr10Plus),
+	};
+	const row = {
+		id: source.id,
+		jobId: job.id,
+		sourceKey: source.sourceKey,
+		bitmovinEncodingId: job.bitmovinEncodingId,
+		plan,
+		snapshot: old,
+	};
+	tx.$queryRaw.mockResolvedValueOnce([row]);
+	await retainLibraryInputsBeforeJobDeletion(
+		tx as unknown as Parameters<typeof retainLibraryInputsBeforeJobDeletion>[0],
+		job.id,
+	);
+	expect(tx.librarySource.update).toHaveBeenCalledWith({
+		where: { id: source.id },
+		data: { snapshot: complete },
+	});
+});
+
+it("retains literal names with their storage provenance at capture and redacts unverified network locators", async () => {
+	const [ingest] = planFixture.ingest;
+	if (!ingest) throw new Error("Missing fixture ingest");
+	const objectPath = "reels/take.mxf?auth=review";
+	const jobCredential = "00000000-0000-4000-8000-000000000004";
+	const plan = {
+		...planFixture,
+		ingest: [
+			{ ...ingest, inputPath: objectPath },
+			{
+				...ingest,
+				key: "net",
+				inputKey: "akamai",
+				inputPath: "edits/take?version=2.mxf",
+			},
+			{
+				...ingest,
+				key: "remote",
+				inputKey: "remote",
+				inputPath: "reels/take.mxf?ticket=PRIVATE_CAPTURE",
+			},
+		],
+		inputs: [
+			...planFixture.inputs,
+			{
+				kind: "AKAMAI_NETSTORAGE",
+				key: "akamai",
+				name: "NetStorage",
+				credentialId: jobCredential,
+			},
+			{ kind: "HTTPS", key: "remote", name: "Network", host: "media.example" },
+		],
+	};
+	const { job, prisma } = setup({ plan });
+	const result = await requestLibrarySource(prisma, job.id);
+	expect(result.snapshot).toHaveProperty("inputs", [
+		{ name: "Test S3 Input", path: objectPath, pathKind: "OBJECT_KEY" },
+		{
+			name: "NetStorage",
+			path: "edits/take?version=2.mxf",
+			pathKind: "OBJECT_KEY",
+		},
+		{ name: "Network", path: "", pathKind: "HTTPS_PATH" },
+	]);
+	expect(JSON.stringify(result)).not.toContain("PRIVATE_CAPTURE");
+});
 function qcOnlyPlan() {
 	const destination = planFixture.muxings[0]?.destination;
 	if (!destination) throw new Error("Fixture destination missing");
@@ -81,6 +170,75 @@ function qcOnlyPlan() {
 }
 
 describe("requestLibrarySource", () => {
+	it.each([
+		false,
+		true,
+	])("captures both HDR10+ source objects with ordinary audio present=%s", async (audio) => {
+		const input = "Test S3 Input";
+		const ingest = audio
+			? [
+					{
+						key: "audio",
+						inputKey: "main",
+						selectionMode: "AUTO",
+						inputPath: "audio.wav",
+					},
+				]
+			: [];
+		const plan = {
+			...planFixture,
+			ingest,
+			hdr10PlusStreams: [
+				{
+					key: "hdr",
+					inputKey: "main",
+					videoInputPath: "picture.mxf",
+					metadataInputPath: "scene.json",
+				},
+			],
+			renditions: [
+				{
+					key: "v180",
+					ingestKey: "hdr",
+					codec: "H265",
+					bitrate: 1000000,
+					height: 180,
+				},
+			],
+		};
+		const { job, tx, prisma } = setup({ plan });
+		const source = await requestLibrarySource(prisma, job.id);
+		const ordinary = audio
+			? [{ name: input, path: "audio.wav", pathKind: "OBJECT_KEY" }]
+			: [];
+		const expected = [
+			...ordinary,
+			{
+				name: input,
+				path: "picture.mxf",
+				hdr10Plus: { streamKey: "hdr", inputKey: "main", role: "VIDEO" },
+			},
+			{
+				name: input,
+				path: "scene.json",
+				hdr10Plus: { streamKey: "hdr", inputKey: "main", role: "METADATA" },
+			},
+		];
+		expect(source.snapshot).toHaveProperty("inputs", expected);
+
+		// The previous capture retained only ordinary inputs. Repair once after its active lease ends.
+		const snapshot = source.snapshot as Record<string, unknown>;
+		snapshot.inputs = [...ordinary];
+		source.state = "RUNNING";
+		await requestLibrarySource(prisma, job.id);
+		expect(tx.librarySource.update).not.toHaveBeenCalled();
+		source.state = "READY";
+		const repaired = await requestLibrarySource(prisma, job.id);
+		expect(repaired.snapshot).toHaveProperty("inputs", expected);
+		await requestLibrarySource(prisma, job.id);
+		expect(tx.librarySource.update).toHaveBeenCalledOnce();
+		expect(tx.contentRevision.create).toHaveBeenCalledOnce();
+	});
 	it.each([
 		"READY",
 		"ERROR",

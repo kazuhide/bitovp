@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
 import { VOD_FLOW_COOKIE } from "@/lib/vod-flow";
 import { draftKey, writeWizardDraft } from "@/lib/wizard-draft";
-import { renderWithQuery } from "@/test/render";
+import { renderWithOperatorSession as renderWithQuery } from "@/test/render";
 import {
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
@@ -72,7 +72,8 @@ vi.mock("@/components/storage-picker", () => ({
 			</button>
 		) : null,
 }));
-vi.mock("@/lib/auth/use-session", () => ({
+vi.mock("@/lib/auth/use-session", async (original) => ({
+	...(await original<Record<string, unknown>>()),
 	useSession: () => ({
 		status: "success",
 		isFetchedAfterMount: true,
@@ -250,6 +251,154 @@ describe("VodWizard — the file-output flow", () => {
 		expect(first.getByRole("checkbox", { name: audio })).toBeChecked();
 	});
 
+	it("clears the inspected track when the source path changes", async () => {
+		await restore(
+			{
+				...ready,
+				audioFile: {
+					mode: "COPY",
+					position: 1,
+					sourceCodec: "PCM",
+					container: "PROGRESSIVE_WAV",
+					filename: "copy.wav",
+					inspectionId: "33333333-3333-4333-8333-333333333333",
+				},
+			},
+			1,
+		);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Enter manually" }),
+		);
+		const input = screen.getByLabelText("Object path");
+		await userEvent.clear(input);
+		await userEvent.type(input, "changed.mov");
+		await userEvent.click(screen.getByRole("button", { name: /Review$/ }));
+		expect(
+			screen.getByRole("button", { name: "Start encoding" }),
+		).toBeDisabled();
+	});
+	it("returns to a writable video file from an imported audio-only plan", async () => {
+		await restore(
+			{
+				...ready,
+				videos: [],
+				audios: [],
+				audioFile: {
+					mode: "PCM",
+					position: 0,
+					filename: "sound.wav",
+					rate: 48000,
+					channelLayout: "STEREO",
+					sampleFormat: "S24LE",
+				},
+			},
+			2,
+		);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Return to video files" }),
+		);
+		expect(screen.getByRole("group", { name: "File 1" })).toBeInTheDocument();
+		expect(
+			(screen.getByLabelText("File name") as HTMLInputElement).value,
+		).toMatch(/\.mp4$/);
+	});
+	it("submits the selected inspected track through the file wizard and never sends a resampling configuration", async () => {
+		const baseline = apiFetch.getMockImplementation();
+		const inspection = "33333333-3333-4333-8333-333333333333";
+		apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+			if (url === "/api/storage-inspections" && init?.method === "POST")
+				return { id: inspection, status: "PENDING" };
+			if (url === `/api/storage-inspections/${inspection}`)
+				return {
+					id: inspection,
+					status: "FINISHED",
+					bucket: "synthetic",
+					objectKey: "/take.mov",
+					verifiedCredentialId: credentialId,
+					verifiedAudioTracks: [{ position: 1, sourceCodec: "PCM" }],
+				};
+			return baseline?.(url, init);
+		});
+		await restore(
+			{
+				...ready,
+				inputFiles: ready.inputFiles.map((file) => ({
+					...file,
+					path: "/take.mov",
+				})),
+			},
+			2,
+		);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Export audio only" }),
+		);
+		await userEvent.selectOptions(
+			screen.getByLabelText("Audio file format"),
+			"COPY",
+		);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Inspect source tracks" }),
+		);
+		await screen.findByRole("option", { name: "2 · PCM" });
+		await userEvent.selectOptions(screen.getByLabelText("Audio track"), "1");
+		expect(screen.getByLabelText("Audio container")).toHaveValue(
+			"PROGRESSIVE_WAV",
+		);
+		await userEvent.click(screen.getByRole("button", { name: "5. Review" }));
+		expect(screen.getByText("synthetic/exports/audio.wav")).toBeInTheDocument();
+		const req = apiFetch.mock.calls.find(
+			([url]) => url === "/api/storage-inspections",
+		);
+		expect(JSON.parse(req?.[1]?.body as string)).toEqual({
+			credentialId,
+			bucket: "synthetic",
+			objectKey: "/take.mov",
+			verifyAudioCopy: true,
+		});
+		const start = screen.getByRole("button", { name: "Start encoding" });
+		await userEvent.click(start);
+		await waitFor(() =>
+			expect(push).toHaveBeenCalledWith(`/vod/jobs/${jobId}`),
+		);
+		const post = apiFetch.mock.calls.find(
+			([url, init]) => url === "/api/encoding-jobs" && init?.method === "POST",
+		);
+		const { plan } = JSON.parse(post?.[1].body);
+		expect(plan.ingest[0]).toMatchObject({
+			position: 1,
+			inputPath: "/take.mov",
+		});
+		expect(plan.renditions[0]).toMatchObject({
+			codec: "AUDIO_PASSTHROUGH",
+			inspectionId: inspection,
+			sourceCodec: "PCM",
+		});
+		expect(plan.renditions[0]).not.toHaveProperty("rate");
+	});
+	it("exports a stereo PCM WAV from the normal file-format step", async () => {
+		await restore(ready, 2);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Export audio only" }),
+		);
+		expect(screen.getByLabelText("Audio file format")).toHaveValue("PCM");
+		expect(screen.getByLabelText("Sample format")).toHaveValue("S24LE");
+		fireEvent.change(screen.getByLabelText("Audio filename"), {
+			target: { value: "soundtrack.wav" },
+		});
+		await userEvent.click(screen.getByRole("button", { name: "Plan JSON" }));
+		const plan = JSON.parse(planJson());
+		expect(plan.renditions).toMatchObject([
+			{ codec: "PCM", rate: 48000, bitrate: 2304000 },
+		]);
+		expect(plan.muxings).toMatchObject([
+			{ kind: "PROGRESSIVE_WAV", filename: "soundtrack.wav" },
+		]);
+		expect(plan.manifests ?? []).toEqual([]);
+		await userEvent.click(
+			screen.getByRole("button", { name: "Return to video files" }),
+		);
+		expect(JSON.parse(planJson()).renditions[0].codec).toBe("H264");
+	});
 	it("leaves the streaming wizard as it was, with the switch beside it", () => {
 		renderWithQuery(<VodWizard flow="streaming" />);
 		expect(steps()).toHaveLength(8);

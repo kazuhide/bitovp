@@ -267,6 +267,22 @@ export function slateNormalizedKey(
 	sourceKey: string,
 	target: SlateNormalizationTarget,
 ): string {
+	return slateNormalizedKeyWithRateToken(
+		sourceKey,
+		target,
+		slateFrameRateToken(target.frameRate),
+	);
+}
+
+/** A retained receipt already contains the formatted token. Keep its precision. */
+export function slateNormalizedKeyWithRateToken(
+	sourceKey: string,
+	target: Pick<
+		SlateNormalizationTarget,
+		"width" | "height" | "sampleRate" | "channels"
+	>,
+	frameRateToken: string,
+): string {
 	const slash = sourceKey.lastIndexOf("/");
 	const dir = slash >= 0 ? sourceKey.slice(0, slash + 1) : "";
 	const base = sourceKey.slice(slash + 1);
@@ -274,7 +290,7 @@ export function slateNormalizedKey(
 	// clips and must not overwrite each other's output (review of #552, L6).
 	const marker = base.indexOf(SLATE_NORMALIZED_MARKER);
 	const stem = marker >= 0 ? base.slice(0, marker) : base;
-	const fps = slateFrameRateToken(target.frameRate).replace("/", "_");
+	const fps = frameRateToken.replace("/", "_");
 	return `${dir}${stem}${SLATE_NORMALIZED_MARKER}${target.width}x${target.height}-${fps}-${target.sampleRate}-${target.channels}ch.ts`;
 }
 

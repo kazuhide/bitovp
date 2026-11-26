@@ -657,6 +657,47 @@ describe("observeEdgeLeg — the four MSL delivery topologies close (non-regress
 		expect(urls.every((u) => u.startsWith(ROOT))).toBe(true);
 	});
 
+	it.each([
+		true,
+		false,
+	])("checks DVB segments and their init on the delivery edge (missing=%s)", async (missing) => {
+		const sub =
+			'<AdaptationSet lang="ja" mimeType="application/mp4" codecs="wvtt"><Representation id="sub" bandwidth="1000"><SegmentList duration="6"><Initialization sourceURL="subs/init.mp4"/><SegmentURL media="subs/segment_1.m4s"/></SegmentList></Representation></AdaptationSet>';
+		const objects: Record<string, Served> = {
+			[ROOT + "stream.mpd"]: segmentListMpd().replace(
+				"</Period>",
+				sub + "</Period>",
+			),
+			[ROOT + "list/list-v1/init.mp4"]: MP4_BYTES,
+			[ROOT + "list/list-v1/seg-1.m4s"]: MP4_BYTES,
+			[ROOT + "list/list-v1/seg-2.m4s"]: MP4_BYTES,
+			[ROOT + "subs/init.mp4"]: MP4_BYTES,
+			...(!missing && { [ROOT + "subs/segment_1.m4s"]: MP4_BYTES }),
+		};
+		const { readEdge, urls } = edge(objects);
+		const result = await observeEdgeLeg(
+			readEdge,
+			policy,
+			{
+				...DASH,
+				dashDvbSubtitles: [
+					{
+						key: "ja",
+						language: "ja",
+						segmentPath: "subs/",
+						segmentNaming: "segment_%number%.m4s",
+						initSegment: "init.mp4",
+					},
+				],
+			},
+			"mirror-1",
+			NOW,
+			{ expectedChildCount: 2 },
+		);
+		expect(result.closed, JSON.stringify(result)).toBe(!missing);
+		expect(urls).toContain(ROOT + "subs/segment_1.m4s");
+	});
+
 	it("DASH/fMP4 SegmentTimeline: fetches init and every addressed media segment", async () => {
 		const objects: Record<string, Served> = {
 			[`${ROOT}stream.mpd`]: segmentTimelineMpd(),

@@ -63,7 +63,12 @@ declare module "mpd-parser" {
 		segments?: {
 			uri?: string;
 			resolvedUri?: string;
-			map?: { uri?: string; resolvedUri?: string };
+			byterange?: { offset?: number; length?: number };
+			map?: {
+				uri?: string;
+				resolvedUri?: string;
+				byterange?: { offset?: number; length?: number };
+			};
 		}[];
 	};
 
@@ -79,9 +84,24 @@ declare module "mpd-parser" {
 	export function parse(manifestString: string, options?: unknown): MpdManifest;
 	export function stringToMpdXml(manifestString: string): unknown;
 	export type MpdRepresentationInfo = {
-		attributes: { contentType?: string; mimeType?: string };
+		attributes: {
+			periodStart?: number;
+			contentType?: string;
+			mimeType?: string;
+			id?: string;
+			lang?: string;
+			bandwidth?: number;
+			baseUrl?: string;
+		};
+		segmentInfo?: {
+			template?: { media?: string };
+			list?: { segmentUrls?: { media?: string }[] };
+		};
 	};
-	export function inheritAttributes(manifest: unknown): {
+	export function inheritAttributes(
+		manifest: unknown,
+		options?: { manifestUri: string; NOW?: number },
+	): {
 		representationInfo: MpdRepresentationInfo[];
 	};
 	export function toPlaylists(

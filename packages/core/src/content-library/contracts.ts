@@ -34,7 +34,21 @@ export const librarySnapshotSchema = z.object({
 	name: z.string(),
 	planHash: z.string(),
 	identity: z.literal("UNVERIFIED"),
-	inputs: z.array(z.object({ name: z.string(), path: z.string() })),
+	inputs: z.array(
+		z.object({
+			name: z.string(),
+			path: z.string(),
+			/** Private evidence captured with a finished plan; omitted on public reads. */
+			pathKind: z.enum(["OBJECT_KEY", "HTTPS_PATH"]).optional(),
+			hdr10Plus: z
+				.object({
+					streamKey: z.string(),
+					inputKey: z.string(),
+					role: z.enum(["VIDEO", "METADATA"]),
+				})
+				.optional(),
+		}),
+	),
 	playbackLinks: z.array(libraryPlaybackLinkSchema),
 	/** Server-only storage coordinates for authenticated playback after job deletion. */
 	fileOutputs: z.array(libraryFileOutputSchema).max(100).optional(),

@@ -37,7 +37,8 @@ export function checkConcatenationAvQualification(
 		const leaf =
 			plan.ingest.find((item) => item.key === key) ??
 			plan.fileStreams.find((item) => item.key === key) ??
-			plan.dolbyStreams.find((item) => item.key === key);
+			plan.dolbyStreams.find((item) => item.key === key) ??
+			plan.hdr10PlusStreams.find((item) => item.key === key);
 		const trim = plan.trimmingStreams.find((item) => item.key === key);
 		const concat = plan.concatenationStreams.find((item) => item.key === key);
 		const mix = plan.audioMixStreams.find((item) => item.key === key);

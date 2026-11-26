@@ -160,6 +160,7 @@ const EXPERIMENT_MODELS = [
 ];
 const PRESERVES = [
 	"liveStopNotification",
+	"encodingResourceRemoval",
 	...RESET_PROTECTED_EDITING_MODELS,
 	...EXPERIMENT_MODELS,
 	"createRequest",

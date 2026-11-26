@@ -1,7 +1,10 @@
-import type {
-	WizardFilter,
-	WizardRenditionExtras,
-	WizardState,
+import {
+	isWizardWatermarkFilter,
+	type WizardFilter,
+	type WizardRenditionExtras,
+	type WizardState,
+	wizardInputStorage,
+	wizardWatermarkFile,
 } from "./build-plan";
 
 /** Change a definition and its references in a single state update. */
@@ -10,6 +13,7 @@ export function editFilter(
 	index: number,
 	next: WizardFilter,
 	manualKey = false,
+	storageSelected = false,
 ): Partial<WizardState> {
 	const filters = state.filters ?? [];
 	const previous = filters[index];
@@ -62,7 +66,72 @@ export function editFilter(
 					},
 				}
 			: row;
+	let inputFiles = state.inputFiles;
+	function uniqueFileKey(base: string) {
+		let suffix = 2;
+		while (inputFiles.some((file) => file.key === `${base}-${suffix}`))
+			suffix++;
+		return `${base}-${suffix}`;
+	}
+	if (
+		storageSelected &&
+		isWizardWatermarkFilter(previous) &&
+		isWizardWatermarkFilter(next)
+	) {
+		const targetKey = next.inputKey;
+		const site = inputFiles.find((file) => file.key === targetKey);
+		if (site) {
+			const prior = wizardWatermarkFile(inputFiles, previous);
+			const path =
+				prior?.purpose === "FILTER_IMAGE" ? prior.path : previous.imagePath;
+			const location = wizardInputStorage(site);
+			let image = inputFiles.find(
+				(file) =>
+					file.purpose === "FILTER_IMAGE" &&
+					file.path === path &&
+					file.inputKey === site.inputKey &&
+					wizardInputStorage(file) === location,
+			);
+			if (!image) {
+				image = {
+					...site,
+					key: uniqueFileKey(site.key),
+					purpose: "FILTER_IMAGE",
+					path,
+				};
+				inputFiles = [...inputFiles, image];
+			}
+			next = { ...next, inputKey: image.key, imagePath: path };
+		}
+	}
+	if (
+		isWizardWatermarkFilter(previous) &&
+		isWizardWatermarkFilter(next) &&
+		previous.inputKey === next.inputKey &&
+		previous.imagePath !== next.imagePath
+	) {
+		const image = wizardWatermarkFile(inputFiles, previous);
+		if (image?.purpose === "FILTER_IMAGE") {
+			const edited = { ...image, path: next.imagePath };
+			const shared = filters.some(
+				(row, i) =>
+					i !== index &&
+					isWizardWatermarkFilter(row) &&
+					wizardWatermarkFile(inputFiles, row)?.key === image.key,
+			);
+			if (shared) {
+				edited.key = uniqueFileKey(image.key);
+				inputFiles = [...inputFiles, edited];
+			} else {
+				inputFiles = inputFiles.map((file) =>
+					file.key === image.key ? edited : file,
+				);
+			}
+			next = { ...next, inputKey: edited.key };
+		}
+	}
 	return {
+		...(inputFiles !== state.inputFiles ? { inputFiles } : {}),
 		filters: filters.map((row, i) => (i === index ? next : row)),
 		...(manualKey ? { manualFilterKeys: [...manual] } : {}),
 		...(canRename

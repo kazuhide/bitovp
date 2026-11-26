@@ -6,6 +6,7 @@ import { checkMslEncoderVersion } from "../plan/msl-encoder-version";
 import { muxingStreamKeys } from "../plan/muxing-streams";
 import { outputStorageKeys } from "../plan/output-files";
 import { AUDIO_CODECS } from "../plan/schema";
+import { checkStreamConditions } from "../plan/stream-condition-validation";
 import type { PlanIssue, PlanValidationOptions } from "../plan/validate";
 import { isAisaManagedLivePlan, validateAisaManagedLivePlan } from "./aisa";
 import {
@@ -13,6 +14,7 @@ import {
 	liveHlsEntryUris,
 	selectLiveManifestMuxings,
 } from "./compiler";
+import { liveDvbIssues } from "./dvb-subtitles";
 import { LIVE_MANIFEST_ELEMENT_BUDGET } from "./dvr";
 import {
 	isLiveAacChannelLayout,
@@ -60,13 +62,19 @@ import { AGGREGATE_CLOUD_REGIONS } from "./startup";
  * worker would drift the moment a codec is added here.
  */
 export const LIVE_VIDEO_CODECS = new Set(["H264", "H265"]);
-export const LIVE_AUDIO_CODECS = new Set(["AAC", "DDPLUS", "DD"]);
+export const LIVE_AUDIO_CODECS = new Set([
+	"AAC",
+	"HE_AAC_V1",
+	"HE_AAC_V2",
+	"DDPLUS",
+	"DD",
+]);
 
 /** Container/codec matrix for the live muxing kinds (mirror of VOD's). */
 const LIVE_MUXING_ALLOWED: Record<string, string[]> = {
-	FMP4: ["H264", "H265", "AAC", "DDPLUS", "DD"],
+	FMP4: ["H264", "H265", "AAC", "HE_AAC_V1", "HE_AAC_V2", "DDPLUS", "DD"],
 	CMAF: ["H264", "AAC"],
-	TS: ["H264", "AAC"],
+	TS: ["H264", "AAC", "HE_AAC_V1", "HE_AAC_V2"],
 	// Deliberately scoped to the provider's HD progressive-archive regression.
 	MP4: ["H264", "AAC"],
 };
@@ -259,12 +267,14 @@ export function validateLiveChannel(
 	const issues: PlanIssue[] = [
 		...moqOutputIssues(plan, options),
 		...liveManifestPathIssues(plan),
+		...liveDvbIssues(plan),
 		...liveManifestDetailIssues(plan),
 		...liveDrmIssues(plan, options),
 		...liveFallbackRegionIssues(plan),
 		...checkLiveHlsVideoUris(plan),
 	];
 	issues.push(...checkH26xCodecControls(plan.renditions));
+	issues.push(...checkStreamConditions(plan.renditions, true));
 	issues.push(...checkCodecDetailControls(plan.renditions));
 	if (plan.start.encodingOption === "HD") {
 		const resolution = resolveLiveEncodingOption(plan);

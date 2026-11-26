@@ -6,7 +6,7 @@ import type {
 	StoragePresetWire,
 } from "@bitovp/core";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
 	InspectDialog,
 	type InspectTarget,
@@ -40,6 +40,10 @@ type StoragePickerProps = {
 	 *  picker straight at its bucket instead of a blank credential step. */
 	initialCredentialId?: string;
 	initialBucket?: string;
+	/** Metadata must remain on its video's input and select a different object. */
+	fixedLocation?: Pick<StoragePickerSelection, "credentialId" | "bucket"> & {
+		excludeObject?: string;
+	};
 	onClose: () => void;
 	onSelect: (selection: StoragePickerSelection) => void;
 };
@@ -51,44 +55,42 @@ type ObjectsPage = {
 };
 
 /** UI-DESIGN §3: the storage browser reused as a modal inside wizards. */
-export function StoragePicker({
+export function StoragePicker(props: StoragePickerProps) {
+	if (!props.open) return null;
+	const location = props.fixedLocation;
+	return (
+		<OpenStoragePicker
+			key={JSON.stringify(
+				location ? [location.credentialId, location.bucket] : null,
+			)}
+			{...props}
+		/>
+	);
+}
+
+function OpenStoragePicker({
 	open,
 	mode,
 	providers,
 	initialCredentialId,
 	initialBucket,
+	fixedLocation,
 	onClose,
 	onSelect,
 }: StoragePickerProps) {
 	const { t } = useT();
 	const errorText = useStorageErrorText();
-	const [credentialId, setCredentialId] = useState("");
+	const [credentialId, setCredentialId] = useState(
+		fixedLocation?.credentialId ?? initialCredentialId ?? "",
+	);
 	// : Inspect from the picker - the browser and job-detail cards
 	// had it, the wizard picker did not.
 	const [inspecting, setInspecting] = useState<InspectTarget | null>(null);
-	const [bucket, setBucket] = useState("");
+	const [bucket, setBucket] = useState(
+		fixedLocation?.bucket ?? initialBucket ?? "",
+	);
 	const [bucketInput, setBucketInput] = useState("");
 	const [prefix, setPrefix] = useState("");
-
-	// Seed from the field's existing location when the modal OPENS, so "Change"
-	// continues from where the user is instead of re-asking the credential. The
-	// wasOpen ref makes this fire only on the false→true edge, so in-modal
-	// navigation is never reset even if the seed props change mid-browse.
-	const wasOpen = useRef(false);
-	useEffect(() => {
-		if (open && !wasOpen.current) {
-			setCredentialId(initialCredentialId ?? "");
-			setBucket(initialBucket ?? "");
-			setBucketInput("");
-			setPrefix("");
-			// Review of PR #175, I1: without this, reopening the picker
-			// resurrects the PREVIOUS session's Inspect modal over the browse
-			// UI — and where the prior row was not adoptable, re-fires an
-			// unrequested bounded read of customer storage.
-			setInspecting(null);
-		}
-		wasOpen.current = open;
-	}, [open, initialCredentialId, initialBucket]);
 
 	const credentials = useQuery({
 		queryKey: ["credentials"],
@@ -105,7 +107,7 @@ export function StoragePicker({
 			apiFetch<{ buckets: string[] }>(
 				`/api/credentials/${credentialId}/storage/buckets`,
 			),
-		enabled: open && credentialId !== "",
+		enabled: open && credentialId !== "" && !fixedLocation,
 		retry: false,
 		staleTime: 60_000,
 	});
@@ -143,7 +145,17 @@ export function StoragePicker({
 	const pages = objects.data?.pages ?? [];
 	const crumbs = prefixCrumbs(prefix);
 
+	const excludedInput = (key: string) =>
+		!!fixedLocation?.excludeObject &&
+		fixedLocation.excludeObject.replace(/^\//, "") === key.replace(/^\//, "");
 	function finish(selection: StoragePickerSelection) {
+		if (mode === "object" && excludedInput(selection.path)) return;
+		if (
+			fixedLocation &&
+			(selection.credentialId !== fixedLocation.credentialId ||
+				selection.bucket !== fixedLocation.bucket)
+		)
+			return;
 		onSelect(selection);
 		onClose();
 	}
@@ -185,6 +197,7 @@ export function StoragePicker({
 						<SelectNative
 							id="picker-credential"
 							value={credentialId}
+							disabled={!!fixedLocation}
 							onChange={(e) => {
 								setCredentialId(e.target.value);
 								setBucket("");
@@ -198,7 +211,7 @@ export function StoragePicker({
 								</option>
 							))}
 						</SelectNative>
-						<NewCredentialLink />
+						{fixedLocation ? null : <NewCredentialLink />}
 					</Field>
 					{/*
 					 * : `{buckets: []}` is a SUCCESS, and it used to render
@@ -213,7 +226,7 @@ export function StoragePicker({
 					<Field
 						label={t("ui.bucket")}
 						htmlFor="picker-bucket"
-						{...(buckets.isError
+						{...(!fixedLocation && buckets.isError
 							? {
 									/**
 									 * The reason PLUS what to do about it — 's
@@ -235,65 +248,70 @@ export function StoragePicker({
 										"list",
 									)} ${t("uiX.enterTheBucketName")}`,
 								}
-							: buckets.data?.buckets.length === 0
+							: !fixedLocation && buckets.data?.buckets.length === 0
 								? { hint: t("ui.noBucketsListedTypeBelow") }
 								: {})}
 					>
-						<div className="flex gap-2">
-							{buckets.isError || buckets.data?.buckets.length === 0 ? null : (
-								<SelectNative
-									id="picker-bucket"
-									className="min-w-0"
-									value={bucket}
-									disabled={!credentialId || !buckets.data}
-									onChange={(e) => {
-										setBucket(e.target.value);
-										setPrefix("");
-									}}
-								>
-									<option value="">{t("ui.selectBucket")}</option>
-									{(buckets.data?.buckets ?? []).map((name) => (
-										<option key={name} value={name}>
-											{name}
-										</option>
-									))}
-								</SelectNative>
-							)}
-							<form
-								className={
-									buckets.isError || buckets.data?.buckets.length === 0
-										? "flex flex-1 gap-1"
-										: "flex gap-1"
-								}
-								onSubmit={(e) => {
-									e.preventDefault();
-									if (bucketInput.trim()) {
-										setBucket(bucketInput.trim());
-										setPrefix("");
-									}
-								}}
-							>
-								<Input
-									id={
-										buckets.isError || buckets.data?.buckets.length === 0
-											? "picker-bucket"
-											: undefined
-									}
-									aria-label={t("ui.bucketNameManual")}
+						{fixedLocation ? (
+							<Input id="picker-bucket" value={fixedLocation.bucket} readOnly />
+						) : (
+							<div className="flex gap-2">
+								{buckets.isError ||
+								buckets.data?.buckets.length === 0 ? null : (
+									<SelectNative
+										id="picker-bucket"
+										className="min-w-0"
+										value={bucket}
+										disabled={!credentialId || !buckets.data}
+										onChange={(e) => {
+											setBucket(e.target.value);
+											setPrefix("");
+										}}
+									>
+										<option value="">{t("ui.selectBucket")}</option>
+										{(buckets.data?.buckets ?? []).map((name) => (
+											<option key={name} value={name}>
+												{name}
+											</option>
+										))}
+									</SelectNative>
+								)}
+								<form
 									className={
 										buckets.isError || buckets.data?.buckets.length === 0
-											? "h-9 flex-1 text-xs"
-											: "h-9 w-36 text-xs"
+											? "flex flex-1 gap-1"
+											: "flex gap-1"
 									}
-									placeholder={t("ui.orTypeBucket")}
-									value={bucketInput}
-									onChange={(e) => setBucketInput(e.target.value)}
-								/>
-								<Button type="submit" variant="secondary" size="sm">
-									{t("ui.open")}
-								</Button>
-							</form>
-						</div>
+									onSubmit={(e) => {
+										e.preventDefault();
+										if (bucketInput.trim()) {
+											setBucket(bucketInput.trim());
+											setPrefix("");
+										}
+									}}
+								>
+									<Input
+										id={
+											buckets.isError || buckets.data?.buckets.length === 0
+												? "picker-bucket"
+												: undefined
+										}
+										aria-label={t("ui.bucketNameManual")}
+										className={
+											buckets.isError || buckets.data?.buckets.length === 0
+												? "h-9 flex-1 text-xs"
+												: "h-9 w-36 text-xs"
+										}
+										placeholder={t("ui.orTypeBucket")}
+										value={bucketInput}
+										onChange={(e) => setBucketInput(e.target.value)}
+									/>
+									<Button type="submit" variant="secondary" size="sm">
+										{t("ui.open")}
+									</Button>
+								</form>
+							</div>
+						)}
 					</Field>
 				</div>
 
@@ -371,6 +389,9 @@ export function StoragePicker({
 								onFetchNextPage={() => objects.fetchNextPage()}
 								onOpenPrefix={(p) => setPrefix(p)}
 								onUseAsInput={mode === "object" ? pick : undefined}
+								inputDisabled={
+									fixedLocation?.excludeObject ? excludedInput : undefined
+								}
 								onUseAsOutput={mode === "prefix" ? pick : undefined}
 								onInspect={(key, size) =>
 									setInspecting({

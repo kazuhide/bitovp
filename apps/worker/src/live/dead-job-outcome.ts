@@ -1,6 +1,7 @@
 import {
 	type LiveEffectIntent,
 	liveChannelJobSchema,
+	publicStorageDiagnostic,
 	redactSecrets,
 	scheduledStopJobId,
 	scheduledStopScheduleId,
@@ -781,7 +782,10 @@ export async function recordDeadJobScheduleOutcomes(
 	at: Date,
 ): Promise<void> {
 	await recordExhaustedScheduledStop(prisma, job, at);
-	for (const write of deadJobScheduleWrites(job, message)) {
+	for (const write of deadJobScheduleWrites(
+		job,
+		publicStorageDiagnostic(message),
+	)) {
 		await recordScheduleOutcomeBestEffort(
 			prisma,
 			write.target,

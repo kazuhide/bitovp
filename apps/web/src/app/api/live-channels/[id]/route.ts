@@ -56,7 +56,7 @@ import {
 	MoqObservationError,
 	moqHistoryError,
 } from "@/lib/server/moq-observations";
-import { publicMoqHistory } from "@/lib/server/moq-public-history";
+import { publicLiveHistory } from "@/lib/server/moq-public-history";
 import { playbackLinksForLivePlan } from "@/lib/server/playback-links";
 import { resetBlockingFeederWhere } from "@/lib/server/reset";
 import {
@@ -208,7 +208,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 		};
 		const currentRunView = currentRun
 			? {
-					...publicMoqHistory(runFields),
+					...publicLiveHistory(runFields),
 					liveToVod: liveToVodForRole(
 						currentRun.liveToVod,
 						technicalDetailsAllowed,
@@ -256,7 +256,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 		// the credential's config never needs to cross .
 		return NextResponse.json(
 			{
-				...publicMoqHistory(channel),
+				...publicLiveHistory(channel),
 				liveToVod: liveToVodForRole(channel.liveToVod, technicalDetailsAllowed),
 				liveToVodFamilies,
 				currentRun: currentRunView,

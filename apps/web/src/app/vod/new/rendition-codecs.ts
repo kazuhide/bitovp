@@ -17,6 +17,8 @@ export const VIDEO_CODECS: readonly WizardVideoCodec[] = [
 
 export const AUDIO_CODECS: readonly WizardAudioCodec[] = [
 	"AAC",
+	"HE_AAC_V1",
+	"HE_AAC_V2",
 	"AC3",
 	"EAC3",
 	"OPUS",

@@ -2,6 +2,7 @@ import {
 	compareSlateCompatibility,
 	feederError,
 	normalizeSlateInputPath,
+	publicStorageDiagnostic,
 	SLATE_SUPPORTED_PROVIDERS,
 	type SlateConversionDestination,
 	type SlateSource,
@@ -295,7 +296,7 @@ export async function registerSlateContent(
 		// resume) and the slate window, not the queue, stays the deadline.
 		// Deterministic refusals (unsupported driver, content ERROR) return
 		// FAILED above instead and KEEP the claim — retrying cannot fix those.
-		const reason = `slate registration failed: ${err instanceof Error ? err.message : String(err)}`;
+		const reason = `slate registration failed: ${publicStorageDiagnostic(err instanceof Error ? err.message : String(err))}`;
 		await deps.prisma.liveSchedule.updateMany({
 			where: { id: args.scheduleId, insertableContentId: null },
 			data: { contentClaimedAt: null, note: reason },
@@ -438,7 +439,7 @@ async function registerAndLink(
 			if (prepared.kind === "WAIT") {
 				// Transient by nature: the claim is RELEASED so the next sweep
 				// tick retries, and the slate window stays the deadline.
-				const reason = `slate not registered yet: ${prepared.note}`;
+				const reason = `slate not registered yet: ${publicStorageDiagnostic(prepared.note)}`;
 				await deps.prisma.liveSchedule.updateMany({
 					where: { id: args.scheduleId, insertableContentId: null },
 					data: { contentClaimedAt: null, note: reason },
@@ -446,7 +447,7 @@ async function registerAndLink(
 				return { outcome: "RELEASED", reason };
 			}
 			if (prepared.kind === "REFUSED") {
-				const reason = `slate cannot be prepared: ${prepared.reason}`;
+				const reason = `slate cannot be prepared: ${publicStorageDiagnostic(prepared.reason)}`;
 				await deps.prisma.liveSchedule.updateMany({
 					where: { id: args.scheduleId, status: "ARMED" },
 					data: { error: reason },

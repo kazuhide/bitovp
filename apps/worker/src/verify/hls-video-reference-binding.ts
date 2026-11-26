@@ -55,7 +55,7 @@ export function bindHlsVideoReferences(
 	const resource = media.resource;
 	if (!resource?.outputKeys.includes(context.outputKey))
 		return fail(
-			"The VIDEO child is not bound to a declared output of its configured media writer",
+			"The media playlist is not bound to a declared output of its configured media writer",
 		);
 	const segments: NonNullable<ParsedHls["mediaSegments"]> =
 		parsed.mediaSegments ?? (parsed.segmentUris ?? []).map((uri) => ({ uri }));
@@ -69,10 +69,11 @@ export function bindHlsVideoReferences(
 		: parsed.mapUri
 			? [{ uri: parsed.mapUri }]
 			: [];
-	const requiresInit = resource.container !== "TS";
+	const requiresInit =
+		resource.container !== "TS" && resource.container !== "CHUNKED_TEXT";
 	if (!segments.length || (requiresInit ? !maps.length : maps.length > 0))
 		return fail(
-			"The configured VIDEO container requires media references and its correct initialization addressing",
+			"The configured media container requires media references and its correct initialization addressing",
 		);
 	const init =
 		resource.container === "MP4"
@@ -82,7 +83,7 @@ export function bindHlsVideoReferences(
 		resource.container === "MP4" ? resource.filename : resource.segmentNaming;
 	if (segment === undefined || (requiresInit && init === undefined))
 		return fail(
-			"The configured VIDEO writer has no verifiable filename contract",
+			"The configured media writer has no verifiable filename contract",
 		);
 	const matchMedia = createFilenameMatcher(segment, {
 		policyTokens: resource.container !== "MP4",
@@ -106,12 +107,12 @@ export function bindHlsVideoReferences(
 			);
 			if (key === undefined || !key.startsWith(resource.directory))
 				return fail(
-					"A VIDEO child reference resolves outside its configured writer directory",
+					"A media playlist reference resolves outside its configured writer directory",
 				);
 			const matched = matcher(key.slice(resource.directory.length));
 			if (matched === "NO_MATCH")
 				return fail(
-					"A VIDEO child reference does not match its configured writer filename and template policy",
+					"A media playlist reference does not match its configured writer filename and template policy",
 				);
 			if (matched === "UNVERIFIED") unknown = true;
 			const range = reference.byteRange;
@@ -122,10 +123,10 @@ export function bindHlsVideoReferences(
 					!Number.isSafeInteger(range.offset) ||
 					(range.offset ?? -1) < 0)
 			)
-				return fail("A VIDEO child has an invalid byte range");
+				return fail("A media playlist has an invalid byte range");
 			if (resource.container === "MP4" && !range)
 				return fail(
-					"An MP4 VIDEO child must address initialization and media with byte ranges",
+					"An MP4 media playlist must address initialization and media with byte ranges",
 				);
 			objects.push({
 				key,
@@ -141,8 +142,8 @@ export function bindHlsVideoReferences(
 			area: "manifest",
 			verdict: unknown ? "SKIP" : "PASS",
 			detail: unknown
-				? "VIDEO writer membership exceeded bounded matching; its references remain UNVERIFIED"
-				: "Every VIDEO child initialization and media reference belongs to its configured writer",
+				? "media writer membership exceeded bounded matching; its references remain UNVERIFIED"
+				: "Every media playlist initialization and media reference belongs to its configured writer",
 		},
 		objects: unknown ? [] : objects,
 	};

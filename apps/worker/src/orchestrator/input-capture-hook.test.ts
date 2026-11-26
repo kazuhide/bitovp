@@ -30,6 +30,17 @@ function setup(capture: ReturnType<typeof vi.fn>) {
 	return { sdk, context };
 }
 describe("provider capture uses the actual ingest request", () => {
+	it("blocks a required audio capture before a provider stream can read mutable storage", async () => {
+		const f = setup(vi.fn(async () => null));
+		const copy = {
+			...operation,
+			payload: { ...operation.payload, requireAudioCapture: true },
+		};
+		await expect(executeStep(copy, f.context)).rejects.toThrow(
+			"AUDIO_COPY_INPUT_UNVERIFIED",
+		);
+		expect(f.sdk.createIngestInputStream).not.toHaveBeenCalled();
+	});
 	it("sends gateway Basic Auth through the installed SDK while keeping the audit secret-free", async () => {
 		const bodies: unknown[] = [],
 			audits: unknown[] = [];

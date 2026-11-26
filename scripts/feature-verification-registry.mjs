@@ -52,8 +52,8 @@ export const FEATURES = Object.freeze(
 				"VOD, Live and single-pass feeder creation and request identity",
 			files: {
 				"src/lib/server/create-request.test.ts": 11,
-				"src/app/api/encoding-jobs/route.test.ts": 71,
-				"src/app/api/live-channels/route.test.ts": 92,
+				"src/app/api/encoding-jobs/route.test.ts": 79,
+				"src/app/api/live-channels/route.test.ts": 94,
 				"src/app/api/feeder-sessions/route.test.ts": 50,
 			},
 		},
@@ -76,7 +76,7 @@ export const FEATURES = Object.freeze(
 				"Live run ownership, provider observations and startup cancellation",
 			files: {
 				"src/live/startup-cancel.test.ts": 2,
-				"src/live/provider-lifecycle.test.ts": 56,
+				"src/live/provider-lifecycle.test.ts": 57,
 			},
 		},
 		{

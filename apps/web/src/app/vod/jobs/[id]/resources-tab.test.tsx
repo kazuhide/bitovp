@@ -101,6 +101,62 @@ describe("ResourcesTab — raw snapshots in place", () => {
 		);
 		expect(screen.queryByRole("button", { name: /cURL/ })).toBeNull();
 	});
+	it.each([
+		"current",
+		"masked",
+	] as const)("copies the exact caption object key from a %s request and matching S3 receipt", async (version) => {
+		const user = userEvent.setup();
+		const path = "assets/angle?key=iso.ts";
+		const entry: StepLogEntry = {
+			step: "caption:CC1",
+			kind: "CREATE_CEA608_INPUT_STREAM",
+			status: "DONE",
+			resourceId: "caption-123",
+			response: { id: "caption-123" },
+			refs: { inputId: "input:main", encodingId: "encoding" },
+			payload: { inputPath: path, channel: "CC1" },
+			request: {
+				inputPath: version === "masked" ? "[REDACTED]" : path,
+				channel: "CC1",
+				refs: { inputId: "in-123", encodingId: "encoder" },
+			},
+		};
+		renderLocalized(<ResourcesTab entries={[...ENTRIES, entry]} />);
+		const row = document.getElementById(anchorId(entry.step));
+		if (!row) throw Error("The caption resource was not displayed");
+		await user.click(within(row).getByRole("button", { name: "Copy as cURL" }));
+		expect(await navigator.clipboard.readText()).toContain(path);
+	});
+	it("copies the exact historical Dolby input key only when the fulfilled object input is still present", async () => {
+		const user = userEvent.setup(),
+			key = "///reels:day@night/take.mxf";
+		const vision: StepLogEntry = {
+			step: "dolby:picture",
+			kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+			status: "DONE",
+			payload: { videoInputPath: key },
+			refs: { encodingId: "encoding", inputId: "input:main" },
+			resourceId: "vision-id",
+			response: { id: "vision-id" },
+			request: {
+				videoInputPath: "///reels:[REDACTED]@night/take.mxf",
+				refs: { encodingId: "enc-real", inputId: "in-123" },
+			},
+		};
+		const bare = renderLocalized(<ResourcesTab entries={[vision]} />);
+		expect(screen.queryByRole("button", { name: /Copy as cURL/i })).toBeNull();
+		bare.unmount();
+		renderLocalized(<ResourcesTab entries={[...ENTRIES, vision]} />);
+		const row = document.getElementById(anchorId(vision.step));
+		if (!row) throw new Error("Missing Dolby resource");
+		await user.click(
+			within(row).getByRole("button", { name: /Copy as cURL/i }),
+		);
+		const copy = await navigator.clipboard.readText();
+		expect(copy).toContain("/encodings/enc-real/input-streams/dolby-vision");
+		expect(copy).toContain(key);
+		expect(copy).toContain('"inputId": "in-123"');
+	});
 	it("opens the persisted request/response, each body under ITS label", async () => {
 		renderLocalized(<ResourcesTab entries={ENTRIES} />);
 		await userEvent.click(

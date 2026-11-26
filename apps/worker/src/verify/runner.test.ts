@@ -164,6 +164,7 @@ const plans = planFiles.map((file) => ({
 const gated = plans.filter(
 	({ plan }) =>
 		(plan.dolbyStreams ?? []).length > 0 ||
+		(plan.hdr10PlusStreams ?? []).length > 0 ||
 		(plan.fileStreams ?? []).some(
 			(f) => "fileType" in f && typeof f.fileType === "string",
 		),
@@ -171,6 +172,28 @@ const gated = plans.filter(
 const rewritable = plans.filter((p) => !gated.includes(p));
 
 describe("rewriteForRun — over the whole corpus", () => {
+	it("refuses to replace HDR10+ video and metadata with the staged SDR file", () => {
+		const fixture = rewritable[0]?.plan;
+		if (!fixture) throw new Error("Missing source fixture");
+		const plan = encodingPlanSchema.parse({
+			...fixture,
+			hdr10PlusStreams: [
+				{
+					key: "hdr10plus",
+					inputKey: fixture.inputs[0]?.key,
+					videoInputPath: "assets/hdr10.mov",
+					metadataInputPath: "assets/hdr10plus.json",
+					selectionMode: "AUTO",
+				},
+			],
+		});
+		const before = JSON.stringify(plan);
+		expect(() => rewriteForRun(plan, OPTIONS)).toThrow(
+			/HDR10\+ requires its declared HDR10 video and matching JSON/,
+		);
+		expect(JSON.stringify(plan)).toBe(before);
+	});
+
 	it("has a corpus to rewrite, so a broken read cannot pass over nothing", () => {
 		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 71→72 same day: `mixed-codec-dash-hls` .

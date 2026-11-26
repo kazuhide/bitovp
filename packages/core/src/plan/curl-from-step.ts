@@ -1,11 +1,23 @@
 import {
+	matchesHistoricalUserinfoMask,
+	REDACTED,
+} from "../crypto/url-userinfo";
+import {
 	codecDetailWireControls,
 	type DetailCodec,
 } from "./codec-detail-controls";
 import { CODEC_ENUM_VALUES, codecEnumSchema } from "./codec-enums";
 import type { OperationKind } from "./compiler";
+import { hasPrivateStorageLocator } from "./hdr-source-paths";
 import { manifestCurlSnapshot } from "./manifest-curl";
 import { externalVttUrlSchema } from "./manifest-options";
+import {
+	authoredObjectPath,
+	hasCompletedResource,
+	hasRecordedObjectInput,
+	matchesRecordedObjectPath,
+} from "./object-input-path";
+import { hdr10PlusStreamSchema } from "./schema";
 import type { StepLogEntry } from "./steplog";
 
 /**
@@ -43,6 +55,8 @@ export type CurlOptions = {
 	baseUrl?: string;
 	/** Emit an `X-Tenant-Org-Id` placeholder header (sub-org calls). */
 	includeOrgHeader?: boolean;
+	objectInputs?: ReadonlyMap<string, string | null>;
+	plan?: unknown;
 };
 
 type EndpointDef = {
@@ -127,6 +141,23 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		method: "POST",
 		template: "/encoding/encodings/:encodingId/input-streams/dolby-vision",
 	},
+	CREATE_CEA608_INPUT_STREAM: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/input-streams/captions/cea608",
+	},
+	CREATE_CEA708_INPUT_STREAM: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/input-streams/captions/cea708",
+	},
+	CREATE_DVB_SUBTITLE_INPUT_STREAM: {
+		method: "POST",
+		template:
+			"/encoding/encodings/:encodingId/input-streams/subtitles/dvb-subtitle",
+	},
+	CREATE_HDR10_PLUS_INPUT_STREAM: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/input-streams/hdr10-plus",
+	},
 	CREATE_DOLBY_VISION_METADATA_INPUT_STREAM: {
 		method: "POST",
 		template:
@@ -176,6 +207,14 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		method: "POST",
 		template: "/encoding/configurations/audio/opus",
 	},
+	CREATE_CODEC_PCM: {
+		method: "POST",
+		template: "/encoding/configurations/audio/pcm",
+	},
+	CREATE_CODEC_AUDIO_PASSTHROUGH: {
+		method: "POST",
+		template: "/encoding/configurations/audio/passthrough",
+	},
 	CREATE_CODEC_IMSC: {
 		method: "POST",
 		template: "/encoding/configurations/subtitles/imsc",
@@ -189,6 +228,30 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		template:
 			"/encoding/manifests/dash/:manifestId/periods/:periodId/adaptationsets/:adaptationSetId/representations/imsc",
 	},
+	CREATE_FILTER_ENHANCED_DEINTERLACE: {
+		method: "POST",
+		template: "/encoding/filters/enhanced-deinterlace",
+	},
+	CREATE_FILTER_CONFORM: {
+		method: "POST",
+		template: "/encoding/filters/conform",
+	},
+	CREATE_FILTER_INTERLACE: {
+		method: "POST",
+		template: "/encoding/filters/interlace",
+	},
+	CREATE_FILTER_ENHANCED_WATERMARK: {
+		method: "POST",
+		template: "/encoding/filters/enhanced-watermark",
+	},
+	CREATE_FILTER_DOLBY_LOUDNESS: {
+		method: "POST",
+		template: "/encoding/filters/dolby-loudness",
+	},
+	CREATE_FILTER_AUDIO_MIX: {
+		method: "POST",
+		template: "/encoding/filters/audio-mix",
+	},
 	CREATE_FILTER_DENOISE_HQDN3D: {
 		method: "POST",
 		template: "/encoding/filters/denoise-hqdn3d",
@@ -200,6 +263,14 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 	CREATE_CODEC_AAC: {
 		method: "POST",
 		template: "/encoding/configurations/audio/aac",
+	},
+	CREATE_CODEC_HE_AAC_V1: {
+		method: "POST",
+		template: "/encoding/configurations/audio/he-aac-v1",
+	},
+	CREATE_CODEC_HE_AAC_V2: {
+		method: "POST",
+		template: "/encoding/configurations/audio/he-aac-v2",
 	},
 	CREATE_CODEC_DOLBY_ATMOS: {
 		method: "POST",
@@ -323,6 +394,10 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		method: "POST",
 		template: "/encoding/encodings/:encodingId/muxings/progressive-mov",
 	},
+	CREATE_MUXING_PROGRESSIVE_WAV: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/muxings/progressive-wav",
+	},
 	CREATE_MUXING_TS: {
 		method: "POST",
 		template: "/encoding/encodings/:encodingId/muxings/ts",
@@ -344,7 +419,7 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 	CREATE_DRM_SPEKE: {
 		method: "POST",
 		template:
-			"/encoding/encodings/:encodingId/muxings/fmp4/:muxingId/drm/speke",
+			"/encoding/encodings/:encodingId/muxings/:muxingKind/:muxingId/drm/speke",
 	},
 	CREATE_DRM_FAIRPLAY: {
 		method: "POST",
@@ -514,10 +589,52 @@ function refScalar(entry: StepLogEntry, key: string): string | undefined {
 	return typeof value === "string" ? value : undefined;
 }
 
+/** The persisted request, unlike the compiled operation, has the provider IDs.
+ * A missing or unresolved historical snapshot cannot reproduce this POST. */
+function streamFilterAttachment(snapshot: unknown) {
+	if (
+		!snapshot ||
+		typeof snapshot !== "object" ||
+		!("refs" in snapshot) ||
+		!("positions" in snapshot)
+	)
+		return;
+	const refs = snapshot.refs;
+	const positions = snapshot.positions;
+	if (
+		!refs ||
+		typeof refs !== "object" ||
+		!("encodingId" in refs) ||
+		!("streamId" in refs) ||
+		!("filterIds" in refs)
+	)
+		return;
+	const providerId = (id: unknown): id is string =>
+		typeof id === "string" &&
+		/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id);
+	if (
+		!providerId(refs.encodingId) ||
+		!providerId(refs.streamId) ||
+		!Array.isArray(refs.filterIds) ||
+		!refs.filterIds.every(providerId) ||
+		!Array.isArray(positions) ||
+		!positions.length ||
+		positions.length !== refs.filterIds.length ||
+		!positions.every((p) => Number.isSafeInteger(p) && p >= 0)
+	)
+		return;
+	return {
+		refs: { encodingId: refs.encodingId, streamId: refs.streamId },
+		body: refs.filterIds.map((id, i) => ({ id, position: positions[i] })),
+	};
+}
+
 /** DRM muxing path segment (fmp4/mp4/ts/webm) from the redacted payload. */
 function muxingKindSegment(entry: StepLogEntry): string | undefined {
 	const kind = (entry.payload as { muxingKind?: unknown }).muxingKind;
-	return typeof kind === "string" ? kind.toLowerCase() : undefined;
+	return typeof kind === "string"
+		? kind.toLowerCase().replaceAll("_", "-")
+		: undefined;
 }
 
 /**
@@ -708,6 +825,144 @@ export function curlForStep(
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
 	let request = entry.request;
+	const ingest = entry.kind === "CREATE_INGEST_INPUT_STREAM";
+	const snapshotPath =
+		entry.request &&
+		typeof entry.request === "object" &&
+		"inputPath" in entry.request
+			? entry.request.inputPath
+			: undefined;
+	const sensitiveIngest =
+		ingest &&
+		typeof snapshotPath === "string" &&
+		(snapshotPath.includes(REDACTED) || hasPrivateStorageLocator(snapshotPath));
+	const caption =
+		entry.kind === "CREATE_CEA608_INPUT_STREAM" ||
+		entry.kind === "CREATE_CEA708_INPUT_STREAM" ||
+		entry.kind === "CREATE_DVB_SUBTITLE_INPUT_STREAM";
+	if (
+		entry.kind === "CREATE_DOLBY_VISION_INPUT_STREAM" ||
+		caption ||
+		sensitiveIngest
+	) {
+		if (
+			ingest &&
+			entry.response &&
+			typeof entry.response === "object" &&
+			"inputReceiptId" in entry.response
+		)
+			return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+		const data = request as Record<string, unknown> | null | undefined;
+		const refs = data?.refs as Record<string, unknown> | undefined;
+		const proven = hasRecordedObjectInput(entry, data, options.objectInputs);
+		const replay = { ...data };
+		const completed = hasCompletedResource(entry);
+		if (
+			typeof refs?.encodingId !== "string" ||
+			!refs.encodingId.trim() ||
+			typeof refs.inputId !== "string" ||
+			!refs.inputId.trim()
+		)
+			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		for (const field of ingest || caption
+			? ["inputPath"]
+			: ["videoInputPath", "metadataInputPath"]) {
+			const actual = data?.[field];
+			const compiled = entry.payload[field];
+			if (
+				actual === undefined &&
+				compiled === undefined &&
+				field === "metadataInputPath"
+			)
+				continue;
+			const verified =
+				proven && completed && matchesRecordedObjectPath(actual, compiled);
+			const restored = verified ? compiled : actual;
+			if (
+				typeof restored !== "string" ||
+				!restored ||
+				(restored.includes(REDACTED) &&
+					!(
+						verified &&
+						authoredObjectPath(
+							options.plan,
+							entry.step,
+							entry.refs.inputId,
+							field,
+							restored,
+						)
+					)) ||
+				hasPrivateStorageLocator(restored, verified ? "OBJECT_KEY" : "UNKNOWN")
+			)
+				return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+			replay[field] = restored;
+		}
+		entry = { ...entry, refs: { encodingId: refs.encodingId } };
+		replay.inputId = refs.inputId;
+		request = replay;
+	}
+	if (entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM") {
+		const snapshot = request as Record<string, unknown> | null | undefined;
+		const refs = snapshot?.refs as Record<string, unknown> | undefined;
+		if (
+			typeof refs?.encodingId !== "string" ||
+			!refs.encodingId.trim() ||
+			typeof refs.inputId !== "string" ||
+			!refs.inputId.trim()
+		)
+			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		const source = hdr10PlusStreamSchema.safeParse({
+			key: "source",
+			inputKey: "input",
+			videoInputPath: recordedObjectPath(
+				snapshot?.videoInputPath,
+				entry.payload.videoInputPath,
+			),
+			metadataInputPath: recordedObjectPath(
+				snapshot?.metadataInputPath,
+				entry.payload.metadataInputPath,
+			),
+			selectionMode: snapshot?.selectionMode,
+			position: snapshot?.position,
+		});
+		if (!source.success)
+			return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+		const { videoInputPath, metadataInputPath, selectionMode, position } =
+			source.data;
+		entry = { ...entry, refs: { encodingId: refs.encodingId } };
+		request = {
+			type: "HDR10_PLUS",
+			inputId: refs.inputId,
+			videoInputPath,
+			metadataInputPath,
+			selectionMode,
+			position,
+		};
+	}
+	if (
+		[
+			"CREATE_FILTER_ENHANCED_DEINTERLACE",
+			"CREATE_FILTER_CONFORM",
+			"CREATE_FILTER_INTERLACE",
+			"CREATE_FILTER_ENHANCED_WATERMARK",
+			"CREATE_FILTER_AUDIO_MIX",
+			"CREATE_FILTER_DOLBY_LOUDNESS",
+		].includes(entry.kind)
+	) {
+		if (!request || typeof request !== "object" || Array.isArray(request))
+			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		// Generated SDK filter models put their discriminator on the wire even
+		// when all user-editable options are unset.
+		request = { ...request, type: entry.kind.slice("CREATE_FILTER_".length) };
+	}
+	let filterBody: string | undefined;
+	if (entry.kind === "CREATE_STREAM_FILTERS") {
+		const attachment = streamFilterAttachment(request);
+		if (!attachment)
+			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+		entry = { ...entry, refs: attachment.refs };
+		filterBody = JSON.stringify(attachment.body, null, 2);
+	}
 	const manifestSnapshot = manifestCurlSnapshot(entry);
 	if (manifestSnapshot === false)
 		return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
@@ -716,19 +971,26 @@ export function curlForStep(
 		entry = { ...entry, refs: manifestSnapshot.refs };
 	}
 	if (
-		["CREATE_CODEC_AAC", "CREATE_CODEC_AC3", "CREATE_CODEC_EAC3"].includes(
-			entry.kind,
-		) &&
+		[
+			"CREATE_CODEC_AAC",
+			"CREATE_CODEC_HE_AAC_V1",
+			"CREATE_CODEC_HE_AAC_V2",
+			"CREATE_CODEC_AC3",
+			"CREATE_CODEC_EAC3",
+		].includes(entry.kind) &&
 		request !== null &&
 		typeof request === "object" &&
 		!Array.isArray(request)
 	) {
 		const snapshot = request as Record<string, unknown>;
 		if (snapshot.channelLayout !== undefined) {
-			const name =
-				entry.kind === "CREATE_CODEC_AAC"
-					? "AacChannelLayout"
-					: "Ac3ChannelLayout";
+			const name = [
+				"CREATE_CODEC_AAC",
+				"CREATE_CODEC_HE_AAC_V1",
+				"CREATE_CODEC_HE_AAC_V2",
+			].includes(entry.kind)
+				? "AacChannelLayout"
+				: "Ac3ChannelLayout";
 			const layout = codecEnumSchema(name).safeParse(snapshot.channelLayout);
 			if (!layout.success)
 				return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
@@ -876,18 +1138,31 @@ export function curlForStep(
 		lines.push(
 			`  -H ${shellSingleQuote(`X-BITMOVIN-BCF-VERSION: ${entry.payload.bcfVersion}`)}`,
 		);
-	const body = hasBody(endpoint.method, request)
-		? curlBody(
-				request,
-				entry.kind === "START_LIVE_ENCODING",
-				entry.kind === "CREATE_FILTER_WATERMARK",
-			)
-		: undefined;
+	const body =
+		filterBody ??
+		(hasBody(endpoint.method, request)
+			? curlBody(
+					request,
+					entry.kind === "START_LIVE_ENCODING",
+					entry.kind === "CREATE_FILTER_WATERMARK" ||
+						entry.kind === "CREATE_FILTER_ENHANCED_WATERMARK",
+				)
+			: undefined);
 	if (body !== undefined) {
 		lines.push(`  -H 'Content-Type: application/json'`);
 		lines.push(`  --data ${shellSingleQuote(body)}`);
 	}
 	return { ok: true, command: lines.join(" \\\n") };
+}
+
+function recordedObjectPath(actual: unknown, compiled: unknown) {
+	if (typeof actual !== "string" || !actual.includes(REDACTED)) return actual;
+	if (typeof compiled !== "string") return undefined;
+	// The unredacted compiler payload records the exact object key. Older
+	// snapshot writers masked through the first or last @ of a path segment.
+	return actual === compiled || matchesHistoricalUserinfoMask(actual, compiled)
+		? compiled
+		: undefined;
 }
 
 /** True when a step has a mappable, fully-resolvable curl. */

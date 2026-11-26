@@ -36,6 +36,130 @@ function mount(
 	}
 	return render(<Harness />, locale);
 }
+it("adds a trim from ordinary video beside a named HDR video", () => {
+	mount({
+		...DEFAULT_WIZARD_STATE,
+		sources: {
+			hdr10PlusStreams: [
+				{
+					key: "video",
+					videoInputFile: "main",
+					metadataInputPath: "metadata.json",
+					selectionMode: "AUTO",
+				},
+			],
+		},
+	});
+	fireEvent.click(screen.getByText("Add input clip"));
+	const trim = stateNow().sources?.trimmingStreams?.[0];
+	expect(trim?.sourceKey).toBe("video-input-1");
+	const source = document.getElementById("wz-trim-0-src") as HTMLSelectElement;
+	expect(Array.from(source.options, (o) => o.value)).toContain(trim?.sourceKey);
+	expect(buildPlan(stateNow()).ingest).toContainEqual(
+		expect.objectContaining({
+			key: trim?.sourceKey,
+			selectionMode: "VIDEO_RELATIVE",
+		}),
+	);
+});
+it("keeps a referenced HDR source when its removal would silently switch the rendition to ordinary video", () => {
+	mount({
+		...DEFAULT_WIZARD_STATE,
+		videos: [
+			{
+				height: 720,
+				bitrate: 1000000,
+				codec: "H265",
+				extras: { source: "video-input-1" },
+			},
+		],
+		sources: {
+			hdr10PlusStreams: ["video", "video-input-1"].map((key, i) => ({
+				key,
+				videoInputFile: "main",
+				metadataInputPath: `hdr${i}.json`,
+				selectionMode: "AUTO",
+			})),
+		},
+	});
+	const remove = screen.getByRole("button", {
+		name: "Remove stream wz-stream-hdr10Plus-1",
+		hidden: true,
+	});
+	expect(remove).toBeDisabled();
+	fireEvent.click(remove);
+	expect(stateNow().sources?.hdr10PlusStreams?.[1]?.metadataInputPath).toBe(
+		"hdr1.json",
+	);
+	expect(
+		buildPlan(stateNow()).ingest?.some(
+			(stream) => stream.key === "video-input-1",
+		),
+	).toBe(false);
+});
+it("keeps unresolved source bindings when adding HDR to a restored draft", () => {
+	mount({
+		...DEFAULT_WIZARD_STATE,
+		videos: [
+			{
+				height: 720,
+				bitrate: 1000000,
+				codec: "H265",
+				extras: { source: "hdr10plus1" },
+			},
+		],
+		sources: {
+			trimmingStreams: [
+				{ kind: "TIME_BASED", key: "trim1", sourceKey: "hdr10plus2" },
+			],
+		},
+	});
+	fireEvent.click(screen.getByText("Add HDR10+ video"));
+	const current = stateNow();
+	expect(current.sources?.hdr10PlusStreams?.map((s) => s.key)).toEqual([
+		"hdr10plus3",
+	]);
+	expect(current.videos[0]?.extras?.source).toBe("hdr10plus1");
+	expect(current.sources?.trimmingStreams?.[0]?.sourceKey).toBe("hdr10plus2");
+});
+it("keeps a named HDR source bound when another HDR source is added", () => {
+	mount({
+		...DEFAULT_WIZARD_STATE,
+		videos: [
+			{
+				height: 720,
+				bitrate: 1000000,
+				codec: "H265",
+				extras: { source: "hdr10plus1" },
+			},
+		],
+		sources: {
+			hdr10PlusStreams: [
+				{
+					key: "hdr10plus1",
+					videoInputFile: "main",
+					metadataInputPath: "original.json",
+					selectionMode: "AUTO",
+				},
+			],
+		},
+	});
+	const remove = screen.getByRole("button", {
+		name: "Remove stream wz-stream-hdr10Plus-0",
+		hidden: true,
+	});
+	expect(remove).toBeDisabled();
+	fireEvent.click(remove);
+	fireEvent.click(screen.getByText("Add HDR10+ video"));
+	expect(stateNow().sources?.hdr10PlusStreams?.map((row) => row.key)).toEqual([
+		"hdr10plus1",
+		"hdr10plus2",
+	]);
+	expect(stateNow().sources?.hdr10PlusStreams?.[0]?.metadataInputPath).toBe(
+		"original.json",
+	);
+	expect(stateNow().videos[0]?.extras?.source).toBe("hdr10plus1");
+});
 const stateNow = () =>
 	JSON.parse(screen.getByTestId("state").textContent ?? "{}") as WizardState;
 const base: WizardState = {
@@ -145,12 +269,53 @@ describe("source resource editing", () => {
 		expect(
 			compilePlan(currentPlan()).find((op) => op.kind === "CREATE_ENCODING")
 				?.payload.encoderVersion,
-		).toBe("2.292.0");
+		).toBe("2.294.0");
 	});
 
 	it("keeps encoder override controls out of ordinary single-encoding sources", () => {
 		mount(base);
 		expect(screen.queryByLabelText("Encoder version")).not.toBeInTheDocument();
+	});
+
+	it("keeps the ordinary track and the named clip separate when a copied clip releases its reserved key", () => {
+		mount({
+			...DEFAULT_WIZARD_STATE,
+			videos: [{ height: 720, bitrate: 1000000, extras: { source: "video" } }],
+			sources: {
+				trimmingStreams: [
+					{
+						kind: "TIME_BASED",
+						key: "video",
+						sourceKey: "video-input-1",
+						duration: 3,
+					},
+				],
+				concatenationStreams: [
+					{
+						key: "cut",
+						sources: [{ sourceKey: "video", position: 0, isMain: true }],
+					},
+				],
+			},
+		});
+		const key = document.getElementById("wz-trim-0-key") as HTMLInputElement;
+		fireEvent.change(key, { target: { value: "video-input-1" } });
+		fireEvent.blur(key);
+		expect(stateNow().sources?.trimmingStreams?.[0]?.key).toBe("video");
+		fireEvent.change(key, { target: { value: "picture-cut" } });
+		fireEvent.blur(key);
+		const saved = stateNow();
+		expect(saved.videos[0]?.extras?.source).toBe("picture-cut");
+		expect(
+			saved.sources?.concatenationStreams?.[0]?.sources[0]?.sourceKey,
+		).toBe("picture-cut");
+		expect(saved.sources?.trimmingStreams?.[0]?.sourceKey).toBe("video");
+		expect(buildPlan(saved).ingest).toContainEqual(
+			expect.objectContaining({
+				key: "video",
+				selectionMode: "VIDEO_RELATIVE",
+			}),
+		);
 	});
 
 	it("allows a complete trim rename without losing focus and preserves references", async () => {
@@ -170,6 +335,18 @@ describe("source resource editing", () => {
 		expect(
 			stateNow().sources?.concatenationStreams?.[0]?.sources[0]?.sourceKey,
 		).toBe("scene-a");
+	});
+	it.each([
+		"audio",
+		"video",
+	])("keeps a trim rename from capturing implicit %s", (name) => {
+		mount(base);
+		const key = document.getElementById("wz-trim-0-key") as HTMLInputElement;
+		fireEvent.change(key, { target: { value: name } });
+		fireEvent.blur(key);
+		expect(key).toHaveValue("trim1");
+		expect(stateNow().sources?.trimmingStreams?.[0]?.key).toBe("trim1");
+		expect(stateNow().sources?.trimmingStreams?.[0]?.sourceKey).toBe("video");
 	});
 	it("renames a concatenation source while preserving rendition references", async () => {
 		const user = userEvent.setup();

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
 	type BandingPooled,
+	publicStorageDiagnostic,
 	type QcGate,
 	type QcVerdict,
 	qcRuleSeverity,
@@ -256,7 +257,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 		const otherRuns = otherRunRows.slice(0, OTHER_RUNS_LIMIT).map((run) => ({
 			vmafJobId: run.id,
 			status: run.status,
-			error: run.error,
+			error: publicStorageDiagnostic(run.error),
 			createdAt: run.createdAt.toISOString(),
 			// WHY this run is not the gate evidence. Provenance, not the
 			// presence of a verdict: historical lab re-runs can carry a
@@ -361,7 +362,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 				name: job.name,
 				labels: job.labels,
 				status: job.status,
-				error: job.error,
+				error: publicStorageDiagnostic(job.error),
 				createdAt: job.createdAt.toISOString(),
 			},
 			// sha256 of the stored plan JSON: ties the report to the exact
@@ -382,7 +383,7 @@ export async function GET(req: Request, { params }: RouteParams) {
 								: {}),
 						scoringVersion: vmaf.scoringVersion,
 						status: vmaf.status,
-						error: vmaf.error,
+						error: publicStorageDiagnostic(vmaf.error),
 						reference: reference ?? null,
 						cores: vmaf.cores,
 						threads: vmaf.threads,

@@ -1,12 +1,14 @@
 import type { CredentialSummaryWire } from "@bitovp/core";
-import type {
-	WizardDolbyStream,
-	WizardFileStream,
-	WizardIngestTrack,
-	WizardInputFile,
-	WizardSources,
-	WizardState,
-	WizardStreamSelectionMode,
+import {
+	implicitTrackKeys,
+	type WizardDolbyStream,
+	type WizardFileStream,
+	type WizardHdr10PlusStream,
+	type WizardIngestTrack,
+	type WizardInputFile,
+	type WizardSources,
+	type WizardState,
+	type WizardStreamSelectionMode,
 } from "./build-plan";
 
 /**
@@ -183,9 +185,9 @@ export function outputKindIsBrowsable(
 }
 
 /**
- * The unified "Streams" row the Sources UI presents — one list over the three
- * underlying WizardSources arrays (ingest tracks, WebVTT file streams, Dolby
- * streams). Internal resource keys are hidden from the user; this view-model
+ * The unified "Streams" row the Sources UI presents over the WizardSources
+ * arrays (ingest tracks, file streams, Dolby and HDR10+ streams).
+ * Internal resource keys are hidden from the user; this view-model
  * still carries `key`/`inputKey`/`encodingKey` so every edit maps back to the
  * exact array element and the emitted plan is byte-identical (the round-trip
  * gate is unaffected — this is presentation only).
@@ -196,9 +198,14 @@ export type UnifiedStreamType =
 	| "TTML"
 	| "ATMOS"
 	| "VISION"
-	| "VISION_METADATA";
+	| "VISION_METADATA"
+	| "HDR10_PLUS";
 
-export type UnifiedStreamOrigin = "track" | "fileStream" | "dolby";
+export type UnifiedStreamOrigin =
+	| "track"
+	| "fileStream"
+	| "dolby"
+	| "hdr10Plus";
 
 export type UnifiedStream = {
 	/** Identity into the underlying WizardSources arrays (valid per render). */
@@ -212,9 +219,11 @@ export type UnifiedStream = {
 	inputFile: string;
 	/** VISION only: optional separate metadata-sidecar input file. */
 	metadataInputFile?: string;
+	/** HDR10_PLUS only: JSON sidecar path on the video's same input. */
+	metadataInputPath?: string;
 	/** ATMOS only. */
 	inputFormat?: "DAMF" | "ADM" | "MXF";
-	/** INGEST only. */
+	/** INGEST and HDR10_PLUS; HDR10_PLUS excludes AUDIO_RELATIVE. */
 	selectionMode?: WizardStreamSelectionMode;
 	position?: number;
 };
@@ -226,6 +235,7 @@ const TYPE_LABELS: Record<UnifiedStreamType, string> = {
 	ATMOS: "Dolby Atmos",
 	VISION: "Dolby Vision",
 	VISION_METADATA: "Vision metadata",
+	HDR10_PLUS: "HDR10+",
 };
 
 const KEY_PREFIXES: Record<UnifiedStreamType, string> = {
@@ -235,6 +245,7 @@ const KEY_PREFIXES: Record<UnifiedStreamType, string> = {
 	ATMOS: "atmos",
 	VISION: "dv",
 	VISION_METADATA: "dv-meta",
+	HDR10_PLUS: "hdr10plus",
 };
 
 export const UNIFIED_STREAM_TYPES: UnifiedStreamType[] = [
@@ -244,6 +255,7 @@ export const UNIFIED_STREAM_TYPES: UnifiedStreamType[] = [
 	"ATMOS",
 	"VISION",
 	"VISION_METADATA",
+	"HDR10_PLUS",
 ];
 
 export function streamTypeLabel(type: UnifiedStreamType): string {
@@ -298,7 +310,32 @@ export function flattenStreams(sources: WizardSources): UnifiedStream[] {
 			inputFormat: s.kind === "ATMOS" ? s.inputFormat : undefined,
 		});
 	});
+	(sources.hdr10PlusStreams ?? []).forEach((stream, index) => {
+		rows.push({
+			origin: "hdr10Plus",
+			index,
+			type: "HDR10_PLUS",
+			key: stream.key,
+			encodingKey: stream.encodingKey,
+			inputFile: stream.videoInputFile,
+			metadataInputPath: stream.metadataInputPath,
+			selectionMode: stream.selectionMode,
+			position: stream.position,
+		});
+	});
 	return rows;
+}
+
+function toHdr10Plus(row: UnifiedStream): WizardHdr10PlusStream {
+	return {
+		key: row.key,
+		videoInputFile: row.inputFile,
+		metadataInputPath: row.metadataInputPath ?? "",
+		selectionMode: (row.selectionMode ??
+			"AUTO") as WizardHdr10PlusStream["selectionMode"],
+		...(row.position !== undefined ? { position: row.position } : {}),
+		encodingKey: row.encodingKey,
+	};
 }
 
 /** Rebuild the native ingest-track element from a unified row. */
@@ -351,15 +388,22 @@ function toDolby(row: UnifiedStream): WizardDolbyStream {
 const originFor = (type: UnifiedStreamType): UnifiedStreamOrigin =>
 	type === "INGEST"
 		? "track"
-		: type === "WEBVTT" || type === "TTML"
-			? "fileStream"
-			: "dolby";
+		: type === "HDR10_PLUS"
+			? "hdr10Plus"
+			: type === "WEBVTT" || type === "TTML"
+				? "fileStream"
+				: "dolby";
 
 /** Write an edited unified row back into its native array (same origin/type). */
 export function writeStream(
 	sources: WizardSources,
 	row: UnifiedStream,
 ): WizardSources {
+	if (row.origin === "hdr10Plus") {
+		const hdr10PlusStreams = [...(sources.hdr10PlusStreams ?? [])];
+		hdr10PlusStreams[row.index] = toHdr10Plus(row);
+		return { ...sources, hdr10PlusStreams };
+	}
 	if (row.origin === "track") {
 		const tracks = [...(sources.tracks ?? [])];
 		tracks[row.index] = toTrack(row);
@@ -380,6 +424,14 @@ export function removeStream(
 	sources: WizardSources,
 	row: UnifiedStream,
 ): WizardSources {
+	if (row.origin === "hdr10Plus") {
+		return {
+			...sources,
+			hdr10PlusStreams: (sources.hdr10PlusStreams ?? []).filter(
+				(_, index) => index !== row.index,
+			),
+		};
+	}
 	if (row.origin === "track") {
 		return {
 			...sources,
@@ -402,17 +454,153 @@ export function removeStream(
 	};
 }
 
+/** A JSON sidecar belongs to the chosen video object. Re-select it after moving the video. */
+export function reconcileHdr10PlusSidecars(
+	previous: WizardState,
+	next: WizardState,
+): WizardState {
+	const streams = next.sources?.hdr10PlusStreams;
+	if (
+		!streams?.length ||
+		(previous.inputFiles === next.inputFiles &&
+			previous.sources === next.sources)
+	)
+		return next;
+	const changed = streams.map((stream) => {
+		const old = previous.sources?.hdr10PlusStreams?.find(
+			(row) => row.key === stream.key,
+		);
+		if (
+			!stream.metadataInputPath ||
+			old?.metadataInputPath !== stream.metadataInputPath
+		)
+			return stream;
+		const before = previous.inputFiles.find(
+			(file) => file.key === old.videoInputFile,
+		);
+		const after = next.inputFiles.find(
+			(file) => file.key === stream.videoInputFile,
+		);
+		if (
+			before &&
+			after &&
+			before.kind === after.kind &&
+			before.credentialId === after.credentialId &&
+			before.bucket === after.bucket &&
+			before.path === after.path &&
+			before.region === after.region
+		)
+			return stream;
+		return { ...stream, metadataInputPath: "" };
+	});
+	return changed.some((row, index) => row !== streams[index])
+		? { ...next, sources: { ...next.sources, hdr10PlusStreams: changed } }
+		: next;
+}
+
+/** Carry explicit and ordinary source bindings together across a graph edit. */
+export function sourceGraphPatch(
+	state: WizardState,
+	patch: Partial<WizardState> & { sources: WizardSources },
+	renamed?: [string, string],
+): Partial<WizardState> {
+	const implicit = implicitTrackKeys(state.sources ?? {});
+	const next = patch.sources;
+	const nextImplicit = implicitTrackKeys(next);
+	const mapped = new Map<string, string>(renamed ? [renamed] : []);
+	for (const kind of ["video", "audio"] as const) {
+		if (implicit[kind] !== nextImplicit[kind])
+			mapped.set(implicit[kind], nextImplicit[kind]);
+	}
+	if (!mapped.size) return patch;
+	const remap = <T extends { sourceKey: string }>(row: T): T => {
+		const sourceKey = mapped.get(row.sourceKey);
+		return sourceKey === undefined ? row : { ...row, sourceKey };
+	};
+	const mapRendition = <T extends { extras?: { source?: string } }>(
+		row: T,
+	): T =>
+		row.extras?.source && mapped.has(row.extras.source)
+			? {
+					...row,
+					extras: { ...row.extras, source: mapped.get(row.extras.source) },
+				}
+			: row;
+	return {
+		...patch,
+		videos: (patch.videos ?? state.videos).map(mapRendition),
+		audios: (patch.audios ?? state.audios).map(mapRendition),
+		sources: {
+			...next,
+			audioMixStreams: next.audioMixStreams?.map((mix) => ({
+				...mix,
+				audioMixChannels: mix.audioMixChannels.map(remap),
+			})),
+			trimmingStreams: next.trimmingStreams?.map(remap),
+			concatenationStreams: next.concatenationStreams?.map((row) => ({
+				...row,
+				sources: row.sources.map(remap),
+			})),
+		},
+	};
+}
+
+function sourceReferences(sources: WizardSources, state?: WizardState) {
+	return new Set([
+		...(state?.videos ?? []).map((r) => r.extras?.source),
+		...(state?.audios ?? []).map((r) => r.extras?.source),
+		...(state?.subtitles ?? []).map((r) => r.source),
+		...(sources.trimmingStreams ?? []).map((r) => r.sourceKey),
+		...(sources.concatenationStreams ?? []).flatMap((r) =>
+			r.sources.map((s) => s.sourceKey),
+		),
+		...(sources.audioMixStreams ?? []).flatMap((r) =>
+			r.audioMixChannels.map((c) => c.sourceKey),
+		),
+	]);
+}
+
+/** Removing a named source must not turn its explicit bindings into ordinary input. */
+export function removalCapturesSource(
+	state: WizardState,
+	next: WizardSources,
+	key: string,
+): boolean {
+	const allocated = implicitTrackKeys(next);
+	const isHdrSource = state.sources?.hdr10PlusStreams?.some(
+		(row) => row.key === key,
+	);
+	if (!isHdrSource && key !== allocated.video && key !== allocated.audio)
+		return false;
+	return sourceReferences(next, state).has(key);
+}
+
 /** Auto-generate a unique, hidden resource key across every stream array. */
 export function nextStreamKey(
 	sources: WizardSources,
 	type: UnifiedStreamType,
+	state?: WizardState,
 ): string {
-	const taken = new Set<string>([
+	return nextSharedKey(sources, KEY_PREFIXES[type], state);
+}
+
+export function nextSharedKey(
+	sources: WizardSources,
+	prefix: string,
+	state?: WizardState,
+): string {
+	// An older draft can retain bindings to a source it no longer defines.
+	const taken = new Set([
+		...sourceReferences(sources, state),
 		...(sources.tracks ?? []).map((t) => t.key),
 		...(sources.fileStreams ?? []).map((s) => s.key),
+		...(sources.captionStreams ?? []).map((s) => s.key),
 		...(sources.dolbyStreams ?? []).map((s) => s.key),
+		...(sources.hdr10PlusStreams ?? []).map((s) => s.key),
+		...(sources.trimmingStreams ?? []).map((s) => s.key),
+		...(sources.concatenationStreams ?? []).map((s) => s.key),
+		...(sources.audioMixStreams ?? []).map((s) => s.key),
 	]);
-	const prefix = KEY_PREFIXES[type];
 	let n = 1;
 	while (taken.has(`${prefix}${n}`)) {
 		n += 1;
@@ -425,9 +613,24 @@ export function blankStream(
 	sources: WizardSources,
 	type: UnifiedStreamType,
 	inputFile = "main",
+	state?: WizardState,
 ): WizardSources {
-	const key = nextStreamKey(sources, type);
+	const key = nextStreamKey(sources, type, state);
 	// New streams read the primary input file by default; the user repoints them.
+	if (type === "HDR10_PLUS") {
+		return {
+			...sources,
+			hdr10PlusStreams: [
+				...(sources.hdr10PlusStreams ?? []),
+				{
+					key,
+					videoInputFile: inputFile,
+					metadataInputPath: "",
+					selectionMode: "AUTO",
+				},
+			],
+		};
+	}
 
 	if (type === "INGEST") {
 		return {
@@ -481,11 +684,35 @@ export function convertStreamType(
 		type,
 		// Reset type-specific fields the new shape may not carry.
 		metadataInputFile: type === "VISION" ? row.metadataInputFile : undefined,
+		metadataInputPath:
+			type === "HDR10_PLUS" ? row.metadataInputPath : undefined,
 		inputFormat: type === "ATMOS" ? (row.inputFormat ?? "DAMF") : undefined,
 		selectionMode:
-			type === "INGEST" ? (row.selectionMode ?? "AUTO") : undefined,
-		position: type === "INGEST" ? (row.position ?? 0) : undefined,
+			type === "INGEST"
+				? (row.selectionMode ?? "AUTO")
+				: type === "HDR10_PLUS"
+					? row.selectionMode === "AUDIO_RELATIVE"
+						? "AUTO"
+						: (row.selectionMode ?? "AUTO")
+					: undefined,
+		position:
+			type === "INGEST"
+				? (row.position ?? 0)
+				: type === "HDR10_PLUS" &&
+						row.selectionMode !== "AUTO" &&
+						row.selectionMode !== "AUDIO_RELATIVE"
+					? row.position
+					: undefined,
 	};
+	if (type === "HDR10_PLUS") {
+		return {
+			...removed,
+			hdr10PlusStreams: [
+				...(removed.hdr10PlusStreams ?? []),
+				toHdr10Plus(reshaped),
+			],
+		};
+	}
 	if (type === "INGEST") {
 		return {
 			...removed,
@@ -519,12 +746,13 @@ export function sourceStreamKeys(
 	} = {},
 ): string[] {
 	const sources = state.sources ?? {};
+	const implicit = implicitTrackKeys(sources);
 	const keys: string[] = [];
 	if (state.videos.length > 0) {
-		keys.push("video");
+		keys.push(implicit.video);
 	}
 	if (state.audios.length > 0) {
-		keys.push("audio");
+		keys.push(implicit.audio);
 	}
 	for (const t of sources.tracks ?? []) {
 		keys.push(t.key);
@@ -532,6 +760,9 @@ export function sourceStreamKeys(
 	for (const d of sources.dolbyStreams ?? []) {
 		keys.push(d.key);
 	}
+	const hdrKeys = new Set(
+		(sources.hdr10PlusStreams ?? []).map((stream) => stream.key),
+	);
 	if (options.includeTrimming) {
 		for (const t of sources.trimmingStreams ?? []) {
 			keys.push(t.key);
@@ -542,7 +773,9 @@ export function sourceStreamKeys(
 			keys.push(c.key);
 		}
 	}
-	return keys.filter((k) => k !== options.excludeKey && k !== "");
+	return keys.filter(
+		(k) => k !== options.excludeKey && k !== "" && !hdrKeys.has(k),
+	);
 }
 
 /** One selectable input file (object) a stream can read. */

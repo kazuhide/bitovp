@@ -90,6 +90,6 @@ describe("schema-derived organization enforcement coverage", () => {
 				);
 			}
 		}
-		expect(references).toBe(75);
+		expect(references).toBe(77);
 	});
 });

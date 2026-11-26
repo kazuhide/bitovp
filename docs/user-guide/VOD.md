@@ -206,14 +206,19 @@ Verify Dolby Vision display on the intended playback hardware.
 In **Credentials**, save an **AWS S3 (role-based)** connection with the role
 ARN and bucket region. In the VOD wizard select it in **Sources**, **Outputs**,
 or both, then enter the bucket and object path or output folder. Plans and
-presets reference the saved credential as `S3_ROLE_BASED`. New role-based
-destinations default to private access. Delivery mirrors inherit the primary
-destination's ACL.
+presets reference the saved credential as `S3_ROLE_BASED`. Role-based
+destinations default to private access. A role-based delivery mirror uses a
+private ACL even when the primary destination is public.
 
 Configure the IAM trust policy using Bitmovin's GLOBAL External ID for the
 organization or sub-organization that runs the job. Bitmovin supplies this
 value when it assumes the role. Grant the role read access for sources and the
 required write permissions for destinations. [Bitmovin's role-based setup guide](https://developer.bitmovin.com/encoding/docs/creating-an-s3-role-based-encoding-input-or-output-with-the-bitmovin-api)
+
+BitOVP records a receipt before creating a role-based resource. The provider
+resource name includes that receipt so BitOVP can find the original resource
+after an interrupted request. The job and provider description keep the
+authored name.
 
 Bitmovin uses the role during encoding. The storage browser, local media
 inspection and QC need independently readable storage and cannot use this

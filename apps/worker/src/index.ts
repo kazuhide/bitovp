@@ -1654,6 +1654,7 @@ const scheduleSweep = tenantService(() => {
 		enqueueScheduledLiveJob,
 	);
 	return createScheduleSweep({
+		readStartJob: readJob,
 		recoverExhaustedDeliveries: async () => {
 			await recoverStops();
 			await recoverStarts(new Date()).catch(() =>

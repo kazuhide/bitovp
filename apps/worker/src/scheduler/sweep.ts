@@ -40,6 +40,11 @@ import {
 	readLockedLiveStartState,
 } from "@bitovp/db";
 import { estimateStageLeadMs, STAGE_LEAD_MAX_MS } from "../feeder/stage-lead";
+import {
+	type ReadProvisionJob,
+	readRetainedScheduledStart,
+	recordRetainedScheduledStart,
+} from "../live/provision-admission";
 import type { EmitProductEvent } from "../notify/emitter";
 import { createRunMirror } from "../orchestrator/run-mirror";
 import { DEFAULT_REGISTRATION_TIMEOUT_MS } from "../orchestrator/slate-register";
@@ -481,6 +486,7 @@ export type ScheduleSweep = (() => Promise<ScheduleSweepStats>) & {
 
 type SweepDeps = {
 	recoverExhaustedDeliveries?: () => Promise<void>;
+	readStartJob?: ReadProvisionJob;
 	prisma: AppPrismaClient;
 	allowNewWork?: () => Promise<boolean>;
 	enqueue(job: LiveChannelJob, dedupeId: string): Promise<void>;
@@ -2389,6 +2395,36 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 							? scheduledStartJobId(row.id, row.startAdmissionFenceVersion)
 							: scheduleJobId(row.id);
 				try {
+					if (
+						row.action === "START" &&
+						row.liveChannelRunId &&
+						typeof row.startAdmissionFenceVersion === "number" &&
+						deps.readStartJob
+					) {
+						const start = {
+							id: row.id,
+							liveChannelId: row.liveChannelId,
+							liveChannelRunId: row.liveChannelRunId,
+							startAdmissionFenceVersion: row.startAdmissionFenceVersion,
+						};
+						const retained = await readRetainedScheduledStart(
+							deps.prisma,
+							deps.readStartJob,
+							start,
+						);
+						if (retained) {
+							if (
+								await recordRetainedScheduledStart(
+									deps.prisma,
+									start,
+									retained,
+									now,
+								)
+							)
+								redispatched += 1;
+							return;
+						}
+					}
 					await deps.enqueue(job, jobId);
 				} catch (err) {
 					// Leave FIRED + unstamped and retry on the next cursor lap.

@@ -1,6 +1,7 @@
-import { hasAisaLiveBinding } from "@bitovp/core";
+import { hasAisaLiveBinding, liveChannelJobSchema } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import {
+	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
 	scheduledStartJobId,
 	scheduledStartScheduleId,
 } from "../scheduler/schedule-outcome";
@@ -15,10 +16,29 @@ type ProvisionDelivery = {
 	provisionFenceVersion?: number;
 };
 
+type ProvisionQueueJob = {
+	data: unknown;
+	timestamp?: number;
+	getState(): Promise<string>;
+};
+
+export type ReadProvisionJob = (
+	id: string,
+) => Promise<ProvisionQueueJob | undefined>;
+
+type ScheduledStartIdentity = {
+	id: string;
+	liveChannelId: string;
+	liveChannelRunId: string;
+	startAdmissionFenceVersion: number;
+};
+
 const bindingSelect = {
 	origin: true,
 	plan: true,
 	stepLog: true,
+	liveEffectFenceVersion: true,
+	legacyAdmissionFenceVersion: true,
 	runs: {
 		orderBy: { seq: "desc" },
 		take: 1,
@@ -97,7 +117,7 @@ export async function resolveProvisionAdmission(
 	// Old manual IDs contain only a producer clock, which may be sampled
 	// after a later same-run revival. The SQL sweeper resumes the frozen
 	// airing under a new generation-addressed job instead.
-	if (!scheduleId || (!runId && jobId !== scheduledStartJobId(scheduleId)))
+	if (!scheduleId || (delivery.provisionFenceVersion !== undefined && !runId))
 		return null;
 	const row = await prisma.liveSchedule.findFirst({
 		where: {
@@ -123,19 +143,20 @@ export async function resolveProvisionAdmission(
 				delivery.provisionFenceVersion !== row.startAdmissionFenceVersion)
 		)
 			return null;
-		// A pre-upgrade queued job can predate a later revival of the same
-		// run even if its asynchronous dispatch ACK was recorded afterwards.
-		if (
-			delivery.provisionFenceVersion === undefined &&
-			queuedAt !== undefined
-		) {
-			const run = await prisma.liveChannelRun.findFirst({
-				where: { id: row.liveChannelRunId, liveChannelId: channelId },
-				select: { legacyProvisionAdmissionAt: true },
-			});
+		if (delivery.provisionFenceVersion === undefined) {
+			const latest = row.liveChannel?.runs[0];
+			// The bare key alone is reusable. Only a delivery from the migration's
+			// exact live admission can borrow its persisted generation.
 			if (
-				run?.legacyProvisionAdmissionAt &&
-				queuedAt < run.legacyProvisionAdmissionAt.getTime()
+				!latest?.legacyProvisionAdmissionAt ||
+				latest.id !== row.liveChannelRunId ||
+				row.liveChannel.legacyAdmissionFenceVersion !==
+					row.startAdmissionFenceVersion ||
+				row.liveChannel.liveEffectFenceVersion !==
+					row.startAdmissionFenceVersion ||
+				queuedAt === undefined ||
+				!Number.isFinite(queuedAt) ||
+				queuedAt < latest.legacyProvisionAdmissionAt.getTime()
 			)
 				return null;
 		}
@@ -145,4 +166,86 @@ export async function resolveProvisionAdmission(
 		};
 	}
 	return null;
+}
+
+export async function identifyProvisionJob(
+	prisma: AppPrismaClient,
+	channelId: string,
+	id: string,
+	job: ProvisionQueueJob,
+) {
+	const parsed = liveChannelJobSchema.safeParse(job.data);
+	if (
+		!parsed.success ||
+		parsed.data.action !== "provision" ||
+		parsed.data.params ||
+		parsed.data.effect ||
+		channelId !== parsed.data.liveChannelId
+	)
+		return null;
+	const admission = await resolveProvisionAdmission(
+		prisma,
+		channelId,
+		parsed.data,
+		id,
+		job.timestamp,
+	);
+	return admission ? { admission, data: parsed.data } : null;
+}
+
+export async function readRetainedScheduledStart(
+	prisma: AppPrismaClient,
+	readJob: ReadProvisionJob,
+	start: ScheduledStartIdentity,
+) {
+	const id = scheduledStartJobId(start.id);
+	const job = await readJob(id);
+	if (!job) return null;
+	const original = await identifyProvisionJob(
+		prisma,
+		start.liveChannelId,
+		id,
+		job,
+	);
+	if (
+		!original ||
+		!("runId" in original.admission) ||
+		original.admission.runId !== start.liveChannelRunId ||
+		original.admission.generation !== start.startAdmissionFenceVersion
+	)
+		return null;
+	return { id, job, original, state: await job.getState() };
+}
+
+export async function recordRetainedScheduledStart(
+	prisma: AppPrismaClient,
+	start: ScheduledStartIdentity,
+	retained: { id: string; state: string },
+	at: Date,
+): Promise<boolean> {
+	const { count } = await prisma.liveSchedule.updateMany({
+		where: {
+			...start,
+			action: "START",
+			status: "FIRED",
+			outcome: "PENDING",
+			dispatchedAt: null,
+			liveChannel: { liveEffectFenceVersion: start.startAdmissionFenceVersion },
+		},
+		data: {
+			dispatchedAt: at,
+			dispatchJobId: retained.id,
+			// Retention may evict the job before the bounded recovery scan. Keep
+			// the terminal observation with the handoff so it is never replayed.
+			...(retained.state === "failed" && {
+				outcome: "UNKNOWN",
+				outcomeAt: at,
+				outcomeNote: "The original Live startup job exhausted its deliveries.",
+				outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+				outcomeEvidenceAt: at,
+			}),
+		},
+	});
+	return count === 1;
 }

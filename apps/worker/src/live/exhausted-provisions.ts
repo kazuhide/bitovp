@@ -1,54 +1,26 @@
-import {
-	hasAisaLiveBinding,
-	type LiveChannelJob,
-	liveChannelJobSchema,
-} from "@bitovp/core";
+import { hasAisaLiveBinding, type LiveChannelJob } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import {
 	scheduledStartJobId,
 	scheduledStartScheduleId,
 } from "../scheduler/schedule-outcome";
-import { resolveProvisionAdmission } from "./provision-admission";
+import {
+	identifyProvisionJob,
+	type ReadProvisionJob,
+	readRetainedScheduledStart,
+	recordRetainedScheduledStart,
+} from "./provision-admission";
 import { PROVISION_LEASE_MS } from "./provision-lease";
 import { recordExpiredProvisionFailure } from "./reconcile-stranded-runs";
 
-type ReadJob = (
-	id: string,
-) => Promise<
-	{ data: unknown; timestamp?: number; getState(): Promise<string> } | undefined
->;
-
 export function createExhaustedProvisionRecovery(
 	prisma: AppPrismaClient,
-	readOwnedJob: ReadJob,
+	readOwnedJob: ReadProvisionJob,
 	reenqueue: (job: LiveChannelJob, id: string) => Promise<void>,
 ) {
 	let after: string | undefined;
 	const error =
 		"The original Live startup job exhausted its deliveries. Check the encoder before starting again.";
-	async function identify(
-		id: string,
-		job: NonNullable<Awaited<ReturnType<ReadJob>>>,
-		channelId: string,
-	) {
-		const parsed = liveChannelJobSchema.safeParse(job.data);
-		if (
-			!parsed.success ||
-			parsed.data.action !== "provision" ||
-			parsed.data.params ||
-			parsed.data.effect ||
-			channelId !== parsed.data.liveChannelId
-		)
-			return null;
-		const admission = await resolveProvisionAdmission(
-			prisma,
-			channelId,
-			parsed.data,
-			id,
-			job.timestamp,
-		);
-		return admission ? { admission, data: parsed.data } : null;
-	}
 	return async (at: Date) => {
 		// The database identifies all current admissions, including an initial CREATED
 		// channel without a run. Queue retention is independent of this keyset cursor.
@@ -182,38 +154,31 @@ export function createExhaustedProvisionRecovery(
 				}
 			}
 			let job = await readOwnedJob(id);
+			let retained: Awaited<ReturnType<typeof readRetainedScheduledStart>> =
+				null;
 			if (!job && scheduledStartId && run) {
-				const legacyId = scheduledStartJobId(scheduledStartId);
-				const legacy = await readOwnedJob(legacyId);
-				const original = legacy && (await identify(legacyId, legacy, row.id));
-				if (
-					legacy &&
-					original &&
-					"runId" in original.admission &&
-					original.admission.runId === run.id &&
-					original.admission.generation === generation
-				) {
-					id = legacyId;
-					job = legacy;
-					await prisma.liveSchedule.updateMany({
-						where: {
-							id: scheduledStartId,
-							liveChannelId: row.id,
-							liveChannelRunId: run.id,
-							action: "START",
-							status: "FIRED",
-							outcome: "PENDING",
-							startAdmissionFenceVersion: generation,
-							dispatchedAt: null,
-						},
-						data: { dispatchedAt: at, dispatchJobId: legacyId },
-					});
+				const start = {
+					id: scheduledStartId,
+					liveChannelId: row.id,
+					liveChannelRunId: run.id,
+					startAdmissionFenceVersion: generation,
+				};
+				retained = await readRetainedScheduledStart(
+					prisma,
+					readOwnedJob,
+					start,
+				);
+				if (retained) {
+					id = retained.id;
+					job = retained.job;
+					await recordRetainedScheduledStart(prisma, start, retained, at);
 				}
 			}
+			const state = retained?.state ?? (await job?.getState());
 			if (
 				terminalScheduleId &&
 				run &&
-				(!job || ["failed", "completed"].includes(await job.getState()))
+				(!job || state === "failed" || state === "completed")
 			)
 				await recordExpiredProvisionFailure(
 					prisma,
@@ -225,8 +190,10 @@ export function createExhaustedProvisionRecovery(
 					terminalScheduleId,
 				);
 			else if (job) {
-				if ((await job.getState()) !== "failed") continue;
-				const original = await identify(id, job, row.id);
+				if (state !== "failed") continue;
+				const original =
+					retained?.original ??
+					(await identifyProvisionJob(prisma, row.id, id, job));
 				if (original)
 					await recordExpiredProvisionFailure(
 						prisma,

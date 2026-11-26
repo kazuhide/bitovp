@@ -1444,6 +1444,22 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					});
 			});
 			const id = `sched-${current.id}-start-4`;
+			// Without the migration-era run marker the old bare payload is
+			// unproven even if its clock appears plausible.
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { legacyProvisionAdmissionAt: null },
+			});
+			await expect(
+				resolveProvisionAdmission(
+					tenant,
+					f.channel.id,
+					{},
+					legacy.id,
+					now.getTime(),
+					"dispatch",
+				),
+			).resolves.toBeNull();
 			const recover = createExhaustedProvisionRecovery(
 				tenant,
 				async (key) => queue.get(key),
@@ -1486,12 +1502,17 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toEqual(current);
 
 			// The stranded dispatcher must dedupe against that exact admission too.
+			await tenant.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { legacyProvisionAdmissionAt: now },
+			});
 			enqueue.mockClear();
 			const dispatchAt = new Date(now.getTime() + 600_000);
 			await createScheduleSweep({
 				prisma: tenant,
 				now: () => dispatchAt,
 				enqueue,
+				readStartJob: async (key) => queue.get(key),
 			}).dispatchPending();
 			expect(enqueue).toHaveBeenCalledWith(job.data, job.id);
 			expect(queue.get(job.id)).toBe(job);
@@ -1770,18 +1791,17 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					),
 				).toBe(false);
 			} else {
-				expect(retained).toEqual(admission);
-				if (retained)
-					expect(
-						await recordExpiredProvisionFailure(
-							tenant,
-							f.channel.id,
-							"old",
-							at,
-							at,
-							retained,
-						),
-					).toBe(false);
+				expect(retained).toBeNull();
+				expect(
+					await recordExpiredProvisionFailure(
+						tenant,
+						f.channel.id,
+						"old",
+						at,
+						at,
+						admission,
+					),
+				).toBe(false);
 			}
 		});
 
@@ -1828,6 +1848,57 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					heldAt.getTime() + 50,
 				),
 			).toEqual({ runId: f.run.id, generation: 0 });
+			const legacyId = `sched-${admitted.id}`;
+			await expect(
+				resolveProvisionAdmission(
+					tenant,
+					f.channel.id,
+					{},
+					legacyId,
+					undefined,
+					"dispatch",
+				),
+			).resolves.toBeNull();
+			const at = new Date(heldAt.getTime() + 600_000);
+			const readStartJob = async (id: string) =>
+				id === legacyId
+					? {
+							data: { action: "provision", liveChannelId: f.channel.id },
+							timestamp: heldAt.getTime() + 50,
+							getState: async () => "failed",
+						}
+					: undefined;
+			const enqueue = vi.fn(async (..._input: [LiveChannelJob, string]) => {});
+			const queuedAdmission = () =>
+				enqueue.mock.calls.some(
+					([, id]) => id === legacyId || id === `${legacyId}-start-0`,
+				);
+			// Boot outbox sees this row independently of the bounded recovery pass.
+			await createScheduleSweep({
+				prisma: tenant,
+				now: () => at,
+				enqueue,
+				readStartJob,
+			}).dispatchPending();
+			expect(queuedAdmission()).toBe(false);
+			await expect(
+				tenant.liveSchedule.findUniqueOrThrow({ where: { id: admitted.id } }),
+			).resolves.toMatchObject({
+				dispatchedAt: at,
+				dispatchJobId: legacyId,
+				outcome: "UNKNOWN",
+			});
+			// Retention can evict the failed job before the next recovery page.
+			const recover = createExhaustedProvisionRecovery(
+				tenant,
+				async () => undefined,
+				enqueue,
+			);
+			for (let i = 0; i < 10; i++) await recover(at);
+			await expect(
+				tenant.liveChannel.findUniqueOrThrow({ where: { id: f.channel.id } }),
+			).resolves.toMatchObject({ status: "ERROR" });
+			expect(queuedAdmission()).toBe(false);
 			expect(
 				await resolveProvisionAdmission(
 					tenant,

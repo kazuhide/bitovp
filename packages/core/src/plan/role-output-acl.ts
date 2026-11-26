@@ -18,6 +18,42 @@ const noAcl = new Set<OutputKind>([
 
 const roleAcl = (value: unknown) =>
 	value === "PUBLIC_READ" ? "PUBLIC_READ" : "PRIVATE";
+const explicitAcl = (value: unknown) =>
+	value === "PUBLIC_READ" || value === "PRIVATE";
+
+type AisaPayload = { features?: { assetDescription?: { acl?: unknown } } };
+
+/** Inspect a previously attempted provider destination without rewriting its evidence. */
+export function hasRecordedRoleOutputAcl(
+	op: CompiledOperation,
+	kinds: ReadonlyMap<string, OutputKind>,
+	request: unknown,
+): boolean {
+	const role = (ref: string | string[] | undefined) =>
+		typeof ref === "string" && kinds.get(ref) === "S3_ROLE_BASED";
+	const payload =
+		request && typeof request === "object"
+			? (request as Record<string, unknown>)
+			: {};
+	if (role(op.refs.outputId) && !explicitAcl(payload.acl)) return false;
+	if (role(op.refs.reportOutputId) && !explicitAcl(payload.reportAcl))
+		return false;
+	if (role(op.refs.aiAssetDescriptionOutputId)) {
+		const ai = payload.aiSceneAnalysis as AisaPayload | undefined;
+		if (!explicitAcl(ai?.features?.assetDescription?.acl)) return false;
+	}
+	const mirrorAcls = Array.isArray(payload.mirrorOutputAcls)
+		? payload.mirrorOutputAcls
+		: undefined;
+	return (
+		!Array.isArray(op.refs.mirrorOutputIds) ||
+		op.refs.mirrorOutputIds.every(
+			(ref, index) =>
+				!role(ref) ||
+				(mirrorAcls ? mirrorAcls[index] : payload.acl) === "PRIVATE",
+		)
+	);
+}
 
 /** Apply to new compiler output and existing journal steps before execution. */
 export function applyRoleOutputAcl(
@@ -65,9 +101,7 @@ export function applyRoleOutputAcl(
 	}
 	if (hasRoleReport) payload.reportAcl = roleAcl(payload.reportAcl);
 	if (hasRoleAisa) {
-		const ai = payload.aiSceneAnalysis as
-			| { features?: { assetDescription?: { acl?: unknown } } }
-			| undefined;
+		const ai = payload.aiSceneAnalysis as AisaPayload | undefined;
 		const asset = ai?.features?.assetDescription;
 		if (asset)
 			payload.aiSceneAnalysis = {

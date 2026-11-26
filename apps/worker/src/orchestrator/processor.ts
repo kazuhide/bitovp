@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import {
+	applyRoleOutputAcl,
 	type CompiledOperation,
 	checkHdr10PlusPlan,
 	checkInternalHevcV2Plan,
 	classifyProviderStatusWord,
 	encodingPlanSchema,
+	hasRecordedRoleOutputAcl,
 	orchestratorJobSchema,
 	publicStorageDiagnostic,
 	type QcVerdict,
@@ -819,6 +821,33 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		if (cancelAtSetup || (await checkCancel())) {
 			return await finalizeCancel();
 		}
+		// Starting an encoding also uses its existing muxings. A new safe
+		// request cannot repair a previously attempted, differently configured one.
+		const unsafeDestination = entries.find(
+			(entry) =>
+				(entry.status === "DONE" ||
+					entry.status === "RUNNING" ||
+					entry.startedAt !== undefined) &&
+				!hasRecordedRoleOutputAcl(
+					entry,
+					outputKinds,
+					entry.status === "DONE" ? entry.request : entry.payload,
+				),
+		);
+		if (unsafeDestination) {
+			const error = `Prior step "${unsafeDestination.step}" lacks a safe role output ACL. Create a new encoding job to use the updated output policy.`;
+			await stopJobEncodings(entries, ids, sdk);
+			await persist(encodingJobId, entries, { status: "ERROR", error });
+			await deps.emitEvent?.({
+				kind: "JOB_ERROR",
+				jobId: encodingJobId,
+				name: row.name,
+				labels: row.labels,
+				error,
+				path: `/vod/jobs/${encodingJobId}`,
+			});
+			return { acknowledged: true, encodingJobId, status: "ERROR" };
+		}
 
 		{
 			const next = new Date(new Date(deps.now()).getTime());
@@ -1097,6 +1126,9 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					isVerificationRun &&
 					entry.kind === "CREATE_ENCODING" &&
 					(entry.startedAt !== undefined || entry.finishedAt !== undefined);
+				// Persist the safe dispatch payload before the provider call. If
+				// its response is lost, a resume can still prove what went out.
+				entry.payload = applyRoleOutputAcl(entry, outputKinds).payload;
 				entry.status = "RUNNING";
 				entry.startedAt = deps.now();
 				entry.error = undefined;

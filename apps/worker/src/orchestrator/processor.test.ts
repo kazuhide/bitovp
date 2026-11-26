@@ -208,6 +208,84 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("orchestrator processor", () => {
+	it.each([
+		"pending",
+		"safe-done",
+		"unsafe-done",
+		"uncertain",
+	] as const)("hydrates VOD role output ACLs and refuses an unsafe prior destination (%s)", async (previous) => {
+		const plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		const primary = plan.outputs[0];
+		if (!primary) throw new Error("Missing primary fixture");
+		plan.outputs.push({
+			kind: "S3_ROLE_BASED",
+			key: "mirror",
+			name: "Private mirror",
+			credentialId: primary.credentialId,
+			bucket: "private-role-mirror",
+		});
+		plan.deliveryMirrors = [{ outputKey: "mirror" }];
+		const history = initStepLog(compilePlan(plan));
+		const mirror = history.find(
+			(row) => row.kind === "CREATE_OUTPUT_S3_ROLE_BASED",
+		);
+		const firstMuxing = history.find(
+			(row) => row.kind === "CREATE_MUXING_FMP4",
+		);
+		if (!mirror || !firstMuxing) throw new Error("Missing role mirror steps");
+		mirror.status = "DONE";
+		mirror.resourceId = "adopted-role-output";
+		for (const entry of history) {
+			if (previous !== "safe-done" || entry !== firstMuxing)
+				delete entry.payload.mirrorOutputAcls;
+		}
+		if (previous === "safe-done" || previous === "unsafe-done") {
+			firstMuxing.status = "DONE";
+			firstMuxing.resourceId = "recorded-muxing";
+			firstMuxing.request = { ...firstMuxing.payload, refs: firstMuxing.refs };
+		} else if (previous === "uncertain") {
+			firstMuxing.status = "RUNNING";
+			firstMuxing.startedAt = "2026-06-11T00:00:00.000Z";
+		}
+		const h = setup({ plan, stepLog: history });
+		if (previous === "unsafe-done" || previous === "uncertain") {
+			await expect(
+				h.processor({ encodingJobId: JOB_ID }),
+			).resolves.toMatchObject({ status: "ERROR" });
+			expect(h.row.error).toMatch(/prior.*role output ACL/i);
+			expect(h.sdk.startEncoding).not.toHaveBeenCalled();
+			expect(h.sdk.createFmp4Muxing).not.toHaveBeenCalled();
+			return;
+		}
+		await expect(h.processor({ encodingJobId: JOB_ID })).resolves.toMatchObject(
+			{ status: "FINISHED" },
+		);
+		const destination = expect.objectContaining({
+			acl: "PUBLIC_READ",
+			mirrorOutputIds: ["adopted-role-output"],
+			mirrorOutputAcls: ["PRIVATE"],
+			roleOutputIds: ["adopted-role-output"],
+		});
+		expect(h.sdk.createS3RoleBasedOutput).not.toHaveBeenCalled();
+		expect(h.sdk.createFmp4Muxing).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({ destination }),
+		);
+		expect(h.sdk.createHlsManifest).toHaveBeenCalledWith(
+			expect.objectContaining({ destination }),
+		);
+		expect(h.row.stepLog).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "CREATE_MANIFEST_HLS",
+					payload: expect.objectContaining({ mirrorOutputAcls: ["PRIVATE"] }),
+					request: expect.objectContaining({ mirrorOutputAcls: ["PRIVATE"] }),
+				}),
+			]),
+		);
+	});
+
 	it("persists the exact caption key from its executed S3 input", async () => {
 		const inputPath = "archive/scene.ts?key=wide";
 		const plan = structuredClone(basePlan);

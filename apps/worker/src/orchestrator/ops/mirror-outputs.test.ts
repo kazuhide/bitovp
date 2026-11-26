@@ -16,11 +16,14 @@ import { outputs } from "./shared";
 afterEach(() => vi.unstubAllGlobals());
 
 it.each([
-	"AZURE",
-	"SFTP",
-	"AKAMAI_NETSTORAGE",
-	"S3",
-] as const)("keeps role-backed mirrors private in actual muxing and manifest requests with a %s primary", async (kind) => {
+	["AZURE", undefined, undefined],
+	["AZURE", "PUBLIC_READ", undefined],
+	["SFTP", undefined, undefined],
+	["AKAMAI_NETSTORAGE", undefined, undefined],
+	["S3", "PUBLIC_READ", "PUBLIC_READ"],
+	["S3_ROLE_BASED", undefined, "PRIVATE"],
+	["S3_ROLE_BASED", "PUBLIC_READ", "PUBLIC_READ"],
+] as const)("keeps mirrors private with primary %s and declared ACL %s", async (kind, declaredAcl, primaryAcl) => {
 	const plan = encodingPlanSchema.parse(
 		JSON.parse(
 			readFileSync(
@@ -42,7 +45,7 @@ it.each([
 			credentialId: prior.credentialId,
 			...(kind === "AZURE"
 				? { container: "primary" }
-				: kind === "S3"
+				: kind === "S3" || kind === "S3_ROLE_BASED"
 					? { bucket: "primary" }
 					: {}),
 		},
@@ -56,7 +59,9 @@ it.each([
 	] as typeof plan.outputs;
 	plan.deliveryMirrors = [{ outputKey: "mirror" }];
 	for (const { destination } of [...plan.muxings, ...plan.manifests]) {
-		if (destination && kind !== "S3") delete destination.acl;
+		if (!destination) continue;
+		if (declaredAcl) destination.acl = declaredAcl;
+		else delete destination.acl;
 	}
 	const calls: { kind: string; outputs: unknown }[] = [];
 	vi.stubGlobal(
@@ -99,7 +104,7 @@ it.each([
 			{
 				outputId: "id-output:origin",
 				outputPath: expect.any(String),
-				...(kind === "S3" ? { acl: [{ permission: "PUBLIC_READ" }] } : {}),
+				...(primaryAcl ? { acl: [{ permission: primaryAcl }] } : {}),
 			},
 			{
 				outputId: "id-output:mirror",

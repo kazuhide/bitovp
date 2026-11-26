@@ -9,6 +9,7 @@ import {
 	type TestInfo,
 	test,
 } from "@playwright/test";
+import { CREATE_SESSION_HEADER } from "../../apps/web/src/lib/creation-submission-contract";
 import { liveChannelPlanSchema } from "../../packages/core/src/live/schema";
 import { encodingPlanSchema } from "../../packages/core/src/plan/schema";
 
@@ -793,11 +794,53 @@ async function openSubmission(browser: Browser) {
 	return { context, page, unexpected };
 }
 
+async function verifiedCreationHeaders(context: BrowserContext) {
+	const response = await context.request.get("/api/auth/session", {
+		maxRedirects: 0,
+	});
+	expect(response.status()).toBe(200);
+	const value: unknown = await response.json();
+	if (!value || typeof value !== "object")
+		throw new Error("Expected an authenticated submission session");
+	const session = value as Record<string, unknown>;
+	if (
+		session.mode !== "users" ||
+		session.configured !== true ||
+		session.authenticated !== true ||
+		session.isImpersonating ||
+		session.organizationUnavailable ||
+		(session.role !== "ADMIN" && session.role !== "OPERATOR") ||
+		typeof session.organizationId !== "string" ||
+		!session.organizationId ||
+		typeof session.effectiveUserId !== "string" ||
+		!session.effectiveUserId ||
+		session.actorUserId !== session.effectiveUserId
+	)
+		throw new Error("Expected a verified operator for direct submission");
+	return {
+		origin: fixture.baseURL,
+		[CREATE_SESSION_HEADER]: JSON.stringify([
+			session.organizationId,
+			session.effectiveUserId,
+		]),
+	};
+}
+
 async function rejectInvalidSubmissions(
 	context: BrowserContext,
 	path: "/api/encoding-jobs" | "/api/live-channels",
 	plan: ReturnType<typeof nonpaidVodPlan> | ReturnType<typeof nonpaidLivePlan>,
+	headers: Awaited<ReturnType<typeof verifiedCreationHeaders>>,
 ) {
+	const unbound = await context.request.post(path, {
+		headers: { origin: fixture.baseURL },
+		maxRedirects: 0,
+		data: { plan },
+	});
+	expect(unbound.status()).toBe(409);
+	expect(await unbound.json()).toMatchObject({
+		details: { code: "CREATE_SESSION_CHANGED" },
+	});
 	const patches: Record<string, unknown>[] = [
 		{ level: "INVALID_LEVEL" },
 		{ level: "toString" },
@@ -820,7 +863,7 @@ async function rejectInvalidSubmissions(
 		const candidate = structuredClone(plan);
 		Object.assign(candidate.renditions[0] as object, patch);
 		const response = await context.request.post(path, {
-			headers: { origin: fixture.baseURL },
+			headers,
 			maxRedirects: 0,
 			data: { plan: candidate },
 		});
@@ -835,6 +878,7 @@ test("persist VOD through the authenticated submission API", async ({
 }) => {
 	const { context, page, unexpected } = await openSubmission(browser);
 	try {
+		const creationHeaders = await verifiedCreationHeaders(context);
 		const account = await context.request.post("/api/bitmovin-accounts", {
 			headers: { origin: fixture.baseURL },
 			maxRedirects: 0,
@@ -866,7 +910,12 @@ test("persist VOD through the authenticated submission API", async ({
 			syntheticProvider.accountId,
 			syntheticProvider.credentialId,
 		);
-		await rejectInvalidSubmissions(context, "/api/encoding-jobs", plan);
+		await rejectInvalidSubmissions(
+			context,
+			"/api/encoding-jobs",
+			plan,
+			creationHeaders,
+		);
 		const imported = structuredClone(plan);
 		Object.assign(imported.renditions[0] as object, { level: "4.1" });
 		await page.goto("/vod/new");
@@ -919,19 +968,29 @@ test("persist VOD through the authenticated submission API", async ({
 		});
 		const key = response.request().headers()["idempotency-key"];
 		expect(key).toMatch(/^[a-f0-9]{64}$/);
+		expect(
+			response.request().headers()[CREATE_SESSION_HEADER.toLowerCase()],
+		).toBe(creationHeaders[CREATE_SESSION_HEADER]);
+		const replayHeaders = {
+			...creationHeaders,
+			"idempotency-key": key as string,
+		};
 		const repeated = await context.request.post("/api/encoding-jobs", {
-			headers: { origin: fixture.baseURL, "idempotency-key": key as string },
+			headers: replayHeaders,
 			maxRedirects: 0,
 			data: { plan: requestPlan },
 		});
 		expect(repeated.status()).toBe(200);
 		expect((await repeated.json()).id).toBe(id);
 		const conflict = await context.request.post("/api/encoding-jobs", {
-			headers: { origin: fixture.baseURL, "idempotency-key": key as string },
+			headers: replayHeaders,
 			maxRedirects: 0,
 			data: { plan: { ...requestPlan, name: "Conflicting VOD request" } },
 		});
 		expect(conflict.status()).toBe(409);
+		expect(await conflict.json()).toMatchObject({
+			details: { code: "CREATE_REQUEST_CONFLICT" },
+		});
 		const denied = await request.post("/api/encoding-jobs", {
 			maxRedirects: 0,
 			data: { plan: requestPlan },
@@ -954,11 +1013,17 @@ test("persist Live through the authenticated submission API", async ({
 }) => {
 	const { context, page, unexpected } = await openSubmission(browser);
 	try {
+		const creationHeaders = await verifiedCreationHeaders(context);
 		const plan = nonpaidLivePlan(
 			syntheticProvider.accountId,
 			syntheticProvider.credentialId,
 		);
-		await rejectInvalidSubmissions(context, "/api/live-channels", plan);
+		await rejectInvalidSubmissions(
+			context,
+			"/api/live-channels",
+			plan,
+			creationHeaders,
+		);
 		const imported = structuredClone(plan);
 		Object.assign(imported.renditions[0] as object, { level: "4.1" });
 		await page.goto("/live/new");
@@ -1011,19 +1076,29 @@ test("persist Live through the authenticated submission API", async ({
 		});
 		const key = response.request().headers()["idempotency-key"];
 		expect(key).toMatch(/^[a-f0-9]{64}$/);
+		expect(
+			response.request().headers()[CREATE_SESSION_HEADER.toLowerCase()],
+		).toBe(creationHeaders[CREATE_SESSION_HEADER]);
+		const replayHeaders = {
+			...creationHeaders,
+			"idempotency-key": key as string,
+		};
 		const repeated = await context.request.post("/api/live-channels", {
-			headers: { origin: fixture.baseURL, "idempotency-key": key as string },
+			headers: replayHeaders,
 			maxRedirects: 0,
 			data: { plan: requestPlan },
 		});
 		expect(repeated.status()).toBe(200);
 		expect((await repeated.json()).id).toBe(id);
 		const conflict = await context.request.post("/api/live-channels", {
-			headers: { origin: fixture.baseURL, "idempotency-key": key as string },
+			headers: replayHeaders,
 			maxRedirects: 0,
 			data: { plan: { ...requestPlan, name: "Conflicting Live request" } },
 		});
 		expect(conflict.status()).toBe(409);
+		expect(await conflict.json()).toMatchObject({
+			details: { code: "CREATE_REQUEST_CONFLICT" },
+		});
 		const denied = await request.post("/api/live-channels", {
 			maxRedirects: 0,
 			data: { plan: requestPlan },

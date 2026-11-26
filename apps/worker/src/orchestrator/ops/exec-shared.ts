@@ -362,7 +362,19 @@ export function destinationOf(
 	if (op.refs.outputId === undefined) {
 		return undefined;
 	}
+	const outputId = refId(op, ctx, "outputId");
 	const mirrors = refIdList(op, ctx, "mirrorOutputIds");
+	const mirrorRefs = Array.isArray(op.refs.mirrorOutputIds)
+		? op.refs.mirrorOutputIds
+		: [];
+	const roleOutputIds = [op.refs.outputId, ...mirrorRefs].flatMap((ref, i) => {
+		const id = i === 0 ? outputId : mirrors?.[i - 1];
+		return typeof ref === "string" &&
+			id &&
+			ctx.outputKinds?.get(ref) === "S3_ROLE_BASED"
+			? [id]
+			: [];
+	});
 	// : per-mirror wire paths ride the payload, aligned with the
 	// mirror refs (an MSL mirror of a storage primary needs `/folder/`).
 	const mirrorPaths = Array.isArray(op.payload.mirrorOutputPaths)
@@ -370,13 +382,20 @@ export function destinationOf(
 				typeof p === "string" ? p : undefined,
 			)
 		: undefined;
+	const mirrorAcls = Array.isArray(op.payload.mirrorOutputAcls)
+		? op.payload.mirrorOutputAcls.map((value: unknown) =>
+				typeof value === "string" ? value : null,
+			)
+		: undefined;
 	return {
-		outputId: refId(op, ctx, "outputId"),
+		outputId,
 		outputPath: str(op.payload.outputPath),
 		acl: optStr(op.payload.acl),
 		// : mirrors resolve HERE so every consumer between this
 		// and the facade's outputs stays signature-identical.
 		...(mirrors && mirrors.length > 0 ? { mirrorOutputIds: mirrors } : {}),
+		...(mirrors && mirrorAcls ? { mirrorOutputAcls: mirrorAcls } : {}),
+		...(roleOutputIds.length ? { roleOutputIds } : {}),
 		...(mirrors && mirrors.length > 0 && mirrorPaths
 			? {
 					mirrorOutputPaths: mirrors.map(

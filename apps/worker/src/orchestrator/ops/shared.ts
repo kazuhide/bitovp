@@ -218,7 +218,7 @@ export function acl(permission: string | undefined): AclEntry[] | undefined {
 /**
  * Destination → SDK outputs array; absent destination → no outputs.
  * : a destination carrying resolved mirrorOutputIds expands to
- * one EncodingOutput per mirror at the SAME path and acl — one encode,
+ * one EncodingOutput per mirror, with optional path and ACL overrides — one encode,
  * N storages; this is the single point where the fan-out becomes wire.
  */
 export function outputs(destination: Destination | undefined) {
@@ -236,7 +236,11 @@ export function outputs(destination: Destination | undefined) {
 							// : a mirror may carry its own wire path (MSL form).
 							outputPath:
 								destination.mirrorOutputPaths?.[i] ?? destination.outputPath,
-							acl: acl(destination.acl),
+							acl: acl(
+								destination.mirrorOutputAcls
+									? (destination.mirrorOutputAcls[i] ?? undefined)
+									: destination.acl,
+							),
 						}),
 				),
 			]

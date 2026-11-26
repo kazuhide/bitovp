@@ -2024,7 +2024,8 @@ export const encodingPlanSchema = z.strictObject({
 	/**
 	 * Multi-output delivery : every muxing/DRM/thumbnail/sprite/
 	 * manifest destination is ALSO written to each mirror output, at the SAME
-	 * path and acl — one encode, N storages (S3 and GCS alike). Plan-level by
+	 * path — one encode, N storages. Role-based S3 mirrors always use a
+	 * separate private ACL. Plan-level by
 	 * design: the owner's ask is fan-out, not per-muxing routing; the compiler
 	 * spreads mirror refs at every destination site and the worker appends
 	 * them to the SDK outputs array. `.optional` (not `.default([])`) so

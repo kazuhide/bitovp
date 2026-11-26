@@ -93,7 +93,7 @@ export type Destination = {
 	acl?: string;
 	/**
 	 * RESOLVED mirror output ids — the facade's `outputs`
-	 * expands one EncodingOutput per mirror at the SAME path and acl.
+	 * expands one EncodingOutput per mirror, with a destination-specific ACL.
 	 */
 	mirrorOutputIds?: string[];
 	/**
@@ -103,6 +103,10 @@ export type Destination = {
 	 * MSL manifest form (`/folder/`) instead.
 	 */
 	mirrorOutputPaths?: string[];
+	/** Per-mirror ACLs, aligned with IDs. A null entry omits the ACL. */
+	mirrorOutputAcls?: (string | null)[];
+	/** Resolved role-backed output IDs for manifest recovery verification. */
+	roleOutputIds?: string[];
 };
 
 /** ColorConfig with enum NAMES; copy* flags pass through. */

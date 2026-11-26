@@ -31,6 +31,7 @@ import {
 } from "./per-title-results";
 import { streamPerTitleSettings } from "./per-title-settings";
 import { qcMirrorFilename, qcMirrorMuxingKind } from "./qc-mirror";
+import { applyRoleOutputAcl, vodOutputKinds } from "./role-output-acl";
 import type { EncodingPlan, PlanRendition } from "./schema";
 import { AUDIO_CODECS } from "./schema";
 
@@ -560,7 +561,7 @@ function muxingName(
 
 /**
  * mirror refs ride beside every destination's outputId — the
- * worker appends one EncodingOutput per mirror, same path and acl. Emitted
+ * worker appends one EncodingOutput per mirror at the same path. Emitted
  * only when the plan declares deliveryMirrors AND the site has a destination
  * (DRM-owned-output muxings keep their no-ref shape).
  */
@@ -2530,7 +2531,8 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 		}
 	}
 
-	return ops;
+	const outputKinds = vodOutputKinds(plan.outputs);
+	return ops.map((op) => applyRoleOutputAcl(op, outputKinds));
 }
 
 type RenditionMap = Map<string, PlanRendition>;

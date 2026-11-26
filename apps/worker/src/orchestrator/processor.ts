@@ -13,6 +13,7 @@ import {
 	type StepLogEntry,
 	soleEncodingStepId,
 	stepLogSchema,
+	vodOutputKinds,
 } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
 import { autoTriggerKey } from "@bitovp/db";
@@ -748,11 +749,15 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		// loop. Built BEFORE the RUNNING transition so a loop-top cancel can run
 		// finalize without flipping the job to RUNNING first.
 		const ids = new Map<string, string>();
+		const outputKinds = vodOutputKinds(plan.outputs);
 		// Hoisted: the answer cannot change during the run, and computing it per
 		// step made this O(n^2) over the step log (review nit).
 		const soleStep = soleEncodingStepId(entries);
 
 		for (const entry of entries) {
+			if (entry.kind === "CREATE_OUTPUT_S3_ROLE_BASED") {
+				outputKinds.set(entry.step, "S3_ROLE_BASED");
+			}
 			if (entry.status === "DONE" && entry.resourceId) {
 				ids.set(entry.step, entry.resourceId);
 			}
@@ -838,6 +843,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		const ctx = {
 			sdk,
 			ids,
+			outputKinds,
 			resolveCredential: deps.resolveCredential,
 			captureIngestInput: captureIngestInput
 				? (input: { operation: CompiledOperation; encodingId: string }) =>

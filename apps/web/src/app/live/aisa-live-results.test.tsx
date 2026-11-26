@@ -76,7 +76,12 @@ describe("key moment result presentation", () => {
 		expect(screen.queryByText("Final result")).not.toBeInTheDocument();
 
 		rendered.rerender(
-			<AisaLiveResults {...props} embedded status="FINISHED" />,
+			<AisaLiveResults
+				{...props}
+				embedded
+				status="FINISHED"
+				acceptedSnapshot={{ ...snapshot, sequence: 2 }}
+			/>,
 		);
 		expect(screen.getByText("Final result")).toBeVisible();
 		expect(

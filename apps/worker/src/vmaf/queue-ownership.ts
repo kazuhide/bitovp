@@ -71,27 +71,44 @@ export function createVmafOwnershipConnection(redisUrl: string) {
 	return redis;
 }
 
-/** Compare the actual PostgreSQL process and database used by each worker.
+/** Compare the PostgreSQL writer, database and schema used by each worker.
  * This read requires no application mutation or monitoring-role privileges. */
 export async function readVmafQueueDatabase(
 	prisma: Pick<AppPrismaClient, "$queryRaw">,
 ) {
 	const rows = await prisma.$queryRaw<
-		{ name: string; oid: string; epoch: string }[]
-	>`SELECT current_database() AS name, oid::text AS oid,
+		{
+			name: string;
+			oid: string;
+			schema: string;
+			schemaOid: string;
+			epoch: string;
+		}[]
+	>`SELECT current_database() AS name, db.oid::text AS oid,
+		  ns.nspname AS schema, ns.oid::text AS "schemaOid",
 		EXTRACT(EPOCH FROM pg_postmaster_start_time())::text AS epoch
-		FROM pg_database
-		WHERE datname = current_database() AND NOT pg_is_in_recovery()`;
+		FROM pg_database db JOIN pg_namespace ns ON ns.nspname = current_schema()
+		WHERE db.datname = current_database() AND NOT pg_is_in_recovery()`;
 	const database = rows[0];
 	if (
 		rows.length !== 1 ||
 		!database?.name ||
+		!database.schema ||
 		!/^\d+$/.test(database.oid) ||
+		!/^\d+$/.test(database.schemaOid) ||
 		!/^\d+(\.\d+)?$/.test(database.epoch)
 	)
 		throw new Error("VMAF_QUEUE_DATABASE_IDENTITY_UNAVAILABLE");
 	return createHash("sha256")
-		.update(JSON.stringify([database.name, database.oid, database.epoch]))
+		.update(
+			JSON.stringify([
+				database.name,
+				database.oid,
+				database.schema,
+				database.schemaOid,
+				database.epoch,
+			]),
+		)
 		.digest("hex");
 }
 

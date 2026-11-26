@@ -345,9 +345,9 @@ selected resources for each comparison in `params.localResources`.
 The primary worker consumes the QC queue by default. To move consumption to a
 dedicated process, stop existing QC consumers after their active jobs complete.
 Set `VMAF_QUEUE_OWNER=dedicated` in the shared environment for both processes.
-Use the same BitOVP revision, PostgreSQL and Redis database, and model
-configuration. Keep older worker binaries stopped after the handoff. Restart
-the primary worker and then run this command on the QC host.
+Use the same BitOVP revision, PostgreSQL database and schema, Redis database,
+and model configuration. Keep older worker binaries stopped after the handoff.
+Restart the primary worker and then run this command on the QC host.
 
 ```sh
 pnpm --filter @bitovp/worker start:vmaf
@@ -360,8 +360,8 @@ later, with persistent AOF storage and `maxmemory-policy noeviction`. The Redis
 credentials must allow `INFO` and `WAITAOF`. The primary announces
 its writable PostgreSQL database while its orchestration and notification
 workers are ready. Dedicated startup and job acceptance require the same Redis
-database and a current announcement for the same PostgreSQL writer and
-database. Restart the dedicated worker after a PostgreSQL restart or failover
+database and a current announcement for the same PostgreSQL writer, database,
+and schema. Restart the dedicated worker after a PostgreSQL restart or failover
 to verify the new writer. The primary enqueues measurements, delivers events,
 and reconciles QC and cloud resources.
 

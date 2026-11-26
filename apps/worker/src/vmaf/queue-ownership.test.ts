@@ -153,25 +153,33 @@ it("releases a reservation before any consumption if Redis has not persisted its
 	]);
 });
 
-it("derives topology identity from the live writable database, including its restart epoch", async () => {
-	const query = vi.fn(async () => [
-		{ name: "bitovp", oid: "16392", epoch: "1795734000.001234" },
-	]);
+it("binds topology to the live writable database, its schema and its restart epoch", async () => {
+	const sample = {
+		name: "bitovp",
+		oid: "16392",
+		schema: "public",
+		schemaOid: "2200",
+		epoch: "1795734000.001234",
+	};
+	const query = vi.fn(async () => [sample]);
 	const prisma = { $queryRaw: query } as never;
 	const first = await readVmafQueueDatabase(prisma);
 	expect(first).toMatch(/^[a-f0-9]{64}$/);
-	query.mockResolvedValueOnce([
-		{ name: "another", oid: "16393", epoch: "1795734000.001234" },
-	]);
-	expect(await readVmafQueueDatabase(prisma)).not.toBe(first);
-	query.mockResolvedValueOnce([
-		{ name: "bitovp", oid: "16392", epoch: "1795734111.001234" },
-	]);
-	expect(await readVmafQueueDatabase(prisma)).not.toBe(first);
-	query.mockResolvedValueOnce([]);
-	await expect(readVmafQueueDatabase(prisma)).rejects.toThrow(
-		"VMAF_QUEUE_DATABASE_IDENTITY_UNAVAILABLE",
-	);
+	for (const variant of [
+		{ name: "another", oid: "16393" },
+		{ epoch: "1795734111.001234" },
+		{ schema: "qc_archive", schemaOid: "16394" },
+		{ schemaOid: "16395" },
+	]) {
+		query.mockResolvedValueOnce([{ ...sample, ...variant }]);
+		expect(await readVmafQueueDatabase(prisma)).not.toBe(first);
+	}
+	for (const invalid of [[], [{ ...sample, schemaOid: "" }]]) {
+		query.mockResolvedValueOnce(invalid);
+		await expect(readVmafQueueDatabase(prisma)).rejects.toThrow(
+			"VMAF_QUEUE_DATABASE_IDENTITY_UNAVAILABLE",
+		);
+	}
 });
 
 it("keeps ordinary queue consumption available with AOF on pre-7.2 Redis", async () => {

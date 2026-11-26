@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-26T10:41:57.717Z",
-		"sourceCommit": "6b91a312cb26952bf7206c48d8cd7532c3d83334",
-		"sourceFingerprint": "36dbc8add7d1eb485cb463fc24b4d09278f0d2f59bf30b163f2bd41867e00fea",
+		"generatedAt": "2026-11-26T10:53:50.333Z",
+		"sourceCommit": "b92c92ab6d78de5bc8c9b0e3c5b8146034a9ed4d",
+		"sourceFingerprint": "4d9b8d6650f9592c4555a1900c75b26b84f6df6de1062dc4237ec847e7071ab4",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -1696,11 +1696,11 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 44
+					"line": 65
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 66
+					"line": 93
 				},
 				{
 					"file": "apps/worker/src/webhooks/provider.ts",
@@ -1743,7 +1743,7 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 49
+					"line": 70
 				}
 			]
 		},
@@ -1819,11 +1819,11 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 57
+					"line": 83
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 155
+					"line": 190
 				},
 				{
 					"file": "apps/worker/src/verify/live-archive-runtime.ts",
@@ -1849,7 +1849,7 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 70
+					"line": 99
 				}
 			]
 		},
@@ -2874,7 +2874,7 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 68
+					"line": 98
 				}
 			]
 		},
@@ -2980,7 +2980,7 @@
 				},
 				{
 					"file": "apps/web/src/app/api/live-channels/[id]/schedules/route.ts",
-					"line": 369
+					"line": 367
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/live.ts",
@@ -10416,7 +10416,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/admin/reset/route.ts",
-					"line": 581
+					"line": 635
 				},
 				{
 					"file": "apps/web/src/app/api/live/stream-keys/[id]/route.ts",
@@ -10424,7 +10424,7 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 91
+					"line": 123
 				}
 			]
 		},
@@ -10452,7 +10452,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/admin/reset/route.ts",
-					"line": 580
+					"line": 634
 				},
 				{
 					"file": "apps/web/src/app/api/live/stream-keys/route.ts",
@@ -10460,7 +10460,7 @@
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
-					"line": 79
+					"line": 110
 				}
 			]
 		},

@@ -15,7 +15,6 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EncodingPlan, LiveChannelPlan } from "@bitovp/core";
 import {
-	CREDENTIAL_PROVIDER_SHAPES,
 	cipherFromEnv,
 	encodingPlanSchema,
 	liveChannelPlanSchema,
@@ -38,7 +37,11 @@ const PLACEHOLDER_ACCOUNT = "00000000-0000-4000-8000-00000000acc7";
 import type { AppPrismaClient, CredentialProvider } from "@bitovp/db";
 import { createCredentialStore } from "@bitovp/db";
 import { createBrowserForCredential } from "@bitovp/storage";
-import { pickByLabel } from "./harness-rails";
+import {
+	type S3RoleVerificationBinding,
+	type S3VerificationStorage,
+	selectS3RoleObserver,
+} from "./s3-verification-storage";
 
 /** A capability a scenario may depend on. */
 export type Capability =
@@ -956,21 +959,6 @@ export type PreflightOptions = {
 	log?: (line: string) => void;
 };
 
-export type S3VerificationStorage = {
-	s3CredentialLabel: string;
-	s3RoleCredentialLabel?: string;
-	inputBucket: string;
-	outputBucket: string;
-	sourceObject: string;
-};
-
-export type S3RoleVerificationBinding = {
-	roleCredentialId: string;
-	observerCredentialId: string;
-	inputBucket: string;
-	outputBucket: string;
-};
-
 /**
  * Which cloud a credential provider satisfies.
  *
@@ -1062,32 +1050,15 @@ async function probeS3RoleBinding(
 	settings: S3VerificationStorage | undefined,
 	credentials: ReturnType<typeof createCredentialStore>,
 	rows: Awaited<ReturnType<ReturnType<typeof createCredentialStore>["list"]>>,
+	labelPrefix: string,
 	log: (line: string) => void,
 ): Promise<S3RoleVerificationBinding | undefined> {
-	const label = settings?.s3RoleCredentialLabel;
-	if (!settings || !label) return undefined;
+	if (!settings) return undefined;
 	try {
-		const role = pickByLabel(
-			rows.filter(
-				(row) => row.provider === "AWS_S3_ROLE_BASED" && row.label === label,
-			),
-			label,
-			"S3 role verification credential",
-		);
-		const observer = pickByLabel(
-			rows.filter((row) => row.provider === "AWS_S3"),
-			settings.s3CredentialLabel,
-			"S3 verification observer",
-		);
-		if (
-			!role ||
-			!observer ||
-			!CREDENTIAL_PROVIDER_SHAPES.AWS_S3_ROLE_BASED.config.safeParse(
-				role.config,
-			).success
-		)
-			return undefined;
-		JSON.parse(await credentials.revealSecret(role.id));
+		const selected = selectS3RoleObserver(settings, rows, labelPrefix);
+		if (!selected) return undefined;
+		const { binding, observer } = selected;
+		JSON.parse(await credentials.revealSecret(binding.roleCredentialId));
 
 		const browser = createBrowserForCredential({
 			provider: observer.provider,
@@ -1111,12 +1082,7 @@ async function probeS3RoleBinding(
 		} finally {
 			browser.dispose?.();
 		}
-		return {
-			roleCredentialId: role.id,
-			observerCredentialId: observer.id,
-			inputBucket: settings.inputBucket,
-			outputBucket: settings.outputBucket,
-		};
+		return binding;
 	} catch {
 		log(
 			"S3 role verification could not confirm the separate S3 observer and staged source",
@@ -1140,6 +1106,7 @@ export async function preflight(
 		options.s3Storage,
 		credentials,
 		rows,
+		prefix,
 		log,
 	);
 	if (s3RoleBinding) {

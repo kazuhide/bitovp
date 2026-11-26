@@ -89,12 +89,7 @@ import {
 	unestablishedCleanupElements,
 } from "./live-cleanup-seal";
 import { listLiveOutputObjects } from "./live-storage-list";
-import type {
-	Capability,
-	PreflightReport,
-	S3RoleVerificationBinding,
-	S3VerificationStorage,
-} from "./preflight";
+import type { Capability, PreflightReport } from "./preflight";
 import {
 	bucketFromLabel,
 	loadScenarios,
@@ -150,6 +145,11 @@ import {
 	teardownAdoptedChannel,
 	validateLiveEncoderVersion,
 } from "./runner-live";
+import {
+	type S3RoleVerificationBinding,
+	type S3VerificationStorage,
+	s3VerificationStorageEnv,
+} from "./s3-verification-storage";
 
 export type ScenarioVerdict = "PASS" | "WARN" | "FAIL" | "SKIP" | "INVALID";
 
@@ -493,12 +493,7 @@ export function storageEnv(
 	longSourceObject: string;
 } {
 	return {
-		s3CredentialLabel: env.VERIFY_S3_LABEL ?? "verify-aws",
-		s3RoleCredentialLabel: env.VERIFY_S3_ROLE_BASED_LABEL?.trim() || undefined,
-		inputBucket: env.VERIFY_S3_INPUT_BUCKET ?? "ap-northeast-1-input",
-		outputBucket: env.VERIFY_S3_OUTPUT_BUCKET ?? "ap-northeast-1-output",
-		sourceObject:
-			env.VERIFY_SOURCE_OBJECT ?? "big_buck_bunny_1080p_h264_short.mov",
+		...s3VerificationStorageEnv(env),
 		/**
 		 * The source object in the GenericS3 input bucket, which is a DIFFERENT object.
 		 *

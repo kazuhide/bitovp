@@ -38,8 +38,8 @@ describe("fixture registry ↔ directory", () => {
 	});
 
 	it("retains the complete compiler fixture corpus", () => {
-		expect(plansIn(vodDir).length).toBe(72);
+		expect(plansIn(vodDir).length).toBe(73);
 		expect(plansIn(liveDir).length).toBe(15);
-		expect(VOD_FIXTURES.length + LIVE_FIXTURES.length).toBe(87);
+		expect(VOD_FIXTURES.length + LIVE_FIXTURES.length).toBe(88);
 	});
 });

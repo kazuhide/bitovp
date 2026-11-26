@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { BitmovinCallError } from "../orchestrator/ops/shared";
 import { ensureTerminal, resumeEligibility } from "./harness-rails";
 import { browsable } from "./job";
-import { capabilitiesFor, sourcesOf } from "./preflight";
+import { capabilitiesFor, loadScenarios, sourcesOf } from "./preflight";
 import type { RunReport } from "./runner";
 import {
 	breakerTripReason,
@@ -131,13 +131,20 @@ const FIXTURES = join(
 
 const CRED = "22222222-2222-4222-8222-222222222222";
 const ACCOUNT = "33333333-3333-4333-8333-333333333333";
-const OPTIONS = {
-	credentialId: CRED,
+const ROLE_BINDING = {
+	roleCredentialId: "00000000-0000-4000-8000-000000000033",
+	observerCredentialId: CRED,
 	inputBucket: "verify-in",
 	outputBucket: "verify-out",
+};
+const OPTIONS = {
+	credentialId: CRED,
+	inputBucket: ROLE_BINDING.inputBucket,
+	outputBucket: ROLE_BINDING.outputBucket,
 	sourceObject: "bbb-short.mov",
 	prefix: "verify/RUN1/scenario/",
 	bitmovinAccountId: ACCOUNT,
+	s3RoleBinding: ROLE_BINDING,
 };
 
 const planFiles = readdirSync(FIXTURES)
@@ -174,34 +181,18 @@ const rewritable = plans.filter((p) => !gated.includes(p));
 
 describe("rewriteForRun — over the whole corpus", () => {
 	it("uses role credentials for provider operations and an independently observed bucket for verification", () => {
-		const fixture = plans.find(
-			({ name }) => name === "fixed-bitrate-hls-on-aws",
-		)?.plan;
-		if (!fixture) throw new Error("missing fixed-ladder fixture");
-		const plan = encodingPlanSchema.parse({
-			...fixture,
-			inputs: fixture.inputs.map((input) => ({
-				...input,
-				kind: "S3_ROLE_BASED",
-			})),
-			outputs: fixture.outputs.map((output) => ({
-				...output,
-				kind: "S3_ROLE_BASED",
-			})),
-		});
-		const binding = {
-			roleCredentialId: "00000000-0000-4000-8000-000000000033",
-			observerCredentialId: OPTIONS.credentialId,
-			inputBucket: OPTIONS.inputBucket,
-			outputBucket: OPTIONS.outputBucket,
-		};
-		expect(capabilitiesFor(plan, "role")).toContain("S3_ROLE_BASED");
-		expect(capabilitiesFor(plan, "role")).not.toContain("S3");
-		expect(() => rewriteForRun(plan, OPTIONS)).toThrow(/S3 role verification/);
-		const rewritten = rewriteForRun(plan, {
-			...OPTIONS,
-			s3RoleBinding: binding,
-		});
+		const scenario = loadScenarios().find(
+			({ name }) => name === "fixed-bitrate-hls-on-aws-role",
+		);
+		if (!scenario?.plan) throw new Error("missing role-backed corpus plan");
+		const { plan } = scenario;
+		expect(scenario.submittedVia).toBe("wizard-form");
+		expect(scenario.needs).toEqual(["S3_ROLE_BASED"]);
+		expect(() =>
+			rewriteForRun(plan, { ...OPTIONS, s3RoleBinding: undefined }),
+		).toThrow(/S3 role verification/);
+		const binding = ROLE_BINDING;
+		const rewritten = rewriteForRun(plan, OPTIONS);
 		for (const [io, bucket] of [
 			[rewritten.inputs[0], binding.inputBucket],
 			[rewritten.outputs[0], binding.outputBucket],
@@ -250,12 +241,12 @@ describe("rewriteForRun — over the whole corpus", () => {
 	it("has a corpus to rewrite, so a broken read cannot pass over nothing", () => {
 		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 71→72 same day: `mixed-codec-dash-hls` .
-		expect(plans.length).toBe(72);
+		expect(plans.length).toBe(73);
 		// Both sides non-empty, or one of the two suites below is silently testing nothing.
 		expect(gated.length, "fixtures the rewrite must refuse").toBe(22);
 		// 48→49: `vp9-webm-fixed-dash` has a plain output prefix, so it is
 		// namespaceable like every other fixed-ladder fixture.
-		expect(rewritable.length, "fixtures the rewrite may namespace").toBe(50);
+		expect(rewritable.length, "fixtures the rewrite may namespace").toBe(51);
 	});
 
 	it("refuses every gated fixture, naming the capability that would unblock it", () => {
@@ -298,7 +289,6 @@ describe("rewriteForRun — over the whole corpus", () => {
 		 * kinds stay as authored and are gated by their capability — which is why the test
 		 * that asserted otherwise had to change rather than the code.
 		 */
-		const S3 = new Set(["S3", "S3_ROLE"]);
 		let repointed = 0;
 		let preserved = 0;
 		for (const { name, plan } of rewritable) {
@@ -310,8 +300,13 @@ describe("rewriteForRun — over the whole corpus", () => {
 				const original = [...plan.inputs, ...plan.outputs].find(
 					(x) => x.key === io.key,
 				);
-				if (S3.has(io.kind)) {
+				if (io.kind === "S3") {
 					expect(io.credentialId, `${name}/${io.key}`).toBe(CRED);
+					repointed++;
+				} else if (io.kind === "S3_ROLE_BASED") {
+					expect(io.credentialId, `${name}/${io.key}`).toBe(
+						ROLE_BINDING.roleCredentialId,
+					);
 					repointed++;
 				} else {
 					expect(
@@ -405,7 +400,7 @@ describe("rewriteForRun — over the whole corpus", () => {
 		for (const { name, plan } of rewritable) {
 			const out = rewriteForRun(plan, OPTIONS);
 			for (const io of [...out.inputs, ...out.outputs]) {
-				if (!("bucket" in io) || io.kind !== "S3") {
+				if (io.kind !== "S3" && io.kind !== "S3_ROLE_BASED") {
 					continue;
 				}
 				const expected = out.inputs.some((i) => i.key === io.key)
@@ -705,7 +700,7 @@ describe("the run report covers every scenario", () => {
 		// And the corpus itself is pinned, so this cannot pass over a shrunken list.
 		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 71→72 same day: `mixed-codec-dash-hls` .
-		expect(plans.length).toBe(72);
+		expect(plans.length).toBe(73);
 	});
 });
 

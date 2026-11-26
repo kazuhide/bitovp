@@ -44,6 +44,13 @@ the key-based observer. The role must trust the Bitmovin organization running
 the encode and allow access to `VERIFY_S3_INPUT_BUCKET` and
 `VERIFY_S3_OUTPUT_BUCKET`. The encoding run confirms the role's IAM access.
 
+Use `verify run --only fixed-bitrate-hls-on-aws-role --dry-run` to check
+whether the role-backed H.264 HLS scenario is ready. For an existing job, use
+`verify job <jobId>` with the same labels and buckets. It reads the saved
+job's output through the observer when the saved role credential and bucket
+match the configuration. An existing-job check reads the saved source path
+when available.
+
 For HEVC/HDR10+ verification, stage the declared HDR10 video and its matching
 metadata JSON. The harness checks both `HDR10_ASSET` and
 `TYPED_SOURCE_ASSETS` and cannot substitute its generic video for the pair.

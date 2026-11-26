@@ -145,6 +145,12 @@ describe("S3 role verification binding", () => {
 		ports.credentials.mockResolvedValue([role]);
 		const result = await probe();
 		expect(result.s3RoleBinding).toBeUndefined();
+		expect(
+			result.scenarios.find((s) => s.name === "fixed-bitrate-hls-on-aws-role"),
+		).toMatchObject({
+			runnable: false,
+			blockedBy: ["S3_ROLE_BASED"],
+		});
 		expect(result.capabilities).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -180,6 +186,12 @@ describe("S3 role verification binding", () => {
 			getObject: vi.fn(),
 		});
 		const result = await probe(settings);
+		expect(
+			result.scenarios.find((s) => s.name === "fixed-bitrate-hls-on-aws-role"),
+		).toMatchObject({
+			runnable: reachable,
+			blockedBy: reachable ? [] : ["S3_ROLE_BASED"],
+		});
 		expect(result.capabilities).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({

@@ -28,7 +28,7 @@ describe("stepNameFor agrees with the compiler", () => {
 		// changes only when a fixture PR changes it, which is precisely when this
 		// number should be re-measured and moved.
 		// 70→71→72 on 2026-08-28: `vp9-webm-fixed-dash`, then `mixed-codec-dash-hls` .
-		expect(planNames.length).toBe(72);
+		expect(planNames.length).toBe(73);
 	});
 
 	it.each(

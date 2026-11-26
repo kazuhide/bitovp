@@ -48,7 +48,12 @@ import {
 	perTitleUnverifiedChecks,
 	verifyArtefacts,
 } from "./engine";
-import type { S3RoleVerificationBinding } from "./preflight";
+import {
+	type S3RoleVerificationBinding,
+	type S3VerificationStorage,
+	s3VerificationStorageEnv,
+	selectS3RoleObserver,
+} from "./s3-verification-storage";
 
 /**
  * Where a plan input/output can be BROWSED, or why it cannot be.
@@ -901,6 +906,7 @@ export type VerifyJobOptions = {
 	/** Job id, or a unique prefix of one. */
 	jobIdPrefix: string;
 	s3RoleBinding?: S3RoleVerificationBinding;
+	s3Storage?: S3VerificationStorage;
 	/**
 	 * When true, an object is FOREIGN if it was written before this job's creation time
 	 * OR sits in no directory this plan can write into — see `makeForeignKeyFilter`.
@@ -971,6 +977,18 @@ export async function verifyJob(
 	}
 	const plan: EncodingPlan = encodingPlanSchema.parse(job.plan);
 	const expected = compileExpectedArtefacts(plan);
+	let s3RoleBinding = options.s3RoleBinding;
+	if (
+		!s3RoleBinding &&
+		options.s3Storage?.s3RoleCredentialLabel &&
+		[...plan.inputs, ...plan.outputs].some((io) => io.kind === "S3_ROLE_BASED")
+	) {
+		const credentials = createCredentialStore(options.prisma, cipherFromEnv());
+		s3RoleBinding = selectS3RoleObserver(
+			options.s3Storage,
+			await credentials.list(),
+		)?.binding;
+	}
 	/**
 	 * The job's per-title capture, read ONCE for its two consumers (row 284).
 	 *
@@ -1013,15 +1031,15 @@ export async function verifyJob(
 			string,
 			{ bucket: string; browser: ObjectStorageBrowser }
 		>();
-		const unbrowsable: string[] = [];
+		const unbrowsable = new Map<string, string>();
 		for (const outputKey of expected.outputKeys) {
 			const where = browsable(
 				plan.outputs.find((o) => o.key === outputKey),
 				`output "${outputKey}"`,
-				options.s3RoleBinding,
+				s3RoleBinding,
 			);
 			if (!where.ok) {
-				unbrowsable.push(where.reason);
+				unbrowsable.set(outputKey, where.reason);
 				continue;
 			}
 			outputs.set(outputKey, {
@@ -1036,7 +1054,7 @@ export async function verifyJob(
 		const where = browsable(
 			plan.inputs.find((i) => i.key === ingest?.inputKey),
 			"the reference input",
-			options.s3RoleBinding,
+			s3RoleBinding,
 		);
 		if (ingest && where.ok) {
 			try {
@@ -1085,7 +1103,10 @@ export async function verifyJob(
 			outputFor: (outputKey) => {
 				const hit = outputs.get(outputKey);
 				if (!hit) {
-					throw new Error(`plan output "${outputKey}" has no credential`);
+					throw new Error(
+						unbrowsable.get(outputKey) ??
+							`plan output "${outputKey}" has no credential`,
+					);
 				}
 				return hit;
 			},
@@ -1118,7 +1139,7 @@ export async function verifyJob(
 		const report = await verifyArtefacts(expected, deps);
 		addHygieneChecks(report, {
 			truncations,
-			unbrowsable,
+			unbrowsable: [...unbrowsable.values()],
 			notes: expected.notes,
 		});
 		// : the measurement, joined — read only when the plan asked for one.
@@ -1191,6 +1212,7 @@ export async function main(argv: string[]): Promise<number> {
 		const result = await verifyJob({
 			prisma,
 			ffprobePath: process.env.FFPROBE_PATH ?? "ffprobe",
+			s3Storage: s3VerificationStorageEnv(),
 			jobIdPrefix,
 			excludeOlderThanJob: argv.includes("--strict-prefix"),
 			log: (line) => console.log(`[verify] ${line}`),

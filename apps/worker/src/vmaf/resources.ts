@@ -255,7 +255,7 @@ export function readLocalResources(sources = defaults): LocalResources {
 		reserveBytes,
 		budgetBytes:
 			headroomBytes !== undefined
-				? Math.max(0, headroomBytes - reserveBytes)
+				? Math.floor(Math.max(0, headroomBytes - reserveBytes))
 				: undefined,
 	};
 }

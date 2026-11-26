@@ -38,7 +38,7 @@ describe("banding resource admission", () => {
 		expect(plan.estimatedBytes).toBeGreaterThanOrEqual(512 * 1024 ** 2);
 	});
 
-	it("registers the pinned GPU for a detector-specific exclusive composite reservation", async () => {
+	it("preserves bounded host admission and full GPU credits for a composite reservation", async () => {
 		const selected = {
 			backend: "cuda" as const,
 			device: 0,
@@ -120,9 +120,10 @@ describe("banding resource admission", () => {
 		};
 		const first = await planner(request);
 		expect(first).toMatchObject({
-			exclusive: true,
+			exclusive: false,
 			concurrency: 1,
-			decoderThreads: 1,
+			decoderThreads: 2,
+			cpuChargePerComparison: 7,
 			nativeDevice: 0,
 			nativeInflightFrames: 1,
 			gpu: { computeCredits: VMAF_GPU_COMPUTE_CREDITS },
@@ -136,6 +137,12 @@ describe("banding resource admission", () => {
 			video: { ...request.video, bitDepth: 10 },
 		});
 		expect(first.profileKey).not.toBe(second.profileKey);
+		info.device.integrated = true;
+		expect((await planner(request)).exclusive).toBe(true);
+		info.device.integrated = false;
+		info.device.memoryTotalBytes = null;
+		info.device.memoryAvailableBytes = null;
+		expect((await planner(request)).exclusive).toBe(true);
 		readResources.mockClear();
 		inspect.mockClear();
 		await expect(
@@ -157,5 +164,51 @@ describe("banding resource admission", () => {
 		await expect(planner(request)).rejects.toThrow(
 			"BANDING_RESOURCE_IDENTITY_CHANGED",
 		);
+	});
+	it("admits two CPU HDR plus full-frame CAMBI jobs within CPU and memory bounds", async () => {
+		const GiB = 1024 ** 3;
+		const planner = createBandingResourcePlanner({
+			runner: {} as never,
+			nativePath: "/native",
+			hostKey: async () => "d".repeat(64),
+			shared: {} as never,
+			configured: { threads: 4 },
+			readResources: () => ({
+				cpuCapacity: 24,
+				reserveBytes: 0,
+				budgetBytes: 76 * GiB,
+			}),
+		});
+		const plan = await planner({
+			video: {
+				width: 3840,
+				height: 2160,
+				bitDepth: 10,
+				codec: "av1",
+				fps: 60000 / 1001,
+				frames: 6314,
+			},
+			pairCount: 1,
+			signal: new AbortController().signal,
+			basePlan: {
+				threads: 4,
+				decoderThreads: 2,
+				cpuChargePerComparison: 9,
+				concurrency: 2,
+				estimatedBytes: 24 * GiB,
+				exclusive: false,
+				manualFallback: false,
+			},
+		});
+		expect(plan).toMatchObject({
+			threads: 4,
+			decoderThreads: 2,
+			cpuChargePerComparison: 9,
+			concurrency: 2,
+			exclusive: false,
+			frameCount: 6314,
+		});
+		expect(plan.estimatedBytes).toBeGreaterThan(24 * GiB);
+		expect(2 * plan.estimatedBytes).toBeLessThanOrEqual(76 * GiB);
 	});
 });

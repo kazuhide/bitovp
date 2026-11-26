@@ -336,6 +336,110 @@ const ampleResources = () => ({
 });
 
 describe("global local VMAF preparation and execution", () => {
+	it("does not open additional shared preparation slots on a single-core host or with no memory budget", () => {
+		for (const resources of [
+			{ cpuCapacity: 1, reserveBytes: 0, budgetBytes: 8 * GiB },
+			{ cpuCapacity: 24, reserveBytes: 8 * GiB, budgetBytes: 0 },
+		]) {
+			const service = createLocalVmafResources({
+				concurrency: 8,
+				readResources: () => resources,
+				execute: vi.fn(),
+			});
+			expect(service.jobCapacity()).toBe(1);
+		}
+	});
+
+	it("lets three single-comparison parents reach shared admission while only two fit CPU24", async () => {
+		const readResources = () => ({
+			cpuCapacity: 24,
+			reserveBytes: 0,
+			budgetBytes: 76 * GiB,
+		});
+		const cpu = createResourceAdmission({
+			capacityBytes: 24000,
+			availableBytes: () => 24000,
+		});
+		const memory = createResourceAdmission({
+			capacityBytes: 76 * GiB,
+			availableBytes: () => 76 * GiB,
+		});
+		const requests: VmafResourceLeaseRequest[] = [];
+		const shared = createSharedVmafExecution({
+			hostKey: async () => "a".repeat(64),
+			readResources,
+			leases: {
+				async run(request, signal, work) {
+					requests.push(request);
+					return cpu.run(request.requested.cpuMilliCores, signal, () =>
+						memory.run(request.requested.hostBytes, signal, () =>
+							work({
+								signal,
+								assertOwned: async () => {},
+								fitsHeadroom: async () => true,
+							}),
+						),
+					);
+				},
+			},
+		});
+		const service = createLocalVmafResources({
+			threads: 4,
+			readResources,
+			execute: shared.run,
+		});
+		const sessions = Array.from({ length: 3 }, () =>
+			service.begin(new AbortController().signal),
+		);
+		expect(service.jobCapacity()).toBe(3);
+		const hold = deferred();
+		let active = 0,
+			maximum = 0;
+		const jobs = sessions.map((session, i) =>
+			session.prepared(String(i), () =>
+				session.run(
+					String(i),
+					pair,
+					1,
+					async () => {
+						active++;
+						maximum = Math.max(maximum, active);
+						try {
+							await hold.promise;
+						} finally {
+							active--;
+						}
+					},
+					async () => ({
+						threads: 4,
+						decoderThreads: 2,
+						cpuChargePerComparison: 9,
+						concurrency: 1,
+						estimatedBytes: 28 * GiB,
+						exclusive: false,
+						manualFallback: false,
+					}),
+				),
+			),
+		);
+		try {
+			await vi.waitFor(() => expect(active).toBe(2));
+			expect(service.jobCapacity()).toBe(3);
+			expect(requests).toHaveLength(3);
+			expect(
+				requests.every(
+					(request) =>
+						request.requested.cpuMilliCores === 9000 &&
+						request.requested.hostBytes === 28 * GiB,
+				),
+			).toBe(true);
+		} finally {
+			hold.resolve();
+		}
+		await Promise.all(jobs);
+		expect(maximum).toBe(2);
+		expect(sessions[0]?.report()).toMatchObject({ active: 0, queued: 0 });
+	});
 	it("starts cold at one preparation, then runs eight units from two sessions through a shared capacity of two", async () => {
 		const service = createLocalVmafResources({ readResources: ampleResources });
 		const a = service.begin(new AbortController().signal),

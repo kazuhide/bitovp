@@ -1009,6 +1009,7 @@ describe("HDR QC execution policy", () => {
 			if (banding) {
 				expect(cambi).toHaveBeenCalledOnce();
 				expect(cambi.mock.calls[0]?.[4]).toBe(1);
+				expect(cambi.mock.calls[0]?.[7]).toBe(2);
 				expect(t.results[0]?.pooled).toMatchObject({
 					banding: { max: 12, frameCount: 1 },
 				});
@@ -1043,8 +1044,25 @@ describe("HDR QC execution policy", () => {
 
 describe("createVmafProcessor", () => {
 	it("persists actual NVDEC and CPU scoring facts under a separate experimental generation", async () => {
+		const host = {
+			cpuCapacity: 8,
+			budgetBytes: 8 * 1024 ** 3,
+			reserveBytes: 0,
+		};
+		const localResources = createLocalVmafResources({
+			readResources: () => host,
+			execute: (plan, signal, work) => {
+				expect(plan.exclusive).toBe(true);
+				return work(signal, async () => {});
+			},
+		});
 		const t = setup({
 			decodePolicy: { backend: "auto", device: 0 },
+			localResources,
+			resolveLocalResources: async ({ pair }) => {
+				expect(pair).toMatchObject({ decodeBackend: "auto" });
+				return planLocalResources(host, pair, {}, 1);
+			},
 			probeJson: JSON.stringify({
 				streams: [
 					{
@@ -1054,6 +1072,7 @@ describe("createVmafProcessor", () => {
 						width: 1920,
 						height: 1080,
 						r_frame_rate: "30/1",
+						duration: "1",
 					},
 				],
 			}),
@@ -5530,6 +5549,24 @@ describe("banding measurement integration", () => {
 				"n_threads=20",
 			);
 		}
+		const detector = vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(([, argv]) =>
+				argv[argv.indexOf("-filter_complex") + 1]?.includes("model=:"),
+			);
+		const timing = vi
+			.mocked(t.runner.run)
+			.mock.calls.filter(([, argv]) => argv.includes("-show_frames"));
+		expect(detector).toHaveLength(2);
+		expect(timing).toHaveLength(2);
+		for (const [, argv] of [...detector, ...timing]) {
+			expect(argv[argv.indexOf("-threads") + 1]).toBe(String(decoderThreads));
+		}
+		for (const [, argv] of detector) {
+			expect(argv[argv.indexOf("-filter_complex") + 1]).toContain(
+				"n_threads=20",
+			);
+		}
 		expect(t.results).toHaveLength(2);
 	});
 
@@ -5538,6 +5575,9 @@ describe("banding measurement integration", () => {
 		let owned = 0;
 		const plans: unknown[] = [];
 		const localResources = createLocalVmafResources({
+			// This fixture inspects one reservation and its private files at a
+			// time. Its fake executor does not arbitrate concurrent leases.
+			concurrency: 1,
 			readResources: () => ({
 				cpuCapacity: 8,
 				reserveBytes: 0,

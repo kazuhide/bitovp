@@ -1,5 +1,6 @@
 import { isHdrVmafModel } from "@bitovp/core";
 import { geometryFromProbe } from "./geometry";
+import type { DecodePolicy } from "./hardware-decode";
 import { ResourceUnavailableError } from "./resource-admission";
 import type { LocalResources } from "./resources";
 
@@ -26,6 +27,7 @@ export type ResourcePair = {
 	psnr?: boolean;
 	measurementMethod?: string;
 	scoringBackend?: "cuda" | "vulkan";
+	decodeBackend?: DecodePolicy["backend"];
 	outputFps?: number;
 };
 export type LocalResourceOptions = { concurrency?: number; threads?: number };
@@ -245,7 +247,9 @@ export function planLocalResources(
 		minimumBytes > resources.budgetBytes
 	)
 		throw new ResourceUnavailableError("estimate");
-	const exclusive = !calibrated;
+	const exclusive =
+		!calibrated ||
+		(pair.decodeBackend !== undefined && pair.decodeBackend !== "cpu");
 	const estimatedBytes = minimumBytes;
 	const automaticConcurrency = exclusive
 		? 1

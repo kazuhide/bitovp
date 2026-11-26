@@ -1,4 +1,7 @@
-import { maskUrlUserinfo, REDACTED } from "../crypto/redact";
+import {
+	matchesHistoricalUserinfoMask,
+	REDACTED,
+} from "../crypto/url-userinfo";
 import {
 	codecDetailWireControls,
 	type DetailCodec,
@@ -8,7 +11,12 @@ import type { OperationKind } from "./compiler";
 import { hasPrivateStorageLocator } from "./hdr-source-paths";
 import { manifestCurlSnapshot } from "./manifest-curl";
 import { externalVttUrlSchema } from "./manifest-options";
-import { hasRecordedObjectInput } from "./object-input-path";
+import {
+	authoredObjectPath,
+	hasCompletedResource,
+	hasRecordedObjectInput,
+	matchesRecordedObjectPath,
+} from "./object-input-path";
 import { hdr10PlusStreamSchema } from "./schema";
 import type { StepLogEntry } from "./steplog";
 
@@ -43,11 +51,12 @@ import type { StepLogEntry } from "./steplog";
  */
 
 export type CurlOptions = {
-	objectInputs?: ReadonlyMap<string, string | null>;
 	/** Base, default the public Bitmovin host. */
 	baseUrl?: string;
 	/** Emit an `X-Tenant-Org-Id` placeholder header (sub-org calls). */
 	includeOrgHeader?: boolean;
+	objectInputs?: ReadonlyMap<string, string | null>;
+	plan?: unknown;
 };
 
 type EndpointDef = {
@@ -816,13 +825,38 @@ export function curlForStep(
 		return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 	}
 	let request = entry.request;
-	if (
+	const ingest = entry.kind === "CREATE_INGEST_INPUT_STREAM";
+	const snapshotPath =
+		entry.request &&
+		typeof entry.request === "object" &&
+		"inputPath" in entry.request
+			? entry.request.inputPath
+			: undefined;
+	const sensitiveIngest =
+		ingest &&
+		typeof snapshotPath === "string" &&
+		(snapshotPath.includes(REDACTED) || hasPrivateStorageLocator(snapshotPath));
+	const caption =
 		entry.kind === "CREATE_CEA608_INPUT_STREAM" ||
 		entry.kind === "CREATE_CEA708_INPUT_STREAM" ||
-		entry.kind === "CREATE_DVB_SUBTITLE_INPUT_STREAM"
+		entry.kind === "CREATE_DVB_SUBTITLE_INPUT_STREAM";
+	if (
+		entry.kind === "CREATE_DOLBY_VISION_INPUT_STREAM" ||
+		caption ||
+		sensitiveIngest
 	) {
+		if (
+			ingest &&
+			entry.response &&
+			typeof entry.response === "object" &&
+			"inputReceiptId" in entry.response
+		)
+			return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
 		const data = request as Record<string, unknown> | null | undefined;
-		const refs = data?.refs as Record<string, unknown> | null | undefined;
+		const refs = data?.refs as Record<string, unknown> | undefined;
+		const proven = hasRecordedObjectInput(entry, data, options.objectInputs);
+		const replay = { ...data };
+		const completed = hasCompletedResource(entry);
 		if (
 			typeof refs?.encodingId !== "string" ||
 			!refs.encodingId.trim() ||
@@ -830,38 +864,42 @@ export function curlForStep(
 			!refs.inputId.trim()
 		)
 			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
-		const objectInput = hasRecordedObjectInput(
-			entry,
-			data,
-			options.objectInputs,
-		);
-		const compiled = entry.payload.inputPath;
-		// Embedded caption executors send the compiled path verbatim. Some older
-		// snapshots masked an entire query-like S3 key, even after a successful POST.
-		const confirmedMaskedKey =
-			data?.inputPath === REDACTED &&
-			objectInput &&
-			entry.status === "DONE" &&
-			typeof entry.resourceId === "string" &&
-			!!entry.resourceId &&
-			entry.response !== null &&
-			typeof entry.response === "object" &&
-			"id" in entry.response &&
-			entry.response.id === entry.resourceId &&
-			typeof compiled === "string" &&
-			!compiled.includes(REDACTED) &&
-			hasPrivateStorageLocator(compiled);
-		const inputPath = confirmedMaskedKey
-			? compiled
-			: recordedObjectPath(data?.inputPath, compiled);
-		if (
-			typeof inputPath !== "string" ||
-			!inputPath ||
-			hasPrivateStorageLocator(inputPath, objectInput)
-		)
-			return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+		for (const field of ingest || caption
+			? ["inputPath"]
+			: ["videoInputPath", "metadataInputPath"]) {
+			const actual = data?.[field];
+			const compiled = entry.payload[field];
+			if (
+				actual === undefined &&
+				compiled === undefined &&
+				field === "metadataInputPath"
+			)
+				continue;
+			const verified =
+				proven && completed && matchesRecordedObjectPath(actual, compiled);
+			const restored = verified ? compiled : actual;
+			if (
+				typeof restored !== "string" ||
+				!restored ||
+				(restored.includes(REDACTED) &&
+					!(
+						verified &&
+						authoredObjectPath(
+							options.plan,
+							entry.step,
+							entry.refs.inputId,
+							field,
+							restored,
+						)
+					)) ||
+				hasPrivateStorageLocator(restored, verified ? "OBJECT_KEY" : "UNKNOWN")
+			)
+				return { ok: false, code: "NO_ENDPOINT", kind: entry.kind };
+			replay[field] = restored;
+		}
 		entry = { ...entry, refs: { encodingId: refs.encodingId } };
-		request = { ...data, inputPath, inputId: refs.inputId };
+		replay.inputId = refs.inputId;
+		request = replay;
 	}
 	if (entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM") {
 		const snapshot = request as Record<string, unknown> | null | undefined;
@@ -873,7 +911,6 @@ export function curlForStep(
 			!refs.inputId.trim()
 		)
 			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
-
 		const source = hdr10PlusStreamSchema.safeParse({
 			key: "source",
 			inputKey: "input",
@@ -1123,13 +1160,9 @@ function recordedObjectPath(actual: unknown, compiled: unknown) {
 	if (typeof compiled !== "string") return undefined;
 	// The unredacted compiler payload records the exact object key. Older
 	// snapshot writers masked through the first or last @ of a path segment.
-	if (actual === compiled || actual === maskUrlUserinfo(compiled))
-		return compiled;
-	const firstAtMask = compiled.replace(
-		/(\/\/[^/\s:@]+:)[^@/\s]+@/g,
-		`$1${REDACTED}@`,
-	);
-	return actual === firstAtMask ? compiled : undefined;
+	return actual === compiled || matchesHistoricalUserinfoMask(actual, compiled)
+		? compiled
+		: undefined;
 }
 
 /** True when a step has a mappable, fully-resolvable curl. */

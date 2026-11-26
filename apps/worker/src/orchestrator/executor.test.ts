@@ -3019,6 +3019,35 @@ describe("executeStep", () => {
 			expect(sdk.listRtmpInputs).toHaveBeenCalledOnce();
 		});
 
+		it("does not diagnose a missing manifest as stale RTMP when its location includes input", async () => {
+			const failure = new BitmovinCallError(
+				"POST",
+				"/encoding/encodings/bm-enc/live/start",
+				{
+					httpStatusCode: 400,
+					errorCode: 1001,
+					shortMessage:
+						"The manifest could not be found at recordings/input.m3u8?ticket=PRIVATE_FIXTURE",
+				},
+			);
+			const sdk = fakeSdk({
+				getEncodingStatus: vi.fn(async () => ({ status: "CREATED" })),
+				startLiveEncoding: vi.fn(async () => {
+					throw failure;
+				}),
+				listRtmpInputs: vi.fn(),
+				listIngestInputStreams: vi.fn(),
+			});
+			const thrown = await executeStep(
+				startLiveOp,
+				ctx(sdk, startLiveIds),
+			).catch((err: unknown) => err);
+			expect(thrown).toBe(failure);
+			expect(failure.message).toContain("[withheld]");
+			expect(sdk.listRtmpInputs).not.toHaveBeenCalled();
+			expect(sdk.listIngestInputStreams).not.toHaveBeenCalled();
+		});
+
 		it("passes a non-input live-start failure through untouched", async () => {
 			const sdk = fakeSdk({
 				getEncodingStatus: vi.fn(() => Promise.resolve({ status: "CREATED" })),

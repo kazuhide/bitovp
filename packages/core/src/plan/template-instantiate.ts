@@ -1,4 +1,5 @@
 import { mapDestinationPaths } from "./destinations";
+import { hasPrivateStorageLocator } from "./hdr-source-paths";
 import { type EncodingPlan, encodingPlanSchema } from "./schema";
 
 /**
@@ -175,12 +176,31 @@ export function renderTemplateOutputPrefix(
 	template: string,
 	ctx: {
 		objectKey: string;
+		inputKind?: string;
 		templateName: string;
 		now: Date;
 		uuid: string;
 	},
 ): string {
-	const file = ctx.objectKey.split("/").pop() ?? ctx.objectKey;
+	let sourcePath = ctx.objectKey;
+	if (
+		ctx.inputKind === "HTTPS" ||
+		hasPrivateStorageLocator(sourcePath, "OBJECT_KEY")
+	) {
+		// Only the URL path belongs in a public destination token.
+		try {
+			const source = /^[\s\p{Cc}]*[a-z][a-z\d+.-]*:/iu.test(sourcePath)
+				? new URL(sourcePath)
+				: new URL(sourcePath, "https://template.invalid");
+			sourcePath =
+				source.protocol === "https:" || source.protocol === "http:"
+					? source.pathname
+					: "";
+		} catch {
+			sourcePath = "";
+		}
+	}
+	const file = sourcePath.split("/").pop() ?? sourcePath;
 	const dot = file.lastIndexOf(".");
 	const basename = dot > 0 ? file.slice(0, dot) : file;
 	const ext = dot > 0 ? file.slice(dot + 1).toLowerCase() : "";
@@ -353,6 +373,9 @@ export function instantiateTemplatePlan(
 		: "";
 	const outputPrefix = renderTemplateOutputPrefix(input.outputPrefixTemplate, {
 		objectKey: firstEffective,
+		inputKind: template.inputs.find(
+			(resource) => resource.key === firstSite?.inputKey,
+		)?.kind,
 		templateName: input.templateName,
 		now: input.now,
 		uuid: input.uuid,

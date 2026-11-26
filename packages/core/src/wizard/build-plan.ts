@@ -1683,15 +1683,19 @@ export function implicitTrackKeys(sources: WizardSources) {
 			...(sources.concatenationStreams ?? []),
 		].map((stream) => stream.key),
 	);
-	function availableTrackKey(kind: "video" | "audio") {
-		let key: string = kind;
-		for (let i = 1; sourceKeys.has(key); i++) key = `${kind}-input-${i}`;
-		return key;
-	}
 	return {
-		video: availableTrackKey("video"),
-		audio: availableTrackKey("audio"),
+		video: availableImplicitTrackKey(sourceKeys, "video"),
+		audio: availableImplicitTrackKey(sourceKeys, "audio"),
 	};
+}
+
+export function availableImplicitTrackKey(
+	sourceKeys: ReadonlySet<unknown>,
+	kind: "video" | "audio",
+) {
+	let key: string = kind;
+	for (let i = 1; sourceKeys.has(key); i++) key = `${kind}-input-${i}`;
+	return key;
 }
 
 export function buildPlan(state: WizardState): EncodingPlanInput {

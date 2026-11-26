@@ -1,4 +1,8 @@
-import { encodingPlanSchema, type ManifestPlaybackLink } from "@bitovp/core";
+import {
+	AV1_DYNAMIC_RANGE_FORMATS,
+	h264RenditionSchema,
+	type ManifestPlaybackLink,
+} from "@bitovp/core";
 import { z } from "zod";
 
 export type OutputJob = {
@@ -39,22 +43,42 @@ export function outputLinks(job?: OutputJob): OutputLink[] {
 }
 
 /** Plan settings describe the output request, never the display's active HDR mode. */
+const formatPlan = z.object({ renditions: z.array(z.unknown()) });
+const videoFormat = z.object({
+	codec: z.enum(["H264", "H265", "AV1", "VP9"]),
+	dynamicRangeFormat: z
+		.enum([
+			...AV1_DYNAMIC_RANGE_FORMATS,
+			"DOLBY_VISION",
+			"DOLBY_VISION_PROFILE_5",
+			"DOLBY_VISION_PROFILE_8_1",
+			"HLG",
+		])
+		.optional()
+		.catch(undefined),
+	encodingMode: h264RenditionSchema.shape.encodingMode.catch(undefined),
+	colorConfig: z
+		.object({
+			colorTransfer: z.enum(["SMPTE_2084", "ARIB_STD_B67", "BT_709"]),
+		})
+		.optional()
+		.catch(undefined),
+});
+
 export function outputFormats(value: unknown): string {
-	const plan = encodingPlanSchema.safeParse(value);
+	// Detail reports can withhold source locators independently of output settings.
+	const plan = formatPlan.safeParse(value);
 	if (!plan.success) return "";
-	const formats = plan.data.renditions.flatMap((rendition) => {
-		if (!["H264", "H265", "AV1", "VP9"].includes(rendition.codec)) return [];
-		const row = rendition as typeof rendition & {
-			dynamicRangeFormat?: string;
-			encodingMode?: string;
-			colorConfig?: { colorTransfer?: string };
-		};
+	const formats = plan.data.renditions.flatMap((value) => {
+		const parsed = videoFormat.safeParse(value);
+		if (!parsed.success) return [];
+		const row = parsed.data;
 		const codec =
-			rendition.codec === "H264"
+			row.codec === "H264"
 				? "H.264"
-				: rendition.codec === "H265"
+				: row.codec === "H265"
 					? "H.265"
-					: rendition.codec;
+					: row.codec;
 		const range =
 			row.dynamicRangeFormat
 				?.replace("DOLBY_VISION_PROFILE_10_1", "Dolby Vision 10.1")

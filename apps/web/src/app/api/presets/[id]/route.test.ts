@@ -34,6 +34,28 @@ function withId(id: string) {
 }
 
 describe("GET /api/presets/[id]", () => {
+	it("keeps equal withheld HTTPS paths grouped for source replacement and leaves missing paths unmarked", async () => {
+		const path = "incoming/feature.mxf?ticket=PRIVATE_FIXTURE";
+		const body = {
+			inputs: [{ key: "remote", kind: "HTTPS", host: "media.example" }],
+			ingest: ["audio", "video", "missing", "other"].map((key, index) => ({
+				key,
+				inputKey: "remote",
+				inputPath: index === 2 ? "" : index === 3 ? path + "-alternate" : path,
+			})),
+		};
+		findFirst.mockResolvedValueOnce({ id: ID, kind: "FULL_PLAN", body });
+		const response = await GET(new Request("http://test"), withId(ID));
+		const result = await response.json();
+		expect(JSON.stringify(result)).not.toContain("PRIVATE_FIXTURE");
+		expect(result.body.withheldSourcePaths).toEqual([
+			[
+				{ collection: "ingest", index: 0, field: "inputPath" },
+				{ collection: "ingest", index: 1, field: "inputPath" },
+			],
+			[{ collection: "ingest", index: 3, field: "inputPath" }],
+		]);
+	});
 	it("withholds old HDR source locations from a saved template download without changing the editable body", async () => {
 		const body = {
 			hdr10PlusStreams: [

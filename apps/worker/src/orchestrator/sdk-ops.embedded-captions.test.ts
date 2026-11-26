@@ -83,12 +83,21 @@ it.each([
 		refs: op.refs ?? {},
 		payload: op.payload ?? {},
 		request: snapshot,
+		resourceId: result.resourceId,
+		response: result.response,
 	};
+	const inputReceipt = {
+		step: "input:media",
+		kind: "CREATE_INPUT_S3",
+		status: "DONE",
+		resourceId: "input-id",
+	};
+	const requests = objectInputReceipts([inputReceipt]);
 	for (const path of [inputPath, "dailies//Scene A:[REDACTED]@camera.mov"]) {
-		const replay = curlForStep({
-			...entry,
-			request: { ...snapshot, inputPath: path },
-		});
+		const replay = curlForStep(
+			{ ...entry, request: { ...snapshot, inputPath: path } },
+			{ objectInputs: requests },
+		);
 		if (!replay.ok) throw Error(replay.code);
 		expect(
 			JSON.parse(replay.command.split("--data '")[1]?.slice(0, -1) ?? ""),
@@ -104,13 +113,6 @@ it.each([
 	});
 	expect(lost).toMatchObject({ ok: false });
 	const objectPath = "reels/take?key=isolated.ts";
-	const inputReceipt = {
-		step: "input:media",
-		kind: "CREATE_INPUT_S3",
-		status: "DONE",
-		resourceId: "input-id",
-	};
-	const requests = objectInputReceipts([inputReceipt]);
 	const stored = {
 		...entry,
 		payload: { ...entry.payload, inputPath: objectPath },
@@ -166,7 +168,11 @@ it.each([
 	}
 	expect(
 		curlForStep(
-			{ ...stored, request: { ...write, inputPath: "[REDACTED]" } },
+			{
+				...stored,
+				response: undefined,
+				request: { ...write, inputPath: "[REDACTED]" },
+			},
 			{ objectInputs: requests },
 		),
 	).toMatchObject({ ok: false });

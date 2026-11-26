@@ -84,8 +84,10 @@ export function isBitmovinError(err: unknown): err is {
 
 /** Classify while the provider's wording is available; only the boolean is public. */
 export function isMissingInputMessage(message: string): boolean {
-	return (
-		/input/i.test(message) && /could not be found|not found/i.test(message)
+	// The missing resource must be the subject. A manifest's location can
+	// itself be named input.m3u8 or include that word in a signed query.
+	return /^\s*(?:the |an? )?(?:requested )?(?:(?:rtmp|ingest|live) )?input(?: with (?:the )?id\s*:?\s*["']?[\w-]+["']?)?\s+(?:could not be found|(?:was )?not found)\b/iu.test(
+		message,
 	);
 }
 

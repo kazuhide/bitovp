@@ -5,6 +5,7 @@ import {
 	createTenantPrismaClient,
 	type Prisma,
 	requestLibrarySource,
+	retainLibraryInputsBeforeJobDeletion,
 } from "@bitovp/db";
 import { expect, it } from "vitest";
 import fixture from "../../../../packages/core/src/plan/__fixtures__/ai-scene-analysis-passthrough-test.plan.json";
@@ -30,6 +31,10 @@ it.runIf(adminUrl && appUrl)(
 				...fixture,
 				bitmovin: { ...fixture.bitmovin, accountId: account.id },
 				aiSceneAnalysis: undefined,
+				ingest: fixture.ingest.map((input) => ({
+					...input,
+					inputPath: "reels/take.mxf?auth=review",
+				})),
 				hdr10PlusStreams: [
 					{
 						key: "hdr",
@@ -52,7 +57,9 @@ it.runIf(adminUrl && appUrl)(
 			const original = librarySnapshotSchema.parse(source.snapshot);
 			const old = {
 				...original,
-				inputs: original.inputs.filter((i) => !i.hdr10Plus),
+				inputs: original.inputs
+					.filter((i) => !i.hdr10Plus)
+					.map(({ pathKind: _, ...row }) => row),
 			};
 			await prisma.librarySource.update({
 				where: { id: source.id },
@@ -103,6 +110,22 @@ it.runIf(adminUrl && appUrl)(
 					where: { contentId: content.id },
 				}),
 			).toBe(1);
+			await prisma.librarySource.update({
+				where: { id: source.id },
+				data: { snapshot: old as Prisma.InputJsonObject },
+			});
+			await prisma.$transaction(async (tx) => {
+				await tx.$queryRaw`SELECT id FROM "EncodingJob" WHERE id = ${job.id}::uuid FOR UPDATE`;
+				await retainLibraryInputsBeforeJobDeletion(tx, job.id);
+				await tx.encodingJob.delete({ where: { id: job.id } });
+			});
+			const retained = await prisma.librarySource.findUniqueOrThrow({
+				where: { id: source.id },
+			});
+			expect(retained.jobId).toBeNull();
+			expect(librarySnapshotSchema.parse(retained.snapshot).inputs).toEqual(
+				original.inputs,
+			);
 		} finally {
 			try {
 				await prisma.contentRevision.deleteMany();

@@ -79,7 +79,9 @@ it("debounces edited fields, retains a failed submission and cancels pending sav
 	expect(readWizardDraft(key, "vod")?.value.name).toBe("current");
 	// A failed submit leaves the same draft; only the caller's success clears it.
 	act(() => hook.rerender({ value: { ...value, name: "pending" } }));
-	act(() => hook.result.current.afterSubmission()?.());
+	act(() => {
+		void hook.result.current.afterSubmission()?.();
+	});
 	act(() => vi.advanceTimersByTime(1000));
 	expect(localStorage.getItem(key)).toBeNull();
 });
@@ -152,7 +154,9 @@ it("clears its bound draft when success occurs during session refresh, without r
 	act(() => hook.rerender({ value: { ...value, name: "pending" } }));
 	session.isFetching = true;
 	act(() => hook.rerender({ value }));
-	act(() => hook.result.current.afterSubmission()?.());
+	act(() => {
+		void hook.result.current.afterSubmission()?.();
+	});
 	hook.unmount();
 	act(() => vi.advanceTimersByTime(1000));
 	expect(localStorage.getItem(key)).toBeNull();
@@ -288,7 +292,9 @@ it("resumes the last saved work across two tabs and keeps it when the older tab 
 	act(() => vi.advanceTimersByTime(301));
 	const reopened = mount();
 	expect(reopened.result.current.pending?.value.name).toBe("Newer job");
-	act(() => older.result.current.afterSubmission()?.());
+	act(() => {
+		void older.result.current.afterSubmission()?.();
+	});
 	const afterSubmit = mount();
 	expect(afterSubmit.result.current.pending?.value.name).toBe("Newer job");
 });
@@ -317,7 +323,9 @@ it("clears the submitted working draft when a second tab already discarded the o
 	expect(readWizardDraft(`${key}:working`, "vod")?.value.name).toBe(
 		"Completed form",
 	);
-	act(() => older.result.current.afterSubmission()?.());
+	act(() => {
+		void older.result.current.afterSubmission()?.();
+	});
 	expect(reopen().result.current.available).toBe(false);
 });
 
@@ -332,7 +340,9 @@ it("keeps another tab's offered form when the operator submits without restoring
 	expect(older.result.current.pending?.value.name).toBe(
 		"Other operator window",
 	);
-	act(() => older.result.current.afterSubmission()?.());
+	act(() => {
+		void older.result.current.afterSubmission()?.();
+	});
 	expect(reopen().result.current.pending?.value.name).toBe(
 		"Other operator window",
 	);
@@ -381,7 +391,9 @@ it("serializes a submitted removal and the sibling tab's delayed edit under the 
 		return Promise.resolve();
 	}) as LockManager["request"]);
 	try {
-		act(() => older.result.current.afterSubmission()?.());
+		act(() => {
+			void older.result.current.afterSubmission()?.();
+		});
 		act(() => newer.rerender({ form: { ...value, name: "Sibling edit" } }));
 		act(() => vi.advanceTimersByTime(301));
 		expect(waiting).toHaveLength(2);
@@ -407,7 +419,9 @@ it("ties a successful request to the accepted snapshots at submission time", () 
 	act(() => vi.advanceTimersByTime(301));
 	act(() => older.result.current.restore(true));
 	act(() => older.result.current.restore());
-	act(() => complete?.());
+	act(() => {
+		void complete?.();
+	});
 	expect(reopen().result.current.pending?.value.name).toBe(
 		"Edited during submission",
 	);
@@ -429,7 +443,9 @@ it("clears the submitted form when its pending autosave finishes during the requ
 	const complete = hook.result.current.afterSubmission();
 	act(() => vi.advanceTimersByTime(301));
 	expect(readWizardDraft(key, "vod")?.value.name).toBe("Just submitted");
-	act(() => complete?.());
+	act(() => {
+		void complete?.();
+	});
 	expect(readWizardDraft(key, "vod")).toBeNull();
 });
 
@@ -486,7 +502,9 @@ it.each([
 	act(() => sibling.result.current.discard());
 	expect(readWizardDraft(`${scopeKey}:working`, kind)).toBeNull();
 	expect(readWizardDraft(scopeKey, kind)).not.toBeNull();
-	act(() => older.result.current.afterSubmission()?.());
+	act(() => {
+		void older.result.current.afterSubmission()?.();
+	});
 	expect(reopen().result.current.available).toBe(false);
 });
 
@@ -518,7 +536,9 @@ it("persists edits queued after submission before navigating away on success", (
 			hook.rerender({ form: { ...value, name: "Edited after click" } }),
 		);
 		act(() => vi.advanceTimersByTime(301));
-		act(() => finish?.());
+		act(() => {
+			void finish?.();
+		});
 		hook.unmount();
 		expect(waiting).toHaveLength(2);
 		for (const callback of waiting) act(callback);
@@ -526,4 +546,60 @@ it("persists edits queued after submission before navigating away on success", (
 	} finally {
 		request.mockRestore();
 	}
+});
+
+it("keeps later edits when a successful request finishes during the same user's refresh", () => {
+	writeWizardDraft(key, "vod", value, 1);
+	const hook = renderHook(
+		({ form }) =>
+			useWizardDraft({
+				kind: "vod",
+				context: "new",
+				value: form,
+				step: 1,
+				onRestore: vi.fn(),
+			}),
+		{ initialProps: { form: value } },
+	);
+	act(() => hook.result.current.restore());
+	const finish = hook.result.current.afterSubmission();
+	act(() => hook.rerender({ form: { ...value, name: "Later edit" } }));
+	session.isFetching = true;
+	act(() => hook.rerender({ form: { ...value, name: "Later edit" } }));
+	act(() => {
+		void finish?.();
+	});
+	expect(readWizardDraft(key, "vod")?.value.name).toBe("Later edit");
+});
+
+it("does not recreate an autosaved revision already submitted in a sibling tab", () => {
+	const mount = (initial: typeof value) =>
+		renderHook(
+			({ form }) =>
+				useWizardDraft({
+					kind: "vod",
+					context: "new",
+					value: form,
+					step: 1,
+					onRestore: vi.fn(),
+				}),
+			{ initialProps: { form: initial } },
+		);
+	writeWizardDraft(key, "vod", value, 1);
+	const earlier = mount(value);
+	act(() => earlier.result.current.restore());
+	const earlierFinish = earlier.result.current.afterSubmission();
+	const newer = { ...value, name: "Later draft already submitted" };
+	act(() => earlier.rerender({ form: newer }));
+	act(() => vi.advanceTimersByTime(301));
+	const sibling = mount(newer);
+	act(() => sibling.result.current.restore());
+	act(() => {
+		void sibling.result.current.afterSubmission()?.();
+	});
+	expect(readWizardDraft(key, "vod")).toBeNull();
+	act(() => {
+		void earlierFinish?.();
+	});
+	expect(readWizardDraft(key, "vod")).toBeNull();
 });

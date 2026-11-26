@@ -2672,6 +2672,7 @@ export const en = {
 		collapseRowNamed: "Hide details for {rendition}",
 		collapseRow: "Hide details",
 		inputFiles: "Input files",
+		withheldInputPath: "Source path withheld",
 		deletedCredential: "deleted credential",
 		storageIo: "Storage I/O",
 		storageInputs: "Read from",
@@ -6305,6 +6306,9 @@ export const en = {
 		help: "Saved for 7 days on this browser. VOD drafts keep filter settings, including image object paths and channel gains. Secrets, URLs, DRM, text-overlay contents and imported JSON are omitted.",
 	},
 	templates: {
+		protectedInputHint:
+			"The original source path is private. Enter a replacement to reuse these settings.",
+		useReplacementInputs: "Use replacement paths",
 		savedDeliveryHeading: "Saved delivery presets",
 		emptyDelivery:
 			"No saved delivery presets yet. Import a delivery specification below to save one.",

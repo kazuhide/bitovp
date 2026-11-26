@@ -31,6 +31,44 @@ import {
 
 beforeEach(() => localStorage.clear());
 
+it.each([
+	["S3", "///reels/take.mxf", "///reels/take.mxf"],
+	["GCS", "////reels/take.mxf", "////reels/take.mxf"],
+	["HTTPS", "///reels/take.mxf", ""],
+	["S3", "///name@fixture.invalid/movie", ""],
+	["S3", "///name:pass@fixture.invalid/movie", ""],
+	["S3", "///reels/take.mxf?ticket=fixture", ""],
+] as const)("round-trips only unsigned repeated-slash object keys (%s %s)", (kind, path, expected) => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const media = base.inputFiles[0];
+	if (!media) throw new Error("missing input");
+	base.inputFiles = [
+		{ ...media, kind, path, bucket: "archive", credentialId: "storage" },
+	];
+	writeWizardDraft(
+		"unsigned",
+		"vod",
+		{ ...base, name: "edited" },
+		1,
+		localStorage,
+		100,
+	);
+	const draft = readWizardDraft("unsigned", "vod", localStorage, 101);
+	if (!draft) throw new Error("missing draft");
+	const restored = mergeWizardDraft(
+		base,
+		draft.value,
+		"vod",
+		draft.vodInputOrder,
+	);
+	expect(restored.inputFiles[0]?.path).toBe(expected);
+	expect(restored.name).toBe("edited");
+	expect(
+		buildPlan(restored).ingest?.find((track) => track.key === "video")
+			?.inputPath,
+	).toBe(expected);
+});
+
 it("never saves or restores a protocol-relative HDR credential, including an older draft envelope", () => {
 	const secret =
 		"//fixture:FIXTURE_DRAFT_CREDENTIAL@fixture.invalid/sidecar.json";
@@ -396,6 +434,7 @@ it.each([
 		["Logo: winter @thumbnail.webp", "Logo: winter @thumbnail.webp"],
 		["user: secret @host", ""],
 		["operator: example @cdn.png.invalid", ""],
+		["operator: PRIVATE_FIXTURE @cdn.png-v2", ""],
 		["operator: example @ cdn.png.invalid", ""],
 		["user: secret @ host/logo.png", ""],
 		["user: secret @ host", ""],
@@ -431,6 +470,80 @@ it.each([
 		expect(restored.videos[0]?.extras?.filters).toEqual(video.extras.filters);
 	}
 });
+it("keeps sparse input rows and an artwork row selected as audio", () => {
+	const state = structuredClone(DEFAULT_WIZARD_STATE);
+	const [media] = state.inputFiles;
+	if (!media) throw new Error("Missing input");
+	state.inputFiles = [
+		{ ...media, path: "reels/full.mov" },
+		{
+			...media,
+			key: "music",
+			purpose: "FILTER_IMAGE",
+			path: "Review: cut @ Studio.mov",
+		},
+	];
+	state.audioInputFile = "music";
+	const draft = projectWizardDraft("vod", {
+		...state,
+		inputFiles: [...state.inputFiles, { key: "unused", kind: "S3" }],
+	});
+	expect(draft.inputFiles).toMatchObject([
+		{ key: media.key, path: "reels/full.mov" },
+		{ key: "music", path: "Review: cut @ Studio.mov" },
+		{ key: "unused" },
+	]);
+});
+
+it("discards pasted login text in Live source hosts while retaining job titles", () => {
+	const hostname = "operator:sample password @ edge.v2";
+	const state = {
+		...DEFAULT_LIVE_WIZARD_STATE,
+		name: "Review: cut @ Studio.v2",
+		srt: {
+			...DEFAULT_LIVE_WIZARD_STATE.srt,
+			host: hostname,
+			backups: [{ host: hostname, path: "source" }],
+		},
+		zixi: { ...DEFAULT_LIVE_WIZARD_STATE.zixi, host: hostname },
+	};
+	expect(projectWizardDraft("live", state)).toMatchObject({
+		name: state.name,
+		srt: { host: "", backups: [{ host: "", path: "source" }] },
+		zixi: { host: "" },
+	});
+});
+
+it("keeps the replacement entered on reopen when the draft omitted its prior URL", () => {
+	const base = structuredClone(DEFAULT_WIZARD_STATE);
+	const [primary] = base.inputFiles;
+	if (!primary) throw new Error("Missing input");
+	const input = {
+		...primary,
+		kind: "HTTPS" as const,
+		bucket: "media.invalid",
+		path: "media/new.mov?ticket=NEW_FIXTURE",
+	};
+	base.inputFiles = [input, { ...primary, key: "other", path: "file.mov" }];
+	const saved = {
+		step: 2,
+		value: projectWizardDraft("vod", {
+			...base,
+			name: "Keep the editorial change",
+			inputFiles: [
+				{ ...input, path: "media/old.mov?ticket=OLD_FIXTURE" },
+				{ ...primary, key: "other", path: "" },
+			],
+		}),
+	};
+	expect(JSON.stringify(saved.value)).not.toContain("OLD_FIXTURE");
+	const restored = restoreVodWizardDraft(base, saved, [
+		{ inputKey: input.inputKey, path: input.path },
+	]);
+	expect(restored.name).toBe("Keep the editorial change");
+	expect(restored.inputFiles.map((row) => row.path)).toEqual([input.path, ""]);
+});
+
 it("retains gains and attachment while a numbered Audio Mix source is awaiting its position", () => {
 	const base = structuredClone(DEFAULT_WIZARD_STATE);
 	const audio = base.audios[0];
@@ -1749,10 +1862,108 @@ it.each([
 });
 
 it.each([
+	"direct",
+	"wrapped",
+	"cleared-binding",
+	"kept-binding",
+] as const)("keeps the first saved audio object after adding an implicit AAC rendition to a named HDR copy (%s)", (mode) => {
+	const authored = structuredClone(DEFAULT_WIZARD_STATE);
+	const media = authored.inputFiles[0];
+	const video = authored.videos[0],
+		audio = authored.audios[0];
+	if (!media || !video || !audio) throw new Error("missing base files");
+	const picture = { ...media, key: "pic", inputKey: "pic", path: "master.mxf" };
+	const sound = {
+		...media,
+		key: "sound",
+		inputKey: "sound",
+		path: "program.wav",
+	};
+	authored.inputFiles = [sound, picture];
+	authored.sources = {
+		tracks: [
+			{
+				key: "narration",
+				inputFile: sound.key,
+				selectionMode: "AUDIO_RELATIVE",
+				position: 0,
+			},
+		],
+		hdr10PlusStreams: [
+			{
+				key: "hdr",
+				videoInputFile: picture.key,
+				metadataInputPath: "sidecar.json",
+				selectionMode: "AUTO",
+			},
+		],
+	};
+	authored.videos = [{ ...video, codec: "H265", extras: { source: "hdr" } }];
+	authored.audios = [{ ...audio, extras: { source: "narration" } }];
+	const previous = {
+		...media,
+		key: "previous-audio",
+		inputKey: "previous-audio",
+		path: "previous.wav",
+	};
+	const separate = mode === "cleared-binding" || mode === "kept-binding";
+	if (separate) {
+		authored.inputFiles.push(previous);
+		authored.audioInputFile = previous.key;
+		authored.audios.push({ ...audio, bitrate: 256000 });
+	}
+	const base = planToWizardState(
+		buildPlan(authored) as unknown as Record<string, unknown>,
+	);
+	const files = [...base.inputFiles].sort(
+		(a, b) => Number(b.path === sound.path) - Number(a.path === sound.path),
+	);
+	expect(files[0]?.path).toBe(sound.path);
+	expect(
+		base.inputFiles.find((row) => row.key === base.audioInputFile)?.path,
+	).toBe(separate ? previous.path : undefined);
+	const saved = projectWizardDraft("vod", {
+		...base,
+		audioInputFile: mode === "kept-binding" ? base.audioInputFile : undefined,
+		inputFiles: files,
+		sources: {
+			...base.sources,
+			...(mode === "wrapped" && {
+				trimmingStreams: [
+					{
+						kind: "TIME_BASED",
+						key: "trim-sound",
+						sourceKey: "audio",
+						offset: 0,
+						duration: 5,
+					},
+				],
+			}),
+		},
+		audios: [
+			...base.audios,
+			{
+				...audio,
+				bitrate: 320000,
+				...(mode === "wrapped" && { extras: { source: "trim-sound" } }),
+			},
+		],
+	});
+	const built = buildPlan(mergeWizardDraft(base, saved, "vod"));
+	expect(built.hdr10PlusStreams?.[0]?.videoInputPath).toBe(picture.path);
+	expect(built.ingest?.find((track) => track.key === "audio")?.inputPath).toBe(
+		mode === "kept-binding" ? previous.path : sound.path,
+	);
+});
+
+it.each([
 	"rebound",
 	"removed-and-recycled",
 	"removed-picture-retained",
 	"rebound-picture-retained",
+	"edited-picture",
+	"new-ordinary-row",
+	"wrapped-ordinary",
 ] as const)("restores edited HDR Copy media bindings (%s)", (edit) => {
 	const authored = structuredClone(DEFAULT_WIZARD_STATE);
 	const file = authored.inputFiles[0];
@@ -1787,14 +1998,38 @@ it.each([
 	const recycled = edit === "removed-and-recycled";
 	const removed = recycled || edit === "removed-picture-retained";
 	const hasOrdinary = edit !== "rebound";
-	const selected = removed ? { ...hdr, key: "replacementHdr" } : hdr;
+	const ordinary =
+		edit === "edited-picture" || edit === "wrapped-ordinary"
+			? { ...original, path: "edited.mxf" }
+			: edit === "new-ordinary-row"
+				? { ...original, key: "ordinary", path: "ordinary.mxf" }
+				: original;
+	const wrapped = edit === "wrapped-ordinary";
+	const selected = wrapped
+		? { ...hdr, key: "video" }
+		: removed
+			? { ...hdr, key: "replacementHdr" }
+			: hdr;
 	const saved = projectWizardDraft("vod", {
 		...base,
 		inputFiles: recycled
 			? [replacement, { ...original, path: "unrelated.mxf" }]
-			: [original, replacement],
+			: [ordinary, replacement],
 		sources: {
 			...base.sources,
+			...(wrapped
+				? {
+						trimmingStreams: [
+							{
+								key: "trim-primary",
+								kind: "TIME_BASED" as const,
+								sourceKey: "video-input-1",
+								offset: 0,
+								duration: 3,
+							},
+						],
+					}
+				: {}),
 			hdr10PlusStreams: [
 				{
 					...selected,
@@ -1807,7 +2042,11 @@ it.each([
 			? {
 					videos: [
 						{ ...rendition, codec: "H265", extras: { source: selected.key } },
-						{ ...rendition, height: 720 },
+						{
+							...rendition,
+							height: 720,
+							...(wrapped && { extras: { source: "trim-primary" } }),
+						},
 					],
 				}
 			: {}),
@@ -1818,9 +2057,11 @@ it.each([
 		metadataInputPath: "replacement.json",
 	});
 	if (hasOrdinary) {
-		expect(plan.ingest?.find((entry) => entry.key === "video")?.inputPath).toBe(
-			recycled ? "replacement.mxf" : "original.mxf",
-		);
+		expect(
+			plan.ingest?.find(
+				(entry) => entry.key === (wrapped ? "video-input-1" : "video"),
+			)?.inputPath,
+		).toBe(recycled ? "replacement.mxf" : ordinary.path);
 	} else {
 		expect(plan.ingest?.find((entry) => entry.key === "audio")?.inputPath).toBe(
 			"original.mxf",

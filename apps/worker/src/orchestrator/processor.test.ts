@@ -1649,6 +1649,38 @@ it("persists and emits only the public provider failure diagnostic", async () =>
 	expect(JSON.stringify(updates)).not.toContain("PRIVATE_STEP_SAMPLE");
 });
 
+it("executes and records the same literal Dolby Vision key on the selected S3 input", async () => {
+	const plan = structuredClone(basePlan);
+	plan.bitmovin.accountId = ACCOUNT_ID;
+	const key = "reels/take.mxf?auth=review";
+	plan.dolbyStreams = [
+		{ kind: "VISION", key: "vision", inputKey: "main", videoInputPath: key },
+	];
+	const { processor, sdk, row } = setup({
+		plan,
+		stepLog: initStepLog(compilePlan(plan)),
+	});
+	await processor({ encodingJobId: JOB_ID });
+	const entries = row.stepLog as StepLogEntry[];
+	const producer = entries.find((entry) => entry.step === "input:main");
+	const consumer = entries.find((entry) => entry.step === "dolby:vision");
+	expect(sdk.createDolbyVisionInputStream).toHaveBeenCalledWith(
+		"bm-encoding",
+		expect.objectContaining({
+			inputId: producer?.resourceId,
+			videoInputPath: key,
+		}),
+	);
+	expect(consumer).toMatchObject({
+		status: "DONE",
+		request: {
+			videoInputPath: key,
+			refs: { inputId: producer?.resourceId, encodingId: "bm-encoding" },
+		},
+	});
+	expect(consumer?.response).toEqual({ id: consumer?.resourceId });
+});
+
 it("rejects a queued unsupported HDR10+ trim before provider access", async () => {
 	const p = structuredClone(basePlan);
 	p.bitmovin = {

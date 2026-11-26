@@ -1,5 +1,6 @@
 import {
 	isAisaManagedLivePlan,
+	markWithheldPlanSources,
 	patchLivePresetSchema,
 	patchPlanPresetSchema,
 	planHasErrors,
@@ -88,9 +89,13 @@ export async function GET(_req: Request, { params }: RouteParams) {
 			!aisaLiveAccessAllowed(ctx.tenant)
 		)
 			return jsonError(404, "Not found");
-		return NextResponse.json(publicVodSourceProjection(preset, preset.body), {
-			headers: { "Cache-Control": "private, no-store" },
-		});
+		const safe = publicVodSourceProjection(preset, preset.body);
+		return NextResponse.json(
+			{ ...safe, body: markWithheldPlanSources(preset.body, safe.body) },
+			{
+				headers: { "Cache-Control": "private, no-store" },
+			},
+		);
 	} catch (err) {
 		return routeError(err);
 	}
@@ -294,9 +299,13 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 			!aisaLiveAccessAllowed(ctx.tenant)
 		)
 			return jsonError(404, "Not found");
-		return NextResponse.json(publicVodSourceProjection(updated, updated.body), {
-			headers: { "Cache-Control": "private, no-store" },
-		});
+		const safe = publicVodSourceProjection(updated, updated.body);
+		return NextResponse.json(
+			{ ...safe, body: markWithheldPlanSources(updated.body, safe.body) },
+			{
+				headers: { "Cache-Control": "private, no-store" },
+			},
+		);
 	} catch (err) {
 		// @@unique([kind, name]) collision on rename → P2002.
 		if ((err as { code?: string }).code === "P2002") {

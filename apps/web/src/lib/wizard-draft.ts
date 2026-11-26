@@ -10,10 +10,12 @@ import {
 	dolbyLoudnessFilterSchema,
 	enhancedWatermarkFilterSchema,
 	HE_AAC_V2_SIGNALING,
+	hasPrivateStorageLocator,
 	hlsAdditionalMediaSchema,
 	hlsDetailedOptionsSchema,
 	hlsMediaAttributesSchema,
 	hlsStreamOptionsSchema,
+	isObjectStorageInput,
 	liveDashDetailedOptionsSchema,
 	liveHlsDetailedOptionsSchema,
 	mediaFilterSchema,
@@ -26,7 +28,11 @@ import {
 	vodInputTimelineDocumentSchema,
 	vodInputTimelinePreparationReferenceSchema,
 } from "@bitovp/core/vod-input-timeline";
-import { mainPictureSourceKey, type WizardState } from "@bitovp/core/wizard";
+import {
+	availableImplicitTrackKey,
+	mainPictureSourceKey,
+	type WizardState,
+} from "@bitovp/core/wizard";
 import { z } from "zod";
 import type { SessionDto } from "./auth/dto";
 import {
@@ -86,6 +92,9 @@ export function draftFingerprint(value: unknown): string {
 // are deliberately absent; even a nested unknown property cannot enter storage.
 
 const text = z.string().max(2048).refine(draftKeepsText).optional().catch("");
+const host = text
+	.refine((value) => value === undefined || !/[@/\\\s\p{Cc}]/u.test(value))
+	.catch("");
 const number = z.number().finite().nullable().optional().catch(undefined);
 const flag = z.boolean().optional().catch(undefined);
 const strings = z
@@ -513,20 +522,26 @@ const vod = fields(
 				"inputDeclarationIndex",
 				"",
 				{
-					path: z.unknown(),
+					path: z.string().max(2048).optional().catch(""),
 					purpose: z.literal("FILTER_IMAGE").optional().catch(undefined),
 				},
-			).transform(({ path, ...file }) => ({
-				...file,
-				...(path === undefined
-					? {}
-					: {
-							path: (file.purpose === "FILTER_IMAGE"
-								? draftImagePath
-								: text
-							).parse(path),
-						}),
-			})),
+			).transform((file) => {
+				const path = file.path;
+				if (typeof path !== "string") return file;
+				if (file.purpose === "FILTER_IMAGE") {
+					return { ...file, path: draftImagePath.parse(path) };
+				}
+				if (draftKeepsText(path)) return file;
+				// Repeated leading slashes are significant in bucket keys.
+				const unsignedBucketKey =
+					typeof file.kind === "string" &&
+					isObjectStorageInput(file.kind) &&
+					/^\/{3,}[^/]/u.test(path) &&
+					!/[\\\p{Cc}]/u.test(path) &&
+					draftKeepsText(path.replace(/^\/+/, "")) &&
+					!hasPrivateStorageLocator(path);
+				return unsignedBucketKey ? file : { ...file, path: "" };
+			}),
 		),
 		additionalOutputs: rows(location),
 		sources: group(
@@ -816,20 +831,25 @@ const live = fields(
 		),
 		srt: group(
 			fields(
-				"name mode host path credentialId",
+				"name mode path credentialId",
 				"listenerPort callerPort latency keyLength backupDelayThreshold",
 				"",
 				{
+					host,
 					backups: rows(
-						fields("mode host path credentialId", "port latency keyLength"),
+						fields("mode path credentialId", "port latency keyLength", "", {
+							host,
+						}),
 					),
 				},
 			),
 		),
 		zixi: group(
 			fields(
-				"name host stream credentialId decryptionType",
+				"name stream credentialId decryptionType",
 				"port latency minBitrate",
+				"",
+				{ host },
 			),
 		),
 		hlsIn: group(fields("name adMarkersSource")),
@@ -976,7 +996,24 @@ export function projectWizardDraft(
 	kind: WizardDraftKind,
 	value: unknown,
 ): DraftValue {
-	const projected = (kind === "vod" ? vod : live).parse(value);
+	let source = value;
+	// A row reused by the audio selector can still carry its original artwork role.
+	if (
+		kind === "vod" &&
+		draftRecord(value) &&
+		typeof value.audioInputFile === "string" &&
+		Array.isArray(value.inputFiles)
+	) {
+		source = {
+			...value,
+			inputFiles: value.inputFiles.map((row: unknown) => {
+				if (!draftRecord(row) || row.key !== value.audioInputFile) return row;
+				const { purpose: _outdatedRole, ...media } = row;
+				return media;
+			}),
+		};
+	}
+	const projected = (kind === "vod" ? vod : live).parse(source);
 	if (kind === "vod") {
 		retainGeneratedFileOutputs(value, projected);
 		const filters = vodFilterDrafts.parse(projected.filters) ?? [];
@@ -1284,6 +1321,7 @@ function restoreCopiedHdrInputs(
 		"region",
 	].every((field) => first[field] === primary[field]);
 	let primaryKey = primary.key;
+	let firstOwnsImplicitAudio = false;
 	if (
 		originalSource &&
 		!originalPictureStillFirst &&
@@ -1296,18 +1334,57 @@ function restoreCopiedHdrInputs(
 			"dolbyStreams",
 			"hdr10PlusStreams",
 		].flatMap((name) => records(sources[name]));
-		let binding = declarations.find((source) => source.key === originalSource);
-		if (!binding) {
-			// A removed stream may leave its file key available for a different
-			// object. Prefer the replacement source named by the saved rendition.
-			const firstVideo = records(snapshot.videos)[0];
-			const selected = mainPictureSourceKey(
-				draftRecord(firstVideo?.extras) ? firstVideo.extras.source : undefined,
-				sources,
+		const trims = records(sources.trimmingStreams);
+		const concats = records(sources.concatenationStreams);
+		const mixes = records(sources.audioMixStreams);
+		const declaredKeys = new Set(
+			[...declarations, ...trims, ...concats, ...mixes].map((row) => row.key),
+		);
+		const usesImplicit = (kind: "video" | "audio", renditions: unknown) => {
+			const key = availableImplicitTrackKey(declaredKeys, kind);
+			return (
+				records(renditions).some(
+					(row) =>
+						!draftRecord(row.extras) ||
+						row.extras.source === undefined ||
+						row.extras.source === key,
+				) ||
+				trims.some((row) => row.sourceKey === key) ||
+				concats.some((row) =>
+					records(row.sources).some((part) => part.sourceKey === key),
+				) ||
+				mixes.some((row) =>
+					records(row.audioMixChannels).some((part) => part.sourceKey === key),
+				)
 			);
-			binding = declarations.find((source) => source.key === selected);
+		};
+		// When the original plan supplied only a named picture, any ordinary
+		// ingest authored in the saved form reads its first file. Promoting the
+		// named picture must preserve the independent ordinary audio binding.
+		const namedPicture = typeof copiedPictureSource === "string";
+		const savedOwnsPrimary =
+			namedPicture && usesImplicit("video", snapshot.videos);
+		firstOwnsImplicitAudio =
+			namedPicture && usesImplicit("audio", snapshot.audios);
+		if (savedOwnsPrimary) primaryKey = first.key;
+		else {
+			let binding = declarations.find(
+				(source) => source.key === originalSource,
+			);
+			if (!binding) {
+				// A removed stream may leave its file key available for a different
+				// object. Prefer the replacement source named by the saved rendition.
+				const firstVideo = records(snapshot.videos)[0];
+				const selected = mainPictureSourceKey(
+					draftRecord(firstVideo?.extras)
+						? firstVideo.extras.source
+						: undefined,
+					sources,
+				);
+				binding = declarations.find((source) => source.key === selected);
+			}
+			primaryKey = binding?.videoInputFile ?? binding?.inputFile ?? primary.key;
 		}
-		primaryKey = binding?.videoInputFile ?? binding?.inputFile ?? primary.key;
 	}
 	const index = snapshot.inputFiles.findIndex(
 		(f) => draftRecord(f) && f.key === primaryKey,
@@ -1335,7 +1412,9 @@ function restoreCopiedHdrInputs(
 	const copiedAudioKey = base.audioInputFile ?? primary.key;
 	const audioInputFile =
 		snapshot.audioInputFile ??
-		(index > 0 && first.key === copiedAudioKey ? first.key : undefined);
+		(index > 0 && (first.key === copiedAudioKey || firstOwnsImplicitAudio)
+			? first.key
+			: undefined);
 	return {
 		...snapshot,
 		...(audioInputFile !== undefined ? { audioInputFile } : {}),
@@ -1455,10 +1534,40 @@ export function legacyVodMetadataOnly(
 export function restoreVodWizardDraft(
 	base: WizardState,
 	draft: WizardDraft,
+	replacementPaths?: readonly { inputKey: string; path: string }[],
 ): WizardState {
-	const value = missingLegacyFilters(base, draft)
+	let value = missingLegacyFilters(base, draft)
 		? null
 		: recoverRenditionSettings(base, "vod", draft);
+	if (Array.isArray(value?.inputFiles) && replacementPaths?.length) {
+		const sameInput = [
+			"key",
+			"inputKey",
+			"kind",
+			"credentialId",
+			"bucket",
+			"region",
+		] as const;
+		value = {
+			...value,
+			inputFiles: value.inputFiles.map((saved: unknown) => {
+				if (!draftRecord(saved) || saved.path !== "") return saved;
+				const replacement = base.inputFiles.find((row) =>
+					sameInput.every((field) => row[field] === saved[field]),
+				);
+				if (
+					!replacement ||
+					!replacementPaths.some(
+						(path) =>
+							path.inputKey === replacement.inputKey &&
+							path.path === replacement.path,
+					)
+				)
+					return saved;
+				return { ...saved, path: replacement.path };
+			}),
+		};
+	}
 	return value === null
 		? restoreMetadata(base, draft.value)
 		: mergeWizardDraft(base, value, "vod", draft.vodInputOrder);

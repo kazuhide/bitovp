@@ -5,7 +5,9 @@ import {
 	contentEditSchema,
 	type contentRegisterSchema,
 	type contentUpdateSchema,
+	hasPrivateStorageLocator,
 	type LibrarySourceView,
+	libraryIngestInputs,
 	librarySourceSnapshotSchema,
 	MAX_SCENE_ANALYSIS_BYTES,
 	normalizeSceneAnalysis,
@@ -13,7 +15,9 @@ import {
 	publicHdrSourceProjection,
 	publicLibraryQcEvidence,
 	publicStorageDiagnostic,
+	recoverLibraryIngestInputs,
 	redactSecrets,
+	type StoragePathProvenance,
 	sceneAnalysisDocumentSchema,
 	sceneAnalysisLocales,
 } from "@bitovp/core";
@@ -24,7 +28,10 @@ import { requestOrganizationId } from "@/lib/passive-request";
 import { getServerContext } from "./context";
 import { jsonError, routeError, validationError } from "./http";
 import { contentParent } from "./library-hierarchy";
-import { enrichLibraryPlayback } from "./library-playback";
+import {
+	enrichLibraryPlayback,
+	matchingLibraryPlans,
+} from "./library-playback";
 
 function analysisDisplayData(value: unknown): AnalysisJsonValue {
 	const serialized = JSON.stringify(value);
@@ -124,6 +131,36 @@ export async function sourceView(
 				? parsedSnapshot.analysisOutput
 				: undefined,
 	};
+	const objectFields: StoragePathProvenance = new WeakMap();
+	let visibleSnapshot = snapshot;
+	if (snapshot.kind === "VOD_JOB") {
+		// Old captures omitted the input kind. Only recover it from the same
+		// job and immutable plan hash, with an unambiguous matching input row.
+		const needsPlan = snapshot.inputs.some(
+			(row) =>
+				!row.hdr10Plus && !row.pathKind && hasPrivateStorageLocator(row.path),
+		);
+		const jobId = source.jobId;
+		const match =
+			jobId && needsPlan
+				? (
+						await matchingLibraryPlans(prisma, [
+							{ jobId, planHash: snapshot.planHash },
+						])
+					).get(jobId)
+				: undefined;
+		const planned = match ? libraryIngestInputs(match.plan) : [];
+		const inputs =
+			recoverLibraryIngestInputs(snapshot.inputs, planned) ?? snapshot.inputs;
+		visibleSnapshot = {
+			...snapshot,
+			inputs: inputs.map(({ pathKind, ...input }) => {
+				if (pathKind && !input.hdr10Plus)
+					objectFields.set(input, new Map([["path", pathKind]]));
+				return input;
+			}),
+		};
+	}
 	const [playbackLinks] = await enrichLibraryPlayback(
 		prisma,
 		[
@@ -150,13 +187,17 @@ export async function sourceView(
 			),
 		error: publicStorageDiagnostic(source.error),
 		locales,
-		snapshot: publicHdrSourceProjection({
-			...snapshot,
-			playbackLinks: playbackLinks ?? snapshot.playbackLinks,
-			...(qcEvidence === undefined
-				? {}
-				: { qcEvidence: publicLibraryQcEvidence(qcEvidence) }),
-		}),
+		snapshot: publicHdrSourceProjection(
+			{
+				...visibleSnapshot,
+				playbackLinks: playbackLinks ?? snapshot.playbackLinks,
+				...(qcEvidence === undefined
+					? {}
+					: { qcEvidence: publicLibraryQcEvidence(qcEvidence) }),
+			},
+			"record",
+			objectFields,
+		),
 		analyses: analyses.flatMap((row) => {
 			if (!row) return [];
 			let document: ReturnType<typeof normalizeSceneAnalysis>;

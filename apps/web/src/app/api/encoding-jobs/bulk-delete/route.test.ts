@@ -6,7 +6,7 @@ const vmafDeleteMany = vi.fn();
 const vmafFindFirst = vi.fn();
 const vmafCount = vi.fn();
 const auditCreate = vi.fn();
-const lockJob = vi.fn();
+const queryRaw = vi.fn();
 const snapshotJobs = vi.fn();
 const findCapturedSource = vi.fn();
 
@@ -14,7 +14,7 @@ const findCapturedSource = vi.fn();
 // model methods the shared delete helper uses.
 const tx = {
 	libraryEvidenceReceipt: { count: vi.fn(async () => 0) },
-	$queryRaw: lockJob,
+	$queryRaw: queryRaw,
 	librarySource: { findUnique: findCapturedSource },
 	vmafJob: { deleteMany: vmafDeleteMany, count: vmafCount },
 	encodingJob: { deleteMany: jobDeleteMany, findMany: snapshotJobs },
@@ -64,7 +64,7 @@ function row(
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	lockJob.mockResolvedValue([]);
+	queryRaw.mockResolvedValue([]);
 	snapshotJobs.mockResolvedValue([]);
 	findCapturedSource.mockResolvedValue(null);
 	vmafDeleteMany.mockResolvedValue({ count: 0 });
@@ -126,7 +126,23 @@ describe("POST /api/encoding-jobs/bulk-delete", () => {
 		expect(jobDeleteMany).toHaveBeenCalledWith({
 			where: { id: captured, status: { notIn: ["QUEUED", "RUNNING"] } },
 		});
-		expect(lockJob).toHaveBeenCalledTimes(2);
+		const queries = queryRaw.mock.calls.map(([sql, ...values]) => ({
+			sql: (sql as TemplateStringsArray).join("?"),
+			values,
+		}));
+		const jobLock = expect.stringContaining(
+			'FROM "EncodingJob" WHERE id = ?::uuid FOR UPDATE',
+		);
+		expect(queries).toEqual([
+			{ sql: jobLock, values: [uncaptured] },
+			{ sql: jobLock, values: [captured] },
+			{
+				sql: expect.stringContaining(
+					'FROM "LibrarySource" s JOIN "EncodingJob" j',
+				),
+				values: [captured, captured],
+			},
+		]);
 		expect(snapshotJobs).toHaveBeenCalledWith({
 			where: { status: "FINISHED", id: { in: [uncaptured] } },
 			select: { id: true, plan: true, bitmovinEncodingId: true },

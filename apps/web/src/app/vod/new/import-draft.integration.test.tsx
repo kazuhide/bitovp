@@ -2,7 +2,7 @@ import { onlineManager } from "@tanstack/react-query";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { draftKey, writeWizardDraft } from "@/lib/wizard-draft";
-import { renderWithQuery } from "@/test/render";
+import { renderWithOperatorSession as renderWithQuery } from "@/test/render";
 import { buildPlan, DEFAULT_WIZARD_STATE } from "./build-plan";
 import { VodWizard } from "./wizard";
 
@@ -17,7 +17,8 @@ vi.mock("@/lib/api", async (original) => ({
 vi.mock("next/navigation", () => ({
 	useRouter: () => ({ push, replace: vi.fn() }),
 }));
-vi.mock("@/lib/auth/use-session", () => ({
+vi.mock("@/lib/auth/use-session", async (original) => ({
+	...(await original<Record<string, unknown>>()),
 	useSession: () => ({
 		status: "success",
 		isFetchedAfterMount: true,

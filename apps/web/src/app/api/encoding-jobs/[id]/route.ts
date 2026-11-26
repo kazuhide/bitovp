@@ -1,4 +1,5 @@
 import {
+	markWithheldPlanSources,
 	publicStorageDiagnostic,
 	publicVodSourceProjection,
 } from "@bitovp/core";
@@ -131,6 +132,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
 		const safe = publicVodSourceProjection(row, row.plan, row.stepLog);
 		return NextResponse.json({
 			...safe,
+			plan: markWithheldPlanSources(row.plan, safe.plan),
 			error: publicStorageDiagnostic(safe.error),
 			playbackLinks: await playbackLinksForPlan(ctx, row.plan),
 			// Labels for the storage panel — `{id, label, provider}` for the

@@ -2628,6 +2628,7 @@ export const ja = {
 		collapseRowNamed: "{rendition} の詳細を隠す",
 		collapseRow: "詳細を隠す",
 		inputFiles: "入力ファイル",
+		withheldInputPath: "入力パスは非公開",
 		deletedCredential: "削除済みの認証情報",
 		storageIo: "ストレージ入出力",
 		storageInputs: "読み込み元",
@@ -6249,6 +6250,9 @@ export const ja = {
 		help: "このブラウザに7日間保存します。VOD のフィルター設定（画像のオブジェクトパスや音声ゲインなど）も保存します。秘密値・URL・DRM・テキストオーバーレイの内容・読み込んだ JSON は除外します。",
 	},
 	templates: {
+		protectedInputHint:
+			"元の入力パスは非公開です。この設定で使う入力パスを指定してください。",
+		useReplacementInputs: "指定した入力パスを使用",
 		savedDeliveryHeading: "保存済みの配信プリセット",
 		emptyDelivery:
 			"保存済みの配信プリセットはありません。下の配信仕様をインポートすると保存できます。",

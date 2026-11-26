@@ -60,7 +60,9 @@ export {
 } from "./content-library/editing-storage";
 export {
 	libraryHdr10PlusInputs,
+	libraryIngestInputs,
 	missingLibraryHdrInputs,
+	recoverLibraryIngestInputs,
 } from "./content-library/hdr-inputs";
 export { sceneAnalysisLocales } from "./content-library/languages";
 export {
@@ -621,6 +623,7 @@ export {
 	slateNormalizedKey,
 	slateProbeFacts,
 } from "./live/slate-normalize";
+export { publicSlateRegistrationNote } from "./live/slate-registration-note";
 export type {
 	AutoLeadResolution,
 	ResolvedStartupRegion,
@@ -776,11 +779,13 @@ export {
 } from "./plan/egress";
 export { VOD_FIXTURES } from "./plan/fixtures";
 export {
+	hasPrivateStorageLocator,
 	isHdr10PlusAuditPath,
 	isHdr10PlusObjectPath,
 	publicHdrSourceProjection,
 	publicStorageDiagnostic,
 	publicVodSourceProjection,
+	type StoragePathProvenance,
 } from "./plan/hdr-source-paths";
 /**
  * The VOD acceptance corpus, exported so a test OUTSIDE this package can derive
@@ -834,7 +839,11 @@ export {
 	physicalMuxingKind,
 	VOD_DRM_MUXINGS,
 } from "./plan/muxing-streams";
-export { objectInputReceipts } from "./plan/object-input-path";
+export {
+	isObjectStorageInput,
+	objectInputReceipts,
+	vodObjectPathFields,
+} from "./plan/object-input-path";
 export { outputFileKeys, outputStorageKeys } from "./plan/output-files";
 export { PER_TITLE_SIMULATOR_MAX_BITRATE } from "./plan/per-title-candidate-api";
 export { findCapReachingMaximumStep } from "./plan/per-title-cap-reach";
@@ -1107,6 +1116,10 @@ export {
 	watchSelfIntersectionIssues,
 	watchTemplateIssues,
 } from "./plan/watch-instantiate";
+export {
+	markWithheldPlanSources,
+	withheldPlanSources,
+} from "./plan/withheld-source-paths";
 export type {
 	PlaybackCorsRule,
 	PlaybackCorsVerdict,

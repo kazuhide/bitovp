@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { compilePlan, encodingPlanSchema } from "@bitovp/core";
+import {
+	compilePlan,
+	curlForStep,
+	encodingPlanSchema,
+	objectInputReceipts,
+} from "@bitovp/core";
 import { buildPlan, tryImportPresetIntoWizard } from "@bitovp/core/wizard";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -104,7 +109,13 @@ it("round-trips a literal S3 caption key through Viewer detail and Copy and Edit
 		{
 			...caption,
 			status: "DONE",
-			request: { inputPath, refs: { encodingId: "enc", inputId: "s3-input" } },
+			resourceId: "caption-id",
+			response: { id: "caption-id" },
+			request: {
+				inputPath,
+				metadataInputPath: "scene.json?download=PRIVATE_FIXTURE",
+				refs: { encodingId: "enc", inputId: "s3-input" },
+			},
 		},
 	];
 	const mixedPlan = {
@@ -138,6 +149,213 @@ it("round-trips a literal S3 caption key through Viewer detail and Copy and Edit
 	expect(buildPlan(imported.state).captionStreams?.[0]?.inputPath).toBe(
 		inputPath,
 	);
+});
+
+it("publishes a Dolby object key only for its authored input and fulfilled provider receipt", async () => {
+	const path = "///reels:day@night/take.mxf",
+		sensitive = "\u0001//fixture:PRIVATE_DOLBY_REFERENCE@local.invalid/take";
+	const job = timesRow({
+		plan: {
+			inputs: [
+				{ key: "store", kind: "S3" },
+				{ key: "network", kind: "HTTPS" },
+			],
+			dolbyStreams: [
+				{ kind: "VISION", inputKey: "store", videoInputPath: path },
+				{ kind: "VISION", inputKey: "network", videoInputPath: path },
+			],
+		},
+		stepLog: [
+			{
+				step: "input:store",
+				kind: "CREATE_INPUT_S3",
+				status: "DONE",
+				resourceId: "store-id",
+			},
+			...[
+				["store-id", path],
+				["other", sensitive],
+				["other", path],
+			].map(([id, videoInputPath]) => ({
+				kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+				status: "DONE",
+				resourceId: "vision-id",
+				response: { id: "vision-id" },
+				refs: { inputId: "input:store" },
+				payload: { videoInputPath },
+				request: { videoInputPath, refs: { inputId: id } },
+			})),
+			{
+				kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+				status: "DONE",
+				resourceId: "vision-id",
+				response: { id: "other" },
+				refs: { inputId: "input:store" },
+				payload: { videoInputPath: path },
+				request: { videoInputPath: path, refs: { inputId: "store-id" } },
+			},
+			{
+				kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+				status: "DONE",
+				resourceId: "vision-id",
+				response: { id: "vision-id" },
+				refs: { inputId: "input:store" },
+				payload: { videoInputPath: "different" },
+				request: { videoInputPath: path, refs: { inputId: "store-id" } },
+			},
+		],
+	});
+	findUnique.mockResolvedValueOnce(job);
+	const response = await GET(
+		new Request(`http://test/api/encoding-jobs/${JOB_ID}`),
+		ctx(JOB_ID),
+	);
+	expect(response.status).toBe(200);
+	const body = await response.json();
+	expect(
+		body.plan.dolbyStreams.map(
+			(item: { videoInputPath: string }) => item.videoInputPath,
+		),
+	).toEqual([path, ""]);
+	expect(
+		body.stepLog
+			.slice(1)
+			.map(
+				(row: { request: { videoInputPath: string } }) =>
+					row.request.videoInputPath,
+			),
+	).toEqual([path, "[REDACTED]", "[REDACTED]", "[REDACTED]", "[REDACTED]"]);
+	expect(JSON.stringify(body)).not.toContain("PRIVATE_DOLBY_REFERENCE");
+});
+
+it.each([
+	["S3", "reels/take.mxf?auth=review", "[REDACTED]", true],
+	[
+		"S3",
+		"///reels:file@day@night/take.mxf",
+		"///reels:[REDACTED]@day@night/take.mxf",
+		true,
+	],
+	["S3", "[REDACTED]", "[REDACTED]", true],
+	["HTTPS", "reels/take.mxf?ticket=PRIVATE_ACCESS", "[REDACTED]", false],
+	[
+		"S3",
+		"https://fixture.invalid/take?ticket=PRIVATE_ACCESS",
+		"[REDACTED]",
+		false,
+	],
+] as const)("replays only the confirmed public recording returned by job detail (%s, %s)", async (kind, original, actual, available) => {
+	const row = timesRow({
+		plan: {
+			inputs: [{ kind, key: "store" }],
+			dolbyStreams: [
+				{
+					kind: "VISION",
+					key: "source",
+					inputKey: "store",
+					videoInputPath: original,
+				},
+			],
+		},
+		stepLog: [
+			{
+				step: "input:store",
+				kind: `CREATE_INPUT_${kind}`,
+				status: "DONE",
+				resourceId: "in-id",
+				response: { id: "in-id" },
+				payload: {},
+				refs: {},
+			},
+			{
+				step: "dolby:source",
+				kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+				status: "DONE",
+				resourceId: "dv-id",
+				response: { id: "dv-id" },
+				refs: { inputId: "input:store", encodingId: "encoding" },
+				payload: { videoInputPath: original },
+				request: {
+					videoInputPath: actual,
+					refs: { inputId: "in-id", encodingId: "enc-id" },
+				},
+			},
+		],
+	});
+	findUnique.mockResolvedValueOnce(row);
+	const response = await GET(
+		new Request(`http://test/api/encoding-jobs/${JOB_ID}`),
+		ctx(JOB_ID),
+	);
+	expect(response.status).toBe(200);
+	const projected = await response.json();
+	const result = curlForStep(projected.stepLog[1], {
+		plan: projected.plan,
+		objectInputs: objectInputReceipts(projected.stepLog),
+	});
+	expect(result.ok).toBe(available);
+	if (result.ok) expect(result.command).toContain(original);
+	else expect(JSON.stringify(projected)).not.toContain("PRIVATE_ACCESS");
+});
+
+it("protects an HTTPS ingest query in both the Viewer plan and resource history and preserves an identical literal S3 name", async () => {
+	const inputPath = "clips/source.mxf?ticket=VIEWER_TEST";
+	const inputs = [
+		{ key: "storage", kind: "S3" },
+		{ key: "web", kind: "HTTPS" },
+	];
+	findUnique.mockResolvedValueOnce(
+		timesRow({
+			plan: {
+				inputs,
+				fileStreams: [
+					{ key: "subtitles", inputKey: "storage", fileType: "VTT", inputPath },
+				],
+				ingest: inputs.map((source) => ({
+					key: source.key,
+					inputKey: source.key,
+					inputPath,
+				})),
+			},
+			stepLog: inputs.flatMap((source) => [
+				{
+					step: `input:${source.key}`,
+					kind: `CREATE_INPUT_${source.kind}`,
+					status: "DONE",
+					resourceId: source.key,
+					response: { id: source.key },
+				},
+				{
+					step: `ingest:${source.key}`,
+					kind: "CREATE_INGEST_INPUT_STREAM",
+					status: "DONE",
+					resourceId: "done",
+					response: { id: "done" },
+					refs: { inputId: `input:${source.key}` },
+					payload: { inputPath },
+					request: {
+						inputPath,
+						refs: { inputId: source.key, encodingId: "enc" },
+					},
+				},
+			]),
+		}),
+	);
+	const response = await GET(
+		new Request(`http://test/api/encoding-jobs/${JOB_ID}`),
+		ctx(JOB_ID),
+	);
+	expect(response.status).toBe(200);
+	const body = await response.json();
+	expect(
+		body.plan.ingest.map((r: { inputPath: string }) => r.inputPath),
+	).toEqual([inputPath, ""]);
+	expect(body.plan.fileStreams[0].inputPath).toBe(inputPath);
+	expect(body.plan.withheldSourcePaths).toEqual([
+		[{ collection: "ingest", index: 1, field: "inputPath" }],
+	]);
+	expect(body.stepLog[1].request.inputPath).toBe(inputPath);
+	expect(JSON.stringify(body.stepLog[3])).not.toContain("VIEWER_TEST");
 });
 
 it.each([
@@ -583,7 +801,16 @@ describe("DELETE /api/encoding-jobs/[id]", () => {
 		findCapturedSource.mockResolvedValue({ id: "source-1" });
 		expect((await DELETE(delReq(), ctx(JOB_ID))).status).toBe(200);
 		expect(jobDeleteMany).toHaveBeenCalledTimes(1);
-		expect(lockJob).toHaveBeenCalledTimes(2);
+		expect(
+			lockJob.mock.calls.filter(([sql]) =>
+				String(sql).includes('FROM "EncodingJob" WHERE id'),
+			),
+		).toHaveLength(2);
+		expect(
+			lockJob.mock.calls.filter(([sql]) =>
+				String(sql).includes("FOR UPDATE OF s"),
+			),
+		).toHaveLength(1);
 	});
 	it("400s a non-uuid id before touching the DB", async () => {
 		const res = await DELETE(delReq(), ctx("nope"));

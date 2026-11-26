@@ -51,6 +51,83 @@ describe("makeWorkerSdk — the production seam, to the wire", () => {
 		}
 		expect(wire).toHaveBeenCalledTimes(2);
 	});
+	it("sends Dolby Vision source paths to the local transport while keeping an unsuccessful provider audit public-safe", async () => {
+		const bodies: unknown[] = [];
+		const videoInputPath = "///reels:day@night/take.mxf";
+		const network = "meta.xml?ticket=PRIVATE_SAMPLE";
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (_url: unknown, init?: { body?: string }) => {
+				bodies.push(JSON.parse(init?.body ?? "{}"));
+				return Response.json(
+					{ data: { code: 403, message: "Input unavailable" } },
+					{ status: 403 },
+				);
+			}),
+		);
+		const create = vi.fn(async (_args: unknown) => ({}));
+		const ops = makeWorkerSdk({
+			auditLog: { create },
+		} as unknown as AppPrismaClient)({
+			apiKey: "fixture",
+			tenantOrgId: null,
+			bitmovinAccountId: "account",
+		});
+		await expect(
+			ops.createDolbyVisionInputStream("enc", {
+				inputId: "input",
+				videoInputPath,
+				metadataInputPath: network,
+			}),
+		).rejects.toThrow();
+		expect(bodies).toEqual([
+			expect.objectContaining({
+				inputId: "input",
+				videoInputPath,
+				metadataInputPath: network,
+			}),
+		]);
+		expect(create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					request: {
+						videoInputPath: "[REDACTED]",
+						metadataInputPath: "[REDACTED]",
+					},
+				}),
+			}),
+		);
+		expect(JSON.stringify(create.mock.calls)).not.toContain("PRIVATE_SAMPLE");
+	});
+	it("keeps relative HTTPS query strings out of ordinary ingest SDK audits", async () => {
+		const create = vi.fn(async (_args: unknown) => ({})),
+			inputPath = "src/take.mov?ticket=INGEST_SAMPLE";
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (_url: unknown, init?: { body?: string }) => {
+				expect(JSON.parse(init?.body ?? "{}")).toHaveProperty(
+					"inputPath",
+					inputPath,
+				);
+				return Response.json({ data: { result: { id: "ingest" } } });
+			}),
+		);
+		const sdk = makeWorkerSdk({
+			auditLog: { create },
+		} as unknown as AppPrismaClient)({
+			apiKey: "fixture",
+			tenantOrgId: null,
+			bitmovinAccountId: "account",
+		});
+		await sdk.createIngestInputStream("enc", {
+			inputId: "https",
+			inputPath,
+			selectionMode: "AUTO",
+			position: 0,
+		});
+		expect(create).toHaveBeenCalledTimes(1);
+		expect(JSON.stringify(create.mock.calls)).not.toContain("INGEST_SAMPLE");
+	});
 	it("forwards the monitoring deadline through status and heartbeat to native fetch", async () => {
 		const controller = new AbortController();
 		const signals: (AbortSignal | null | undefined)[] = [];

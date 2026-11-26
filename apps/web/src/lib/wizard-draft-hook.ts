@@ -40,11 +40,13 @@ export function useWizardDraft({
 }) {
 	const session = useSession();
 	// A warm cache, background read or failed read cannot authorize storage.
+	const cachedIdentity = draftIdentity(session.data);
 	const identity =
 		session.status === "success" &&
 		session.isFetchedAfterMount &&
+		session.fetchStatus !== "paused" &&
 		!session.isFetching
-			? draftIdentity(session.data)
+			? cachedIdentity
 			: null;
 	const identityKey = identity ? JSON.stringify(identity) : null;
 	const boundIdentity = useRef<string | null>(null);
@@ -57,6 +59,16 @@ export function useWizardDraft({
 			: null;
 	const currentKey = useRef(key);
 	currentKey.current = key;
+	// An in-flight submission may finish while the same bound user refreshes.
+	// This scope is used only for completing that submission's local draft.
+	const completionKey = useRef<string | null>(null);
+	completionKey.current =
+		session.status === "success" &&
+		cachedIdentity &&
+		JSON.stringify(cachedIdentity) === boundIdentity.current &&
+		context !== null
+			? draftKey(cachedIdentity, kind, context)
+			: null;
 	const mounted = useRef(false);
 	useEffect(() => {
 		mounted.current = true;
@@ -295,20 +307,22 @@ export function useWizardDraft({
 				);
 			}
 			return () => {
-				const active = latest.current;
-				const unsaved =
-					active?.key === loaded.key &&
-					!active.pending &&
-					currentKey.current === loaded.key &&
-					form.current !== serialized
-						? form.current
-						: null;
 				completed.current = loaded.key;
-				withWizardDraftLock(loaded.key, () => {
-					// Navigation can cancel a debounce or queued lock. Flush the newer
-					// same-scope form instead of clearing the submitted snapshot.
-					if (unsaved && active) {
-						if (currentKey.current === loaded.key) saveForm(active, unsaved);
+				return withWizardDraftLock(loaded.key, () => {
+					const active = latest.current;
+					const currentForm = form.current;
+					if (
+						active?.key === loaded.key &&
+						!active.pending &&
+						completionKey.current === loaded.key &&
+						currentForm !== serialized
+					) {
+						// A sibling can submit and remove a revision we already saved.
+						// Flush only a revision that has never been written by this form.
+						const alreadyWritten = [loaded.key, workingKey].some(
+							(slot) => lastWritten.current.get(slot)?.form === currentForm,
+						);
+						if (!alreadyWritten) saveForm(active, currentForm);
 						return;
 					}
 
@@ -322,8 +336,9 @@ export function useWizardDraft({
 						if (submitted(loaded.key, expectedOriginal))
 							discardWizardDraft(loaded.key);
 					}
+					if (mounted.current && active?.key === loaded.key)
+						present({ ...active, pending: null, retained: null });
 				});
-				present({ ...loaded, pending: null, retained: null });
 			};
 		},
 	};

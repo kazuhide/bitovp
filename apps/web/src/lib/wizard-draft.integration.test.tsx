@@ -11,7 +11,10 @@ import {
 	type WizardState,
 } from "@/app/vod/new/build-plan";
 import { VodWizard } from "@/app/vod/new/wizard";
-import { renderWithQuery } from "@/test/render";
+import {
+	OPERATOR_SESSION,
+	renderWithOperatorSession as renderWithQuery,
+} from "@/test/render";
 import {
 	draftFingerprint,
 	draftKey,
@@ -74,11 +77,13 @@ beforeEach(() => {
 	sessionStorage.clear();
 	vi.clearAllMocks();
 	apiFetch.mockImplementation(async (url: string) =>
-		url === "/api/credentials"
-			? [{ id: credentialId, label: "Storage", provider: "AWS_S3" }]
-			: url === "/api/bitmovin-accounts"
-				? [{ id: accountId, name: "Account" }]
-				: [],
+		url === "/api/auth/session"
+			? OPERATOR_SESSION
+			: url === "/api/credentials"
+				? [{ id: credentialId, label: "Storage", provider: "AWS_S3" }]
+				: url === "/api/bitmovin-accounts"
+					? [{ id: accountId, name: "Account" }]
+					: [],
 	);
 });
 it("VOD restores manually, retains failed submissions, and clears on success before a pending save", async () => {
@@ -327,6 +332,12 @@ it("Live restores safe fields and step, requires its secret again, retains failu
 		return readResponse?.(url, init);
 	});
 	fireEvent.click(submit);
+	await waitFor(() =>
+		expect(apiFetch).toHaveBeenCalledWith(
+			"/api/live-channels",
+			expect.objectContaining({ method: "POST" }),
+		),
+	);
 	await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
 	const firstLivePost = apiFetch.mock.calls.find(
 		([url, init]) => url === "/api/live-channels" && init?.method === "POST",

@@ -1,6 +1,9 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import type { AppPrismaClient } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	retainLibraryInputsBeforeJobDeletion,
+} from "@bitovp/db";
 import {
 	isActiveVmafStatus,
 	VMAF_STATUSES,
@@ -202,6 +205,7 @@ export async function deleteEncodingJobLocally(
 			await tx.$queryRaw`SELECT id FROM "EncodingJob" WHERE id = ${id}::uuid FOR UPDATE`;
 			await assertNoJobEvidenceReferences(tx, [id]);
 			await assertAisaSnapshotCaptured(tx, [id]);
+			await retainLibraryInputsBeforeJobDeletion(tx, id);
 			// Re-assert inside the tx: a report that entered PENDING between the
 			// read above and here must not be deleted out from under the scorer.
 			const stillScoring = await tx.vmafJob.count({

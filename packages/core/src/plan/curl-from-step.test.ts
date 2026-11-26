@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { REDACTED, redactSecrets } from "../crypto/redact";
+import { REDACTED, redactStepRequest } from "../crypto/redact";
 import { canCurlStep, curlForStep } from "./curl-from-step";
 import { OPERATION_KINDS, type StepLogEntry } from "./steplog";
 
@@ -61,21 +61,99 @@ describe("curlForStep — endpoint mapping", () => {
 	it.each([
 		"reels:day/Scene&key=take#2?auth=review",
 		"///reels@day/take.mxf",
-	])("copies literal Dolby Vision media key %s from the persisted request", (videoInputPath) => {
-		const request = redactSecrets({
-			videoInputPath,
-			metadataInputPath: "dv/meta.xml?version=2&key",
+		"///reels:scene@day/take.mxf",
+		"reels/take.mxf?auth=review",
+	])("replays literal Dolby object key %s only with its recorded input", (videoInputPath) => {
+		const producer = step({
+			kind: "CREATE_INPUT_S3",
+			step: "input:storage",
+			resourceId: "s3-id",
 		});
-		const result = curlForStep(
-			step({
-				kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
-				refs: { encodingId: "encoding" },
-				request,
-			}),
+		const target = step({
+			kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+			status: "DONE",
+			resourceId: "vision-id",
+			response: { id: "vision-id" },
+			refs: { inputId: "input:storage", encodingId: "encoding" },
+			payload: {
+				videoInputPath,
+				metadataInputPath: "dv/meta.xml?version=2&key",
+			},
+		});
+		const request = redactStepRequest(
+			target,
+			{
+				...target.payload,
+				videoInputPath,
+				refs: { encodingId: "encoding-id", inputId: "s3-id" },
+			},
+			[producer],
 		);
+		expect(request.videoInputPath).toBe(videoInputPath);
+		const options = { objectInputs: new Map([["input:storage", "s3-id"]]) };
+		const result = curlForStep({ ...target, request }, options);
 		if (!result.ok) throw Error(result.code);
 		expect(result.command).toContain(videoInputPath);
 		expect(result.command).toContain("dv/meta.xml?version=2&key");
+		expect(result.command).toContain(
+			"/encoding/encodings/encoding-id/input-streams/dolby-vision",
+		);
+		expect(result.command).toContain('"inputId": "s3-id"');
+		if (videoInputPath.startsWith("///")) {
+			const masked = {
+				...target,
+				request: { ...request, videoInputPath: REDACTED },
+			};
+			const historical = curlForStep(masked, options);
+			expect(historical.ok && historical.command.includes(videoInputPath)).toBe(
+				true,
+			);
+			for (const mismatch of [
+				{ ...masked, status: "FAILED" as const },
+				{ ...masked, response: { id: "wrong" } },
+				{ ...masked, refs: { encodingId: "encoding", inputId: "input:other" } },
+			])
+				expect(curlForStep(mismatch, options).ok).toBe(false);
+			expect(curlForStep(masked).ok).toBe(false);
+		}
+	});
+
+	it("never exports a substituted Dolby mask and preserves a confirmed literal marker", () => {
+		const literal = "[REDACTED]";
+		const entry = step({
+			step: "dolby:dv",
+			kind: "CREATE_DOLBY_VISION_INPUT_STREAM",
+			status: "DONE",
+			resourceId: "vision",
+			response: { id: "vision" },
+			payload: { videoInputPath: literal },
+			refs: { encodingId: "encoding", inputId: "input:store" },
+			request: {
+				videoInputPath: literal,
+				refs: { encodingId: "enc", inputId: "provider" },
+			},
+		});
+		const options = { objectInputs: new Map([["input:store", "provider"]]) };
+		expect(curlForStep(entry, options).ok).toBe(false);
+		const plan = {
+			inputs: [{ key: "store", kind: "S3" }],
+			dolbyStreams: [
+				{
+					kind: "VISION",
+					key: "dv",
+					inputKey: "store",
+					videoInputPath: literal,
+				},
+			],
+		};
+		const proven = curlForStep(entry, { ...options, plan });
+		expect(proven.ok && proven.command.includes(literal)).toBe(true);
+		expect(
+			curlForStep(entry, {
+				...options,
+				plan: { ...plan, inputs: [{ key: "store", kind: "HTTPS" }] },
+			}).ok,
+		).toBe(false);
 	});
 	it.each([
 		"CREATE_FILTER_ENHANCED_DEINTERLACE",
@@ -600,6 +678,9 @@ describe("every operation kind is classified", () => {
 				type: "SEGMENT_BASE",
 				filePath: "video.mp4",
 				inputPath: "video.mp4",
+				...(kind === "CREATE_DOLBY_VISION_INPUT_STREAM"
+					? { videoInputPath: "video.mp4" }
+					: {}),
 				...(kind === "CREATE_HDR10_PLUS_INPUT_STREAM"
 					? {
 							videoInputPath: "video.mp4",

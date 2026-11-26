@@ -1,8 +1,10 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "./api";
-import { useSession } from "./auth/use-session";
+import type { SessionDto } from "./auth/dto";
+import { SESSION_QUERY_KEY, useSession } from "./auth/use-session";
 import {
 	type CreationBody,
 	type CreationSeed,
@@ -20,10 +22,12 @@ export function useCreationSubmission(
 	// The page gate can populate a fresh cache before this form mounts. Its
 	// observer still needs its own completed read before it can bind identity.
 	const session = useSession({ refetchOnMount: "always" });
+	const queryClient = useQueryClient();
 	const { t } = useT();
 	const identity =
 		session.status === "success" &&
 		session.isFetchedAfterMount &&
+		session.fetchStatus !== "paused" &&
 		!session.isFetching
 			? draftIdentity(session.data)
 			: null;
@@ -64,6 +68,17 @@ export function useCreationSubmission(
 		prepared?.scopeKey === seedScopeKey ? (prepared.seed ?? null) : null;
 	const seedError =
 		prepared?.scopeKey === seedScopeKey ? (prepared.error ?? null) : null;
+	function sessionStillVerified(verifiedOwner: string | null) {
+		// TanStack resumes mutations before paused queries and before React
+		// necessarily commits an observer update. Read the live query here.
+		const state = queryClient.getQueryState<SessionDto>(SESSION_QUERY_KEY);
+		return (
+			state?.status === "success" &&
+			state.fetchStatus === "idle" &&
+			!state.isInvalidated &&
+			JSON.stringify(draftIdentity(state.data)) === verifiedOwner
+		);
+	}
 	return {
 		seed,
 		seedError,
@@ -77,7 +92,8 @@ export function useCreationSubmission(
 			if (
 				!current ||
 				JSON.stringify(current) !== owner ||
-				expectedScope !== currentScope.current
+				expectedScope !== currentScope.current ||
+				!sessionStillVerified(owner)
 			)
 				throw new ApiError(409, t("creationSubmission.sessionUnavailable"));
 			if (prepareSeed && !seed)
@@ -89,7 +105,10 @@ export function useCreationSubmission(
 				return await createSubmissionClient([...current, kind, context], {
 					storage: sessionStorage,
 					beforeSend: () => {
-						if (currentScope.current !== expectedScope)
+						if (
+							currentScope.current !== expectedScope ||
+							!sessionStillVerified(owner)
+						)
 							throw new ApiError(
 								409,
 								t("creationSubmission.sessionUnavailable"),

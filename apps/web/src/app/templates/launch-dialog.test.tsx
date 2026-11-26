@@ -6,7 +6,7 @@ import {
 import { samplePresetPlan } from "@bitovp/core/presets";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithQuery } from "@/test/render";
+import { renderWithOperatorSession as renderWithQuery } from "@/test/render";
 import { LaunchDialog } from "./launch-dialog";
 
 const apiFetch = vi.fn();
@@ -379,4 +379,136 @@ describe("LaunchDialog (ledger #109 §4.1)", () => {
 			apiFetch.mock.calls.find(([url]) => url === "/api/encoding-jobs"),
 		).toBeUndefined();
 	});
+});
+
+it("asks for the withheld HTTPS source before creating a job and preserves the remaining template", async () => {
+	const body = encodingPlanSchema.parse(
+		samplePresetPlan("fixed-bitrate-hls-on-aws"),
+	);
+	const original = body.ingest[0];
+	if (!original) throw new Error("Missing ingest");
+	const projected = {
+		...body,
+		inputs: body.inputs.map((input) =>
+			input.key === original.inputKey
+				? {
+						key: input.key,
+						kind: "HTTPS",
+						name: input.name,
+						host: "media.example",
+					}
+				: input,
+		),
+		ingest: body.ingest.map((stream, i) =>
+			i === 0 ? { ...stream, inputPath: "" } : stream,
+		),
+		withheldSourcePaths: [
+			[{ collection: "ingest", index: 0, field: "inputPath" }],
+		],
+	};
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
+		url === `/api/presets/${ID}`
+			? detailFor(projected)
+			: init?.method === "POST"
+				? { id: ID }
+				: [],
+	);
+	renderWithQuery(<LaunchDialog presetId={ID} onClose={() => {}} />);
+	const source = await screen.findByLabelText(original.key);
+	expect(source).toHaveValue("");
+	const apply = screen.getByRole("button", { name: /use replacement/i });
+	expect(apply).toBeDisabled();
+	expect(screen.queryByRole("button", { name: /create job/i })).toBeNull();
+	fireEvent.change(source, {
+		target: { value: "new/source.mxf?ticket=private-fixture" },
+	});
+	fireEvent.click(apply);
+	const launch = await screen.findByRole("button", { name: /create job/i });
+	await waitFor(() => expect(launch).toBeEnabled());
+	fireEvent.change(screen.getByLabelText(/output prefix/i), {
+		target: { value: "{basename}-{ext}" },
+	});
+	fireEvent.click(launch);
+	await waitFor(() => expect(routerPush).toHaveBeenCalled());
+	const post = apiFetch.mock.calls.find(
+		([url]) => url === "/api/encoding-jobs",
+	);
+	if (!post) throw new Error("Missing launched job");
+	expect(JSON.parse(post[1].body).plan.ingest).toEqual(
+		body.ingest.map((stream, i) =>
+			i === 0
+				? { ...stream, inputPath: "new/source.mxf?ticket=private-fixture" }
+				: stream,
+		),
+	);
+	const created = JSON.parse(post[1].body).plan;
+	expect(created.muxings[0].destination.path).toMatch(/^source-mxf\//);
+	expect(JSON.stringify(created.muxings)).not.toContain("private-fixture");
+	expect(post[1].body).not.toContain("withheldSourcePaths");
+});
+
+it("reuses the creation key when a lost Quick Launch is reopened with the final replacement", async () => {
+	const body = encodingPlanSchema.parse(
+		samplePresetPlan("fixed-bitrate-hls-on-aws"),
+	);
+	const [first] = body.ingest;
+	if (!first) throw new Error("Missing ingest");
+	const sourceLabel = first.key;
+	const projected = {
+		...body,
+		inputs: body.inputs.map((input) =>
+			input.key === first.inputKey
+				? {
+						key: input.key,
+						kind: "HTTPS",
+						name: input.name,
+						host: "media.invalid",
+					}
+				: input,
+		),
+		ingest: body.ingest.map((stream) =>
+			stream === first ? { ...stream, inputPath: "" } : stream,
+		),
+		withheldSourcePaths: [
+			[{ collection: "ingest", index: 0, field: "inputPath" }],
+		],
+	};
+	const submissions: RequestInit[] = [];
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+		if (url.startsWith("/api/presets/")) return detailFor(projected);
+		if (url === "/api/encoding-jobs" && init) {
+			submissions.push(init);
+			return submissions.length === 1 ? {} : { id: ID };
+		}
+		return [];
+	});
+	async function open(path: string) {
+		const view = renderWithQuery(
+			<LaunchDialog presetId={ID} onClose={() => {}} />,
+		);
+		fireEvent.change(await screen.findByLabelText(sourceLabel), {
+			target: { value: path },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /use replacement/i }));
+		const launch = await screen.findByRole("button", { name: /create job/i });
+		await waitFor(() => expect(launch).toBeEnabled());
+		return { view, launch };
+	}
+	const finalPath = "reels/approved.mxf?ticket=PRIVATE_FIXTURE";
+	const initial = await open("reels/rough.mxf?ticket=PRIVATE_FIXTURE");
+	fireEvent.change(screen.getByLabelText(first.key), {
+		target: { value: finalPath },
+	});
+	fireEvent.click(initial.launch);
+	await waitFor(() => expect(submissions).toHaveLength(1));
+	await waitFor(() => expect(initial.launch).toBeEnabled());
+	initial.view.unmount();
+	const retry = await open(finalPath);
+	fireEvent.click(retry.launch);
+	await waitFor(() => expect(routerPush).toHaveBeenCalledOnce());
+	expect(submissions).toHaveLength(2);
+	expect(submissions[0]?.headers).toEqual(submissions[1]?.headers);
+	expect(JSON.parse(String(submissions[0]?.body))).toEqual(
+		JSON.parse(String(submissions[1]?.body)),
+	);
 });

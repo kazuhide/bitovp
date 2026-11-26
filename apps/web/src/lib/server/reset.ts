@@ -3,7 +3,11 @@ import {
 	feederOccupancyWhere,
 	verificationIntentsSealable,
 } from "@bitovp/core";
-import type { AppPrismaClient, Prisma } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	type Prisma,
+	retainLibraryInputsBeforeJobDeletion,
+} from "@bitovp/db";
 import { RESET_RETAINED_EXPERIMENT_MODELS } from "@/lib/reset-selection";
 import { assertAisaSnapshotCaptured } from "./delete-jobs";
 import {
@@ -1176,6 +1180,7 @@ export async function deleteOperationalData(
 				await tx.$queryRaw`SELECT id FROM "EncodingJob" ORDER BY id FOR UPDATE`;
 				await assertNoJobEvidenceReferences(tx);
 				await assertAisaSnapshotCaptured(tx);
+				await retainLibraryInputsBeforeJobDeletion(tx);
 				// Match owned Live transitions before deleting any child rows. Lock all
 				// visible channels in a stable order, then recheck admission and stop proof.
 				await tx.$queryRaw`SELECT id FROM "LiveChannel" ORDER BY id FOR UPDATE`;

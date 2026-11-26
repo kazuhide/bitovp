@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { MAX_SCENE_ANALYSIS_BYTES, normalizeSceneAnalysis } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { describe, expect, it, vi } from "vitest";
+import storagePlan from "../../../../../packages/core/src/plan/__fixtures__/ai-scene-analysis-passthrough-test.plan.json";
 
 vi.mock("server-only", () => ({}));
 vi.mock("./context", () => ({ getServerContext: vi.fn() }));
@@ -109,11 +111,30 @@ function database(
 describe("Library source detail retained-raw projection", () => {
 	it("withholds legacy signed storage paths with and without HDR input provenance after the job was deleted", async () => {
 		const inputs = [
-			{ name: "Ordinary", path: "media/take?2.mxf" },
-			{ name: "Version", path: "media/take.mxf?version=2" },
+			{ name: "Ordinary", path: "media/take?2.mxf", pathKind: "OBJECT_KEY" },
+			{
+				name: "Version",
+				path: "media/take.mxf?version=2",
+				pathKind: "OBJECT_KEY",
+			},
 			{ name: "Annotation", path: "reels/Scene#2?auth=review" },
-			{ name: "Flag", path: "reels/take.mxf?key" },
-			{ name: "Archive reel", path: "///reels@day/take.mxf" },
+			{ name: "Flag", path: "reels/take.mxf?key", pathKind: "OBJECT_KEY" },
+			{
+				name: "Storage",
+				path: "reels/take.mxf?auth=review",
+				pathKind: "OBJECT_KEY",
+			},
+			{
+				name: "Network",
+				path: "reels/take.mxf?ticket=LIBRARY_SIGNATURE",
+				pathKind: "HTTPS_PATH",
+			},
+			{ name: "Unidentified", path: "reels/take.mxf?opaque=LIBRARY_SIGNATURE" },
+			{
+				name: "Archive reel",
+				path: "///reels@day/take.mxf",
+				pathKind: "OBJECT_KEY",
+			},
 			{
 				name: "Normalized authority",
 				path: "h\tttps://fixture:LIBRARY_CREDENTIAL@fixture.invalid/take.mxf",
@@ -143,6 +164,14 @@ describe("Library source detail retained-raw projection", () => {
 			{
 				name: "Old capture",
 				path: "//fixture:LIBRARY_CREDENTIAL@fixture.invalid/picture.mxf",
+			},
+			{
+				name: "Extra separators",
+				path: "///fixture.invalid/take.mxf?ticket=LIBRARY_SIGNATURE",
+			},
+			{
+				name: "Username-only authority",
+				path: "///LIBRARY_CREDENTIAL@fixture.invalid/picture.mxf",
 			},
 			{
 				name: "Bound HDR",
@@ -176,6 +205,9 @@ describe("Library source detail retained-raw projection", () => {
 			"media/take.mxf?version=2",
 			"reels/Scene#2?auth=review",
 			"reels/take.mxf?key",
+			"reels/take.mxf?auth=review",
+			"",
+			"",
 			"///reels@day/take.mxf",
 			"",
 			"",
@@ -184,6 +216,115 @@ describe("Library source detail retained-raw projection", () => {
 			"",
 			"",
 			"reels:day/Scene&key=take#2.mxf",
+			"",
+			"",
+			"",
+			"",
+			"",
+		]);
+	});
+	it("uses confirmed object provenance for ambiguous stored paths, including a retained matching job", async () => {
+		const path = "///reels:scene@day/take.mxf";
+		const plan = {
+			...storagePlan,
+			ingest: storagePlan.ingest.map((row) => ({ ...row, inputPath: path })),
+		};
+		const digest = createHash("sha256")
+			.update(JSON.stringify(plan))
+			.digest("hex");
+		async function visible(
+			storedKind: boolean,
+			jobId: string | null,
+			planHash: string,
+		) {
+			const { db } = database(raw, stored, {
+				jobId,
+				snapshot: {
+					schemaVersion: 1,
+					kind: "VOD_JOB",
+					name: "Asset",
+					planHash,
+					identity: "UNVERIFIED",
+					inputs: [
+						{
+							name: plan.inputs[0]?.name,
+							path,
+							...(storedKind ? { pathKind: "OBJECT_KEY" } : {}),
+						},
+						{ name: "Historic network input", path },
+						{
+							name: "Unknown endpoint",
+							path: "///private-account@fixture.invalid/take",
+						},
+						{
+							name: "Historical network query",
+							path: "///fixture.invalid/take?ticket=LIBRARY_PRIVATE",
+						},
+						{
+							name: "Explicit storage with network authority",
+							pathKind: "OBJECT_KEY",
+							path: "//test:LIBRARY_PRIVATE@fixture.invalid/take",
+						},
+						{
+							name: "Untrusted source",
+							path: "\u0001//test:LIBRARY_PRIVATE@fixture.invalid/media",
+						},
+						{
+							name: "Earlier network source",
+							path: "///test@example.test:LIBRARY_PRIVATE@fixture.invalid/media",
+						},
+					],
+					fileOutputs: [],
+					playbackLinks: [],
+					qcVerdict: null,
+					qcOverriddenAt: null,
+				},
+			});
+			Object.assign(db, {
+				encodingJob: { findMany: vi.fn(async () => [{ id: "job-1", plan }]) },
+				credential: { findMany: vi.fn(async () => []) },
+			});
+			const out = await sourceView(
+				db,
+				"source-1",
+				"00000000-0000-4000-8000-000000000001",
+			);
+			expect(JSON.stringify(out)).not.toContain("LIBRARY_PRIVATE");
+			expect(out.snapshot.inputs[0]).not.toHaveProperty("pathKind");
+			return out.snapshot.inputs.map((input) => input.path);
+		}
+		expect(await visible(true, null, digest)).toEqual([
+			path,
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+		]);
+		expect(await visible(false, "job-1", digest)).toEqual([
+			path,
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+		]);
+		expect(await visible(false, "job-1", "changed")).toEqual([
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+		]);
+		expect(await visible(false, null, digest)).toEqual([
+			"",
+			"",
+			"",
+			"",
 			"",
 			"",
 			"",

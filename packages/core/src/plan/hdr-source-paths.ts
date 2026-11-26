@@ -1,4 +1,4 @@
-import { objectInputFields } from "./object-input-path";
+import { vodObjectPathFields } from "./object-input-path";
 
 const uriScheme = /^[a-z][a-z\d+.-]*:/i;
 
@@ -20,58 +20,57 @@ export function isHdr10PlusObjectPath(value: string) {
 export const isHdr10PlusAuditPath = (path: unknown) =>
 	typeof path === "string" && /\/input-streams\/hdr10-plus(?:\/|$)/.test(path);
 
+export type StoragePathKind = "OBJECT_KEY" | "HTTPS_PATH" | "UNKNOWN";
+export type StoragePathProvenance = WeakMap<
+	object,
+	ReadonlyMap<string, StoragePathKind>
+>;
+
+/** Only a typed object-store path can preserve URL punctuation literally. */
 export function hasPrivateStorageLocator(
 	value: string,
-	objectKey = false,
+	kind: StoragePathKind = "UNKNOWN",
 ): boolean {
-	// Let the URL parser recognize absolute network locators, including its
-	// specified normalization of leading C0 controls and embedded tab/CR/LF.
-	// The caller always returns the original spelling of a public object key.
-	if (URL.canParse(value)) {
-		const url = new URL(value);
-		if (url.host && (url.username || url.password || url.search || url.hash))
-			return true;
-	}
-	const location = value.trim().replace(/[\t\r\n]/gu, "");
-	const authority = /^(?:([a-z][a-z\d+.-]*):)?([/\\]{2,})([^/\\?#]*)/iu.exec(
+	const location = value
+		.replace(/^[\s\p{Cc}]+|[\s\p{Cc}]+$/gu, "")
+		.replace(/[\t\n\r]/gu, "");
+	const literalObject =
+		kind === "OBJECT_KEY" &&
+		!/[\\\p{Cc}]/u.test(value) &&
+		value === value.trim();
+	const authority = /^(?:[a-z][a-z\d+.-]*:)?[/\\]{2,}([^/\\?#]*)/iu.exec(
 		location,
 	);
-	if (authority) {
-		const [, scheme, slashes, host] = authority;
-		// Two separators introduce a network-path reference. Extra separators
-		// without a scheme also occur in real S3 object keys (///reels@day).
-		// Only explicit credentials identify that ambiguous spelling as private.
-		if (
-			(scheme || slashes?.length === 2 || /^[^@]*:[^@]*@/u.test(host ?? "")) &&
-			(host?.includes("@") || /[?#].+/u.test(location))
-		)
-			return true;
-	}
-	if (objectKey) return false;
-	// Historical Library rows lack the input provider. Parse only the query.
-	// A typed Dolby/object key may legitimately contain "?version=2".
-	const beforeFragment = location.split("#", 1)[0] ?? "";
-	const queryStart = beforeFragment.indexOf("?");
-	if (queryStart < 0) return false;
-	const query = beforeFragment.slice(queryStart + 1);
-	for (const [name, value] of new URLSearchParams(query)) {
-		if (value.length === 0) continue;
-		const field = name.replace(/[-_.]/gu, "").toLowerCase();
-		if (
-			/(token|credential|signature|password|secret)$|^(auth|authorization|hdnts|hdnea|hdntl|hmac|jwt|sig|key|apikey|accesskey|keypairid|policy|awsaccesskeyid|googleaccessid)$/u.test(
-				field,
+	const absolute = uriScheme.test(location);
+	const checkUserInfo = !literalObject || /^\/{2}[^/]/u.test(location);
+	const checkQuery = absolute || !literalObject;
+	if (absolute || (authority && checkUserInfo)) {
+		try {
+			const url = absolute
+				? new URL(location)
+				: new URL(location, "https://storage.invalid");
+			if (
+				url.host &&
+				(url.username ||
+					url.password ||
+					(checkQuery && (url.search || url.hash)))
 			)
-		)
-			return true;
-		// An origin can rename an EdgeAuth parameter or carry a JWT in a
-		// generic parameter. Their token formats identify them independently.
+				return true;
+		} catch {
+			// Incomplete authority fields still must not persist as public text.
+		}
 		if (
-			/(?:^|~)hmac=[^~\s]+/iu.test(value) ||
-			/^eyJ[\w-]+\.[\w-]+\.[\w-]+$/u.test(value)
+			authority &&
+			(authority[1]?.includes("@") || (checkQuery && /[?#]/u.test(location)))
 		)
 			return true;
 	}
-	return false;
+	// An object store receives the bytes as a key. An HTTPS input resolves
+	// the path against its host, which can assign any name to a signed query.
+	if (literalObject) return false;
+	const fragment = location.indexOf("#");
+	const path = fragment < 0 ? location : location.slice(0, fragment);
+	return path.includes("?") || (kind === "HTTPS_PATH" && fragment >= 0);
 }
 
 /** Provider diagnostics can echo signed input locators even in list responses without a plan. */
@@ -87,7 +86,7 @@ export function publicStorageDiagnostic<T extends string | null | undefined>(
 	const compact = value.replace(/\s+/gu, "");
 	return value.includes("@") ||
 		(/[?].+/u.test(compact) && /[/\\.]|[?&][^=]+=/u.test(compact)) ||
-		hasPrivateStorageLocator(compact)
+		(uriScheme.test(compact) && hasPrivateStorageLocator(compact))
 		? ("[withheld]" as T)
 		: value;
 }
@@ -108,8 +107,7 @@ export function isProviderDiagnosticText(key: string) {
 	].includes(key);
 }
 
-/** Job/preset routes have the actual plan. Library and audit records without it
- * retain the conservative path projection. */
+/** The plan and its fulfilled operations can identify literal object paths. */
 export function publicVodSourceProjection<T>(
 	row: T,
 	plan: unknown,
@@ -118,7 +116,7 @@ export function publicVodSourceProjection<T>(
 	return publicHdrSourceProjection(
 		row,
 		"record",
-		objectInputFields(plan, stepLog),
+		vodObjectPathFields(plan, stepLog),
 	);
 }
 
@@ -127,19 +125,24 @@ export function publicVodSourceProjection<T>(
 export function publicHdrSourceProjection<T>(
 	value: T,
 	purpose: "record" | "draft" = "record",
-	objectFields?: WeakSet<object>,
+	pathKinds?: StoragePathProvenance,
 ): T {
 	const hidden = new Set<string>();
 	const fields = new WeakMap<object, Map<string, string>>();
 	let changed = false;
-	function replace(row: object, key: string, replacement: string) {
+	function replace(
+		row: object,
+		key: string,
+		replacement: string,
+		modified = true,
+	) {
 		let values = fields.get(row);
 		if (!values) {
 			values = new Map();
 			fields.set(row, values);
 		}
 		values.set(key, replacement);
-		changed = true;
+		if (modified) changed = true;
 	}
 	function mark(row: object, key: string, path: string) {
 		replace(row, key, "");
@@ -202,29 +205,47 @@ export function publicHdrSourceProjection<T>(
 				replace(row, key, "[withheld]");
 			}
 
+			const mediaPath =
+				key === "videoInputPath" ||
+				key === "metadataInputPath" ||
+				(purpose === "record" && key === "inputPath");
+			const pathKind = pathKinds?.get(row)?.get(key);
 			if (
-				key === "inputPath" &&
+				!scope &&
+				((libraryInputs && key === "path") || mediaPath) &&
 				typeof item === "string" &&
-				objectFields?.has(row) &&
-				hasPrivateStorageLocator(item) &&
-				!hasPrivateStorageLocator(item, true)
+				pathKind === "OBJECT_KEY" &&
+				!hasPrivateStorageLocator(item, "OBJECT_KEY")
 			) {
-				// A separate historical step can have lost its proof and therefore
-				// redact this same text. The plan's independently typed field survives.
-				replace(row, key, item);
+				// An untrusted row elsewhere in the same snapshot can carry identical bytes.
+				replace(row, key, item, false);
+				continue;
+			}
+			if (
+				!scope &&
+				mediaPath &&
+				typeof item === "string" &&
+				hasPrivateStorageLocator(item, pathKind)
+			) {
+				// A projected plan is also used to verify genuine literal mask names.
+				// A private authored name cannot become evidence for "[REDACTED]".
+				replace(
+					row,
+					key,
+					row.kind === "VISION" || typeof row.inputKey === "string"
+						? ""
+						: "[REDACTED]",
+				);
+				hidden.add(item);
 				continue;
 			}
 			if (
 				typeof item === "string" &&
 				item.trim().length &&
-				((purpose === "record" &&
-					key === "inputPath" &&
-					hasPrivateStorageLocator(item)) ||
-					(scope &&
-						(key === "videoInputPath" || key === "metadataInputPath")) ||
+				((mediaPath && scope) ||
 					(key === "path" &&
 						(row.hdr10Plus ||
-							(libraryInputs && hasPrivateStorageLocator(item))))) &&
+							(libraryInputs && hasPrivateStorageLocator(item, pathKind))))) &&
 				!isHdr10PlusObjectPath(item)
 			)
 				mark(row, key, item);

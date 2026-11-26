@@ -24,6 +24,10 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldRowAction } from "@/components/ui/field";
 import { HelpOverlay } from "@/components/ui/help-overlay";
 import { Input, SelectNative } from "@/components/ui/input";
+import {
+	useWithheldSourceInputs,
+	WithheldSourceInputs,
+} from "@/components/withheld-source-inputs";
 import { WizardDraftOffer } from "@/components/wizard-draft-offer";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useCreationSubmission } from "@/lib/creation-submission-hook";
@@ -477,13 +481,19 @@ export function VodWizard({
 			selectedPresetQuery.isFetchedAfterMount &&
 			selectedPresetQuery.fetchStatus === "idle");
 	const presetUpdatedAt = loadPresetId ? userPreset.data?.updatedAt : undefined;
-	const presetBody: Record<string, unknown> | undefined = copiedJob
+	const publicPresetBody: Record<string, unknown> | undefined = copiedJob
 		? copiedJob.plan
 		: deliveryPresetId
 			? deliveryPreset.data?.spec.plan
 			: loadPresetId
 				? userPreset.data?.body
 				: preset.data;
+	const replacementVersion = `${presetKey ?? ""}:${presetUpdatedAt ?? ""}`;
+	const replacement = useWithheldSourceInputs(
+		publicPresetBody,
+		replacementVersion,
+	);
+	const presetBody = replacement.body;
 	const presetLabel = deliveryPresetId
 		? deliveryPreset.data?.spec.name
 		: loadPresetId
@@ -551,7 +561,7 @@ export function VodWizard({
 					? presetUpdatedAt
 						? `edit:${editPresetId}:${presetUpdatedAt}`
 						: null
-					: `${presetKey}:${presetUpdatedAt ?? draftFingerprint(presetBody)}`,
+					: `${presetKey}:${presetUpdatedAt ?? draftFingerprint(publicPresetBody)}`,
 			);
 			setStep(0);
 			setMappedPresetName(presetLabel ?? null);
@@ -570,6 +580,7 @@ export function VodWizard({
 		presetReady,
 		presetUpdatedAt,
 		presetBody,
+		publicPresetBody,
 		appliedPreset,
 		presetKey,
 		editPresetId,
@@ -635,7 +646,11 @@ export function VodWizard({
 		value: state,
 		step,
 		onRestore: (saved) => {
-			const restored = restoreVodWizardDraft(draftSource, saved);
+			const restored = restoreVodWizardDraft(
+				draftSource,
+				saved,
+				replacement.resolvedPaths,
+			);
 			// Source facts and preview tasks are deliberately absent from the draft.
 			// Mount their preparation before resuming a later wizard step.
 			openState(restored, restored.inputTimeline ? 1 : saved.step);
@@ -849,6 +864,25 @@ export function VodWizard({
 
 	// A selected template owns the initial form. Keep edits unavailable until
 	// its plan is applied so a late response cannot replace user input.
+	if (presetReady && presetKey !== appliedPreset && replacement.malformed)
+		return (
+			<p role="alert" className="text-rose-400 text-sm">
+				{t("templates.notAPlan")}
+			</p>
+		);
+	if (
+		presetReady &&
+		presetKey !== undefined &&
+		presetKey !== appliedPreset &&
+		replacement.pending
+	)
+		return (
+			<WithheldSourceInputs
+				key={replacementVersion}
+				sources={replacement.pending}
+				onResolve={replacement.resolve}
+			/>
+		);
 	if (presetKey !== undefined && presetKey !== appliedPreset) {
 		const requestedName =
 			presetLabel ?? deliveryPresetId ?? loadPresetId ?? presetName ?? "";

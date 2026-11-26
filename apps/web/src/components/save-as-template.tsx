@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+	useWithheldSourceInputs,
+	WithheldSourceInputs,
+} from "@/components/withheld-source-inputs";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 
@@ -14,7 +18,9 @@ export function SaveAsTemplateButton({
 	kind,
 	plan,
 	defaultName,
+	sourceId,
 }: {
+	sourceId?: string;
 	kind: "FULL_PLAN" | "LIVE_PLAN";
 	plan: unknown;
 	defaultName: string;
@@ -24,17 +30,28 @@ export function SaveAsTemplateButton({
 	const [name, setName] = useState(defaultName);
 	const [savedAs, setSavedAs] = useState<string | null>(null);
 
+	const replacement = useWithheldSourceInputs(
+		kind === "FULL_PLAN" ? plan : undefined,
+		sourceId,
+	);
+	const publicBody = kind === "FULL_PLAN" ? replacement.body : plan;
+	const close = () => {
+		setOpen(false);
+		replacement.clear();
+	};
 	const save = useMutation({
 		mutationFn: () =>
 			apiFetch<{ id: string; name: string }>("/api/presets", {
 				method: "POST",
 				body: JSON.stringify(
-					kind === "LIVE_PLAN" ? { kind, name, plan } : { name, plan },
+					kind === "LIVE_PLAN"
+						? { kind, name, plan }
+						: { name, plan: publicBody },
 				),
 			}),
 		onSuccess: (created) => {
 			setSavedAs(created.name);
-			setOpen(false);
+			close();
 		},
 	});
 
@@ -50,7 +67,7 @@ export function SaveAsTemplateButton({
 			) : null}
 			<Dialog
 				open={open}
-				onOpenChange={setOpen}
+				onOpenChange={(next) => (next ? setOpen(true) : close())}
 				title={t("templates.saveAsTemplate")}
 			>
 				<div className="space-y-4">
@@ -64,6 +81,13 @@ export function SaveAsTemplateButton({
 							onChange={(e) => setName(e.target.value)}
 						/>
 					</Field>
+					{open && replacement.pending ? (
+						<WithheldSourceInputs
+							key={sourceId}
+							sources={replacement.pending}
+							onResolve={replacement.resolve}
+						/>
+					) : null}
 					{save.isError ? (
 						<p className="text-rose-400 text-xs">
 							{t("templates.saveTemplateFailed", {
@@ -76,7 +100,7 @@ export function SaveAsTemplateButton({
 					) : null}
 					<div className="flex justify-end">
 						<Button
-							disabled={save.isPending || name.trim() === ""}
+							disabled={save.isPending || name.trim() === "" || !publicBody}
 							onClick={() => save.mutate()}
 						>
 							{save.isPending

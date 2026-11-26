@@ -57,6 +57,32 @@ describe("GET /api/audit-logs", () => {
 		expect(JSON.stringify(publicRow)).not.toContain("PRIVATE_AUDIT_FIXTURE");
 		expect(publicRow.request.videoInputPath).toBe("assets/safe.mxf");
 	});
+	it("withholds unverified Dolby Vision locators from historical audit details", async () => {
+		const videoInputPath =
+			"\u0001//test:PRIVATE_AUDIT_SAMPLE@fixture.invalid/media";
+		findUnique.mockResolvedValueOnce({
+			id: ID,
+			path: "/encoding/encodings/enc/input-streams/dolby-vision",
+			actor: "worker",
+			request: {
+				videoInputPath,
+				metadataInputPath: "///private-account@fixture.invalid/take",
+			},
+			response: { message: videoInputPath },
+		});
+		const response = await detail(new Request("http://test"), {
+			params: Promise.resolve({ id: ID }),
+		});
+		expect(response.status).toBe(200);
+		const safe = await response.json();
+		expect(safe.request).toEqual({
+			videoInputPath: "[REDACTED]",
+			metadataInputPath: "[REDACTED]",
+		});
+		expect(JSON.stringify(safe)).not.toMatch(
+			/PRIVATE_AUDIT_SAMPLE|private-account/,
+		);
+	});
 	it("withholds signed start errors on historical list and detail reads", async () => {
 		const row = {
 			id: ID,

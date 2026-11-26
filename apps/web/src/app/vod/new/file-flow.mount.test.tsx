@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FeatureFlagsProvider } from "@/lib/feature-flags/context";
 import { VOD_FLOW_COOKIE } from "@/lib/vod-flow";
 import { draftKey, writeWizardDraft } from "@/lib/wizard-draft";
-import { renderWithQuery } from "@/test/render";
+import { renderWithOperatorSession as renderWithQuery } from "@/test/render";
 import {
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
@@ -72,7 +72,8 @@ vi.mock("@/components/storage-picker", () => ({
 			</button>
 		) : null,
 }));
-vi.mock("@/lib/auth/use-session", () => ({
+vi.mock("@/lib/auth/use-session", async (original) => ({
+	...(await original<Record<string, unknown>>()),
 	useSession: () => ({
 		status: "success",
 		isFetchedAfterMount: true,

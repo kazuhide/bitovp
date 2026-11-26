@@ -2,18 +2,21 @@
 
 import { useMutation } from "@tanstack/react-query";
 
-type WizardSubmission<T> = { send: () => Promise<T>; finishDraft?: () => void };
+type WizardSubmission<T> = {
+	send: () => Promise<T>;
+	finishDraft?: () => Promise<void>;
+};
 
 /** Capture both the request and its draft on click, including submissions paused offline. */
 export function useWizardSubmission<T>(
 	prepare: () => () => Promise<T>,
-	afterSubmission: () => (() => void) | undefined,
+	afterSubmission: () => (() => Promise<void>) | undefined,
 	onSuccess: (result: T) => void,
 ) {
 	const mutation = useMutation({
 		mutationFn: (submission: WizardSubmission<T>) => submission.send(),
-		onSuccess(result, submission) {
-			submission.finishDraft?.();
+		async onSuccess(result, submission) {
+			await submission.finishDraft?.();
 			onSuccess(result);
 		},
 	});

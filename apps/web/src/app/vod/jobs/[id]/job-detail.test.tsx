@@ -1961,6 +1961,55 @@ describe("JobDetail — rendition / input / storage panels", () => {
 		).toBeInTheDocument();
 	});
 
+	it("shows rendition and storage summaries and a non-actionable card for a withheld input", async () => {
+		const ordinary = "bitovp-display-source-1";
+		mockApi({
+			row: planRow({
+				plan: {
+					...PLAN,
+					inputs: [
+						...PLAN.inputs,
+						{ key: "private", kind: "HTTPS", host: "media.example.test" },
+					],
+					ingest: [
+						{
+							...PLAN.ingest[0],
+							key: "src",
+							inputKey: "private",
+							inputPath: "",
+						},
+						{ ...PLAN.ingest[0], key: "public-file", inputPath: ordinary },
+					],
+					withheldSourcePaths: [
+						[{ collection: "ingest", index: 0, field: "inputPath" }],
+					],
+				},
+			}),
+		});
+		wrap(<JobDetail id={JOB_ID} />);
+		const heading = await screen.findByRole("heading", { name: "Input files" });
+		const panel = heading.closest("section");
+		if (!panel) throw new Error("missing input files panel");
+		const label = within(panel).getByText("Source path withheld");
+		const card = label.closest("li");
+		if (!card) throw new Error("missing private input card");
+		expect(within(card).queryByRole("button")).toBeNull();
+		expect(within(card).getByText(/→ v1080, v540, a1/)).toBeInTheDocument();
+		expect(
+			within(panel).getByText(`src-bucket/${ordinary}`),
+		).toBeInTheDocument();
+		expect(
+			within(panel).getAllByRole("button", { name: /inspect/i }),
+		).toHaveLength(1);
+		expect(
+			screen.getByRole("heading", { name: "Renditions" }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("heading", { name: "Storage I/O" }),
+		).toBeInTheDocument();
+		expect(document.body.textContent).not.toContain("bitovp-display-source-2");
+	});
+
 	it("names the source file and which renditions consume it", async () => {
 		mockApi({ row: planRow() });
 		wrap(<JobDetail id={JOB_ID} />);

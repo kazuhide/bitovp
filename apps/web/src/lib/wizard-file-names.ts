@@ -55,6 +55,15 @@ export function draftKeepsText(value: string, imagePath = false): boolean {
 	const dot = stem.lastIndexOf(".");
 	if (dot < 0) return !imagePath && spacedLabel;
 	const extension = stem.slice(dot + 1);
+	// A login followed by a versioned hostname can look like an artwork name.
+	// An explicit label separator or an image density suffix identifies the artwork form.
+	if (
+		imagePath &&
+		!spacedLabel &&
+		/-v[0-9]+$/iu.test(extension) &&
+		!/^\d+(?:\.\d+)?x\./iu.test(stem)
+	)
+		return false;
 	// Delivery labels can include a revision, either as the final component
 	// of a display name or after the file format of an artwork asset.
 	if (!imagePath && spacedLabel && /^v[0-9]+$/iu.test(extension)) return true;

@@ -38,6 +38,8 @@ export const librarySnapshotSchema = z.object({
 		z.object({
 			name: z.string(),
 			path: z.string(),
+			/** Private evidence captured with a finished plan; omitted on public reads. */
+			pathKind: z.enum(["OBJECT_KEY", "HTTPS_PATH"]).optional(),
 			hdr10Plus: z
 				.object({
 					streamKey: z.string(),

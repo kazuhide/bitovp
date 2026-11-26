@@ -5,11 +5,15 @@ import {
 	isProviderDiagnosticText,
 	publicStorageDiagnostic,
 } from "../plan/hdr-source-paths";
-
 import {
 	hasRecordedObjectInput,
 	objectInputReceipts,
+	recordedStorageFields,
 } from "../plan/object-input-path";
+
+import { maskUrlUserinfo, REDACTED } from "./url-userinfo";
+
+export { maskUrlUserinfo, REDACTED } from "./url-userinfo";
 
 /**
  * Suffix-anchored so reference fields stay readable: `credentialId`,
@@ -44,9 +48,6 @@ const SENSITIVE_SUFFIX =
 const SENSITIVE_EXACT =
 	/^(ask|serviceaccountjson|username|login|publishingpoint|relayurl|playbackurl)$/i;
 
-/** Masks the password of URL userinfo: `scheme://user:pass@host`. */
-const URL_USERINFO = /([/\\]{2}[^/\\:@]+:)[^/\\]*@/g;
-
 /**
  * Header-tuple detection for the ["name", "value"] array shape. Deliberately
  * NARROWER than isSensitiveKey: the old rule redacted ANY 2-element array
@@ -65,12 +66,6 @@ function isHeaderTupleName(name: string): boolean {
 	);
 }
 
-export const REDACTED = "[REDACTED]";
-
-export function maskUrlUserinfo(value: string): string {
-	return value.replace(URL_USERINFO, `$1${REDACTED}@`);
-}
-
 export function isSensitiveKey(key: string): boolean {
 	return SENSITIVE_SUFFIX.test(key) || SENSITIVE_EXACT.test(key);
 }
@@ -87,11 +82,9 @@ export function redactSecrets<T>(value: T, hdrSource = false): T {
 	return walk(value, new WeakSet(), undefined, hdrSource) as T;
 }
 
-/** Preserve a typed object key in the recorded request only when its provider
- * input matches the fulfilled producer. Other fields still receive the normal
- * request and credential redaction. */
+/** Preserve a literal key when the fulfilled provider input and compiled bytes agree. */
 export function redactStepRequest<T>(
-	entry: { kind: string },
+	entry: { kind: string; payload: Record<string, unknown> },
 	request: T,
 	entries: unknown,
 ): T {
@@ -99,18 +92,26 @@ export function redactStepRequest<T>(
 		request,
 		entry.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",
 	);
+	const paths = recordedStorageFields(entry.kind);
 	if (
-		request &&
-		typeof request === "object" &&
-		"inputPath" in request &&
-		typeof request.inputPath === "string" &&
-		hasPrivateStorageLocator(request.inputPath) &&
-		!hasPrivateStorageLocator(request.inputPath, true) &&
-		hasRecordedObjectInput(entry, request, objectInputReceipts(entries))
-	) {
-		return { ...safe, inputPath: request.inputPath };
+		!paths.length ||
+		!request ||
+		typeof request !== "object" ||
+		!hasRecordedObjectInput(entry, request, objectInputReceipts(entries))
+	)
+		return safe;
+	if (!safe || typeof safe !== "object") return safe;
+	const result = { ...safe };
+	for (const field of paths) {
+		const value = (request as Record<string, unknown>)[field];
+		if (
+			typeof value === "string" &&
+			value === entry.payload[field] &&
+			!hasPrivateStorageLocator(value, "OBJECT_KEY")
+		)
+			Object.assign(result, { [field]: value });
 	}
-	return safe;
+	return result;
 }
 
 function walk(

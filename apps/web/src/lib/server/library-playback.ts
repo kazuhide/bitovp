@@ -37,7 +37,7 @@ function uncapturedWebmPlan(plan: EncodingPlan, source: FileSource) {
 	return muxings.length ? { ...plan, muxings, manifests: [] } : undefined;
 }
 
-async function matchingPlans(
+export async function matchingLibraryPlans(
 	prisma: Pick<AppPrismaClient, "encodingJob" | "credential">,
 	sources: readonly FileSource[],
 ) {
@@ -77,7 +77,7 @@ export async function libraryFileOutputsForSource(
 	source: FileSource,
 ): Promise<ReturnType<typeof libraryFileOutputs>> {
 	if (source.fileOutputs?.length) return source.fileOutputs;
-	const plans = await matchingPlans(prisma, [source]);
+	const plans = await matchingLibraryPlans(prisma, [source]);
 	const match = source.jobId ? plans.get(source.jobId) : undefined;
 	if (!match) return [];
 	if (source.fileOutputs === undefined) return libraryFileOutputs(match.plan);
@@ -101,7 +101,7 @@ export async function enrichLibraryPlayback(
 	/** A batched catalog supplies eligibility from its complete matched snapshot. */
 	projectionEligible = needsLibraryPlaybackProjection,
 ): Promise<PlaybackLinks[]> {
-	const plans = await matchingPlans(
+	const plans = await matchingLibraryPlans(
 		prisma,
 		sources.filter(
 			(source) =>

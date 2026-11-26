@@ -5,7 +5,11 @@ import {
 	type SecretCipher,
 	USAGE_BACKFILL_SETTING_PREFIX,
 } from "@bitovp/core";
-import type { AppPrismaClient, AppTransactionClient } from "@bitovp/db";
+import {
+	type AppPrismaClient,
+	type AppTransactionClient,
+	retainLibraryInputsBeforeJobDeletion,
+} from "@bitovp/db";
 import {
 	RESET_CATALOG,
 	RESET_PROTECTED_EDITING_MODELS,
@@ -167,6 +171,8 @@ export async function deleteSelectedData(
 							throw new SelectedResetLibraryEditingBlocked(protectedCount);
 					}
 					if (selected.has("vodJobs")) await assertNoJobEvidenceReferences(tx);
+					if (selected.has("vodJobs") && !selected.has("contentLibrary"))
+						await retainLibraryInputsBeforeJobDeletion(tx);
 					if (clearsUsage) {
 						await tx.appSetting.deleteMany({
 							where: { key: { startsWith: USAGE_BACKFILL_SETTING_PREFIX } },

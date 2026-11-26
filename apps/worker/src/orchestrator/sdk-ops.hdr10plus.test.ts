@@ -90,3 +90,40 @@ it("rejects an audio selection before transport", async () => {
 	).rejects.toThrow("Invalid HDR10+ selection mode");
 	expect(fetch).not.toHaveBeenCalled();
 });
+
+it("uses the NetStorage input ID and exact object key in the installed ingest SDK", async () => {
+	const fetch = vi.fn(
+		async (_url: string, _init: RequestInit) =>
+			new Response(
+				JSON.stringify({ data: { result: { id: "owned-resource" } } }),
+				{ status: 201, headers: { "content-type": "application/json" } },
+			),
+	);
+	vi.stubGlobal("fetch", fetch);
+	const audit = vi.fn(async () => {});
+	const sdk = createBitmovinSdkOps(
+		{ apiKey: "test-only", tenantOrgId: null },
+		audit,
+	);
+	const inputId = await sdk.createAkamaiNetStorageInput({
+		name: "media",
+		host: "storage.example.invalid",
+		username: "fixture-user",
+		password: "fixture-only",
+	});
+	await sdk.createIngestInputStream("encoding-local", {
+		inputId,
+		inputPath: "edits/take?version=2.mxf",
+		selectionMode: "AUTO",
+		position: 0,
+	});
+	expect(fetch.mock.calls.map(([url]) => new URL(url).pathname)).toEqual([
+		"/v1/encoding/inputs/akamai-netstorage",
+		"/v1/encoding/encodings/encoding-local/input-streams/ingest",
+	]);
+	expect(JSON.parse(String(fetch.mock.calls[1]?.[1].body))).toMatchObject({
+		inputId: "owned-resource",
+		inputPath: "edits/take?version=2.mxf",
+	});
+	expect(JSON.stringify(audit.mock.calls)).not.toContain("fixture-only");
+});

@@ -1190,6 +1190,8 @@ This screen is for checking usage, not a replacement for invoices or incident mo
 
 Use "Content Library" to find completed VOD jobs and their analysis, then organize them with titles and tags. VIEWER can browse the library; registration, editing, and retries require OPERATOR or higher.
 
+The Library hides relative HTTPS paths that contain a query, which can grant private access even when its parameter has an unfamiliar name. It displays the exact object key when the capture or the original job identifies a storage input. A historical query path with no surviving input information appears blank.
+
 | Term | Stored information | Purpose |
 |---|---|---|
 | Source | An import record containing a completed job, output locations, playback metadata, analysis results, and related information | Identify the processing result being referenced |

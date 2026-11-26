@@ -10,6 +10,7 @@ import {
 	recordFinalStopFailure,
 	releaseDeadStageClaim,
 } from "./dead-job-outcome";
+import { createExhaustedProvisionRecovery } from "./exhausted-provisions";
 
 /**
  *  / review-350 HIGH-1 — the dead-job verdicts, at last reachable.
@@ -55,16 +56,34 @@ describe("scheduled START final-delivery recovery", () => {
 		timestamp: at.getTime(),
 	};
 
-	function failedProjection(receiptCount: number) {
+	function failedProjection(receiptCount: number, firstHandoff = false) {
 		const updateMany = vi
 			.fn()
-			.mockResolvedValueOnce({ count: 0 })
+			.mockResolvedValueOnce({ count: firstHandoff ? 1 : 0 })
 			.mockResolvedValueOnce({ count: receiptCount });
 		const transaction = vi.fn(async () => {
 			throw new Error("retirement rolled back");
 		});
 		const prisma = {
+			liveChannel: {
+				findMany: vi.fn(async () => [
+					{
+						id: CHANNEL,
+						status: "PROVISIONING",
+						liveEffectFenceVersion: 7,
+						runs: [{ id: RUN, status: "PROVISIONING" }],
+					},
+				]),
+			},
 			liveSchedule: {
+				findMany: vi.fn(async () => [
+					{
+						id: SCHEDULE_ID,
+						outcome: "PENDING",
+						dispatchJobId: job.id,
+						dispatchedAt: firstHandoff ? null : at,
+					},
+				]),
 				findFirst: vi.fn(async () => ({
 					liveChannelRunId: RUN,
 					startAdmissionFenceVersion: 7,
@@ -82,10 +101,31 @@ describe("scheduled START final-delivery recovery", () => {
 		return { prisma, updateMany, transaction };
 	}
 
+	const fired = {
+		kind: "SCHEDULE_FIRED",
+		scheduleId: SCHEDULE_ID,
+		liveChannelId: CHANNEL,
+		path: `/live/${CHANNEL}`,
+	};
+
+	it("notifies before retirement when the final failed callback saves the first START receipt", async () => {
+		const { prisma, updateMany, transaction } = failedProjection(0, true);
+		const emit = vi.fn().mockRejectedValue(new Error("notify unavailable"));
+		await expect(
+			recordFinalProvisionFailure(prisma, job, "queue worker lost", at, emit),
+		).rejects.toThrow("retirement rolled back");
+		expect(updateMany).toHaveBeenCalledOnce();
+		expect(emit).toHaveBeenCalledExactlyOnceWith(fired);
+		const emission = emit.mock.invocationCallOrder[0] ?? 0;
+		expect(updateMany.mock.invocationCallOrder[0]).toBeLessThan(emission);
+		expect(emission).toBeLessThan(transaction.mock.invocationCallOrder[0] ?? 0);
+	});
+
 	it("saves an exact migrated legacy failure before a rollback can lose retirement", async () => {
 		const { prisma, updateMany, transaction } = failedProjection(1);
+		const emit = vi.fn(async () => {});
 		await expect(
-			recordFinalProvisionFailure(prisma, job, "queue worker lost", at),
+			recordFinalProvisionFailure(prisma, job, "queue worker lost", at, emit),
 		).rejects.toThrow("retirement rolled back");
 		expect(updateMany).toHaveBeenLastCalledWith({
 			where: expect.objectContaining({
@@ -99,6 +139,31 @@ describe("scheduled START final-delivery recovery", () => {
 		expect(updateMany.mock.invocationCallOrder[1]).toBeLessThan(
 			transaction.mock.invocationCallOrder[0] ?? 0,
 		);
+		expect(emit).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		true,
+		false,
+	])("notifies a recovered failed START before retirement only for its first receipt (first=%s)", async (firstHandoff) => {
+		const { prisma, transaction } = failedProjection(1, firstHandoff);
+		const emit = vi.fn(async () => {});
+		const add = vi.fn(async () => {});
+		const recover = createExhaustedProvisionRecovery(
+			prisma,
+			async (id) =>
+				id === job.id ? { ...job, getState: async () => "failed" } : undefined,
+			add,
+			emit,
+		);
+		await expect(recover(at)).rejects.toThrow("retirement rolled back");
+		expect(add).not.toHaveBeenCalled();
+		if (firstHandoff) {
+			expect(emit).toHaveBeenCalledExactlyOnceWith(fired);
+			expect(emit.mock.invocationCallOrder[0]).toBeLessThan(
+				transaction.mock.invocationCallOrder[0] ?? 0,
+			);
+		} else expect(emit).not.toHaveBeenCalled();
 	});
 
 	it("does not retire a START replaced by a different queue receipt", async () => {
@@ -306,6 +371,7 @@ describe("deadJobScheduleWrites (ledger #238)", () => {
 		).toEqual([
 			{
 				target: {
+					requireDispatchReceipt: true,
 					scheduledStart: {
 						id: SCHEDULE,
 						liveChannelId: CHANNEL,
@@ -644,6 +710,8 @@ describe("recordDeadJobScheduleOutcomes", () => {
 					id: SCHEDULE_ID,
 					liveChannelRunId: RUN,
 					startAdmissionFenceVersion: 2,
+					dispatchJobId: `sched-${SCHEDULE_ID}-start-2`,
+					dispatchedAt: { not: null },
 				}),
 				data: expect.objectContaining({
 					outcomeNote: expect.stringContaining("[withheld]"),

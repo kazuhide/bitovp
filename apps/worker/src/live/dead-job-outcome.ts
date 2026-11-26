@@ -14,7 +14,7 @@ import {
 } from "@bitovp/db";
 import { feederLeaseIsFresh } from "../feeder/ownership";
 import { HEARTBEAT_SWEEP_JOB } from "../handlers";
-import type { EmitProductEvent } from "../notify/emitter";
+import { type EmitProductEvent, emitScheduleFired } from "../notify/emitter";
 import {
 	recordScheduleOutcome,
 	recordScheduleOutcomeBestEffort,
@@ -136,6 +136,7 @@ export async function recordFinalProvisionFailure(
 	job: DeadLiveJob,
 	message: string,
 	at = new Date(),
+	emitEvent?: EmitProductEvent,
 ): Promise<boolean> {
 	if (!job || !isTerminalDelivery(job)) return false;
 	const parsed = liveChannelJobSchema.safeParse(job.data);
@@ -162,18 +163,20 @@ export async function recordFinalProvisionFailure(
 	if (scheduleId && job.id && "runId" in admission) {
 		// Save the exact terminal evidence before attempting to retire the
 		// channel. A failed retirement must not enable replay after eviction.
+		const start = {
+			id: scheduleId,
+			liveChannelId: data.liveChannelId,
+			liveChannelRunId: admission.runId,
+			startAdmissionFenceVersion: admission.generation,
+		};
 		const recorded = await recordRetainedScheduledStart(
 			prisma,
-			{
-				id: scheduleId,
-				liveChannelId: data.liveChannelId,
-				liveChannelRunId: admission.runId,
-				startAdmissionFenceVersion: admission.generation,
-			},
+			start,
 			{ id: job.id, state: "failed" },
 			at,
 		);
 		if (!recorded) return false;
+		if (recorded === "handoff") void emitScheduleFired(start, emitEvent);
 	}
 	return recordExpiredProvisionFailure(
 		prisma,
@@ -690,6 +693,11 @@ export function deadJobScheduleWrites(
 			return [
 				{
 					target: {
+						// The exact receipt writer records the handoff and notifies.
+						// Leave an unstamped START recoverable if that write fails.
+						...(data.provisionFenceVersion !== undefined && {
+							requireDispatchReceipt: true,
+						}),
 						scheduledStart: {
 							id,
 							liveChannelId: data.liveChannelId,

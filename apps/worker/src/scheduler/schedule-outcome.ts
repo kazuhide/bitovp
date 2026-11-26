@@ -158,6 +158,7 @@ export type ScheduleOutcomeTarget =
 	| { scheduleId: string }
 	| { feederSessionId: string }
 	| {
+			requireDispatchReceipt?: true;
 			requireFailedAiring?: true;
 			scheduledStart: {
 				id: string;
@@ -196,9 +197,11 @@ function whereOf(target: ScheduleOutcomeTarget): Prisma.LiveScheduleWhereInput {
 			...start,
 			action: "START",
 			status: "FIRED",
-			...(dispatchJobId && {
-				OR: [{ dispatchJobId: null }, { dispatchJobId }],
-			}),
+			...(target.requireDispatchReceipt
+				? { dispatchJobId, dispatchedAt: { not: null } }
+				: dispatchJobId && {
+						OR: [{ dispatchJobId: null }, { dispatchJobId }],
+					}),
 			...(target.requireFailedAiring
 				? {
 						liveChannel: {

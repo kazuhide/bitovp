@@ -1720,6 +1720,26 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					});
 			});
 			const id = `sched-${current.id}-start-4`;
+			// The generic failed callback can run after a failed receipt write.
+			// Without that receipt, the retained job remains recoverable as PENDING.
+			await recordDeadJobScheduleOutcomes(
+				tenant,
+				{
+					id,
+					data: {
+						liveChannelId: f.channel.id,
+						action: "provision",
+						plannedLiveChannelRunId: f.run.id,
+						provisionFenceVersion: 4,
+					},
+					finishedOn: now.getTime(),
+				},
+				"receipt write unavailable",
+				now,
+			);
+			await expect(
+				tenant.liveSchedule.findUniqueOrThrow({ where: { id: current.id } }),
+			).resolves.toMatchObject({ dispatchedAt: null, outcome: "PENDING" });
 			// Without the migration-era run marker the old bare payload is
 			// unproven even if its clock appears plausible.
 			await tenant.liveChannelRun.update({

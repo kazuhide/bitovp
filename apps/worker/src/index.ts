@@ -1905,12 +1905,17 @@ function startQueueWorker(
 					job?.name !== HEARTBEAT_SWEEP_JOB &&
 					liveAction === "provision"
 				) {
-					await recordFinalProvisionFailure(prisma, job, failureMessage).catch(
-						(updateErr) =>
-							console.error(
-								"[worker:liveChannel] failed to record exhausted startup:",
-								updateErr,
-							),
+					await recordFinalProvisionFailure(
+						prisma,
+						job,
+						failureMessage,
+						new Date(),
+						emitEvent,
+					).catch((updateErr) =>
+						console.error(
+							"[worker:liveChannel] failed to record exhausted startup:",
+							updateErr,
+						),
 					);
 				}
 				if (

@@ -13,6 +13,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 ### Fixed
 
 - Allow a worker with shared resource admission to run compatible local QC measurements concurrently within the host CPU and memory budget. Apply the reserved decoder limits to CAMBI scoring and frame-timing probes.
+- Start standard QC automatically when Redis becomes available and confirm queue ownership again before resuming work if its registration is lost.
 
 ## [1.3.5] - 2026-11-25
 

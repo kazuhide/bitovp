@@ -370,8 +370,8 @@ consumer. A standard worker started during dedicated operation continues its
 other queues. A consumer keeps its registration through Redis disconnects and
 until active QC work drains on shutdown. When ownership or the primary
 announcement is unavailable, QC jobs wait for verification.
-If a standard worker could not acquire QC ownership at startup, restart it
-after Redis recovers and any dedicated consumer has drained.
+The standard worker starts or resumes QC automatically once Redis confirms
+its registration and any dedicated consumer has drained.
 
 To inspect a registration after an interrupted shutdown, use `redis-cli`
 against the deployment's Redis database and run the following commands.

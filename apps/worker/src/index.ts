@@ -191,12 +191,12 @@ import {
 	USAGE_SWEEP_INTERVAL_MS,
 } from "./usage/statistics-sweep";
 import {
-	closeVmafQueueConsumer,
 	createVmafOwnershipConnection,
 	createVmafQueueRegistry,
 	guardVmafQueueOwnership,
 	readVmafQueueDatabase,
 	startSplitVmafPrimaryWitness,
+	startStandardVmafConsumer,
 } from "./vmaf/queue-ownership";
 import { createStrandedVmafReconciler } from "./vmaf/reconcile-stranded";
 import { createVmafTrigger } from "./vmaf/trigger";
@@ -1745,29 +1745,15 @@ const queuedVmafParents = vmafRuntime.admitVmaf(handlers.vmafRunner);
 const vmafOwnerRedis = createVmafOwnershipConnection(env.REDIS_URL);
 const vmafOwnership = createVmafQueueRegistry(vmafOwnerRedis);
 const vmafOwnerConnection = vmafOwnerRedis.connect().catch(() => {});
-const ownsStandardVmaf =
-	env.VMAF_QUEUE_OWNER === "worker" &&
-	(await vmafOwnerConnection
-		.then(() => vmafOwnership.claim("worker"))
-		.catch(() => false));
-if (env.VMAF_QUEUE_OWNER === "worker" && !ownsStandardVmaf)
-	console.warn("[worker:vmafRunner] standard QC ownership unavailable");
-const workerKeys = primaryWorkerQueues(
-	Object.keys(handlers) as QueueKey[],
-	ownsStandardVmaf ? "worker" : "dedicated",
-);
-const workers = workerKeys.map((key) => {
-	const consume = consumeTenantJob(
-		key,
-		key === "vmafRunner" ? queuedVmafParents : handlers[key],
-	);
+function startQueueWorker(
+	key: QueueKey,
+	consume: (job: Job) => Promise<unknown>,
+) {
 	const worker = new Worker(
 		QUEUE_NAMES[key],
 		key === "liveChannel"
 			? reserveLiveStopCapacity(LIVE_CHANNEL_CONCURRENCY, consume)
-			: key === "vmafRunner"
-				? guardVmafQueueOwnership(() => vmafOwnership.owns("worker"), consume)
-				: consume,
+			: consume,
 		{
 			connection: { url: env.REDIS_URL },
 			// : BullMQ's default retires a resumable job on its SECOND
@@ -2103,7 +2089,30 @@ const workers = workerKeys.map((key) => {
 		console.error(`[worker:${key}] error:`, err);
 	});
 	return worker;
-});
+}
+// QC starts separately after Redis confirms its registration.
+const workers = primaryWorkerQueues(
+	Object.keys(handlers) as QueueKey[],
+	"dedicated",
+).map((key) => startQueueWorker(key, consumeTenantJob(key, handlers[key])));
+const standardVmaf =
+	env.VMAF_QUEUE_OWNER === "worker"
+		? startStandardVmafConsumer(
+				{
+					...vmafOwnership,
+					claim: () =>
+						vmafOwnerConnection.then(() => vmafOwnership.claim("worker")),
+				},
+				(owns) =>
+					startQueueWorker(
+						"vmafRunner",
+						guardVmafQueueOwnership(
+							owns,
+							consumeTenantJob("vmafRunner", queuedVmafParents),
+						),
+					),
+			)
+		: undefined;
 
 let stopVmafPrimaryWitness: (() => Promise<void>) | undefined;
 if (env.VMAF_QUEUE_OWNER === "dedicated") {
@@ -2158,6 +2167,7 @@ const shutdown = createShutdown({
 	// resolve to STOPPED and worker.close waits for them.
 	stopFeeders: () => {
 		stopping = true;
+		standardVmaf?.stop();
 		vodInputPreviewShutdown.abort();
 		editingShutdownController.abort();
 		void editingGpuGate?.stop();
@@ -2258,17 +2268,8 @@ const shutdown = createShutdown({
 		},
 	],
 	closables: [
-		...workers.map((worker) =>
-			worker.name === QUEUE_NAMES.vmafRunner
-				? {
-						close: () =>
-							closeVmafQueueConsumer(
-								() => worker.close(),
-								() => vmafOwnership.release("worker"),
-							),
-					}
-				: worker,
-		),
+		...workers,
+		...(standardVmaf ? [standardVmaf] : []),
 		liveChannelQueue,
 		feederQueue,
 		vmafQueue,

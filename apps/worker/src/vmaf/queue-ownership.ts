@@ -171,6 +171,101 @@ export function createVmafQueueRegistry(
 	};
 }
 
+/** Start ordinary QC independently of the other queues, and recover its
+ * registration after a Redis restart before allowing more work. */
+export function startStandardVmafConsumer(
+	registry: Pick<
+		ReturnType<typeof createVmafQueueRegistry>,
+		"claim" | "owns" | "release"
+	>,
+	start: (owns: () => Promise<boolean>) => { close(): Promise<unknown> },
+) {
+	let stopping = false;
+	let confirmed = false;
+	let reservationMayExist = false;
+	let reported = false;
+	let claim: Promise<boolean> | undefined;
+	let activation: Promise<void> | undefined;
+	let worker: ReturnType<typeof start> | undefined;
+	let closing: Promise<void> | undefined;
+
+	function register() {
+		if (stopping) return Promise.resolve(false);
+		if (!claim) {
+			// A reply can be lost after Redis records this request.
+			reservationMayExist = true;
+			claim = registry
+				.claim("worker")
+				.then((owned) => {
+					confirmed = owned;
+					reservationMayExist = owned;
+					return owned;
+				})
+				.finally(() => {
+					claim = undefined;
+				});
+		}
+		return claim;
+	}
+
+	async function owns() {
+		if (stopping) return false;
+		if (confirmed && !(await registry.owns("worker"))) confirmed = false;
+		if (!confirmed) await register();
+		return !stopping && confirmed;
+	}
+
+	function report(message: string) {
+		if (stopping || reported) return;
+		reported = true;
+		console.warn(
+			`[worker:vmafRunner] ${message}; retrying standard QC startup`,
+		);
+	}
+
+	function activate() {
+		if (stopping || activation) return;
+		activation = register()
+			.then((owned) => {
+				if (stopping) return;
+				if (!owned) {
+					report("dedicated QC owner is registered");
+					return;
+				}
+				worker = start(owns);
+				clearInterval(timer);
+			})
+			.catch(() => report("standard QC ownership unavailable"))
+			.finally(() => {
+				activation = undefined;
+			});
+	}
+
+	const timer = setInterval(activate, PRIMARY_REFRESH_MS).unref();
+	activate();
+	function stop() {
+		stopping = true;
+		clearInterval(timer);
+	}
+	return {
+		stop,
+		close() {
+			stop();
+			closing ??= (async () => {
+				await activation;
+				await closeVmafQueueConsumer(
+					async () => worker?.close(),
+					async () => {
+						await claim?.catch(() => {});
+						if (reservationMayExist) await registry.release("worker");
+					},
+				);
+			})();
+			return closing;
+		},
+	};
+}
+
 /** One pulse at a time, and no write can follow a successful withdrawal. */
 export function startSplitVmafPrimaryWitness(
 	registry: Pick<

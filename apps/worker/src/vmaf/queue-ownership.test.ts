@@ -1,11 +1,103 @@
 import { DelayedError, type Job } from "bullmq";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import {
 	closeVmafQueueConsumer,
 	createVmafQueueRegistry,
 	guardVmafQueueOwnership,
 	readVmafQueueDatabase,
+	startStandardVmafConsumer,
 } from "./queue-ownership";
+
+afterEach(() => vi.useRealTimers());
+
+function standardConsumerFixture() {
+	const registry = {
+		claim: vi.fn(async (_role: string) => true),
+		owns: vi.fn(async (_role: string) => true),
+		release: vi.fn(async (_role: string) => true),
+	};
+	const drain = vi.fn(async () => {});
+	const start = vi.fn((_owns: () => Promise<boolean>) => ({ close: drain }));
+	return { registry, drain, start };
+}
+
+it("starts standard QC once Redis accepts a late registration", async () => {
+	vi.useFakeTimers();
+	const { registry, start, drain } = standardConsumerFixture();
+	registry.claim.mockRejectedValueOnce(new Error("Redis unavailable"));
+	const consumer = startStandardVmafConsumer(registry, start);
+	await vi.advanceTimersByTimeAsync(0);
+	expect(start).not.toHaveBeenCalled();
+	await vi.advanceTimersByTimeAsync(5_000);
+	expect(registry.claim).toHaveBeenCalledTimes(2);
+	expect(start).toHaveBeenCalledOnce();
+	await vi.advanceTimersByTimeAsync(5_000);
+	expect(registry.claim).toHaveBeenCalledTimes(2);
+	await consumer.close();
+	expect(drain).toHaveBeenCalledOnce();
+	expect(registry.release).toHaveBeenCalledExactlyOnceWith("worker");
+});
+
+it("never starts standard QC against a registered dedicated owner", async () => {
+	vi.useFakeTimers();
+	const { registry, start } = standardConsumerFixture();
+	registry.claim.mockResolvedValue(false);
+	const consumer = startStandardVmafConsumer(registry, start);
+	await vi.advanceTimersByTimeAsync(10_000);
+	expect(start).not.toHaveBeenCalled();
+	await consumer.close();
+	const checks = registry.claim.mock.calls.length;
+	await vi.advanceTimersByTimeAsync(5_000);
+	expect(registry.claim).toHaveBeenCalledTimes(checks);
+	expect(registry.release).not.toHaveBeenCalled();
+});
+
+it("waits for a pending registration on shutdown and never starts a worker afterward", async () => {
+	const { registry, start } = standardConsumerFixture();
+	let finish = (_owned: boolean) => {};
+	registry.claim.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				finish = resolve;
+			}),
+	);
+	const consumer = startStandardVmafConsumer(registry, start);
+	const closing = consumer.close();
+	await Promise.resolve();
+	expect(registry.release).not.toHaveBeenCalled();
+	finish(true);
+	await closing;
+	expect(start).not.toHaveBeenCalled();
+	expect(registry.release).toHaveBeenCalledExactlyOnceWith("worker");
+	expect(consumer.close()).toBe(closing);
+});
+
+it("reacquires a lost token only with a confirmed claim and honors a dedicated conflict", async () => {
+	vi.useFakeTimers();
+	const { registry, start } = standardConsumerFixture();
+	const consumer = startStandardVmafConsumer(registry, start);
+	await vi.advanceTimersByTimeAsync(0);
+	const [owns] = start.mock.calls[0] ?? [];
+	if (!owns) throw new Error("Standard worker did not start");
+	registry.owns.mockResolvedValue(false);
+	registry.claim.mockResolvedValueOnce(false);
+	await expect(owns()).resolves.toBe(false);
+
+	let finish = (_owned: boolean) => {};
+	registry.claim.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				finish = resolve;
+			}),
+	);
+	const first = owns();
+	const second = owns();
+	await vi.advanceTimersByTimeAsync(0);
+	expect(registry.claim).toHaveBeenCalledTimes(3);
+	finish(true);
+	await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+	await consumer.close();
+});
 
 it("defers unowned queue jobs before entering the tenant handler", async () => {
 	const own = vi.fn(async () => false);

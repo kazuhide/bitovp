@@ -37,6 +37,12 @@ const REPO = join(__dirname, "../../../..");
  *   - `live/owned-transition-locking.integration.test.ts` — a final RESTART
  *     queue failure moves its own run out of PROVISIONING when its lease is
  *     null. With a provision token it preserves the channel and run and emits nothing.
+ *   - `live/owned-transition-locking.integration.test.ts` covers the scheduled
+ *     START lease in `live/provision-admission.ts`. When Redis loses the
+ *     enqueue reply, the consumer records its lease and exact queue receipt
+ *     before contacting the provider. A separate race transfers the receipt
+ *     while a legacy consumer is paused. The paused delivery exits before
+ *     acquiring a lease or contacting the provider.
  * A new file appearing here is a signal to add such an arm for it.
  */
 describe("channel provisioning admission and exit paths", () => {
@@ -74,8 +80,9 @@ describe("channel provisioning admission and exit paths", () => {
 			"a file started claiming channels into PROVISIONING — it has a provisioning lease to decide about, and it needs its own behavioural arm (see this file's docstring)",
 		).toEqual([
 			"apps/web/src/app/api/live-channels/[id]/actions/route.ts",
-			// Both exit paths match through their PROVISIONING predicates.
+			// Dead-job and provision outcome writes match their PROVISIONING predicates.
 			"apps/worker/src/live/dead-job-outcome.ts",
+			"apps/worker/src/live/provision-admission.ts",
 			"apps/worker/src/live/provision-outcome.ts",
 			"apps/worker/src/orchestrator/live-processor.ts",
 			"apps/worker/src/scheduler/sweep.ts",

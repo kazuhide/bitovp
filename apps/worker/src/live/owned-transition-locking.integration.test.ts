@@ -4181,6 +4181,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				),
 				"utf8",
 			);
+			const deliveryMigration = readFileSync(
+				new URL(
+					"../../../../packages/db/prisma/migrations/20261126012500_fence_migrated_stop_queue_delivery/migration.sql",
+					import.meta.url,
+				),
+				"utf8",
+			);
 			const armed = [];
 			const firedAt = new Date(Date.now() + 60_000);
 			for (const status of ["RUNNING", "ERROR", "RUNNING"] as const) {
@@ -4222,7 +4229,36 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			}
 			await admin.$executeRawUnsafe(migration);
 			await admin.$executeRawUnsafe(migration);
-			const enqueue = vi.fn(async () => {});
+			await admin.$executeRawUnsafe(deliveryMigration);
+			const assigned = new Map(
+				(
+					await tenant.liveSchedule.findMany({
+						where: { id: { in: armed.map(({ row }) => row.id) } },
+					})
+				).map((row) => [row.id, row.stopDeliveryToken]),
+			);
+			await admin.$executeRawUnsafe(deliveryMigration);
+			type Delivery = import("@bitovp/core").LiveChannelJob;
+			const retained = new Map<string, Delivery>();
+			for (const { f, row } of armed.slice(0, 2)) {
+				retained.set(scheduledStopJobId(row.id), {
+					liveChannelId: f.channel.id,
+					action: "stop",
+					plannedLiveChannelRunId: f.run.id,
+					effect: {
+						action: "STOP",
+						scheduleId: row.id,
+						idempotencyKey: `schedule:${row.id}:stop`,
+						liveChannelRunId: f.run.id,
+						providerEncodingId: f.encodingId,
+						admissionFenceVersion: 0,
+					},
+				});
+			}
+			const enqueue = vi.fn(async (job: Delivery, id: string) => {
+				// BullMQ retains the first payload added under a custom ID.
+				if (!retained.has(id)) retained.set(id, job);
+			});
 			const emitEvent = vi.fn(async () => {});
 			await createScheduleSweep({
 				prisma: tenant,
@@ -4231,15 +4267,28 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				emitEvent,
 			}).dispatchPending();
 			for (const { f, row } of armed.slice(0, 2)) {
+				const saved = await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: row.id },
+				});
+				if (!saved.stopDeliveryToken)
+					throw new Error("Migrated STOP reused the occupied legacy job ID");
+				expect(saved.stopDeliveryToken).toBe(assigned.get(row.id));
+				const currentId = scheduledStopJobId(row.id, saved.stopDeliveryToken);
+				const oldId = scheduledStopJobId(row.id);
+				expect(currentId).not.toBe(oldId);
+				expect(saved.dispatchJobId).toBe(currentId);
+				expect(retained.get(oldId)?.effect?.admissionFenceVersion).toBe(0);
+				expect(retained.get(currentId)?.effect?.admissionFenceVersion).toBe(1);
 				expect(enqueue).toHaveBeenCalledWith(
 					expect.objectContaining({
 						effect: expect.objectContaining({
 							liveChannelRunId: f.run.id,
 							providerEncodingId: f.encodingId,
 							admissionFenceVersion: 1,
+							stopDeliveryToken: saved.stopDeliveryToken,
 						}),
 					}),
-					`sched-${row.id}`,
+					currentId,
 				);
 				expect(
 					await tenant.liveChannel.findUniqueOrThrow({
@@ -4251,6 +4300,38 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						where: { id: f.run.id },
 					}),
 				).toMatchObject({ status: "STOPPING" });
+				const dispatchAt = new Date(firedAt.getTime() + 600_000);
+				const admission = {
+					idempotencyKey: `schedule:${row.id}:stop`,
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					providerEncodingId: f.encodingId,
+					scheduleId: row.id,
+					action: "STOP" as const,
+					ownerId: "migration-fixture",
+					now: dispatchAt,
+					expiresAt: new Date(dispatchAt.getTime() + 30_000),
+				};
+				expect(
+					await beginLiveEffect(tenant, {
+						...admission,
+						expectedFenceVersion: 0,
+					}),
+				).toMatchObject({ kind: "STALE" });
+				expect(
+					await beginLiveEffect(tenant, {
+						...admission,
+						expectedFenceVersion: 1,
+						stopDeliveryToken: randomUUID(),
+					}),
+				).toMatchObject({ kind: "STALE" });
+				expect(
+					await beginLiveEffect(tenant, {
+						...admission,
+						expectedFenceVersion: 1,
+						stopDeliveryToken: saved.stopDeliveryToken,
+					}),
+				).toMatchObject({ kind: "EXECUTE" });
 			}
 			expect(enqueue).not.toHaveBeenCalledWith(
 				expect.anything(),
@@ -4275,6 +4356,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toMatchObject({
 				outcome: "UNKNOWN",
 				outcomeNote: expect.stringContaining("confirm"),
+				stopDeliveryToken: null,
 			});
 		});
 		it("refuses an old unfenced STOP outbox and a retained bare job after same-airing revival", async () => {

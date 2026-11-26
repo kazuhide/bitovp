@@ -497,12 +497,27 @@ describe("recordDeadJobScheduleOutcomes", () => {
 		} as unknown as AppPrismaClient;
 		await recordDeadJobScheduleOutcomes(
 			prisma,
-			{ data: { liveChannelId: CHANNEL, action: "provision" } },
+			{
+				id: `sched-${SCHEDULE_ID}`,
+				attemptsMade: 2,
+				opts: { attempts: 2 },
+				data: {
+					liveChannelId: CHANNEL,
+					action: "provision",
+					plannedLiveChannelRunId: RUN,
+					provisionFenceVersion: 2,
+				},
+			},
 			"Unable to read media.mxf?token=PRIVATE_FIXTURE",
 			new Date(),
 		);
 		expect(updateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
+				where: expect.objectContaining({
+					id: SCHEDULE_ID,
+					liveChannelRunId: RUN,
+					startAdmissionFenceVersion: 2,
+				}),
 				data: expect.objectContaining({
 					outcomeNote: expect.stringContaining("[withheld]"),
 				}),

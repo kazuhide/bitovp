@@ -74,6 +74,7 @@ import type { SdkOps } from "../sdk-ops";
 import type { OpsContext } from "./context";
 import { createOwnedDefaultDashManifest } from "./default-dash-manifest";
 import { createOwnedDefaultHlsManifest } from "./default-hls-manifest";
+import { roleOutputAclsMatch } from "./manifest-output-acl";
 import {
 	adoptOrCreateManifest,
 	BitmovinCallError,
@@ -375,6 +376,7 @@ export function createManifestOps(
 		 * .
 		 */
 		createHlsManifest: async (p) => {
+			const requestedOutputs = outputs(p.destination);
 			const lookup = () =>
 				findManifestByOutput(
 					(q) => api.encoding.manifests.hls.list(q),
@@ -384,6 +386,11 @@ export function createManifestOps(
 							(o: { outputId?: string; outputPath?: string }) =>
 								o.outputId === p.destination.outputId &&
 								o.outputPath === p.destination.outputPath,
+						) &&
+						roleOutputAclsMatch(
+							p.destination.roleOutputIds,
+							requestedOutputs,
+							m.outputs,
 						),
 					"HLS",
 				);
@@ -424,7 +431,7 @@ export function createManifestOps(
 										p.mediaVersion,
 										"HlsVersion",
 									),
-									outputs: outputs(p.destination),
+									outputs: requestedOutputs,
 								}),
 							),
 						(r) => ({ id: r.id }),
@@ -486,6 +493,7 @@ export function createManifestOps(
 			).then(id),
 
 		createDashManifest: async (p) => {
+			const requestedOutputs = outputs(p.destination);
 			const lookup = () =>
 				findManifestByOutput(
 					(q) => api.encoding.manifests.dash.list(q),
@@ -495,6 +503,11 @@ export function createManifestOps(
 							(o: { outputId?: string; outputPath?: string }) =>
 								o.outputId === p.destination.outputId &&
 								o.outputPath === p.destination.outputPath,
+						) &&
+						roleOutputAclsMatch(
+							p.destination.roleOutputIds,
+							requestedOutputs,
+							m.outputs,
 						),
 					"DASH",
 				);
@@ -526,7 +539,7 @@ export function createManifestOps(
 									manifestName: p.manifestName,
 									name: p.name,
 									profile: optEnum(DashProfile, p.profile, "DashProfile"),
-									outputs: outputs(p.destination),
+									outputs: requestedOutputs,
 								}),
 							),
 						(r) => ({ id: r.id }),
@@ -839,6 +852,7 @@ export function createManifestOps(
 		},
 
 		createSmoothManifest: async (p) => {
+			const requestedOutputs = outputs(p.destination);
 			const lookup = () =>
 				findManifestByOutput(
 					(q) => api.encoding.manifests.smooth.list(q),
@@ -849,6 +863,11 @@ export function createManifestOps(
 							(o: { outputId?: string; outputPath?: string }) =>
 								o.outputId === p.destination.outputId &&
 								o.outputPath === p.destination.outputPath,
+						) &&
+						roleOutputAclsMatch(
+							p.destination.roleOutputIds,
+							requestedOutputs,
+							m.outputs,
 						),
 					"Smooth",
 				);
@@ -880,7 +899,7 @@ export function createManifestOps(
 									serverManifestName: p.serverManifestName,
 									clientManifestName: p.clientManifestName,
 									name: p.name,
-									outputs: outputs(p.destination),
+									outputs: requestedOutputs,
 								}),
 							),
 						(r) => ({ id: r.id }),

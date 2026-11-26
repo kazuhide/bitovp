@@ -1,6 +1,7 @@
 import type { DashManifest } from "@bitmovin/api-sdk";
 import { verificationRequestSha256 } from "@bitovp/core";
 import type { OpsContext } from "./context";
+import { roleOutputAclsMatch } from "./manifest-output-acl";
 import {
 	adoptOrCreateManifest,
 	findUniqueManifestByOutput,
@@ -35,7 +36,11 @@ export async function createOwnedDefaultManifest<
 	Request extends ManifestRequest,
 >(
 	ctx: OpsContext,
-	params: { strictIdentity?: boolean; allowCreate?: boolean },
+	params: {
+		strictIdentity?: boolean;
+		allowCreate?: boolean;
+		destination: { roleOutputIds?: string[] };
+	},
 	source: Request,
 	api: ManifestApi<Request>,
 ): Promise<string> {
@@ -115,6 +120,16 @@ export async function createOwnedDefaultManifest<
 						)
 							throw new Error(
 								`${label} manifest request identity conflict: the owned step has different or incomplete settings`,
+							);
+						if (
+							!roleOutputAclsMatch(
+								params.destination.roleOutputIds,
+								request.outputs,
+								manifest.outputs,
+							)
+						)
+							throw new Error(
+								`${label} manifest role destination ACL could not be verified`,
 							);
 					}
 					items.push({ id: manifest.id, owned: ownsStep });

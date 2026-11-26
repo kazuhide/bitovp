@@ -6,6 +6,8 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.3.5] - 2026-11-25
+
 ### Added
 
 - Run repeatable local x264, x265, VP9/libvpx and SVT-AV1 training encodes through the experiment CLI and authenticated API, with per-worker parameter discovery, CPU VMAF and measured bitrate exports.
@@ -391,6 +393,7 @@ instructions.
 Record implemented changes under **Unreleased** until their tagged release is
 published.
 
+[1.3.5]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.5
 [1.3.4]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.4
 [1.3.3]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.3
 [1.3.2]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.2

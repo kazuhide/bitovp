@@ -88,6 +88,28 @@ describe("createHandlers", () => {
 		);
 	});
 
+	it("keeps an active manifest stop on the same delayed orchestrator delivery", async () => {
+		const d = deps();
+		d.orchestrate.mockResolvedValue({ status: "MANIFEST_STOP_PENDING" });
+		const moveToDelayed = vi.fn(async (_at: number, _token?: string) => {});
+		const job = {
+			data: { encodingJobId: "x" },
+			token: "delivery-lock",
+			moveToDelayed,
+		} as unknown as Job;
+		const before = Date.now();
+		await expect(createHandlers(d).orchestrator(job)).rejects.toBeInstanceOf(
+			DelayedError,
+		);
+		expect(moveToDelayed).toHaveBeenCalledWith(
+			expect.any(Number),
+			"delivery-lock",
+		);
+		expect(moveToDelayed.mock.calls[0]?.[0]).toBeGreaterThanOrEqual(
+			before + 30_000,
+		);
+	});
+
 	it.each([
 		[1, 0, 0, true],
 		[2, 0, 1, false],

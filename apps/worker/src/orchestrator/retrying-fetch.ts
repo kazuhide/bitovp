@@ -248,6 +248,8 @@ export function isRetryable(url: string, init: unknown): boolean {
 	if (/\/actions\/update-rtmp-ingest-points\/?$/.test(path)) return false;
 	// Repeating this full replacement restarts the running encoder's timeout.
 	if (/\/live\/update-autoshutdown-config\/?$/.test(path)) return false;
+	if (/\/encoding\/manifests\/(hls|dash|smooth)\/[^/]+\/stop\/?$/.test(path))
+		return false;
 	return !/\/(live\/)?start\/?$/.test(path);
 }
 

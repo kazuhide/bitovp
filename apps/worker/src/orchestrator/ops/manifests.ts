@@ -130,6 +130,9 @@ export function createManifestOps(
 	| "deleteDashManifest"
 	| "startSmoothManifest"
 	| "getSmoothManifestStatus"
+	| "getManifestRoleAcl"
+	| "ownsManifest"
+	| "stopManifest"
 > {
 	const { api, audited, id, options, record } = ctx;
 	async function manifestStatus(
@@ -149,6 +152,52 @@ export function createManifestOps(
 		}
 	}
 	return {
+		getManifestRoleAcl: async (kind, manifestId, destination) => {
+			const manifest =
+				kind === "hls"
+					? await api.encoding.manifests.hls.get(manifestId)
+					: kind === "dash"
+						? await api.encoding.manifests.dash.get(manifestId)
+						: await api.encoding.manifests.smooth.get(manifestId);
+			return (
+				manifest.id === manifestId &&
+				roleOutputAclsMatch(
+					destination.roleOutputIds,
+					outputs(destination),
+					manifest.outputs,
+				)
+			);
+		},
+		ownsManifest: async (kind, manifestId, jobId, step) => {
+			const data =
+				kind === "hls"
+					? await api.encoding.manifests.hls.customdata.get(manifestId)
+					: kind === "dash"
+						? await api.encoding.manifests.dash.customdata.get(manifestId)
+						: await api.encoding.manifests.smooth.customdata.get(manifestId);
+			const marker: unknown = data.customData?.["bitovp"];
+			return (
+				!!marker &&
+				typeof marker === "object" &&
+				"job" in marker &&
+				marker.job === jobId &&
+				"step" in marker &&
+				marker.step === step
+			);
+		},
+		stopManifest: (kind, manifestId) =>
+			audited(
+				"POST",
+				`/encoding/manifests/${kind}/${manifestId}/stop`,
+				{},
+				() =>
+					kind === "hls"
+						? api.encoding.manifests.hls.stop(manifestId)
+						: kind === "dash"
+							? api.encoding.manifests.dash.stop(manifestId)
+							: api.encoding.manifests.smooth.stop(manifestId),
+				() => ({ stopRequested: true }),
+			).then(() => undefined),
 		/**
 		 * Default manifests adopt by ENCODING ID — S6's rule from the manifest
 		 * docblock above: live outputs are per-CHANNEL, not per-run, so a

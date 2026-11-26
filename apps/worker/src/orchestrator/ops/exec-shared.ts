@@ -135,7 +135,7 @@ export async function diagnoseLiveStartFailure(
 
 export function refId(
 	op: CompiledOperation,
-	ctx: ExecutorContext,
+	ctx: Pick<ExecutorContext, "ids">,
 	key: string,
 ): string {
 	const target = op.refs[key];
@@ -160,7 +160,7 @@ export function optRefId(
 
 export function refIdList(
 	op: CompiledOperation,
-	ctx: ExecutorContext,
+	ctx: Pick<ExecutorContext, "ids">,
 	key: string,
 ): string[] | undefined {
 	const target = op.refs[key];
@@ -357,7 +357,7 @@ export function genericS3Endpoint(
  */
 export function destinationOf(
 	op: CompiledOperation,
-	ctx: ExecutorContext,
+	ctx: Pick<ExecutorContext, "ids" | "outputKinds">,
 ): Destination | undefined {
 	if (op.refs.outputId === undefined) {
 		return undefined;

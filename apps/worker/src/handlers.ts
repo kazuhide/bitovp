@@ -66,6 +66,10 @@ export function createHandlers(deps: HandlerDeps): Record<QueueKey, Handler> {
 		},
 		orchestrator: async (job: Job) => {
 			const result = await deps.orchestrate(job.data);
+			if (result.status === "MANIFEST_STOP_PENDING") {
+				await job.moveToDelayed(Date.now() + 30_000, job.token);
+				throw new DelayedError();
+			}
 			if (result.status === "LEASE_HELD") {
 				// A restarted worker can receive this job before the previous
 				// attempt's DB lease expires. Acknowledging would lose its only

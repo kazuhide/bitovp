@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import {
+	applyRoleOutputAcl,
 	type CompiledOperation,
 	compilePlan,
 	downgradeJitManifests,
@@ -8,6 +9,7 @@ import {
 	internalHevcV2Schema,
 	isInternalHevcV2Account,
 	type StepLogEntry,
+	vodOutputKinds,
 } from "@bitovp/core";
 
 export type { InternalHevcV2 } from "@bitovp/core";
@@ -34,6 +36,7 @@ export function internalHevcV2StepsMatch(
 	plan: EncodingPlan,
 	entries: readonly StepLogEntry[],
 ): boolean {
+	const kinds = vodOutputKinds(plan.outputs);
 	const matches = (expected: readonly CompiledOperation[]) =>
 		entries.length === expected.length &&
 		entries.every((entry, index) => {
@@ -43,7 +46,7 @@ export function internalHevcV2StepsMatch(
 				entry.step === op.step &&
 				entry.kind === op.kind &&
 				isDeepStrictEqual(
-					entry.payload,
+					applyRoleOutputAcl(entry, kinds).payload,
 					JSON.parse(JSON.stringify(op.payload)),
 				) &&
 				isDeepStrictEqual(entry.refs, op.refs)

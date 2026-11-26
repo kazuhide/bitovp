@@ -183,6 +183,9 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 				status: started.has(`smooth:${id}`) ? "FINISHED" : "CREATED",
 			}),
 		),
+		getManifestRoleAcl: vi.fn(() => Promise.resolve(true)),
+		ownsManifest: vi.fn(() => Promise.resolve(false)),
+		stopManifest: vi.fn(() => Promise.resolve()),
 		listMuxings: vi.fn(() => Promise.resolve([])),
 		getStreamContext: vi.fn(() =>
 			Promise.resolve({ mode: "STANDARD", codecConfigId: "bm-codec" }),

@@ -125,6 +125,7 @@
 	"getLiveHeartbeat",
 	"getLiveInsertableContent",
 	"getLiveStartRequest",
+	"getManifestRoleAcl",
 	"getSmoothManifestStatus",
 	"getStreamContext",
 	"getVideoConfigBitrate",
@@ -138,6 +139,7 @@
 	"listRtmpInputs",
 	"listRunningLiveEncodings",
 	"listScheduledInsertableContent",
+	"ownsManifest",
 	"resetLiveManifestTimeshift",
 	"restartLiveEncoding",
 	"scheduleInsertableContent",
@@ -150,6 +152,7 @@
 	"stopAisaLiveAnalysis",
 	"stopEncoding",
 	"stopLiveEncoding",
+	"stopManifest",
 	"updateLiveAutoShutdown",
 	"updateLiveRtmpIngestPoints"
 ]

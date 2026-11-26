@@ -42,7 +42,12 @@ import {
 	type JitFallbackNote,
 	planJitFallback,
 } from "./jit-fallback";
+import {
+	recordedRoleManifests,
+	stopRecordedRoleManifest,
+} from "./manifest-resume";
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
+import { destinationOf } from "./ops/exec-shared";
 import { BitmovinCallError } from "./ops/shared";
 import { pollSleepFor } from "./poll-sleep";
 import type { SdkOps } from "./sdk-ops";
@@ -779,16 +784,102 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 			}
 			return fresh.cancelRequested === true;
 		};
+		const roleManifests = recordedRoleManifests(entries, outputKinds);
+		const recordedAccountMatches = (entry: StepLogEntry) =>
+			entry.resourceAccount
+				? entry.resourceAccount.id === accountId &&
+					entry.resourceAccount.version === resourceAccount?.version
+				: !resourceAccount && row.bitmovinAccountId === accountId;
+		const assertStopLease = async () => {
+			if (!(await renewLease())) throw new AttemptLeaseLostError(encodingJobId);
+		};
+		const stopEncodingScope = [...outputKinds.values()].includes(
+			"S3_ROLE_BASED",
+		)
+			? { matches: recordedAccountMatches, beforeStop: assertStopLease }
+			: undefined;
+		const stopRoleManifests = async () => {
+			let outcome: "TERMINAL" | "ACTIVE" | "UNVERIFIED" = "TERMINAL";
+			for (const { entry, kind, attempted } of recordedRoleManifests(
+				entries,
+				outputKinds,
+			)) {
+				if (!attempted) continue;
+				const result =
+					entry.resourceId && recordedAccountMatches(entry)
+						? await stopRecordedRoleManifest(
+								sdk,
+								kind,
+								entry.resourceId,
+								encodingJobId,
+								entry.step,
+								assertStopLease,
+							)
+						: "UNVERIFIED";
+				if (
+					result === "ACTIVE" ||
+					(result === "UNVERIFIED" && outcome === "TERMINAL")
+				)
+					outcome = result;
+			}
+			return outcome;
+		};
+		const failRoleDelivery = async (error: string) => {
+			await persist(encodingJobId, entries, { status: "ERROR", error });
+			await deps.emitEvent?.({
+				kind: "JOB_ERROR",
+				jobId: encodingJobId,
+				name: row.name,
+				labels: row.labels,
+				error,
+				path: `/vod/jobs/${encodingJobId}`,
+			});
+			return { acknowledged: true as const, encodingJobId, status: "ERROR" };
+		};
+		const deferManifestStop = async (error: string) => {
+			const { count } = await deps.prisma.encodingJob.updateMany({
+				where: { id: encodingJobId, attemptClaimedAt: heldAt },
+				data: {
+					status: "RUNNING",
+					error,
+					attemptClaimedAt: null,
+					stepLog: entries as unknown as Prisma.InputJsonValue,
+				},
+			});
+			if (count === 0) throw new AttemptLeaseLostError(encodingJobId);
+			heldAt = null;
+			return {
+				acknowledged: true as const,
+				encodingJobId,
+				status: "MANIFEST_STOP_PENDING",
+			};
+		};
 		// Cancel finalize: stop the job's encoding(s) best-effort (a stop failure
 		// is logged, never fatal — we still cancel locally), then persist CANCELED
 		// with error:null (CANCELED is not an error). Sent START attempts retain
 		// their markers; persist recomputes doneSteps from DONE entries.
-		const finalizeCancel = async (): Promise<{
+		const finalizeCancel = async (
+			manifestOutcome?: Awaited<ReturnType<typeof stopRoleManifests>>,
+		): Promise<{
 			acknowledged: true;
 			encodingJobId: string;
 			status: string;
 		}> => {
-			const { terminal } = await stopJobEncodings(entries, ids, sdk);
+			const manifests = manifestOutcome ?? (await stopRoleManifests());
+			const { terminal } = await stopJobEncodings(
+				entries,
+				ids,
+				sdk,
+				stopEncodingScope,
+			);
+			if (manifests === "ACTIVE")
+				return deferManifestStop(
+					"Bitmovin manifest generation may still be stopping.",
+				);
+			if (manifests === "UNVERIFIED")
+				return failRoleDelivery(
+					"Could not verify whether Bitmovin stopped manifest generation.",
+				);
 			// : stamp the row's OWN pointer, and only when the provider
 			// showed that encoding terminal — a later retry re-points the row
 			// and the stamp stops matching by construction (rev425 C1).
@@ -818,35 +909,63 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		// Loop-top check: a cancel requested before any step runs (e.g. a QUEUED
 		// job canceled before the worker picked it) → CANCELED immediately, before
 		// the RUNNING flip, stopping nothing (no encoding created yet).
-		if (cancelAtSetup || (await checkCancel())) {
-			return await finalizeCancel();
-		}
-		// Starting an encoding also uses its existing muxings. A new safe
-		// request cannot repair a previously attempted, differently configured one.
-		const unsafeDestination = entries.find(
-			(entry) =>
-				(entry.status === "DONE" ||
-					entry.status === "RUNNING" ||
-					entry.startedAt !== undefined) &&
-				!hasRecordedRoleOutputAcl(
-					entry,
-					outputKinds,
-					entry.status === "DONE" ? entry.request : entry.payload,
-				),
-		);
-		if (unsafeDestination) {
-			const error = `Prior step "${unsafeDestination.step}" lacks a safe role output ACL. Create a new encoding job to use the updated output policy.`;
-			await stopJobEncodings(entries, ids, sdk);
-			await persist(encodingJobId, entries, { status: "ERROR", error });
-			await deps.emitEvent?.({
-				kind: "JOB_ERROR",
-				jobId: encodingJobId,
-				name: row.name,
-				labels: row.labels,
-				error,
-				path: `/vod/jobs/${encodingJobId}`,
-			});
-			return { acknowledged: true, encodingJobId, status: "ERROR" };
+		try {
+			if (cancelAtSetup || (await checkCancel())) return await finalizeCancel();
+			// A new safe payload cannot repair an earlier attempt at a different
+			// destination. A saved request also cannot prove what an adopted
+			// provider manifest will actually publish.
+			let unsafeDestination = entries.find(
+				(entry) =>
+					entry.roleDeliveryBlocked ||
+					((entry.status === "DONE" ||
+						entry.status === "RUNNING" ||
+						entry.startedAt !== undefined) &&
+						!hasRecordedRoleOutputAcl(
+							entry,
+							outputKinds,
+							entry.status === "DONE" ? entry.request : entry.payload,
+						)),
+			);
+			for (const { entry, kind } of roleManifests) {
+				if (unsafeDestination) break;
+				try {
+					const destination = destinationOf(
+						applyRoleOutputAcl(entry, outputKinds),
+						{ ids, outputKinds },
+					);
+					if (
+						entry.resourceId &&
+						destination &&
+						recordedAccountMatches(entry) &&
+						(await sdk.getManifestRoleAcl(kind, entry.resourceId, destination))
+					)
+						continue;
+				} catch {
+					// A failed provider detail read cannot authorize delivery.
+				}
+				unsafeDestination = entry;
+			}
+			if (unsafeDestination) {
+				const error = `Prior step "${unsafeDestination.step}" lacks a verified safe role output ACL.`;
+				const manifests = await stopRoleManifests();
+				if (await checkCancel()) return await finalizeCancel(manifests);
+				await stopJobEncodings(entries, ids, sdk, stopEncodingScope);
+				if (manifests === "ACTIVE") {
+					unsafeDestination.roleDeliveryBlocked = true;
+					return await deferManifestStop(
+						`${error} Bitmovin manifest generation may still be stopping.`,
+					);
+				}
+				return await failRoleDelivery(
+					manifests === "UNVERIFIED"
+						? `${error} Could not verify whether Bitmovin stopped manifest generation.`
+						: `${error} Create a new encoding job to use the updated output policy.`,
+				);
+			}
+		} catch (error) {
+			if (error instanceof AttemptLeaseLostError)
+				return { acknowledged: true, encodingJobId, status: "LEASE_LOST" };
+			throw error;
 		}
 
 		{
@@ -1445,10 +1564,17 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		entries: StepLogEntry[],
 		ids: Map<string, string>,
 		sdk: SdkOps,
+		scope?: {
+			matches: (entry: StepLogEntry) => boolean;
+			beforeStop: () => Promise<void>;
+		},
 	): Promise<{ terminal: Set<string> }> {
 		const terminal = new Set<string>();
 		for (const entry of entries) {
-			if (entry.kind !== "CREATE_ENCODING") {
+			if (
+				entry.kind !== "CREATE_ENCODING" ||
+				(scope && !scope.matches(entry))
+			) {
 				continue;
 			}
 			const encodingId = ids.get(entry.step);
@@ -1464,6 +1590,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				if (before !== "QUEUED" && before !== "RUNNING") {
 					continue; // CREATED or unclassified: nothing to stop, nothing proven
 				}
+				await scope?.beforeStop();
 				await sdk.stopEncoding(encodingId);
 				const after = (await sdk.getEncodingStatus(encodingId)).status;
 				if (classifyProviderStatusWord(after) === "TERMINAL") {
@@ -1471,6 +1598,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				}
 				// else: accepted, not yet applied — unproven, no stamp
 			} catch (stopErr) {
+				if (stopErr instanceof AttemptLeaseLostError) throw stopErr;
 				console.error(
 					`[orchestrator] cancel: failed to stop encoding ${encodingId}:`,
 					stopErr instanceof Error ? stopErr.message : stopErr,

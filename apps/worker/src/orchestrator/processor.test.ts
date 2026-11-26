@@ -209,6 +209,275 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("orchestrator processor", () => {
 	it.each([
+		["HLS", "jit"],
+		["HLS", "default"],
+		["HLS", "upstream-safe"],
+		["DASH", "stopped"],
+		["DASH", "scope-changed"],
+		["SMOOTH", "still-active"],
+		["SMOOTH", "foreign"],
+		["SMOOTH", "lost-lease"],
+		["SMOOTH", "user-cancel"],
+	] as const)("guards the recorded %s manifest on resume (%s)", async (format, scenario) => {
+		const sample = basePlan.manifests[0];
+		const primary = basePlan.outputs[0];
+		if (!sample || !primary || !("credentialId" in primary))
+			throw new Error("Missing role manifest fixture");
+		const plan = encodingPlanSchema.parse({
+			...basePlan,
+			bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
+			outputs: [
+				...basePlan.outputs,
+				{
+					kind: "S3_ROLE_BASED",
+					key: "role",
+					name: "Role output",
+					bucket: "role-manifest-test",
+					credentialId: primary.credentialId,
+				},
+			],
+			deliveryMirrors: [{ outputKey: "role" }],
+			generation: {
+				...basePlan.generation,
+				timing: scenario === "jit" ? "JUST_IN_TIME" : "POST_ENCODING",
+			},
+			manifests:
+				format === "HLS"
+					? [
+							{
+								...sample,
+								...(scenario === "default"
+									? { generationMode: "DEFAULT" }
+									: {}),
+							},
+						]
+					: [
+							{
+								key: sample.key,
+								kind: format,
+								destination: sample.destination,
+							},
+						],
+		});
+		const journal = initStepLog(compilePlan(plan));
+		const createKind = `CREATE_MANIFEST_${format}`;
+		const startKind =
+			scenario === "jit" ? "START_ENCODING" : `START_MANIFEST_${format}`;
+		const startIndex = journal.findIndex((entry) => entry.kind === startKind);
+		const manifest = journal.find((entry) => entry.kind === createKind);
+		if (!manifest || startIndex < 0)
+			throw new Error("Missing compiled manifest");
+		const account = {
+			id: ACCOUNT_ID,
+			version: "00000000-0000-4000-8000-0000000000fe",
+		};
+		for (const [index, step] of journal.entries()) {
+			if (index >= startIndex) break;
+			step.status = "DONE";
+			step.resourceId = `provider-${step.step}`;
+			step.request = { ...step.payload };
+			step.resourceAccount = account;
+		}
+		const attempted = [
+			"stopped",
+			"still-active",
+			"foreign",
+			"lost-lease",
+			"scope-changed",
+			"user-cancel",
+		].includes(scenario);
+		const start = journal[startIndex];
+		if (!start || !manifest.resourceId)
+			throw new Error("Missing attempted manifest");
+		if (attempted) {
+			start.status = "RUNNING";
+			start.startedAt = "2026-06-11T00:00:00.000Z";
+		}
+		// Persisted ACL is correct even though the provider-side old adoption is public.
+		expect(manifest.request).toMatchObject({ mirrorOutputAcls: ["PRIVATE"] });
+		const h = setup({
+			plan,
+			stepLog: journal,
+			bitmovinAccountId: ACCOUNT_ID,
+			status: "RUNNING",
+			cancelRequested: scenario === "user-cancel",
+		});
+		vi.mocked(h.deps.revealBitmovinAccount).mockResolvedValue({
+			apiKey: "synthetic-only",
+			tenantOrgId: "fixture-org",
+			resourceScopeVersion:
+				scenario === "scope-changed"
+					? "00000000-0000-4000-8000-0000000000ff"
+					: account.version,
+		});
+		const makeSdk = makeWorkerSdk({
+			...h.prisma,
+			auditLog: { create: vi.fn() },
+		} as unknown as AppPrismaClient);
+		h.deps.makeSdk = (args) => {
+			const real = makeSdk(args);
+			return {
+				...h.sdk,
+				getManifestRoleAcl: real.getManifestRoleAcl,
+				ownsManifest: real.ownsManifest,
+				stopManifest: real.stopManifest,
+				getHlsManifestStatus: real.getHlsManifestStatus,
+				getDashManifestStatus: real.getDashManifestStatus,
+				getSmoothManifestStatus: real.getSmoothManifestStatus,
+			};
+		};
+		const reads: string[] = [];
+		let stopped = false;
+		const manifestId = manifest.resourceId;
+		const path = `/v1/encoding/manifests/${format.toLowerCase()}/${manifestId}`;
+		const result = (resource: unknown, status = 200) =>
+			Response.json({ data: { result: resource } }, { status });
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (raw: string, init: RequestInit) => {
+				const { pathname } = new URL(raw);
+				const decoded = decodeURIComponent(pathname);
+				expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(
+					"fixture-org",
+				);
+				reads.push(`${init.method} ${decoded}`);
+				if (decoded === path) {
+					return result({
+						id: manifestId,
+						outputs: [
+							{
+								outputId: "provider-output:role",
+								outputPath: manifest.payload.outputPath,
+								acl: [
+									{
+										permission:
+											scenario === "upstream-safe" ? "PRIVATE" : "PUBLIC_READ",
+									},
+								],
+							},
+						],
+					});
+				}
+				if (decoded.endsWith("/customData")) {
+					if (scenario === "lost-lease")
+						h.row.attemptClaimedAt = new Date("2030-01-01Z");
+					return result({
+						customData: {
+							bitovp: {
+								job: scenario === "foreign" ? "other-job" : JOB_ID,
+								step: manifest.step,
+							},
+						},
+					});
+				}
+				if (decoded.endsWith("/status"))
+					return result({
+						status:
+							scenario === "upstream-safe"
+								? "FINISHED"
+								: stopped &&
+										(scenario === "stopped" || scenario === "user-cancel")
+									? "CANCELED"
+									: "RUNNING",
+					});
+				if (decoded.endsWith("/stop") && init.method === "POST") {
+					stopped = true;
+					return result({}, 202);
+				}
+				throw new Error("Unexpected role manifest request");
+			}),
+		);
+		try {
+			const outcome = await h.processor({ encodingJobId: JOB_ID });
+			if (scenario === "scope-changed") expect(reads).toHaveLength(0);
+			else if (scenario !== "user-cancel")
+				expect(reads).toContain(`GET ${path}`);
+			expect(stopped).toBe(
+				scenario === "stopped" ||
+					scenario === "still-active" ||
+					scenario === "user-cancel",
+			);
+			expect(h.sdk.startEncoding).not.toHaveBeenCalled();
+			expect(h.sdk.startHlsManifest).toHaveBeenCalledTimes(
+				scenario === "upstream-safe" ? 1 : 0,
+			);
+			expect(h.sdk.startDashManifest).not.toHaveBeenCalled();
+			expect(h.sdk.startSmoothManifest).not.toHaveBeenCalled();
+			if (scenario === "still-active") {
+				expect(outcome.status).toBe("MANIFEST_STOP_PENDING");
+				expect(h.row.status).toBe("RUNNING");
+				expect(h.row.attemptClaimedAt).toBeNull();
+				expect(h.row.stepLog).toEqual(
+					expect.arrayContaining([
+						expect.objectContaining({
+							step: manifest.step,
+							roleDeliveryBlocked: true,
+						}),
+					]),
+				);
+				stopped = true;
+				const post = reads.filter(
+					(call) => call === `POST ${path}/stop`,
+				).length;
+				vi.stubGlobal(
+					"fetch",
+					vi.fn(async (raw: string, init: RequestInit) => {
+						const pathRead = decodeURIComponent(new URL(raw).pathname);
+						reads.push(`${init.method} ${pathRead}`);
+						if (pathRead === path)
+							return result({
+								id: manifestId,
+								outputs: [
+									{
+										outputId: "provider-output:role",
+										outputPath: manifest.payload.outputPath,
+										acl: [{ permission: "PRIVATE" }],
+									},
+								],
+							});
+						if (pathRead === `${path}/status`)
+							return result({ status: "CANCELED" });
+						throw new Error(
+							"Terminal readback must not issue another mutation",
+						);
+					}),
+				);
+				await expect(
+					createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
+				).resolves.toMatchObject({ status: "ERROR" });
+				expect(
+					reads.filter((call) => call === `POST ${path}/stop`),
+				).toHaveLength(post);
+				expect(h.sdk.startSmoothManifest).not.toHaveBeenCalled();
+			} else if (scenario === "upstream-safe") {
+				expect(outcome.status).toBe("FINISHED");
+			} else if (scenario === "lost-lease") {
+				expect(outcome.status).toBe("LEASE_LOST");
+				expect(h.emitted).toHaveLength(0);
+			} else if (scenario === "user-cancel") {
+				expect(outcome.status).toBe("CANCELED");
+				expect(h.emitted).toContainEqual(
+					expect.objectContaining({ kind: "JOB_CANCELED" }),
+				);
+			} else {
+				expect(outcome.status).toBe("ERROR");
+				expect(h.emitted).toContainEqual(
+					expect.objectContaining({
+						kind: "JOB_ERROR",
+						error: expect.stringMatching(/role output ACL/i),
+					}),
+				);
+			}
+			if (scenario === "stopped" || scenario === "user-cancel")
+				expect(
+					reads.filter((read) => read === `GET ${path}/status`),
+				).toHaveLength(2);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it.each([
 		"pending",
 		"safe-done",
 		"unsafe-done",
@@ -400,6 +669,56 @@ describe("orchestrator processor", () => {
 			),
 		});
 	}
+	it.each([
+		"pending",
+		"sent",
+	] as const)("preserves internal HEVCv2 replay across role ACL expansion (%s)", async (prior) => {
+		vi.stubEnv("BITOVP_INTERNAL_HEVC_V2_ACCOUNT_ID", ACCOUNT_ID);
+		const plan = internalPlan();
+		const primary = plan.outputs[0];
+		if (!primary || !("credentialId" in primary))
+			throw new Error("Missing output");
+		plan.outputs.push({
+			kind: "S3_ROLE_BASED",
+			key: "mirror",
+			name: "Role mirror",
+			bucket: "fixture-hevc-role",
+			credentialId: primary.credentialId,
+		});
+		plan.deliveryMirrors = [{ outputKey: "mirror" }];
+		const log = initStepLog(compilePlan(plan));
+		const roleOutput = log.find(
+			(entry) => entry.kind === "CREATE_OUTPUT_S3_ROLE_BASED",
+		);
+		const muxing = log.find((entry) => entry.kind === "CREATE_MUXING_FMP4");
+		if (!roleOutput || !muxing) throw new Error("Missing role replay steps");
+		for (const entry of log) delete entry.payload.mirrorOutputAcls;
+		roleOutput.status = "DONE";
+		roleOutput.resourceId = "role-output";
+		if (prior === "sent") {
+			muxing.status = "RUNNING";
+			muxing.startedAt = "2026-06-11T00:00:00.000Z";
+		}
+		const h = setup({ plan, stepLog: log, bitmovinAccountId: ACCOUNT_ID });
+		await expect(h.processor({ encodingJobId: JOB_ID })).resolves.toMatchObject(
+			{
+				status: prior === "sent" ? "ERROR" : "FINISHED",
+			},
+		);
+		if (prior === "sent") {
+			expect(h.row.error).toMatch(/role output ACL/);
+			expect(h.sdk.startEncoding).not.toHaveBeenCalled();
+		} else {
+			expect(h.sdk.createFmp4Muxing).toHaveBeenCalledWith(
+				expect.any(String),
+				expect.objectContaining({
+					destination: expect.objectContaining({
+						mirrorOutputAcls: ["PRIVATE"],
+					}),
+				}),
+			);
+		}
+	});
 	it.each([
 		"internalHevcV2",
 		"bcfVersion",

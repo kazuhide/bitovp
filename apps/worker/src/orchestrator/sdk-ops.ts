@@ -109,6 +109,8 @@ export type Destination = {
 	roleOutputIds?: string[];
 };
 
+export type ManifestKind = "hls" | "dash" | "smooth";
+
 /** ColorConfig with enum NAMES; copy* flags pass through. */
 export type ColorConfigParams = {
 	copyChromaLocationFlag?: boolean;
@@ -1675,6 +1677,18 @@ export type SdkOps = {
 		p: { manifestGenerator?: string },
 	): Promise<void>;
 	getSmoothManifestStatus(manifestId: string): Promise<TaskStatusResult>;
+	getManifestRoleAcl(
+		kind: ManifestKind,
+		manifestId: string,
+		destination: Destination,
+	): Promise<boolean>;
+	ownsManifest(
+		kind: ManifestKind,
+		manifestId: string,
+		jobId: string,
+		step: string,
+	): Promise<boolean>;
+	stopManifest(kind: ManifestKind, manifestId: string): Promise<void>;
 	/** All pages (limit 100 — C6) of one muxing kind, summarized. */
 	listMuxings(encodingId: string, kind: AvMuxingKind): Promise<MuxingSummary[]>;
 	getStreamContext(

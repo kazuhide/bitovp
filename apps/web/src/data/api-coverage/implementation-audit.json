@@ -3410,6 +3410,94 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.manifests.dash.stop",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/dash/{manifest_id}/stop",
+			"scope": "vod",
+			"scenario": "Stop an owned DASH manifest task that cannot safely resume publishing.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs/[id]/retry",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.dash.stop("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
+				"anchor": "\"sends the official %s manifest stop once via the worker SDK\"",
+				"caseGroup": "worker-standalone-manifest-stop"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.hls.stop",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/hls/{manifest_id}/stop",
+			"scope": "vod",
+			"scenario": "Stop an owned HLS manifest task that cannot safely resume publishing.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs/[id]/retry",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.hls.stop("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
+				"anchor": "\"sends the official %s manifest stop once via the worker SDK\"",
+				"caseGroup": "worker-standalone-manifest-stop"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.smooth.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/smooth/{manifest_id}/customData",
+			"scope": "vod",
+			"scenario": "Verify ownership of a recorded Smooth Streaming manifest before stopping its generation.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs/[id]/retry",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.smooth.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
+				"anchor": "\"reads the official %s manifest owner marker via the worker SDK\"",
+				"caseGroup": "worker-smooth-manifest-owner"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.smooth.stop",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/smooth/{manifest_id}/stop",
+			"scope": "vod",
+			"scenario": "Stop an owned Smooth Streaming manifest task that cannot safely resume publishing.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs/[id]/retry",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.smooth.stop("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
+				"anchor": "\"sends the official %s manifest stop once via the worker SDK\"",
+				"caseGroup": "worker-standalone-manifest-stop"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.outputs.akamaiMsl.get",
 			"httpVerb": "GET",
 			"path": "/encoding/outputs/akamai-msl/{output_id}",

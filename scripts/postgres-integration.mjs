@@ -39,7 +39,7 @@ export const GROUPS = [
 			"src/create-request.integration.test.ts": 7,
 			"src/transaction-options.integration.test.ts": 6,
 			"src/live-run-step-log.integration.test.ts": 4,
-			"src/feeder-single-pass.integration.test.ts": 5,
+			"src/feeder-single-pass.integration.test.ts": 9,
 			"src/library-editing-db.integration.test.ts": 12,
 			"src/library-production.integration.test.ts": 19,
 			"src/library-flow-evidence-pins.integration.test.ts": 12,

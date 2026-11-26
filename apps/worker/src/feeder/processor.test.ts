@@ -986,20 +986,31 @@ function setup(
 	const prismaFixture = {
 		$queryRaw: vi.fn(
 			async (query: TemplateStringsArray, ...values: unknown[]) => {
-				if (query[0]?.includes('FROM "LiveEffectClaim" stop')) {
-					const [id, runId, encodingId, generation] = values;
-					return effectClaims.filter(
+				if (query[0]?.includes("JOIN LATERAL")) {
+					const [id, encodingId, runId, generation] = values;
+					if (
+						channel.id !== id ||
+						channel.bitmovinEncodingId !== encodingId ||
+						run.id !== runId ||
+						run.bitmovinEncodingId !== encodingId ||
+						(channel.liveEffectFenceVersion as number) <= (generation as number)
+					)
+						return [];
+					const scheduled =
+						channel.status === "STOPPING" &&
+						["RUNNING", "STOPPING"].includes(run.status as string);
+					const claimed = effectClaims.some(
 						(claim) =>
 							claim.liveChannelId === id &&
 							claim.liveChannelRunId === runId &&
 							claim.providerEncodingId === encodingId &&
 							claim.action === "STOP" &&
-							(claim.generation as number) > (generation as number) &&
 							claim.generation === channel.liveEffectFenceVersion &&
 							["DISPATCHING", "ACKED", "AMBIGUOUS", "RESOLVED"].includes(
 								claim.state as string,
 							),
 					);
+					return scheduled || claimed ? [{ id }] : [];
 				}
 				if (query[0]?.includes('FROM "LiveChannel"')) {
 					const [id, encodingId, generation] = values;
@@ -6043,29 +6054,36 @@ describe("single-pass feeder processor", () => {
 	});
 
 	it.each([
-		"before final checks",
-		"at the dispatch lock",
-	])("uses the exact Live STOP when it wins %s", async (boundary) => {
+		["before final checks", "claimed"],
+		["at the dispatch lock", "claimed"],
+		["before final checks", "scheduled"],
+		["at the dispatch lock", "scheduled"],
+	] as const)("uses the exact Live STOP when it wins %s (%s)", async (boundary, stop) => {
 		const s = setup({ session: { playbackMode: "ONCE" } });
 		function applyStop() {
 			s.channel.status = "STOPPING";
 			s.channel.liveEffectFenceVersion =
 				(s.channel.liveEffectFenceVersion as number) + 1;
-			s.effectClaims.push({
-				id: "winning-stop",
-				action: "STOP",
-				state: "DISPATCHING",
-				liveChannelId: s.channel.id,
-				liveChannelRunId: s.run.id,
-				providerEncodingId: s.run.bitmovinEncodingId,
-				generation: s.channel.liveEffectFenceVersion,
-			});
+			if (stop === "claimed")
+				s.effectClaims.push({
+					id: "winning-stop",
+					action: "STOP",
+					state: "DISPATCHING",
+					liveChannelId: s.channel.id,
+					liveChannelRunId: s.run.id,
+					providerEncodingId: s.run.bitmovinEncodingId,
+					generation: s.channel.liveEffectFenceVersion,
+				});
 		}
 		if (boundary === "at the dispatch lock") {
 			const query = s.queryRaw.getMockImplementation();
 			if (!query) throw new Error("Missing database fixture");
 			s.queryRaw.mockImplementation(async (sql, ...values) => {
-				if (sql[0]?.includes('FROM "LiveChannel"')) applyStop();
+				if (
+					sql[0]?.includes('FROM "LiveChannel"') &&
+					sql.at(-1)?.includes("FOR UPDATE")
+				)
+					applyStop();
 				return query(sql, ...values);
 			});
 		} else {

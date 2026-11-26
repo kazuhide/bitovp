@@ -19,14 +19,28 @@ export async function hasSupersedingFeederStop(
 	claim: LiveEffectClaimHandle,
 ): Promise<boolean> {
 	const [stop] = await prisma.$queryRaw<{ id: string }[]>`
-		SELECT stop.id FROM "LiveEffectClaim" stop
-		JOIN "LiveChannel" c ON c.id = stop."liveChannelId"
-		WHERE stop."liveChannelId" = ${claim.liveChannelId}::uuid
-			AND stop."liveChannelRunId" = ${claim.liveChannelRunId}::uuid
-			AND stop."providerEncodingId" = ${claim.providerEncodingId}
-			AND stop.action = 'STOP' AND stop.generation > ${claim.generation}
-			AND stop.generation = c."liveEffectFenceVersion"
-			AND stop.state IN ('DISPATCHING', 'ACKED', 'AMBIGUOUS', 'RESOLVED')`;
+		SELECT c.id FROM "LiveChannel" c
+		JOIN LATERAL (
+			SELECT r.id, r.status, r."bitmovinEncodingId" FROM "LiveChannelRun" r
+			WHERE r."liveChannelId" = c.id ORDER BY r.seq DESC LIMIT 1
+		) current_run ON true
+		WHERE c.id = ${claim.liveChannelId}::uuid
+			AND c."bitmovinEncodingId" = ${claim.providerEncodingId}
+			AND current_run.id = ${claim.liveChannelRunId}::uuid
+			AND current_run."bitmovinEncodingId" = c."bitmovinEncodingId"
+			AND c."liveEffectFenceVersion" > ${claim.generation}
+			AND (
+				-- A scheduled STOP advances the channel before its queue claim.
+				(c.status = 'STOPPING' AND current_run.status IN ('RUNNING', 'STOPPING'))
+				OR EXISTS (
+					SELECT 1 FROM "LiveEffectClaim" stop
+					WHERE stop."liveChannelId" = c.id
+						AND stop."liveChannelRunId" = current_run.id
+						AND stop."providerEncodingId" = c."bitmovinEncodingId"
+						AND stop.action = 'STOP' AND stop.generation = c."liveEffectFenceVersion"
+						AND stop.state IN ('DISPATCHING', 'ACKED', 'AMBIGUOUS', 'RESOLVED')
+				)
+			)`;
 	return Boolean(stop);
 }
 
@@ -52,8 +66,8 @@ export async function claimFeederSinglePassDispatch(
 				AND "liveEffectFenceVersion" = ${claim.generation}
 			FOR UPDATE`;
 		if (!channel) {
-			// This separate statement can see the STOP transaction that won the
-			// channel lock after the preceding SELECT took its snapshot.
+			// A new statement can see the STOP admission that won the channel
+			// lock after the preceding SELECT took its snapshot.
 			return (await hasSupersedingFeederStop(tx, claim))
 				? "STOPPED"
 				: "REFUSED";

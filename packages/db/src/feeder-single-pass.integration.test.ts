@@ -301,6 +301,129 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			});
 		});
 
+		it.each([
+			["current broadcast", "STOPPED"],
+			["successor broadcast", "REFUSED"],
+			["replacement encoder", "REFUSED"],
+			["unchanged channel fence", "REFUSED"],
+		] as const)("recognizes a scheduled STOP before its queue claim (%s)", async (scenario, expected) => {
+			const f = await fixture();
+			const scheduler = client();
+			const dispatcher = client();
+			const schedulerPid = await backend(scheduler.runtime);
+			const dispatcherPid = await backend(dispatcher.runtime);
+			const { liveChannelId, liveChannelRunId, providerEncodingId } = f.effect;
+			const now = new Date();
+			const nextEncoding =
+				scenario === "replacement encoder" ? randomUUID() : providerEncodingId;
+			const held = barrier();
+			const release = barrier();
+			const scheduled = scheduler.tenant.$transaction(
+				async (tx) => {
+					// The scheduler advances the channel before the queued STOP creates
+					// an effect. On this base even the run mirror can still be pending.
+					await tx.liveChannel.update({
+						where: { id: liveChannelId },
+						data: {
+							status: "STOPPING",
+							bitmovinEncodingId: nextEncoding,
+							liveEffectFenceVersion:
+								f.effect.generation +
+								Number(scenario !== "unchanged channel fence"),
+						},
+					});
+					let stopRunId = liveChannelRunId;
+					if (scenario === "successor broadcast") {
+						await tx.liveChannelRun.update({
+							where: { id: liveChannelRunId },
+							data: { status: "STOPPED" },
+						});
+						const successor = await tx.liveChannelRun.create({
+							data: {
+								liveChannelId,
+								seq: 2,
+								status: "STOPPING",
+								bitmovinEncodingId: null,
+								outputPrefix: "",
+							},
+						});
+						stopRunId = successor.id;
+					} else if (scenario === "replacement encoder") {
+						await tx.liveChannelRun.update({
+							where: { id: liveChannelRunId },
+							data: { bitmovinEncodingId: nextEncoding },
+						});
+					}
+					await tx.liveSchedule.create({
+						data: {
+							liveChannelId,
+							liveChannelRunId: stopRunId,
+							action: "STOP",
+							status: "FIRED",
+							fireAt: now,
+							firedAt: now,
+						},
+					});
+					held.release();
+					await release.ready;
+				},
+				{ timeout: 15_000 },
+			);
+			let dispatch: Promise<FeederSinglePassDispatchResult> | undefined;
+			let blocked = false;
+			try {
+				await Promise.race([
+					held.ready,
+					scheduled.then(() => {
+						throw new Error("The scheduled STOP did not hold the channel");
+					}),
+				]);
+				dispatch = claimFeederSinglePassDispatch(
+					dispatcher.tenant,
+					f.fence,
+					now,
+					f.effect,
+				);
+				const deadline = Date.now() + 3_000;
+				while (!blocked && Date.now() < deadline) {
+					const [wait] = await admin.$queryRaw<{ blocked: boolean }[]>`
+						SELECT ${schedulerPid}::integer = ANY(pg_blocking_pids(${dispatcherPid}::integer)) AS blocked`;
+					blocked = wait?.blocked === true;
+					if (!blocked) await new Promise((resolve) => setTimeout(resolve, 5));
+				}
+			} finally {
+				release.release();
+				await Promise.allSettled([scheduled, dispatch]);
+			}
+			await scheduled;
+			expect(blocked).toBe(true);
+			expect(await dispatch).toBe(expected);
+			if (scenario === "current broadcast") {
+				await f.tenant.liveChannelRun.update({
+					where: { id: liveChannelRunId },
+					data: { status: "STOPPING" },
+				});
+				expect(
+					await claimFeederSinglePassDispatch(
+						dispatcher.tenant,
+						f.fence,
+						now,
+						f.effect,
+					),
+				).toBe("STOPPED");
+			}
+			expect(
+				await f.tenant.liveEffectClaim.count({
+					where: { liveChannelId, action: "STOP" },
+				}),
+			).toBe(0);
+			expect(
+				await f.tenant.feederSession.findUniqueOrThrow({
+					where: { id: f.row.id },
+				}),
+			).toMatchObject({ playbackDispatchedAt: null });
+		});
+
 		it("retains a committed dispatch marker across disconnect and a new owner without replay", async () => {
 			const f = await fixture();
 			const first = client();

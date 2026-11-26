@@ -31,6 +31,22 @@ export type EmitProductEvent = (
 	occurredAt?: Date,
 ) => Promise<void>;
 
+export async function emitScheduleFired(
+	row: { id: string; liveChannelId: string },
+	emitEvent: EmitProductEvent | undefined,
+) {
+	try {
+		await emitEvent?.({
+			kind: "SCHEDULE_FIRED",
+			scheduleId: row.id,
+			liveChannelId: row.liveChannelId,
+			path: `/live/${row.liveChannelId}`,
+		});
+	} catch {
+		console.warn(`[scheduler] notification for schedule ${row.id} failed`);
+	}
+}
+
 type NotifyQueueLike = {
 	add(
 		name: string,
@@ -41,6 +57,7 @@ type NotifyQueueLike = {
 
 export function createEventEmitter(deps: {
 	queue: NotifyQueueLike;
+	organizationId?: string;
 	/** PUBLIC_BASE_URL; undefined ⇒ links fall back to the bare path. */
 	publicBaseUrl?: string;
 	now?: () => Date;
@@ -69,6 +86,12 @@ export function createEventEmitter(deps: {
 				return;
 			}
 			await deps.queue.add(QUEUE_NAMES.notify, parsed.data, {
+				// The producer and recovery can see the same accepted handoff.
+				// Deduplicate that firing for as long as BullMQ retains the job.
+				...(parsed.data.kind === "SCHEDULE_FIRED" &&
+					deps.organizationId && {
+						jobId: `schedule-fired-${deps.organizationId}-${parsed.data.scheduleId}`,
+					}),
 				// review-183 C1: WITHOUT attempts, BullMQ's default is 0 and a
 				// thrown delivery is gone permanently — the bus was at-MOST-once
 				// while three artefacts (the processor comment, the retry test's

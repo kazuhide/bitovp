@@ -1,5 +1,6 @@
 import { hasAisaLiveBinding, type LiveChannelJob } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
+import { type EmitProductEvent, emitScheduleFired } from "../notify/emitter";
 import {
 	scheduledStartJobId,
 	scheduledStartScheduleId,
@@ -17,6 +18,7 @@ export function createExhaustedProvisionRecovery(
 	prisma: AppPrismaClient,
 	readOwnedJob: ReadProvisionJob,
 	reenqueue: (job: LiveChannelJob, id: string) => Promise<void>,
+	emitEvent?: EmitProductEvent,
 ) {
 	let after: string | undefined;
 	const error =
@@ -178,22 +180,15 @@ export function createExhaustedProvisionRecovery(
 						scheduled,
 					);
 					if (!delivery) continue;
-					if (delivery.state === null) {
-						await reenqueue(data, delivery.id);
-						await recordRetainedScheduledStart(
-							prisma,
-							start,
-							{ id: delivery.id, state: "waiting" },
-							at,
-						);
-						continue;
-					}
+					if (delivery.state === null) await reenqueue(data, delivery.id);
 					const recorded = await recordRetainedScheduledStart(
 						prisma,
 						start,
-						{ id: delivery.id, state: delivery.state },
+						{ id: delivery.id, state: delivery.state ?? "waiting" },
 						at,
 					);
+					if (recorded === "handoff" && scheduled.dispatchedAt === null)
+						void emitScheduleFired(start, emitEvent);
 					if (delivery.state !== "failed" || !recorded) continue;
 				} else {
 					const job = await readOwnedJob(scheduled.dispatchJobId ?? id);

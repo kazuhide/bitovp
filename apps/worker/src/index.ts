@@ -348,6 +348,7 @@ const notifyQueue = tenantQueue(
 const emitEvent = tenantService(() =>
 	createEventEmitter({
 		queue: notifyQueue,
+		organizationId: requireOrganizationId(),
 		publicBaseUrl: env.PUBLIC_BASE_URL,
 	}),
 );
@@ -1647,6 +1648,7 @@ const scheduleSweep = tenantService(() => {
 		prisma,
 		readJob,
 		enqueueScheduledLiveJob,
+		emitEvent,
 	);
 	return createScheduleSweep({
 		readStartJob: readJob,

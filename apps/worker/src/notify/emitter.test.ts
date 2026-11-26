@@ -75,6 +75,33 @@ describe("createEventEmitter", () => {
 		expect(add.mock.calls[0]?.[2]).not.toHaveProperty("jobId");
 	});
 
+	it("uses the same tenant-scoped queue key for repeat schedule firing receipts", async () => {
+		const add = vi.fn().mockResolvedValue(undefined);
+		const tenantOne = "00000000-0000-4000-8000-000000000001";
+		const tenantTwo = "00000000-0000-4000-8000-000000000002";
+		const event = {
+			kind: "SCHEDULE_FIRED" as const,
+			scheduleId: JOB,
+			liveChannelId: JOB,
+			path: `/live/${JOB}`,
+		};
+		const emitFirst = createEventEmitter({
+			queue: { add },
+			organizationId: tenantOne,
+		});
+		await emitFirst(event);
+		await emitFirst(event);
+		await createEventEmitter({
+			queue: { add },
+			organizationId: tenantTwo,
+		})(event);
+		expect(add.mock.calls.map(([, , options]) => options.jobId)).toEqual([
+			`schedule-fired-${tenantOne}-${JOB}`,
+			`schedule-fired-${tenantOne}-${JOB}`,
+			`schedule-fired-${tenantTwo}-${JOB}`,
+		]);
+	});
+
 	it("NEVER throws when the queue is down (the job survives)", async () => {
 		const add = vi.fn().mockRejectedValue(new Error("redis down"));
 		const error = vi.spyOn(console, "error").mockImplementation(() => {});

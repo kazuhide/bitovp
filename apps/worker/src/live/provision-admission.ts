@@ -296,7 +296,7 @@ export async function recordRetainedScheduledStart(
 	start: ScheduledStartIdentity,
 	retained: { id: string; state: string },
 	at: Date,
-): Promise<boolean> {
+): Promise<false | "handoff" | "terminal"> {
 	const owned = pendingStart(start);
 	// Retention may evict the job before the next bounded recovery pass.
 	const failure =
@@ -323,7 +323,8 @@ export async function recordRetainedScheduledStart(
 			...failure,
 		},
 	});
-	if (count || !failure) return count === 1;
+	if (count === 1) return "handoff";
+	if (!failure) return false;
 	// A prior or concurrent observer may already have stamped the same job.
 	// Preserve that handoff time while saving the new terminal observation.
 	const updated = await prisma.liveSchedule.updateMany({
@@ -334,5 +335,5 @@ export async function recordRetainedScheduledStart(
 		},
 		data: failure,
 	});
-	return updated.count === 1;
+	return updated.count === 1 ? "terminal" : false;
 }

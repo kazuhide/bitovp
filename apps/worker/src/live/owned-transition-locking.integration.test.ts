@@ -1511,12 +1511,29 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					"dispatch",
 				),
 			).resolves.toBeNull();
+			const emitFired = vi.fn<import("../notify/emitter").EmitProductEvent>(
+				async (event) => {
+					if (
+						event.kind === "SCHEDULE_FIRED" &&
+						event.scheduleId === current.id
+					)
+						throw new Error("notification queue temporarily unavailable");
+				},
+			);
 			const recover = createExhaustedProvisionRecovery(
 				tenant,
 				async (key) => queue.get(key),
 				enqueue,
+				emitFired,
 			);
 			for (let i = 0; i < 10 && !queue.has(id); i++) await recover(now);
+			const fired = {
+				kind: "SCHEDULE_FIRED",
+				scheduleId: current.id,
+				liveChannelId: f.channel.id,
+				path: `/live/${f.channel.id}`,
+			};
+			expect(emitFired).toHaveBeenCalledWith(fired);
 			expect(queue.get(legacy.id)).toBe(historicalJob);
 			const job = queue.get(id);
 			expect(job?.data).toEqual({
@@ -1568,7 +1585,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				now: () => dispatchAt,
 				enqueue,
 				readStartJob: async (key) => queue.get(key),
+				emitEvent: emitFired,
 			}).dispatchPending();
+			await recover(dispatchAt);
+			expect(
+				emitFired.mock.calls.filter(
+					([event]) =>
+						event.kind === "SCHEDULE_FIRED" && event.scheduleId === current.id,
+				),
+			).toHaveLength(1);
 			expect(enqueue).not.toHaveBeenCalledWith(job.data, job.id);
 			expect(queue.get(job.id)).toBe(job);
 			await expect(
@@ -1926,6 +1951,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						}
 					: undefined;
 			const enqueue = vi.fn(async (..._input: [LiveChannelJob, string]) => {});
+			const emitFired = vi.fn<import("../notify/emitter").EmitProductEvent>();
 			const queuedAdmission = () =>
 				enqueue.mock.calls.some(
 					([, id]) => id === legacyId || id === `${legacyId}-start-0`,
@@ -1936,7 +1962,14 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				now: () => at,
 				enqueue,
 				readStartJob,
+				emitEvent: emitFired,
 			}).dispatchPending();
+			expect(emitFired).toHaveBeenCalledWith({
+				kind: "SCHEDULE_FIRED",
+				scheduleId: admitted.id,
+				liveChannelId: f.channel.id,
+				path: `/live/${f.channel.id}`,
+			});
 			expect(queuedAdmission()).toBe(false);
 			await expect(
 				tenant.liveSchedule.findUniqueOrThrow({ where: { id: admitted.id } }),
@@ -1973,9 +2006,16 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					refuseProvisionRetirement(tenant, f.channel.id),
 					readStartJob,
 					enqueue,
+					emitFired,
 				),
 				failedAt,
 			);
+			expect(
+				emitFired.mock.calls.filter(
+					([event]) =>
+						event.kind === "SCHEDULE_FIRED" && event.scheduleId === admitted.id,
+				),
+			).toHaveLength(1);
 			await expect(
 				tenant.liveSchedule.findUniqueOrThrow({ where: { id: admitted.id } }),
 			).resolves.toMatchObject({

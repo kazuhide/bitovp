@@ -45,7 +45,7 @@ import {
 	type ReadProvisionJob,
 	recordRetainedScheduledStart,
 } from "../live/provision-admission";
-import type { EmitProductEvent } from "../notify/emitter";
+import { type EmitProductEvent, emitScheduleFired } from "../notify/emitter";
 import { createRunMirror } from "../orchestrator/run-mirror";
 import { DEFAULT_REGISTRATION_TIMEOUT_MS } from "../orchestrator/slate-register";
 import { reconcileStartupSamples } from "../orchestrator/startup-sample";
@@ -775,12 +775,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 	}
 
 	async function emitFired(row: { id: string; liveChannelId: string }) {
-		await deps.emitEvent?.({
-			kind: "SCHEDULE_FIRED",
-			scheduleId: row.id,
-			liveChannelId: row.liveChannelId,
-			path: `/live/${row.liveChannelId}`,
-		});
+		await emitScheduleFired(row, deps.emitEvent);
 	}
 
 	async function emitMissed(
@@ -2415,18 +2410,16 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 							row,
 						);
 						if (!delivery) return;
-						if (delivery.state !== null) {
-							if (
-								await recordRetainedScheduledStart(
-									deps.prisma,
-									start,
-									{ id: delivery.id, state: delivery.state },
-									now,
-								)
-							)
-								redispatched += 1;
-							return;
-						}
+						if (delivery.state === null) await deps.enqueue(job, delivery.id);
+						const recorded = await recordRetainedScheduledStart(
+							deps.prisma,
+							start,
+							{ id: delivery.id, state: delivery.state ?? "waiting" },
+							now,
+						);
+						if (delivery.state === null || recorded) redispatched += 1;
+						if (recorded === "handoff") void emitFired(row);
+						return;
 					}
 					await deps.enqueue(job, jobId);
 				} catch (err) {
@@ -2458,18 +2451,8 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				}
 				await markDispatched(row, jobId);
 				redispatched += 1;
-				// The notification is the LAST thing and cannot stall the pass: a
-				// notify channel that throws for one row would otherwise abort the
-				// loop before the rows behind it — every tick, forever, while a
-				// capped encoding kept billing.
-				try {
-					await emitFired(row);
-				} catch (err) {
-					console.error(
-						`[scheduler] re-dispatch notification for ${row.id} failed:`,
-						err instanceof Error ? err.message : err,
-					);
-				}
+				// Notification follows the receipt and does not delay the next row.
+				void emitFired(row);
 			},
 		});
 		redispatched += await redispatchStrandedStages(now);

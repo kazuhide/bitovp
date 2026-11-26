@@ -4,6 +4,7 @@ import { liveChannelPlanSchema, validateLiveChannel } from "@bitovp/core";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { createSubmissionClient } from "@/lib/creation-submission";
+import { CREATE_SESSION_HEADER } from "@/lib/creation-submission-contract";
 import { renderWithQuery } from "@/test/render";
 import { buildLiveChannelPlan } from "./build-live-plan";
 import { tryImportLiveChannelIntoWizard } from "./live-plan-to-wizard";
@@ -366,11 +367,16 @@ it.each([
 	const lostResponse =
 		vi.fn<(path: string, init: RequestInit) => Promise<unknown>>();
 	lostResponse.mockRejectedValue(new Error("Connection closed after creation"));
-	const legacy = createSubmissionClient(
-		["org", "user", "live", `wizard:${duplicateFrom ?? "new"}`],
-		{ storage: sessionStorage, send: lostResponse },
+	const operator = ["org", "user"];
+	const original = createSubmissionClient(
+		[...operator, "live", `wizard:${duplicateFrom ?? "new"}`],
+		{
+			storage: sessionStorage,
+			send: lostResponse,
+			headers: { [CREATE_SESSION_HEADER]: JSON.stringify(operator) },
+		},
 	);
-	await expect(legacy.submit({ plan })).rejects.toThrow(
+	await expect(original.submit({ plan })).rejects.toThrow(
 		"Connection closed after creation",
 	);
 

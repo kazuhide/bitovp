@@ -218,6 +218,12 @@ describe("orchestrator processor", () => {
 		["SMOOTH", "foreign"],
 		["SMOOTH", "lost-lease"],
 		["SMOOTH", "user-cancel"],
+		["SMOOTH", "cancel-during-start"],
+		["SMOOTH", "cancel-at-error-write"],
+		["SMOOTH", "status-503"],
+		["SMOOTH", "owner-503"],
+		["SMOOTH", "owner-forbidden"],
+		["SMOOTH", "stop-forbidden"],
 	] as const)("guards the recorded %s manifest on resume (%s)", async (format, scenario) => {
 		const sample = basePlan.manifests[0];
 		const primary = basePlan.outputs[0];
@@ -278,14 +284,25 @@ describe("orchestrator processor", () => {
 			step.request = { ...step.payload };
 			step.resourceAccount = account;
 		}
-		const attempted = [
-			"stopped",
-			"still-active",
-			"foreign",
-			"lost-lease",
-			"scope-changed",
-			"user-cancel",
-		].includes(scenario);
+		const lostStart =
+			scenario === "cancel-during-start" ||
+			scenario === "cancel-at-error-write";
+		const retryableCancel =
+			scenario === "status-503" || scenario === "owner-503";
+		const userCancel =
+			scenario === "user-cancel" ||
+			scenario === "owner-forbidden" ||
+			scenario === "stop-forbidden" ||
+			retryableCancel;
+		const attempted =
+			userCancel ||
+			[
+				"stopped",
+				"still-active",
+				"foreign",
+				"lost-lease",
+				"scope-changed",
+			].includes(scenario);
 		const start = journal[startIndex];
 		if (!start || !manifest.resourceId)
 			throw new Error("Missing attempted manifest");
@@ -300,8 +317,16 @@ describe("orchestrator processor", () => {
 			stepLog: journal,
 			bitmovinAccountId: ACCOUNT_ID,
 			status: "RUNNING",
-			cancelRequested: scenario === "user-cancel",
+			cancelRequested: userCancel,
 		});
+		if (scenario === "cancel-at-error-write") {
+			const persist = h.updateMany.getMockImplementation();
+			if (!persist) throw new Error("Missing fixture persistence");
+			h.updateMany.mockImplementation(async (args) => {
+				if (args.data.status === "ERROR") h.row.cancelRequested = true;
+				return persist(args);
+			});
+		}
 		vi.mocked(h.deps.revealBitmovinAccount).mockResolvedValue({
 			apiKey: "synthetic-only",
 			tenantOrgId: "fixture-org",
@@ -318,6 +343,7 @@ describe("orchestrator processor", () => {
 			const real = makeSdk(args);
 			return {
 				...h.sdk,
+				...(lostStart ? { startSmoothManifest: real.startSmoothManifest } : {}),
 				getManifestRoleAcl: real.getManifestRoleAcl,
 				ownsManifest: real.ownsManifest,
 				stopManifest: real.stopManifest,
@@ -328,10 +354,19 @@ describe("orchestrator processor", () => {
 		};
 		const reads: string[] = [];
 		let stopped = false;
+		let atStop: typeof h.row | undefined;
 		const manifestId = manifest.resourceId;
 		const path = `/v1/encoding/manifests/${format.toLowerCase()}/${manifestId}`;
 		const result = (resource: unknown, status = 200) =>
 			Response.json({ data: { result: resource } }, { status });
+		const unavailable = (status: number) =>
+			Response.json(
+				{
+					status: "ERROR",
+					data: { code: 1004, message: "Synthetic manifest lookup error" },
+				},
+				{ status },
+			);
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async (raw: string, init: RequestInit) => {
@@ -351,7 +386,9 @@ describe("orchestrator processor", () => {
 								acl: [
 									{
 										permission:
-											scenario === "upstream-safe" ? "PRIVATE" : "PUBLIC_READ",
+											scenario === "upstream-safe" || lostStart
+												? "PRIVATE"
+												: "PUBLIC_READ",
 									},
 								],
 							},
@@ -359,6 +396,8 @@ describe("orchestrator processor", () => {
 					});
 				}
 				if (decoded.endsWith("/customData")) {
+					if (scenario === "owner-503") return unavailable(503);
+					if (scenario === "owner-forbidden") return unavailable(403);
 					if (scenario === "lost-lease")
 						h.row.attemptClaimedAt = new Date("2030-01-01Z");
 					return result({
@@ -370,19 +409,33 @@ describe("orchestrator processor", () => {
 						},
 					});
 				}
-				if (decoded.endsWith("/status"))
+				if (decoded.endsWith("/status")) {
+					if (scenario === "status-503") return unavailable(503);
 					return result({
 						status:
 							scenario === "upstream-safe"
 								? "FINISHED"
 								: stopped &&
-										(scenario === "stopped" || scenario === "user-cancel")
+										(scenario === "stopped" ||
+											scenario === "user-cancel" ||
+											lostStart)
 									? "CANCELED"
 									: "RUNNING",
 					});
+				}
 				if (decoded.endsWith("/stop") && init.method === "POST") {
+					if (scenario === "stop-forbidden") return unavailable(403);
 					stopped = true;
+					atStop = structuredClone(h.row);
 					return result({}, 202);
+				}
+				if (
+					decoded === `${path}/start` &&
+					init.method === "POST" &&
+					lostStart
+				) {
+					if (scenario === "cancel-during-start") h.row.cancelRequested = true;
+					throw new TypeError("Synthetic lost START response after acceptance");
 				}
 				throw new Error("Unexpected role manifest request");
 			}),
@@ -390,12 +443,12 @@ describe("orchestrator processor", () => {
 		try {
 			const outcome = await h.processor({ encodingJobId: JOB_ID });
 			if (scenario === "scope-changed") expect(reads).toHaveLength(0);
-			else if (scenario !== "user-cancel")
-				expect(reads).toContain(`GET ${path}`);
+			else if (!userCancel) expect(reads).toContain(`GET ${path}`);
 			expect(stopped).toBe(
 				scenario === "stopped" ||
 					scenario === "still-active" ||
-					scenario === "user-cancel",
+					scenario === "user-cancel" ||
+					lostStart,
 			);
 			expect(h.sdk.startEncoding).not.toHaveBeenCalled();
 			expect(h.sdk.startHlsManifest).toHaveBeenCalledTimes(
@@ -403,22 +456,29 @@ describe("orchestrator processor", () => {
 			);
 			expect(h.sdk.startDashManifest).not.toHaveBeenCalled();
 			expect(h.sdk.startSmoothManifest).not.toHaveBeenCalled();
-			if (scenario === "still-active") {
+			if (scenario === "still-active" || retryableCancel) {
 				expect(outcome.status).toBe("MANIFEST_STOP_PENDING");
 				expect(h.row.status).toBe("RUNNING");
 				expect(h.row.attemptClaimedAt).toBeNull();
-				expect(h.row.stepLog).toEqual(
-					expect.arrayContaining([
-						expect.objectContaining({
-							step: manifest.step,
-							roleDeliveryBlocked: true,
-						}),
-					]),
-				);
-				stopped = true;
+				expect(h.emitted).toHaveLength(0);
+				const durableBlock = expect.arrayContaining([
+					expect.objectContaining({
+						step: manifest.step,
+						roleDeliveryBlocked: true,
+					}),
+				]);
+				expect(h.row.stepLog).toEqual(durableBlock);
+				if (scenario === "still-active") {
+					expect(atStop?.stepLog).toEqual(durableBlock);
+					Object.assign(h.row, atStop, {
+						status: "RUNNING",
+						attemptClaimedAt: new Date(0),
+					});
+				}
 				const post = reads.filter(
 					(call) => call === `POST ${path}/stop`,
 				).length;
+				let later503 = scenario === "still-active";
 				vi.stubGlobal(
 					"fetch",
 					vi.fn(async (raw: string, init: RequestInit) => {
@@ -435,16 +495,29 @@ describe("orchestrator processor", () => {
 									},
 								],
 							});
-						if (pathRead === `${path}/status`)
+						if (pathRead === `${path}/status`) {
+							if (later503) {
+								later503 = false;
+								return unavailable(503);
+							}
 							return result({ status: "CANCELED" });
+						}
 						throw new Error(
 							"Terminal readback must not issue another mutation",
 						);
 					}),
 				);
+				if (scenario === "still-active") {
+					await expect(
+						createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
+					).resolves.toMatchObject({ status: "MANIFEST_STOP_PENDING" });
+					expect(h.row.status).toBe("RUNNING");
+					expect(h.row.attemptClaimedAt).toBeNull();
+					expect(h.emitted).toHaveLength(0);
+				}
 				await expect(
 					createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
-				).resolves.toMatchObject({ status: "ERROR" });
+				).resolves.toMatchObject({ status: userCancel ? "CANCELED" : "ERROR" });
 				expect(
 					reads.filter((call) => call === `POST ${path}/stop`),
 				).toHaveLength(post);
@@ -454,10 +527,30 @@ describe("orchestrator processor", () => {
 			} else if (scenario === "lost-lease") {
 				expect(outcome.status).toBe("LEASE_LOST");
 				expect(h.emitted).toHaveLength(0);
-			} else if (scenario === "user-cancel") {
+			} else if (scenario === "user-cancel" || lostStart) {
 				expect(outcome.status).toBe("CANCELED");
+				if (lostStart)
+					expect(
+						reads.filter((call) => call === `POST ${path}/start`),
+					).toHaveLength(1);
 				expect(h.emitted).toContainEqual(
 					expect.objectContaining({ kind: "JOB_CANCELED" }),
+				);
+			} else if (
+				scenario === "owner-forbidden" ||
+				scenario === "stop-forbidden"
+			) {
+				expect(outcome.status).toBe("ERROR");
+				expect(
+					reads.filter((call) => call === `POST ${path}/stop`),
+				).toHaveLength(scenario === "stop-forbidden" ? 1 : 0);
+				expect(h.emitted).toContainEqual(
+					expect.objectContaining({
+						kind: "JOB_ERROR",
+						error: expect.stringContaining(
+							"Could not verify whether Bitmovin stopped",
+						),
+					}),
 				);
 			} else {
 				expect(outcome.status).toBe("ERROR");

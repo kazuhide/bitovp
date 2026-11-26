@@ -806,13 +806,20 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		)
 			? { matches: recordedAccountMatches, beforeStop: assertStopLease }
 			: undefined;
+		const blockRoleDelivery = async (steps: readonly StepLogEntry[]) => {
+			for (const step of steps) step.roleDeliveryBlocked = true;
+			await persist(encodingJobId, entries, { status: "RUNNING" });
+		};
 		const stopRoleManifests = async () => {
 			let outcome: "TERMINAL" | "ACTIVE" | "UNVERIFIED" = "TERMINAL";
-			for (const { entry, kind, attempted } of recordedRoleManifests(
-				entries,
-				outputKinds,
-			)) {
-				if (!attempted) continue;
+			const attempts = recordedRoleManifests(entries, outputKinds).filter(
+				({ attempted }) => attempted,
+			);
+			// The block survives a crash before STOP acknowledgement and also
+			// identifies a cleanup waiting for its first successful provider read.
+			if (attempts.length)
+				await blockRoleDelivery(attempts.map(({ entry }) => entry));
+			for (const { entry, kind } of attempts) {
 				const result =
 					entry.resourceId && recordedAccountMatches(entry)
 						? await stopRecordedRoleManifest(
@@ -954,16 +961,18 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				unsafeDestination = entry;
 			}
 			if (unsafeDestination) {
-				const error = `Prior step "${unsafeDestination.step}" lacks a verified safe role output ACL.`;
+				const unsafe = unsafeDestination;
+				const error = `Prior step "${unsafe.step}" lacks a verified safe role output ACL.`;
 				const manifests = await stopRoleManifests();
 				if (await checkCancel()) return await finalizeCancel(manifests);
-				await stopJobEncodings(entries, ids, sdk, stopEncodingScope);
-				if (manifests === "ACTIVE") {
-					unsafeDestination.roleDeliveryBlocked = true;
+				await stopJobEncodings(entries, ids, sdk, {
+					matches: recordedAccountMatches,
+					beforeStop: () => blockRoleDelivery([unsafe]),
+				});
+				if (manifests === "ACTIVE")
 					return await deferManifestStop(
 						`${error} Bitmovin manifest generation may still be stopping.`,
 					);
-				}
 				return await failRoleDelivery(
 					manifests === "UNVERIFIED"
 						? `${error} Could not verify whether Bitmovin stopped manifest generation.`
@@ -1420,6 +1429,20 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 						entry.error = undefined;
 						return await finalizeCancel();
 					}
+					const roleManifestFailure = recordedRoleManifests(
+						entries,
+						outputKinds,
+					).some(
+						({ entry: manifest, kind, attempted }) =>
+							attempted &&
+							entry.refs.manifestId === manifest.step &&
+							(entry.kind === `START_MANIFEST_${kind.toUpperCase()}` ||
+								entry.kind === `AWAIT_MANIFEST_${kind.toUpperCase()}`),
+					);
+					// START may have landed even though its reply failed. Honor a
+					// cancellation accepted during the call and keep the attempt journal.
+					if (roleManifestFailure && (await checkCancel()))
+						return await finalizeCancel();
 					const message = publicStorageDiagnostic(
 						redactSecrets(err instanceof Error ? err.message : "step failed"),
 					);
@@ -1457,10 +1480,22 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 							entry.response = redactSecrets({ stoppedSiblings: stopped });
 						}
 					}
-					await persist(encodingJobId, entries, {
-						status: "ERROR",
-						error: message,
-					});
+					if (
+						!(await persistIf(
+							encodingJobId,
+							entries,
+							{ status: "ERROR", error: message },
+							roleManifestFailure ? { cancelRequested: false } : {},
+						))
+					) {
+						if (roleManifestFailure && (await checkCancel())) {
+							entry.status = "RUNNING";
+							entry.finishedAt = undefined;
+							entry.error = undefined;
+							return await finalizeCancel();
+						}
+						throw new AttemptLeaseLostError(encodingJobId);
+					}
 					await deps.emitEvent?.({
 						kind: "JOB_ERROR",
 						jobId: encodingJobId,

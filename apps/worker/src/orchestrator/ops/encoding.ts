@@ -45,8 +45,10 @@ import {
 	BitmovinCallError,
 	findStampedResource,
 	findVerificationEncodingResources,
+	isBitmovinError,
 	optEnum,
 	outputs,
+	providerErrorWithoutDetails,
 	sdkEnumValue,
 	taskResult,
 	VerificationProviderLookupError,
@@ -108,7 +110,9 @@ export function createEncodingLifecycleOps(
 			throw new BitmovinCallError(
 				"GET",
 				`/encoding/encodings/${encodingId}/status`,
-				cause,
+				options.withholdProviderDetails && isBitmovinError(cause)
+					? providerErrorWithoutDetails(cause)
+					: cause,
 			);
 		}
 	}
@@ -604,7 +608,10 @@ export function createEncodingLifecycleOps(
 				(r) => ({ id: r.id }),
 			).then(() => undefined),
 
-		getEncodingStatus: (encodingId) => readStatus(encodingId).then(taskResult),
+		getEncodingStatus: (encodingId) =>
+			readStatus(encodingId).then((task) =>
+				taskResult(task, options.withholdProviderDetails),
+			),
 
 		// Same endpoint as getEncodingStatus, different projection: severity
 		// and timestamp kept, so a message can be attributed to one insertion.

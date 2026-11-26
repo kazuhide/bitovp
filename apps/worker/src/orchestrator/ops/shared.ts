@@ -22,6 +22,7 @@ import {
 	EncodingOutput,
 	Label,
 	OrConjunction,
+	Status,
 	type Task,
 } from "@bitmovin/api-sdk";
 import {
@@ -106,6 +107,20 @@ export function bitmovinErrorText(err: unknown): string {
 	return err instanceof Error ? publicStorageDiagnostic(err.message) : "failed";
 }
 
+/** Keep structured provider codes while dropping all provider-controlled text. */
+export function providerErrorWithoutDetails(error: unknown) {
+	if (!isBitmovinError(error)) return new Error("Bitmovin request failed");
+	return {
+		httpStatusCode: Number.isSafeInteger(error.httpStatusCode)
+			? error.httpStatusCode
+			: undefined,
+		errorCode: Number.isSafeInteger(error.errorCode)
+			? error.errorCode
+			: undefined,
+		shortMessage: "Bitmovin request failed",
+	};
+}
+
 /**
  * The error every sdk-ops call throws for a Bitmovin API failure. It carries
  * the API's curated `shortMessage` plus the method/path/status we already
@@ -164,7 +179,23 @@ export class BitmovinCallError extends Error {
 	}
 }
 
-export function taskResult(task: Task): TaskStatusResult {
+export function taskResult(
+	task: Task,
+	withholdProviderDetails = false,
+): TaskStatusResult {
+	if (withholdProviderDetails) {
+		const code = task.error?.code;
+		return {
+			status:
+				task.status && Object.hasOwn(Status, task.status)
+					? task.status
+					: "UNKNOWN",
+			progress: Number.isFinite(task.progress) ? task.progress : undefined,
+			messages: Number.isSafeInteger(code)
+				? [`Bitmovin error code ${code}`]
+				: [],
+		};
+	}
 	return {
 		status: String(task.status),
 		progress: task.progress,

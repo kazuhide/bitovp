@@ -104,6 +104,7 @@ export type OrchestratorDeps = {
 		    here lets a wiring silently drop a field, so keep it in lockstep. */
 		stamp?: CreateStamp;
 		startControl?: StartRetryControl;
+		withholdProviderDetails?: true;
 	}): SdkOps;
 	sleep(ms: number): Promise<void>;
 	pollIntervalMs: number;
@@ -567,6 +568,17 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				sdk = deps.makeSdk({
 					...(!cancelAtSetup && plan.internal?.hevcV2
 						? { internalHevcV2: plan.internal.hevcV2 }
+						: {}),
+					// GLOBAL External IDs are provider-managed and never enter our
+					// journal. Detect role storage again when resuming a persisted job.
+					...(plan.inputs.some((input) => input.kind === "S3_ROLE_BASED") ||
+					plan.outputs.some((output) => output.kind === "S3_ROLE_BASED") ||
+					entries.some(
+						(entry) =>
+							entry.kind === "CREATE_INPUT_S3_ROLE_BASED" ||
+							entry.kind === "CREATE_OUTPUT_S3_ROLE_BASED",
+					)
+						? { withholdProviderDetails: true }
 						: {}),
 					startControl: {
 						check: async (attempted) => {

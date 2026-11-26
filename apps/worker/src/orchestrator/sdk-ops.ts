@@ -1882,6 +1882,7 @@ import {
 	bitmovinErrorText,
 	isBitmovinError,
 	ProviderResponseBarrierError,
+	providerErrorWithoutDetails,
 } from "./ops/shared";
 
 export { BitmovinCallError, sdkEnumValue } from "./ops/shared";
@@ -1890,6 +1891,8 @@ export type SdkOpsOptions = {
 	aisaLive?: AisaLiveControl;
 	/** Ownership and cancellation admission for ordinary VOD/Live START only. */
 	startControl?: StartRetryControl;
+	/** Provider prose can contain a role ARN or an unjournaled GLOBAL External ID. */
+	withholdProviderDetails?: true;
 	/** Monitoring GETs share one deadline, including body download. */
 	monitoringSignal?: AbortSignal;
 	internalHevcV2?: InternalHevcV2;
@@ -2011,7 +2014,10 @@ export function createBitmovinSdkOps(
 				// second, misleading provider-call failure row.
 				throw err;
 			}
-			const e = err as {
+			const publicError = options.withholdProviderDetails
+				? providerErrorWithoutDetails(err)
+				: err;
+			const e = publicError as {
 				httpStatusCode?: number;
 				shortMessage?: string;
 				requestId?: unknown;
@@ -2045,7 +2051,7 @@ export function createBitmovinSdkOps(
 							},
 						}
 					: {}),
-				error: bitmovinErrorText(err),
+				error: bitmovinErrorText(publicError),
 			});
 			// SECURITY: the SDK builds BitmovinError.message by concatenating the
 			// raw REQUEST BODY into it (BitmovinErrorBuilder.appendRequestMessage
@@ -2059,7 +2065,7 @@ export function createBitmovinSdkOps(
 			// layer's bitmovinErrorMessage); non-Bitmovin errors are ours and
 			// carry no request body, so they pass through untouched.
 			if (isBitmovinError(err)) {
-				throw new BitmovinCallError(method, path, err);
+				throw new BitmovinCallError(method, path, publicError);
 			}
 			throw err;
 		}

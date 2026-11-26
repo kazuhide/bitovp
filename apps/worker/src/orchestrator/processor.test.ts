@@ -12,6 +12,7 @@ import type { AppPrismaClient } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeSdk as baseFakeSdk } from "./fake-sdk";
 import { applyJitFallback } from "./jit-fallback";
+import { makeWorkerSdk } from "./make-sdk";
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
 import {
 	createOrchestratorProcessor,
@@ -893,6 +894,139 @@ describe("orchestrator processor", () => {
 		expect(failed?.error).toBe("region rejected");
 		// Earlier steps stay DONE for resume.
 		expect(entries[0]?.status).toBe("DONE");
+	});
+
+	it.each([
+		["START", "input"],
+		["STATUS_READ", "output"],
+		["STATUS_TASK", "output"],
+		["START", null],
+	] as const)("projects a %s failure with %s role-backed storage", async (failure, storage) => {
+		const plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		if (storage === "input")
+			plan.inputs = plan.inputs.map((input) =>
+				input.kind === "S3" ? { ...input, kind: "S3_ROLE_BASED" } : input,
+			);
+		if (storage === "output")
+			plan.outputs = plan.outputs.map((output) =>
+				output.kind === "S3" ? { ...output, kind: "S3_ROLE_BASED" } : output,
+			);
+		const stepLog = initStepLog(compilePlan(plan));
+		for (const entry of stepLog) {
+			if (
+				entry.kind === "CREATE_INPUT_S3_ROLE_BASED" ||
+				entry.kind === "CREATE_OUTPUT_S3_ROLE_BASED"
+			) {
+				entry.status = "DONE";
+				entry.resourceId = `prior-${storage}-resource`;
+			}
+		}
+		const h = setup({ plan, stepLog });
+		const audit = vi.fn(
+			async (_entry: { data: Record<string, unknown> }) => {},
+		);
+		const makeSdk = makeWorkerSdk({
+			...h.prisma,
+			auditLog: { create: audit },
+		} as unknown as AppPrismaClient);
+		h.deps.makeSdk = (args) => {
+			const real = makeSdk(args);
+			return {
+				...h.sdk,
+				startEncoding: real.startEncoding,
+				getEncodingStatus: real.getEncodingStatus,
+			};
+		};
+
+		const role = "arn:aws:iam::111122223333:role/fixture-encoding";
+		const external = "global-credential-fixture-value";
+		const providerText = storage
+			? `AssumeRole denied for ${role}; received ${external}`
+			: "Provider refused this account's encoding setup";
+		const diagnostic = {
+			code: 2104,
+			message: providerText,
+			developerMessage: storage ? external : "Internal debugging message",
+		};
+		const rejected = () =>
+			Response.json(
+				{
+					requestId: "fixture-request",
+					status: "ERROR",
+					data: diagnostic,
+				},
+				{ status: 403 },
+			);
+		const wire = vi.fn(async (url: string, init: RequestInit) => {
+			if (url.endsWith("/bm-encoding/start") && init.method === "POST")
+				return failure === "START"
+					? rejected()
+					: Response.json({ data: { result: { status: "CREATED" } } });
+			if (url.endsWith("/bm-encoding/status") && init.method === "GET") {
+				if (failure === "STATUS_READ") return rejected();
+				return Response.json({
+					data: {
+						result:
+							failure === "STATUS_TASK"
+								? {
+										status: "ERROR",
+										error: { ...diagnostic, text: providerText },
+										messages: [{ type: "ERROR", text: providerText }],
+									}
+								: { status: "CREATED" },
+					},
+				});
+			}
+			throw new Error("Unexpected provider call in role diagnostics fixture");
+		});
+		vi.stubGlobal("fetch", wire);
+		try {
+			const outcome = await h
+				.processor({ encodingJobId: JOB_ID })
+				.catch((error: unknown) => error);
+			expect(outcome).toBeInstanceOf(Error);
+			const message = (outcome as Error).message;
+			expect(message).toContain("2104");
+			expect(h.row).toMatchObject({ status: "ERROR", error: message });
+			expect(h.row.stepLog).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: failure === "START" ? "START_ENCODING" : "AWAIT_ENCODING",
+						status: "FAILED",
+						error: message,
+					}),
+				]),
+			);
+			expect(h.emitted).toContainEqual(
+				expect.objectContaining({ kind: "JOB_ERROR", error: message }),
+			);
+			expect(wire).toHaveBeenCalledTimes(2);
+			const startAudit = audit.mock.calls[0]?.[0].data;
+			expect(startAudit).toMatchObject({
+				method: "POST",
+				path: "/encoding/encodings/bm-encoding/start",
+				statusCode: failure === "START" ? 403 : 200,
+			});
+			if (failure === "START")
+				expect(startAudit?.response).toMatchObject({ errorCode: 2104 });
+			if (storage) {
+				const outward = JSON.stringify([
+					message,
+					h.updates,
+					h.emitted,
+					audit.mock.calls,
+				]);
+				expect(outward).not.toContain(role);
+				expect(outward).not.toContain(external);
+				expect(outward).not.toContain(providerText);
+			} else {
+				expect(message).toContain(providerText);
+				expect(startAudit?.error).toContain(providerText);
+			}
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it("ignores already-finished jobs", async () => {

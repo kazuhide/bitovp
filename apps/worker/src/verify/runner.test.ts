@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
 	collectDestinationPaths,
 	compileExpectedArtefacts,
+	compilePlan,
 	DEFAULT_VMAF_MODEL,
 	encodingPlanSchema,
 } from "@bitovp/core";
@@ -1097,18 +1098,28 @@ describe('collectRunFingerprint — the image\'s commit, not "unknown" (re-audit
  * `--resume-from` would have handed out its prior PASS.
  */
 describe("planSourceIdentity — every ingest, or nothing", () => {
-	it("honors a role-backed receipt using the observer's identity for the rewritten source", async () => {
+	it.each([
+		"bbb-short.mov",
+		"/fixtures/source?literal%3F.mov",
+	])("honors a role-backed receipt for the exact source key %s", async (sourceObject) => {
 		const fixture = plans.find(
 			({ name }) => name === "fixed-bitrate-hls-on-aws-role",
 		);
 		if (!fixture) throw new Error("Missing role fixture");
-		const plan = rewriteForRun(fixture.plan, OPTIONS);
+		const options = { ...OPTIONS, sourceObject };
+		const plan = rewriteForRun(fixture.plan, options);
+		expect(
+			compilePlan(plan)
+				.filter((op) => op.kind === "CREATE_INGEST_INPUT_STREAM")
+				.map((op) => op.payload.inputPath),
+		).toEqual(plan.ingest.map(() => sourceObject));
 		const identityOf = vi.fn(
 			async (credentialId: string, bucket: string, key: string) =>
 				credentialId === ROLE_BINDING.observerCredentialId &&
-				bucket === ROLE_BINDING.inputBucket &&
-				key === OPTIONS.sourceObject
-					? 'etag="verified-source"'
+				bucket === ROLE_BINDING.inputBucket
+					? key === sourceObject
+						? 'etag="verified-source"'
+						: 'etag="different-object"'
 					: "unavailable",
 		);
 		const sourceIdentity = await planSourceIdentity(
@@ -1122,10 +1133,10 @@ describe("planSourceIdentity — every ingest, or nothing", () => {
 			dbLatestMigration: "m1",
 		};
 		const receipt = {
-			planSha256: planIdentitySha256(fixture.plan, OPTIONS, fixture.name),
-			sourceObject: OPTIONS.sourceObject,
+			planSha256: planIdentitySha256(fixture.plan, options, fixture.name),
+			sourceObject,
 			sourceIdentity: plan.ingest
-				.map(() => `${OPTIONS.sourceObject}=etag="verified-source"`)
+				.map(() => `${sourceObject}=etag="verified-source"`)
 				.join(" | "),
 			bitmovinAccountId: ACCOUNT,
 		};
@@ -1139,7 +1150,7 @@ describe("planSourceIdentity — every ingest, or nothing", () => {
 		expect(identityOf).toHaveBeenCalledWith(
 			ROLE_BINDING.observerCredentialId,
 			ROLE_BINDING.inputBucket,
-			OPTIONS.sourceObject,
+			sourceObject,
 		);
 	});
 
@@ -1181,8 +1192,8 @@ describe("planSourceIdentity — every ingest, or nothing", () => {
 		async (_credentialId: string, _bucket: string, key: string) =>
 			etags[key] ?? "unavailable";
 
-	const A = "path/to/your/input/part-a.mp4";
-	const B = "path/to/your/input/part-b.mp4";
+	const A = "/path/to/your/input/part-a.mp4";
+	const B = "/path/to/your/input/part-b.mp4";
 
 	it("folds both sources, and a swapped SECOND object changes the identity", async () => {
 		const before = await planSourceIdentity(

@@ -67,6 +67,8 @@ describe("verify job on a saved S3 role-based VOD", () => {
 		const otherRoleId = "00000000-0000-4000-8000-000000000009";
 		const inputBucket = "verify-input-bucket";
 		const outputBucket = "verify-output-bucket";
+		const sourceKey = "/fixtures/source?literal%3F.mov";
+		for (const ingest of plan.ingest) ingest.inputPath = sourceKey;
 		plan.inputs[0].credentialId = roleId;
 		plan.inputs[0].bucket = inputBucket;
 		plan.outputs[0].credentialId = matchRole ? roleId : otherRoleId;
@@ -156,7 +158,7 @@ describe("verify job on a saved S3 role-based VOD", () => {
 		expect(ports.disconnect).toHaveBeenCalledOnce();
 		expect(getObject).toHaveBeenCalledWith({
 			bucket: inputBucket,
-			key: "sintel/Sintel.2010.1080p.mkv",
+			key: sourceKey,
 		});
 		expect(
 			ports.credential.mock.calls.every(([id]) => id === observer.id),

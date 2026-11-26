@@ -32,6 +32,7 @@ import {
 	compileExpectedArtefacts,
 	DEFAULT_MSL_EDGE_HOST_SUFFIXES,
 	encodingPlanSchema,
+	isObjectStorageInput,
 	type LiveEvidenceLeg,
 	type LiveEvidenceSummary,
 	liveEvidenceSupportsPass,
@@ -577,6 +578,7 @@ export async function planSourceIdentity(
 		const input = plan.inputs.find((i) => i.key === ingest.inputKey);
 		if (
 			!input ||
+			!isObjectStorageInput(input.kind) ||
 			!("credentialId" in input) ||
 			!("bucket" in input) ||
 			typeof input.bucket !== "string"
@@ -591,7 +593,8 @@ export async function planSourceIdentity(
 			}
 			credentialId = source.credentialId;
 		}
-		const key = ingest.inputPath.replace(/^\/+/, "");
+		// Probe the literal key carried by the compiled ingest request.
+		const key = ingest.inputPath;
 		const identity = await identityOf(credentialId, input.bucket, key);
 		if (identity === "unavailable") {
 			return "unavailable";

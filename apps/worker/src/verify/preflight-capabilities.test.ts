@@ -118,7 +118,7 @@ describe("S3 role verification binding", () => {
 		s3CredentialLabel: "verify-static",
 		inputBucket: "verification-source",
 		outputBucket: "verification-output",
-		sourceObject: "source.mp4",
+		sourceObject: "/fixtures/source?literal%3F.mov",
 	};
 	const role = {
 		id: "role-id",

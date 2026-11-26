@@ -108,8 +108,10 @@ const EXPECTATIONS: Expectation[] = [
 		// The two former standalone persists disappear; both call sites still emit.
 		// An unsafe RTMP replacement marks both the channel and its run ERROR
 		// in one transaction, then emits one CHANNEL_ERROR for that broadcast.
+		// A queued START that first records its receipt while claiming the lease
+		// emits SCHEDULE_FIRED through the shared helper after the transaction.
 		writeCount: 13,
-		emitCount: 12,
+		emitCount: 13,
 	},
 	{
 		// the provider-lifecycle
@@ -293,10 +295,27 @@ const EXPECTATIONS: Expectation[] = [
 		 */
 		// The exhausted STOP also writes its run in the channel transaction. RESTART
 		// writes the still-owned channel and eligible run, then emits once for the channel.
+		// The first observed terminal START handoff emits through the shared helper.
 		file: "live/dead-job-outcome.ts",
 		writes: /data:\s*\{[^}]*status:\s*"ERROR"/gs,
 		writeCount: 5,
-		emitCount: 3,
+		emitCount: 4,
+	},
+	{
+		// The bounded START recovery emits only if its receipt write records
+		// the first handoff. Terminal evidence on an existing handoff is silent.
+		file: "live/exhausted-provisions.ts",
+		writes: /await recordRetainedScheduledStart\(/g,
+		writeCount: 1,
+		emitCount: 1,
+	},
+	{
+		// The shared SCHEDULE_FIRED helper delegates once to the notify queue.
+		// It does not update a database row. Count its callers separately.
+		file: "notify/emitter.ts",
+		writes: /\.(?:create|update|upsert)(?:Many)?\(/g,
+		writeCount: 0,
+		emitCount: 1,
 	},
 	{
 		// : the origin observer's own alert lifecycle — one open
@@ -324,7 +343,7 @@ const EXPECTATIONS: Expectation[] = [
 ];
 
 const EMIT_CALL =
-	/emitEvent\?\.\(|emitChannel\(|await recordConfirmedLiveStopNotification\(|await tx\.liveStopNotification\.create\(|await deliver\(\{/g;
+	/emitEvent\?\.\(|emitChannel\(|(?<!function )\bemitScheduleFired\(|await recordConfirmedLiveStopNotification\(|await tx\.liveStopNotification\.create\(|await deliver\(\{/g;
 
 describe("every terminal transition emits a product event (ledger #88)", () => {
 	for (const expectation of EXPECTATIONS) {

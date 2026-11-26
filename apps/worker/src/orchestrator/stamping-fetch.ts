@@ -50,7 +50,7 @@ import type { SdkFetch } from "./retrying-fetch";
 
 export type RoleStorageCreateReceipt = {
 	id: string;
-	lookupName?: string;
+	lookupName: string;
 };
 
 export type CreateStamp = {

@@ -497,8 +497,11 @@ export const stepLogEntrySchema = z.strictObject({
 			id: z.uuid(),
 			accountId: z.uuid(),
 			scopeVersion: z.uuid().optional(),
-			/** Omitted when the provider resource was named by the author. */
-			lookupName: z.string().min(1).max(64).optional(),
+			lookupName: z.string(),
+		})
+		.refine(({ id, lookupName }) => lookupName === `bitovp-role-${id}`, {
+			path: ["lookupName"],
+			error: "Role storage lookup name must match its receipt ID",
 		})
 		.optional(),
 	/** Redacted request/response snapshots (C7). */

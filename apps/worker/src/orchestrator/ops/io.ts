@@ -85,106 +85,83 @@ export function createIoOps(
 	): Promise<string> {
 		const path = `/encoding/${direction}/s3-role-based`;
 		const journal = options.stamp?.roleStorageCreateJournal?.();
-		async function recover(
-			receipt: RoleStorageCreateReceipt,
-			phase: "pre" | "post-failure",
-		) {
-			// Name filtering may be non-exact. The full opaque name keeps a normal
-			// lookup selective, and the subsequent typed detail must match exactly.
-			const lookupName = receipt.lookupName ?? p.name;
-			const description = receipt.lookupName
-				? p.name
-				: `BitOVP role storage create ${receipt.id}`;
+		async function findReservedResource({
+			lookupName,
+		}: RoleStorageCreateReceipt) {
 			const roleApi =
 				direction === "inputs"
 					? api.encoding.inputs.s3RoleBased
 					: api.encoding.outputs.s3RoleBased;
+			const limit = 100;
+			// Search by the reserved name, then prove uniqueness within one complete
+			// result. The SDK normalizes both missing and empty item arrays.
+			const page = await roleApi.list({ name: lookupName, offset: 0, limit });
+			const items = page.items;
+			if (
+				!Array.isArray(items) ||
+				items.length === 0 ||
+				items.length > limit ||
+				(page.offset !== undefined && page.offset !== 0) ||
+				(page.limit !== undefined && page.limit !== limit) ||
+				(page.totalCount === undefined
+					? items.length === limit
+					: page.totalCount !== items.length) ||
+				page.next
+			)
+				return;
+
+			const seen = new Set<string>();
 			let match: string | undefined;
-			let complete = false;
+			for (const item of items) {
+				if (
+					typeof item?.id !== "string" ||
+					!item.id.trim() ||
+					seen.has(item.id)
+				)
+					throw new Error(
+						"Role storage lookup returned an invalid resource ID",
+					);
+				seen.add(item.id);
+				if (
+					(item.name !== undefined && item.name !== lookupName) ||
+					(item.description !== undefined && item.description !== p.name)
+				)
+					continue;
+				const candidate = await roleApi.get(item.id);
+				if (candidate.id !== item.id)
+					throw new Error(
+						"Role storage detail returned a different resource ID",
+					);
+				// Bitmovin assigns the GLOBAL External ID. An older local
+				// credential value does not identify this resource.
+				if (
+					candidate.name !== lookupName ||
+					candidate.description !== p.name ||
+					candidate.bucketName !== p.bucketName ||
+					candidate.roleArn !== p.roleArn ||
+					typeof candidate.externalId !== "string" ||
+					!candidate.externalId.trim() ||
+					(candidate.externalIdMode !== undefined &&
+						candidate.externalIdMode !== ExternalIdMode.GLOBAL)
+				)
+					continue;
+				if (match)
+					throw new Error("More than one role resource matches this receipt");
+				match = candidate.id;
+			}
+			return match;
+		}
+		async function recover(
+			receipt: RoleStorageCreateReceipt,
+			phase: "pre" | "post-failure",
+		) {
+			let match: string | undefined;
 			try {
-				const limit = 100;
-				const pageCount = receipt.lookupName ? 1 : 100;
-				const seen = new Set<string>();
-				let total: number | undefined;
-				for (let index = 0; index < pageCount; index++) {
-					const offset = index * limit;
-					const page = await roleApi.list({ name: lookupName, offset, limit });
-					const items = page.items;
-					if (
-						!Array.isArray(items) ||
-						items.length > limit ||
-						(page.offset !== undefined && page.offset !== offset) ||
-						(page.limit !== undefined && page.limit !== limit)
-					)
-						break;
-					const reported = page.totalCount;
-					if (reported !== undefined) {
-						if (
-							!Number.isSafeInteger(reported) ||
-							(total !== undefined && total !== reported)
-						)
-							break;
-						total = reported;
-					}
-					if (
-						total !== undefined &&
-						(total < offset ||
-							items.length !== Math.min(limit, total - offset) ||
-							(receipt.lookupName && total > limit))
-					)
-						break;
-					// The SDK normalizes omitted/null items to []. Only a numeric
-					// total can establish a complete empty page in that projection.
-					if (items.length === 0 && total === undefined) break;
-					const terminal =
-						total === undefined
-							? items.length < limit
-							: offset + items.length === total;
-					if (terminal && page.next) break;
-					for (const item of items) {
-						if (
-							typeof item?.id !== "string" ||
-							!item.id.trim() ||
-							seen.has(item.id)
-						) {
-							throw new Error(
-								"Role storage inventory contains an invalid or repeated resource ID",
-							);
-						}
-						seen.add(item.id);
-						if (
-							(item.name !== undefined && item.name !== lookupName) ||
-							(item.description !== undefined &&
-								item.description !== description)
-						)
-							continue;
-						const candidate = await roleApi.get(item.id);
-						if (candidate.id !== item.id)
-							throw new Error(
-								"Role storage detail returned a different resource ID",
-							);
-						if (
-							candidate.description !== description ||
-							candidate.name !== lookupName ||
-							candidate.bucketName !== p.bucketName ||
-							candidate.roleArn !== p.roleArn
-						)
-							continue;
-						if (match && match !== candidate.id)
-							throw new Error(
-								"More than one role resource matches this receipt",
-							);
-						match = candidate.id;
-					}
-					if (terminal) {
-						complete = true;
-						break;
-					}
-				}
+				match = await findReservedResource(receipt);
 			} catch {
 				throw new Error("S3 role-based storage create could not be verified");
 			}
-			if (!complete || !match)
+			if (!match)
 				throw new Error(
 					"S3 role-based storage create is awaiting provider confirmation",
 				);
@@ -211,9 +188,7 @@ export function createIoOps(
 			roleArn: p.roleArn,
 			// S3 output customData can break JIT manifests. The provider name
 			// carries identity, and the authored name stays in the description.
-			...(receipt?.lookupName
-				? { name: receipt.lookupName, description: p.name }
-				: {}),
+			...(receipt ? { name: receipt.lookupName, description: p.name } : {}),
 		};
 		try {
 			const resource = await audited(

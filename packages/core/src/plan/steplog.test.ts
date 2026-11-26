@@ -4,7 +4,28 @@ import {
 	OPERATION_KINDS,
 	RUNTIME_RECORD_KINDS,
 	soleEncodingStepId,
+	stepLogEntrySchema,
 } from "./steplog";
+
+it("requires the persisted lookup name to carry its role storage receipt ID", () => {
+	const id = "32541f4a-19a2-4a27-8cf7-4af7d2978147";
+	const accountId = "00000000-0000-4000-8000-000000000001";
+	const entry = {
+		step: "output",
+		kind: "CREATE_OUTPUT_S3_ROLE_BASED",
+		payload: {},
+		refs: {},
+		status: "RUNNING",
+	};
+	const parseReceipt = (lookupName?: string) =>
+		stepLogEntrySchema.safeParse({
+			...entry,
+			roleStorageCreate: { id, accountId, lookupName },
+		});
+	expect(parseReceipt().success).toBe(false);
+	expect(parseReceipt(`bitovp-role-${accountId}`).success).toBe(false);
+	expect(parseReceipt(`bitovp-role-${id}`).success).toBe(true);
+});
 
 /**
  * `soleEncodingStepId` exists so the web's status gate and the worker's

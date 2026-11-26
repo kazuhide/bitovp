@@ -1375,7 +1375,6 @@ describe("orchestrator processor", () => {
 		["outputs", "done-write-failed"],
 		["outputs", "invalid-role"],
 		["outputs", "provider-500"],
-		["inputs", "legacy-inventory"],
 	] as const)("recovers %s role storage without duplicating %s creates", async (direction, outcome) => {
 		const plan = structuredClone(basePlan);
 		plan.bitmovin.accountId = ACCOUNT_ID;
@@ -1477,7 +1476,7 @@ describe("orchestrator processor", () => {
 				if (requests.length === 1) {
 					providerResource = { ...body, id: firstId, externalId };
 					crashSnapshot = structuredClone(h.row);
-					if (outcome === "late-visible" || outcome === "legacy-inventory")
+					if (outcome === "late-visible")
 						throw new TypeError("connection lost after committed role storage");
 					if (outcome === "provider-500")
 						return Response.json(
@@ -1501,8 +1500,7 @@ describe("orchestrator processor", () => {
 									description: "another attempt",
 								},
 								providerResource,
-								...((direction === "outputs" && outcome === "late-visible") ||
-								outcome === "legacy-inventory"
+								...(direction === "outputs" && outcome === "late-visible"
 									? Array.from({ length: 600 }, (_, index) => ({
 											id: `another-resource-${index}`,
 											name: originalName,
@@ -1585,15 +1583,6 @@ describe("orchestrator processor", () => {
 					attemptClaimedAt: new Date(0),
 				});
 			}
-			if (outcome === "legacy-inventory" && providerResource) {
-				const receipt = (h.row.stepLog as StepLogEntry[]).find(
-					(entry) => entry.kind === kind,
-				)?.roleStorageCreate;
-				if (!receipt) throw new Error("Missing legacy recovery fixture");
-				delete receipt.lookupName;
-				providerResource.name = originalName;
-				providerResource.description = `BitOVP role storage create ${receipt.id}`;
-			}
 			if (direction === "outputs" && outcome === "late-visible") {
 				const priorCalls = wire.mock.calls.length;
 				vi.mocked(h.deps.revealBitmovinAccount).mockResolvedValueOnce({
@@ -1612,12 +1601,6 @@ describe("orchestrator processor", () => {
 			).resolves.toMatchObject({
 				status: "FINISHED",
 			});
-			if (outcome === "legacy-inventory") {
-				expect(visiblePages).toHaveLength(7);
-				expect(
-					visiblePages.every((page) => page.get("name") === originalName),
-				).toBe(true);
-			}
 			expect(requests).toHaveLength(needsRecovery ? 1 : 2);
 			if (direction === "outputs" && outcome === "late-visible") {
 				expect(visiblePages).toHaveLength(1);

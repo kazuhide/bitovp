@@ -75,11 +75,10 @@ let drainWork: (() => Promise<void>) | undefined;
 let stopSweep: (() => Promise<void>) | undefined;
 const registration = createDedicatedVmafRegistration(ownership, async () => {
 	if (worker)
-		await closeVmafBullWorker(
-			worker,
-			() => Promise.all([drainWork?.(), stopSweep?.()]),
-			!started,
-		);
+		await closeVmafBullWorker(worker, async () => drainWork?.(), {
+			neverStarted: !started,
+			stopSweep,
+		});
 });
 let closing: Promise<void> | undefined;
 function close() {

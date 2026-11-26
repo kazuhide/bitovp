@@ -2126,9 +2126,7 @@ const standardVmaf =
 					);
 					return {
 						close: () =>
-							closeVmafBullWorker(worker, () =>
-								Promise.all([handle.drain(), stopSweep()]),
-							),
+							closeVmafBullWorker(worker, handle.drain, { stopSweep }),
 					};
 				},
 			)

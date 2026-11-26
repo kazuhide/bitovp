@@ -17,7 +17,7 @@ const WORKER_CLOSE_MS = 7_000;
 // FFmpeg or cloud work, so only a gracefully drained holder releases its token.
 // The producer witness attests a matching control plane and may expire safely.
 const OWNER_SCRIPT = `
-local action, role, token, detail, witness_ms, database = unpack(ARGV)
+local action, role, token, detail, witness_ms, database, qualified_server = unpack(ARGV)
 local standard, dedicated, witness, retired = unpack(KEYS)
 local holders = role == 'dedicated' and dedicated or standard
 local function has_aof()
@@ -42,6 +42,9 @@ if action == 'withdraw' then
 end
 if action == 'publish' or role == 'dedicated' then
   local server = redis.call('INFO', 'server')
+  if role == 'dedicated' and string.match(server, 'run_id:([0-9a-f]+)') ~= qualified_server then
+    error('VMAF_QUEUE_REDIS_SERVER_CHANGED')
+  end
   local replication = redis.call('INFO', 'replication')
   if not string.find(server, 'redis_mode:standalone', 1, true)
       or not string.find(replication, 'role:master', 1, true)
@@ -112,10 +115,18 @@ export async function readVmafQueueDatabase(
 	>`SELECT current_database() AS name, db.oid::text AS oid,
 		  ns.nspname AS schema, ns.oid::text AS "schemaOid",
 		EXTRACT(EPOCH FROM pg_postmaster_start_time())::text AS epoch
-		FROM pg_database db JOIN pg_namespace ns ON ns.nspname = current_schema()
+		FROM pg_catalog.pg_database db
+		JOIN pg_catalog.pg_namespace ns ON ns.nspname = current_schema()
 		WHERE db.datname = current_database() AND NOT pg_is_in_recovery()
 		  AND current_setting('transaction_read_only') = 'off'
-		  AND current_setting('default_transaction_read_only') = 'off'`;
+		  AND current_setting('default_transaction_read_only') = 'off'
+		  AND EXISTS (
+			SELECT 1 FROM pg_catalog.pg_class report
+			WHERE report.relnamespace = ns.oid AND report.relname = 'VmafJob'
+			  AND report.relkind IN ('r', 'p')
+			  AND pg_catalog.has_table_privilege(report.oid, 'SELECT')
+			  AND pg_catalog.has_table_privilege(report.oid, 'UPDATE')
+		  )`;
 	const database = rows[0];
 	if (
 		rows.length !== 1 ||
@@ -149,7 +160,7 @@ type RegistryAction =
 	| "withdraw";
 
 export function createVmafQueueRegistry(
-	redis: ResourceLeaseRedis & Pick<Redis, "call">,
+	redis: ResourceLeaseRedis & Pick<Redis, "call" | "pipeline">,
 ) {
 	const token = randomUUID();
 	const detail = {
@@ -157,6 +168,36 @@ export function createVmafQueueRegistry(
 		pid: process.pid,
 		registeredAt: new Date().toISOString(),
 	};
+	async function qualifiedRedisServer() {
+		// CONFIG GET is unavailable from Lua. Read policy and instance identity
+		// in one pipeline, then make the ownership script verify that instance.
+		const [server, config] =
+			(await redis
+				.pipeline()
+				.info("server")
+				.call("CONFIG", "GET", "appendfsync", "no-appendfsync-on-rewrite")
+				.exec()) ?? [];
+		const info: unknown = server?.[1];
+		const settings: unknown = config?.[1];
+		const id =
+			typeof info === "string"
+				? /^run_id:([a-f0-9]{40})\r?$/m.exec(info)?.[1]
+				: undefined;
+		const values = new Map<unknown, unknown>();
+		if (Array.isArray(settings)) {
+			for (let i = 0; i < settings.length; i += 2)
+				values.set(settings[i], settings[i + 1]);
+		}
+		if (
+			!id ||
+			server?.[0] ||
+			config?.[0] ||
+			values.get("appendfsync") !== "always" ||
+			values.get("no-appendfsync-on-rewrite") !== "no"
+		)
+			throw new Error("VMAF_QUEUE_SYNCHRONOUS_AOF_REQUIRED");
+		return id;
+	}
 	async function run(action: RegistryAction, role: Role, database?: string) {
 		if (
 			(action === "publish" ||
@@ -165,6 +206,10 @@ export function createVmafQueueRegistry(
 			(!database || !/^[a-f0-9]{64}$/.test(database))
 		)
 			throw new Error("VMAF_QUEUE_DATABASE_IDENTITY_UNAVAILABLE");
+		const qualifiedServer =
+			role === "dedicated" && (action === "claim" || action === "owns")
+				? await qualifiedRedisServer()
+				: "-";
 		const result = await redis.eval(
 			OWNER_SCRIPT,
 			4,
@@ -178,6 +223,7 @@ export function createVmafQueueRegistry(
 			JSON.stringify({ ...detail, database }),
 			String(PRIMARY_WITNESS_MS),
 			database ?? "-",
+			qualifiedServer,
 		);
 		if (
 			result !== 0 &&
@@ -440,14 +486,17 @@ export function guardVmafQueueOwnership<T>(
 	});
 }
 
-export async function waitForVmafBrokerClose(operation: Promise<unknown>) {
+export async function waitForVmafBrokerClose(
+	operation: Promise<unknown>,
+	unconfirmed = "VMAF_QUEUE_BROKER_CLOSE_UNCONFIRMED",
+) {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
 		await Promise.race([
 			operation,
 			new Promise<never>((_resolve, reject) => {
 				timer = setTimeout(
-					() => reject(new Error("VMAF_QUEUE_BROKER_CLOSE_UNCONFIRMED")),
+					() => reject(new Error(unconfirmed)),
 					WORKER_CLOSE_MS,
 				);
 			}),
@@ -461,15 +510,25 @@ export async function waitForVmafBrokerClose(operation: Promise<unknown>) {
  * work has done draining before closing transport or retaining the token. */
 export async function closeVmafBullWorker(
 	worker: Pick<Worker, "pause" | "close">,
-	drain: () => Promise<unknown>,
-	neverStarted = false,
+	drainHandlers: () => Promise<unknown>,
+	{
+		neverStarted = false,
+		stopSweep,
+	}: {
+		neverStarted?: boolean;
+		stopSweep?: () => Promise<unknown>;
+	} = {},
 ) {
-	const drained = drain();
-	try {
-		if (!neverStarted) await waitForVmafBrokerClose(worker.pause(true));
-	} finally {
-		await drained;
-	}
+	// Bound broker bookkeeping and sweeps separately. Active scoring can
+	// finish normally and must drain even if either of the other steps fails.
+	const results = await Promise.allSettled([
+		drainHandlers(),
+		neverStarted ? undefined : waitForVmafBrokerClose(worker.pause(true)),
+		stopSweep &&
+			waitForVmafBrokerClose(stopSweep(), "VMAF_QUEUE_SWEEP_DRAIN_UNCONFIRMED"),
+	]);
+	const failure = results.find((result) => result.status === "rejected");
+	if (failure) throw failure.reason;
 	await waitForVmafBrokerClose(worker.close(neverStarted));
 }
 

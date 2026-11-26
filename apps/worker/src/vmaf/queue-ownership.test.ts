@@ -12,6 +12,26 @@ import {
 
 afterEach(() => vi.useRealTimers());
 
+function policyPipeline(fsync = "always", skipRewriteSync = "no") {
+	const batch = {
+		info: vi.fn(() => batch),
+		call: vi.fn(() => batch),
+		exec: vi.fn(async () => [
+			[null, `# Server\r\nrun_id:${"a".repeat(40)}\r\n`],
+			[
+				null,
+				["appendfsync", fsync, "no-appendfsync-on-rewrite", skipRewriteSync],
+			],
+		]),
+	};
+	return vi.fn(
+		() =>
+			batch as unknown as ReturnType<
+				Parameters<typeof createVmafQueueRegistry>[0]["pipeline"]
+			>,
+	);
+}
+
 function standardConsumerFixture() {
 	const registry = {
 		claim: vi.fn(async (_role: string) => true),
@@ -176,6 +196,31 @@ it("drains active handlers before closing Redis and retains ownership if broker 
 	expect(release).not.toHaveBeenCalled();
 });
 
+it("bounds a stranded sweep without interrupting active scoring or releasing its reservation", async () => {
+	vi.useFakeTimers();
+	let finishScoring = () => {};
+	const scoring = new Promise<void>((resolve) => {
+		finishScoring = resolve;
+	});
+	const stuckSweep = vi.fn(() => new Promise<void>(() => {}));
+	const worker = { pause: vi.fn(async () => {}), close: vi.fn(async () => {}) };
+	const release = vi.fn(async () => {});
+	const closing = closeVmafQueueConsumer(
+		() => closeVmafBullWorker(worker, () => scoring, { stopSweep: stuckSweep }),
+		release,
+	);
+	const receipt = expect(closing).rejects.toThrow(
+		"VMAF_QUEUE_SWEEP_DRAIN_UNCONFIRMED",
+	);
+	await vi.advanceTimersByTimeAsync(7_000);
+	expect(stuckSweep).toHaveBeenCalledOnce();
+	expect(worker.close).not.toHaveBeenCalled();
+	expect(release).not.toHaveBeenCalled();
+	finishScoring();
+	await receipt;
+	expect(release).not.toHaveBeenCalled();
+});
+
 it("stops startup and releases a possibly written dedicated claim even when its reply was lost", async () => {
 	let loseReply = (_error: Error) => {};
 	const registry = {
@@ -219,6 +264,7 @@ it("confirms a dedicated removal reached AOF even when retry finds no registered
 	const redis = {
 		eval: vi.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(1),
 		call: vi.fn().mockResolvedValue([1, 0]),
+		pipeline: policyPipeline(),
 	};
 	await expect(
 		createVmafQueueRegistry(redis).release("dedicated"),
@@ -230,6 +276,7 @@ it("refuses a release receipt if reconnect loses the retirement marker", async (
 	const redis = {
 		eval: vi.fn().mockResolvedValueOnce(3).mockResolvedValueOnce(0),
 		call: vi.fn().mockResolvedValue([1, 0]),
+		pipeline: policyPipeline(),
 	};
 	await expect(
 		createVmafQueueRegistry(redis).release("dedicated"),
@@ -240,6 +287,7 @@ it("releases a reservation before any consumption if Redis has not persisted its
 	const redis = {
 		eval: vi.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(1),
 		call: vi.fn().mockResolvedValue([0, 0]),
+		pipeline: policyPipeline(),
 	};
 	const ownership = createVmafQueueRegistry(redis);
 	const database = "a".repeat(64);
@@ -251,6 +299,26 @@ it("releases a reservation before any consumption if Redis has not persisted its
 		"claim",
 		"abandon",
 	]);
+});
+
+it.each([
+	["everysec", "no"],
+	["always", "yes"],
+])("refuses a dedicated claim and admission with appendfsync=%s and skipped rewrite sync=%s", async (fsync, skipRewriteSync) => {
+	const redis = {
+		eval: vi.fn(),
+		call: vi.fn(),
+		pipeline: policyPipeline(fsync, skipRewriteSync),
+	};
+	const registry = createVmafQueueRegistry(redis);
+	const database = "a".repeat(64);
+	await expect(registry.claim("dedicated", database)).rejects.toThrow(
+		"VMAF_QUEUE_SYNCHRONOUS_AOF_REQUIRED",
+	);
+	await expect(registry.owns("dedicated", database)).rejects.toThrow(
+		"VMAF_QUEUE_SYNCHRONOUS_AOF_REQUIRED",
+	);
+	expect(redis.eval).not.toHaveBeenCalled();
 });
 
 it("binds topology to the live writable database, its schema and its restart epoch", async () => {
@@ -289,6 +357,7 @@ it.each([
 	const redis = {
 		eval: vi.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(1),
 		call: vi.fn().mockRejectedValue(new Error(message)),
+		pipeline: policyPipeline(),
 	};
 	await expect(createVmafQueueRegistry(redis).claim("worker")).resolves.toBe(
 		true,
@@ -297,4 +366,5 @@ it.each([
 		"claim",
 		"owns",
 	]);
+	expect(redis.pipeline).not.toHaveBeenCalled();
 });

@@ -356,16 +356,20 @@ pnpm --filter @bitovp/worker start:vmaf
 Run one dedicated process per queue. It requires Linux, a matching native
 scorer and supervisor, readable host resource limits, and a Redis connection
 that can list existing clients. Dedicated mode requires one standalone Redis
-server with persistent AOF storage, `maxmemory-policy noeviction`, and Redis
-7.2 or later. Selecting `dedicated` means the Redis endpoint stays on that
+server running Redis 7.2 or later. Persist these server settings across
+restarts: `appendonly yes`, `appendfsync always`,
+`no-appendfsync-on-rewrite no`, and `maxmemory-policy noeviction`.
+Selecting `dedicated` means the Redis endpoint stays on that
 server throughout the ownership period. Use standard mode with replicated
 Redis, Sentinel, Cluster, or a managed endpoint that can promote or replace its
 writer. Dedicated mode checks the server role and replication information.
-The Redis credentials must allow `INFO` and `WAITAOF`.
+The dedicated Redis credentials must allow `INFO`, `WAITAOF`, and read-only
+`CONFIG GET` for the AOF settings.
 
 The primary announces its writable PostgreSQL session's database and schema
 while its orchestration and notification workers are ready. The dedicated
-worker requires the same writer, database, schema, and Redis database.
+worker requires the same writer, database, schema, and Redis database. Both
+PostgreSQL sessions must have SELECT and UPDATE privileges on `VmafJob`.
 Restart the dedicated worker after a PostgreSQL restart or failover to verify
 the new writer. The primary enqueues measurements and delivers events. The QC
 consumer reconciles stranded reports against its own queue.
@@ -378,8 +382,9 @@ announcement is unavailable, QC jobs wait for verification.
 The standard worker starts or resumes QC automatically once Redis confirms
 its registration and any dedicated consumer has drained.
 After active QC work drains, workers retry releasing their registration during
-a transient Redis disconnect. If broker shutdown or registry removal cannot be
-confirmed, the worker exits with an error and may leave its registration held.
+a transient Redis disconnect. If the report sweep, broker shutdown, or
+registry removal cannot be confirmed, the worker exits with an error and may
+leave its registration held.
 
 To inspect a registration after an interrupted shutdown, use `redis-cli`
 against the deployment's Redis database and run the following commands.
@@ -393,8 +398,8 @@ The values identify the registering host, process ID and timestamp. Before
 removing a stale token, confirm that the worker and its native and cloud jobs
 have stopped or have been reconciled. Delete only that token with
 `HDEL <registry-key> <token>`. Before any Redis restore, reinitialization,
-replication change, or endpoint move, stop and drain all QC consumers. Bring
-the queue back online after verifying the intended topology.
+replication or persistence change, or endpoint move, stop and drain all QC
+consumers. Bring the queue back online after verifying the intended topology.
 
 For Live QC, share the feeder spool when possible so the QC worker can read the
 original normalized file. Otherwise it rebuilds the reference using the

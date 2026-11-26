@@ -468,8 +468,12 @@ it.each([
 	const stopSweep = vi.fn(async () => {});
 	const startOwnedVmafReconciliation = vi.fn(() => stopSweep);
 	const closeVmafBullWorker = vi.fn(
-		async (_worker: unknown, drain: () => Promise<unknown>) => {
-			await drain();
+		async (
+			_worker: unknown,
+			drain: () => Promise<unknown>,
+			shutdown: { stopSweep(): Promise<unknown> },
+		) => {
+			await Promise.all([drain(), shutdown.stopSweep()]);
 		},
 	);
 	const { standardVmaf } = load(

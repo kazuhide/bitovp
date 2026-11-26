@@ -5106,6 +5106,276 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			return { scope, ...(await dispatchFixture(encodingId, scope)) };
 		}
 
+		async function scheduledStopReceiptFixture(legacy: boolean) {
+			const f = await isolatedDispatchFixture(randomUUID());
+			const id = randomUUID();
+			const stopDeliveryToken = legacy ? null : randomUUID();
+			const jobId = scheduledStopJobId(id, stopDeliveryToken);
+			await f.scope.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					status: "STOPPING",
+					liveEffectFenceVersion: 2,
+					legacyAdmissionFenceVersion: 2,
+				},
+			});
+			await f.scope.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			await f.scope.liveSchedule.create({
+				data: {
+					id,
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					status: "FIRED",
+					fireAt: now,
+					firedAt: now,
+					dispatchedAt: now,
+					dispatchJobId: jobId,
+					...(stopDeliveryToken && {
+						stopDeliveryToken,
+						stopProviderEncodingId: f.encodingId,
+						stopAdmissionFenceVersion: 2,
+					}),
+				},
+			});
+			const idempotencyKey = `schedule:${id}:stop`;
+			const job = {
+				liveChannelId: f.channel.id,
+				plannedLiveChannelRunId: f.run.id,
+				action: "stop" as const,
+				...(stopDeliveryToken && {
+					effect: {
+						...f.identity,
+						idempotencyKey,
+						scheduleId: id,
+						admissionFenceVersion: 2,
+						stopDeliveryToken,
+					},
+				}),
+			};
+			const later = new Date(now.getTime() + 86_400_000);
+			const observe = createUncertainStopReconciler(
+				{
+					...f.deps,
+					now: () => later.toISOString(),
+					makeSdk: () =>
+						fakeSdk({
+							getEncodingStatus: vi.fn(async () => ({ status: "FINISHED" })),
+						}),
+				},
+				vi.fn(),
+			);
+			const schedule = () =>
+				f.scope.liveSchedule.findUniqueOrThrow({ where: { id } });
+			const saved = () =>
+				f.scope.liveEffectClaim.findUniqueOrThrow({
+					where: { idempotencyKey },
+				});
+			const processStop = () =>
+				createLiveChannelProcessor(f.deps)(job, jobId, legacy);
+			return {
+				...f,
+				later,
+				observe,
+				schedule,
+				saved,
+				processStop,
+				scheduleId: id,
+			};
+		}
+
+		it.each([
+			"owner returns after terminal observer",
+			"observer reads after owner stored acceptance",
+			"same schedule has a newer handoff",
+			"same schedule has a newer pending handoff",
+		] as const)("repairs only an exact accepted bare scheduled STOP (%s)", async (order) => {
+			const f = await scheduledStopReceiptFixture(true);
+			const reading = barrier();
+			const release = barrier();
+			f.sdk.stopLiveEncoding = vi.fn(async () => {});
+			f.sdk.getEncodingStatus = vi.fn(async () => {
+				if (order === "observer reads after owner stored acceptance")
+					throw new Error("inline status read failed after POST");
+				reading.release();
+				await release.ready;
+				return { status: "FINISHED" };
+			});
+			if (order === "observer reads after owner stored acceptance") {
+				expect(await f.processStop()).toMatchObject({
+					status: "EFFECT_AMBIGUOUS",
+				});
+				expect(await f.saved()).toMatchObject({
+					stopOutcomeEvidence: {
+						acceptedScheduledDelivery: {
+							admissionFence: 2,
+							accountId: f.accountId,
+						},
+					},
+				});
+				expect(await f.schedule()).toMatchObject({ outcome: "UNKNOWN" });
+				expect(await f.observe()).toBe(1);
+			} else {
+				const running = f.processStop();
+				try {
+					await Promise.race([
+						reading.ready,
+						running.then(() => {
+							throw new Error("The owner finished before reaching inline GET");
+						}),
+					]);
+					expect(await f.observe()).toBe(1);
+					expect(await f.saved()).toMatchObject({ state: "ACKED" });
+					expect(await f.schedule()).toMatchObject({ outcome: "UNKNOWN" });
+					if (order.startsWith("same schedule has a newer"))
+						await f.scope.liveSchedule.update({
+							where: { id: f.scheduleId },
+							data: {
+								firedAt: f.later,
+								dispatchedAt: f.later,
+								...(order === "same schedule has a newer pending handoff" && {
+									outcome: "PENDING",
+								}),
+							},
+						});
+				} finally {
+					release.release();
+					await running;
+				}
+			}
+			expect(await f.schedule()).toMatchObject({
+				outcome: {
+					"owner returns after terminal observer": "DELIVERED",
+					"observer reads after owner stored acceptance": "DELIVERED",
+					"same schedule has a newer handoff": "UNKNOWN",
+					"same schedule has a newer pending handoff": "PENDING",
+				}[order],
+			});
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+				f.encodingId,
+			);
+		});
+
+		it.each([
+			"unread",
+			"active",
+		] as const)("preserves accepted AISA Encoding STOP when heartbeat and observer win before the %s inline GET completes", async (inline) => {
+			const f = await scheduledStopReceiptFixture(false);
+			const analysisId = randomUUID();
+			await f.scope.liveChannel.update({
+				where: { id: f.channel.id },
+				data: {
+					plan: {
+						bitmovin: { accountId: f.accountId },
+						start: { aiSceneAnalysisLive: {} },
+					},
+				},
+			});
+			await f.scope.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { aisaAnalysisId: analysisId, aisaStatus: "RUNNING" },
+			});
+			provider.aisa.mockReturnValue({
+				get: vi.fn(async () => ({
+					analysisId,
+					encodingId: f.encodingId,
+					status: "FINISHED",
+				})),
+				latest: vi.fn(async () => ({
+					analysisId,
+					encodingId: f.encodingId,
+					isFinal: true,
+					sequence: 1,
+					producedAt: now.toISOString(),
+					mediaTimeOriginUnixMs: now.getTime(),
+					analyzedStartTimeSeconds: 0,
+					analyzedEndTimeSeconds: 60,
+					metadata: { version: "1", disclaimer: "Preview" },
+					observations: [],
+					keyMoments: [],
+					sourceGaps: [],
+				})),
+			});
+			let posted = false;
+			const reading = barrier();
+			const release = barrier();
+			f.sdk.stopLiveEncoding = vi.fn(async () => {
+				posted = true;
+			});
+			f.sdk.getEncodingStatus = vi.fn(async () => {
+				if (!posted) return { status: "RUNNING" };
+				reading.release();
+				await release.ready;
+				if (inline === "unread") throw new Error("inline Encoding GET failed");
+				return { status: "RUNNING" };
+			});
+			f.deps.makeSdk = (options) => ({
+				...f.sdk,
+				...createAisaLiveOps(
+					{ options, audited: (_method, _path, _body, fn) => fn() },
+					f.sdk,
+					f.sdk,
+				),
+			});
+			const running = f.processStop();
+			try {
+				await Promise.race([
+					reading.ready,
+					running.then(() => {
+						throw new Error("The owner finished before reaching inline GET");
+					}),
+				]);
+				expect(
+					await f.scope.liveChannelRun.findUniqueOrThrow({
+						where: { id: f.run.id },
+					}),
+				).toMatchObject({
+					aisaFinalization: { result: "FINAL" },
+				});
+				await f.scope.liveChannelRun.update({
+					where: { id: f.run.id },
+					data: {
+						providerStatus: "FINISHED",
+						providerStatusObservedAt: f.later,
+						providerTerminalAt: f.later,
+					},
+				});
+				expect(await f.observe()).toBe(1);
+				expect(await f.saved()).toMatchObject({ state: "ACKED" });
+				expect(await f.schedule()).toMatchObject({ outcome: "UNKNOWN" });
+			} finally {
+				release.release();
+				await running;
+			}
+			expect(await running).toMatchObject({
+				status: "EFFECT_ALREADY_ACKNOWLEDGED",
+			});
+			expect(await f.saved()).toMatchObject({
+				state: "ACKED",
+				stopOutcomeEvidence: {
+					acceptedScheduledDelivery: {
+						admissionFence: 2,
+						accountId: f.accountId,
+					},
+				},
+			});
+			expect(await f.schedule()).toMatchObject({ outcome: "DELIVERED" });
+			expect(
+				await f.scope.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({
+				status: "STOPPED",
+				error: null,
+			});
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+				f.encodingId,
+			);
+		});
+
 		it.each([
 			"terminal",
 			"active",

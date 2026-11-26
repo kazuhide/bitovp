@@ -121,6 +121,8 @@ export async function recordOwnedScheduledStopDelivery(
 		liveChannelRunId: string;
 		providerEncodingId: string;
 		admissionFence: number;
+		claimDispatchedAt: Date | null;
+		legacyAdmissionMatches: boolean;
 		at: Date;
 	},
 ) {
@@ -150,13 +152,22 @@ export async function recordOwnedScheduledStopDelivery(
 		{ outcome: "PENDING" },
 		{ outcome: "FAILED", outcomeEvidenceKind: "EFFECT_FAILED" },
 	];
-	if (!legacy)
+	const legacyClaimDispatchedAt = legacy ? input.claimDispatchedAt : null;
+	if (!legacy || (legacyClaimDispatchedAt && input.legacyAdmissionMatches))
 		outcomes.push({
 			outcome: "UNKNOWN",
 			outcomeEvidenceKind: {
 				in: ["JOB_TERMINAL_UNKNOWN", "PROVIDER_STATUS_UNKNOWN"],
 			},
 			outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+			// A bare key can survive a refire. Only repair its already handed-off
+			// occurrence, never a fire or receipt written after this claim.
+			...(legacy &&
+				legacyClaimDispatchedAt && {
+					dispatchJobId: expectedJobId,
+					firedAt: { lte: legacyClaimDispatchedAt },
+					dispatchedAt: { lte: legacyClaimDispatchedAt },
+				}),
 		});
 	await tx.liveSchedule.updateMany({
 		where: {
@@ -171,7 +182,25 @@ export async function recordOwnedScheduledStopDelivery(
 			...(legacy
 				? { OR: [{ dispatchJobId: null }, { dispatchJobId: expectedJobId }] }
 				: { dispatchedAt: { not: null }, dispatchJobId: expectedJobId }),
-			AND: [{ OR: outcomes }],
+			AND: [
+				{ OR: outcomes },
+				...(legacyClaimDispatchedAt
+					? [
+							{
+								OR: [
+									{ firedAt: null },
+									{ firedAt: { lte: legacyClaimDispatchedAt } },
+								],
+							},
+							{
+								OR: [
+									{ dispatchedAt: null },
+									{ dispatchedAt: { lte: legacyClaimDispatchedAt } },
+								],
+							},
+						]
+					: []),
+			],
 		},
 		data: {
 			outcome: "DELIVERED",

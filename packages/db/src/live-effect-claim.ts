@@ -1843,6 +1843,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						legacyUnsentStopIds: true,
 						stopAnalysisSendId: true,
 						stopOutcomeEvidence: true,
+						dispatchedAt: true,
 					},
 				}),
 			]);
@@ -1867,6 +1868,8 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					| "idempotencyKey"
 					| "token"
 					| "generation"
+					| "attempt"
+					| "dispatchedAt"
 					| "stopProtocolVersion"
 					| "stopSendEncodingIds"
 					| "stopOutcomeEvidence"
@@ -1889,6 +1892,8 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					claim.id === stopClaim.id &&
 					owner?.token === claim.token &&
 					owner.generation === claim.generation &&
+					channel &&
+					owner.bitmovinAccountId === liveChannelAccountId(channel) &&
 					owner.encodings.some(
 						(encoding) =>
 							encoding.id === input.providerEncodingId &&
@@ -1910,6 +1915,14 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					await recordOwnedScheduledStopDelivery(tx, {
 						...target,
 						admissionFence,
+						claimDispatchedAt: claim.dispatchedAt,
+						legacyAdmissionMatches:
+							!!channel &&
+							isLiveStopAdmissionFence(
+								channel.legacyAdmissionFenceVersion,
+								claim.generation,
+								claim,
+							),
 					});
 				if (recordObservation)
 					await recordObservedScheduledStop(tx, {
@@ -2423,8 +2436,16 @@ export async function resolveLiveEffectsAfterConfirmedStop(
 					id: input.stopClaimId,
 					idempotencyKey: input.stopIdempotencyKey,
 				}))
-			)
+			) {
+				// The observation may have committed after our first snapshot. Let
+				// the ACK branch merge any exact owner receipt before returning.
+				if (
+					input.ownerReadbacks?.acceptedScheduleAdmission !== undefined &&
+					attempt < 2
+				)
+					continue;
 				return { kind: "ALREADY_ACKED" };
+			}
 			return outcome;
 		} catch (error) {
 			if (!isPrismaSerializationConflict(error) || attempt >= 2) throw error;
@@ -2615,6 +2636,117 @@ export async function markLiveEffectAcked(
 	return count === 1;
 }
 
+/** Combine a late POST receipt with the terminal projection the observer committed. */
+async function recordAcceptedStopAfterAck(
+	tx: AppTransactionClient,
+	claim: LiveEffectClaimHandle,
+	input: {
+		acceptedScheduleAdmission?: number;
+		accountId?: string | null;
+		at: Date;
+	},
+): Promise<void> {
+	const { scheduleId, providerEncodingId, liveChannelId, liveChannelRunId } =
+		claim;
+	const { acceptedScheduleAdmission, accountId, at } = input;
+	if (
+		!scheduleId ||
+		claim.idempotencyKey !== `schedule:${scheduleId}:stop` ||
+		acceptedScheduleAdmission === undefined ||
+		!accountId
+	)
+		return;
+	await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${liveChannelId}::uuid FOR UPDATE`;
+	const [channel, run, acknowledged] = await Promise.all([
+		tx.liveChannel.findUnique({
+			where: { id: liveChannelId },
+			select: {
+				plan: true,
+				bitmovinAccountId: true,
+				legacyAdmissionFenceVersion: true,
+			},
+		}),
+		tx.liveChannelRun.findFirst({
+			where: {
+				id: liveChannelRunId,
+				liveChannelId,
+				bitmovinEncodingId: providerEncodingId,
+				status: { in: ["STOPPED", "ERROR"] },
+				providerStatusObservedAt: { not: null },
+				providerTerminalAt: { not: null },
+			},
+			select: { providerStatus: true },
+		}),
+		tx.liveEffectClaim.findFirst({
+			where: {
+				id: claim.id,
+				token: claim.token,
+				generation: claim.generation,
+				idempotencyKey: claim.idempotencyKey,
+				action: "STOP",
+				state: "ACKED",
+				acknowledgedAt: { not: null },
+				scheduleId,
+				providerEncodingId,
+				liveChannelId,
+				liveChannelRunId,
+				stopProtocolVersion: 1,
+				stopSendEncodingIds: { has: providerEncodingId },
+			},
+			select: { attempt: true, dispatchedAt: true, stopOutcomeEvidence: true },
+		}),
+	]);
+	if (
+		!channel ||
+		liveChannelAccountId(channel) !== accountId ||
+		!run ||
+		classifyProviderStatusWord(run.providerStatus) !== "TERMINAL" ||
+		!acknowledged ||
+		!isLiveStopAdmissionFence(
+			acceptedScheduleAdmission,
+			claim.generation,
+			acknowledged,
+		)
+	)
+		return;
+	const oldEvidence = acknowledged.stopOutcomeEvidence;
+	await tx.liveEffectClaim.update({
+		where: {
+			id: claim.id,
+			token: claim.token,
+			generation: claim.generation,
+			state: "ACKED",
+		},
+		data: {
+			stopOutcomeEvidence: {
+				...(oldEvidence &&
+				typeof oldEvidence === "object" &&
+				!Array.isArray(oldEvidence)
+					? oldEvidence
+					: {}),
+				acceptedScheduledDelivery: {
+					accountId,
+					admissionFence: acceptedScheduleAdmission,
+				},
+			},
+		},
+	});
+	await recordOwnedScheduledStopDelivery(tx, {
+		scheduleId,
+		providerEncodingId,
+		liveChannelId,
+		liveChannelRunId,
+		admissionFence: acceptedScheduleAdmission,
+		claimDispatchedAt: acknowledged.dispatchedAt,
+		legacyAdmissionMatches: isLiveStopAdmissionFence(
+			channel.legacyAdmissionFenceVersion,
+			claim.generation,
+			acknowledged,
+		),
+		at,
+	});
+}
+
 /** A late owner cannot overwrite the winner's channel, history, or error evidence. */
 export async function recordLiveStopFailure(
 	prisma: AppPrismaClient,
@@ -2649,9 +2781,9 @@ export async function recordLiveStopFailure(
 			data: { status: input.status, error: input.error },
 		});
 		if (!current.count) {
-			return (await wasLiveStopAcknowledged(tx, claim))
-				? "ALREADY_ACKED"
-				: "LOST";
+			if (!(await wasLiveStopAcknowledged(tx, claim))) return "LOST";
+			await recordAcceptedStopAfterAck(tx, claim, input);
+			return "ALREADY_ACKED";
 		}
 		const run = {
 			id: claim.liveChannelRunId,

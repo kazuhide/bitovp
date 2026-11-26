@@ -191,29 +191,19 @@ writeability are recorded separately; an unannotated property is not assumed
 writable. Nested fields, query parameters, and enum choices are not included in
 the top-level direct-property ratio as though they had been audited.
 
-## Next coverage work
+## Scope of resource and delivery management
 
-**Error Definitions** is now available in Settings and from VOD/Live failure
-details. It searches the selected account's generic error catalogue; it is not
-a failure-history viewer and never restarts a job.
+**Error Definitions** searches the selected account's generic catalogue.
+Resource inspection is scoped to a [VOD job](user-guide/VOD.md#inspect-or-remove-a-provider-resource)
+or a [Live run](user-guide/LIVE.md#inspect-a-runs-provider-resources).
+VOD removal is individually confirmed. Live resource inspection is read-only.
+Presets and watch folders use application-managed templates and storage sweeps.
 
-The [functional gap audit](ENCODING-FUNCTIONAL-GAPS.md) prioritizes actual encoding
-capabilities, including embedded caption extraction. The VOD [audio file workflow](user-guide/VOD.md#audio-only-files) supports PCM/WAV and bounded audio copying. The audit traces
-closed plan unions and execution paths instead of treating unconfirmed SDK
-calls as missing features. Per-rendition Stream Conditions and AND/OR groups are
-available in the VOD and Live editors on the existing stream-create operation.
-Source support is not provider qualification.
-
-Native Templates, Native Watch Folders and resource CRUD remain a separate
-management lane. Current Watch folders use application watch rules and a storage
-sweep; they do not implement the provider's native Watch Folders API. Live MSL
-and SFTP mirror authoring remains a GUI gap; primary MSL already has a path and
-valid expert-JSON mirror plans are preserved.
-
-The Live wizard uses encrypted MoQ credentials. See the [relay settings](./user-guide/LIVE.md#experimental-moq-delivery)
-and [Cloudflare draft 16 trial](./MOQ-LIVE-ENCODER-TEST-RESULTS.md).
-AV1 Per-Title `targetQualityCrf` is an existing field whose upstream documentation
-changed, not an operation or field newly implemented by this upgrade.
+The VOD authoring plan has no H.262, MJPEG, or VP8 configuration and no
+dedicated Broadcast TS or MXF muxing. Live output supports primary MSL.
+Author storage mirrors in the wizard and keep supported MSL or SFTP mirror
+configurations in expert JSON. MoQ setup and scope are covered in the
+[Live guide](user-guide/LIVE.md#experimental-moq-delivery).
 
 A successful encode, an available manifest, and browser playback are separate
 checks. Verify the expected renditions and actual delivery after encoding;

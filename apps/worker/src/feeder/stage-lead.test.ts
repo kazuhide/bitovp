@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
 	estimateStageLeadMs,
-	PAID_RUN_5,
 	STAGE_LEAD_BANDWIDTH_BYTES_PER_SEC,
 	STAGE_LEAD_BASE_MS,
 	STAGE_LEAD_MAX_MS,
 } from "./stage-lead";
+
+// Observed in paid run #5 (2026-08-29 audit §4 HIGH-3).
+const PAID_RUN_5 = {
+	sourceBytes: 725_000_000,
+	firedToPushingMs: 29_193,
+	firedToConnectedMs: 53_488,
+} as const;
 
 describe("estimateStageLeadMs (row #240 — the pre-stage lead)", () => {
 	it("is base + size / bandwidth for an ordinary source", () => {

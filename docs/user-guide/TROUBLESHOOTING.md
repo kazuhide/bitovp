@@ -58,7 +58,8 @@ publication buffer; use the player's retry action after resolving the cause.
 - `RUNNING`: worker/encoder is active; input/output/playback still need checking.
 - `CONNECTED`: observed live input connection; does not prove delivery.
 - `PUSHING`: feeder is sending; does not prove provider receipt.
-- `FIRED`: scheduled action dispatched; does not prove the intended media result.
+- `FIRED`: scheduled action claimed. Check the channel or feeder state for the
+  outcome. The scheduler can still be confirming dispatch.
 - `FINISHED`: encoding ended; does not prove complete delivery or playback.
 
 ## Stop or cancel

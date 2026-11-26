@@ -1,3 +1,4 @@
+import { describeMediaDifferences } from "@bitovp/core";
 import { describe, expect, it } from "vitest";
 import {
 	AAC_FRAME_SAMPLES,
@@ -8,7 +9,6 @@ import {
 	checkSourceSatisfiesIngest,
 	compareSourceCompatibility,
 	decideCodecMode,
-	describeSourceDifferences,
 	expectedIngestMedia,
 	heartbeatIngestMedia,
 	loopProfileFromProbe,
@@ -893,7 +893,7 @@ describe("compareSourceCompatibility (ledger #239)", () => {
 		expect(
 			result.differences.filter((d) => d.blocking).map((d) => d.attribute),
 		).toEqual(["resolution", "frame rate", "H.264 profile", "H.264 level"]);
-		const text = describeSourceDifferences(result.differences);
+		const text = describeMediaDifferences(result.differences);
 		// The four lines Bitmovin's heartbeat itself warned about.
 		expect(text).toContain("resolution 1920×1080 → 1920×1012");
 		expect(text).toContain("frame rate 30000/1001 → 24/1");
@@ -961,7 +961,7 @@ describe("compareSourceCompatibility (ledger #239)", () => {
 		expect(result.compatible).toBe(false);
 		const hit = result.differences.find((d) => d.attribute === attribute);
 		expect(hit?.blocking).toBe(true);
-		expect(describeSourceDifferences(result.differences)).toContain(line);
+		expect(describeMediaDifferences(result.differences)).toContain(line);
 	});
 
 	/** The pins a transcoding push onto THIS reference would actually carry. */
@@ -997,7 +997,7 @@ describe("compareSourceCompatibility (ledger #239)", () => {
 			"audio channels",
 		]);
 		expect(result.differences.every((d) => !d.blocking)).toBe(true);
-		expect(describeSourceDifferences(result.differences)).toContain(
+		expect(describeMediaDifferences(result.differences)).toContain(
 			"resolution 1920×1080 → 1280×720 (will be re-encoded to match)",
 		);
 	});
@@ -1129,7 +1129,7 @@ describe("compareSourceCompatibility (ledger #239)", () => {
 			"copy",
 		);
 		expect(surplus.compatible).toBe(false);
-		expect(describeSourceDifferences(surplus.differences)).toContain(
+		expect(describeMediaDifferences(surplus.differences)).toContain(
 			"audio streams 1 → 2",
 		);
 		// A reference with NO audio still says nothing — that guard is the
@@ -1185,7 +1185,7 @@ describe("compareSourceCompatibility (ledger #239)", () => {
 		};
 		const blocked = compareSourceCompatibility(ntsc, integer, "copy");
 		expect(blocked.compatible).toBe(false);
-		expect(describeSourceDifferences(blocked.differences)).toContain(
+		expect(describeMediaDifferences(blocked.differences)).toContain(
 			"frame rate 30000/1001 → 30/1",
 		);
 		// And the other side of the boundary: 0.005 apart is the same rate

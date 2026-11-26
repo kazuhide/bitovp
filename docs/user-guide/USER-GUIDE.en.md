@@ -10,18 +10,17 @@ If an administrator has already installed bitovp, obtain the application URL and
 
 The following steps describe a new Docker installation on macOS or Linux. For an existing installation, read [Upgrades, backups, and shutdown](https://kazuhide.github.io/bitovp/guide/appendix/#upgrades-backups-and-shutdown) before changing its database.
 
-Install Docker Engine or Docker Desktop and Docker Compose 2.30.0 or later. Initial setup also uses Node.js 24 LTS with current security patches and pnpm 11. Git is needed if you clone the source instead of downloading a release. The default ports are 3100 for Web, 5432 for PostgreSQL, and 6379 for Redis.
+Install Docker Engine or Docker Desktop and Docker Compose 2.30.0 or later. Initial setup also uses Node.js 24 LTS with current security patches and the pnpm version pinned in `package.json`. If you need pnpm, install [Corepack](https://github.com/nodejs/corepack#manual-installs) if your Node.js distribution does not include it, then run `corepack enable pnpm`. Git is needed if you clone the source instead of downloading a release. The default ports are 3100 for Web, 5432 for PostgreSQL, and 6379 for Redis.
 
 Compose 2.30.0 or later is required because `env_file.format: raw` preserves the `$` characters in password hashes. The Web container's default memory limit is 1 GiB. If an older `.env` still contains `WEB_MEMORY_LIMIT=512m`, changing the default does not update that value. Change it to `1g` if needed.
 
 #### Getting the app
 
-Download and extract a source archive from [Releases](https://github.com/kazuhide/bitovp/releases). Open a terminal in that directory and start at `corepack enable` below. Alternatively, use the first two commands to clone the repository.
+Download and extract a source archive from [Releases](https://github.com/kazuhide/bitovp/releases). Open a terminal in that directory and start at `pnpm install` below. Alternatively, use the first two commands to clone the repository.
 
 ```sh
 git clone https://github.com/kazuhide/bitovp.git
 cd bitovp
-corepack enable
 pnpm install --frozen-lockfile
 pnpm --filter @bitovp/db build
 cp .env.example .env
@@ -246,7 +245,7 @@ Opening a wizard, loading a template, or copying an existing job's settings does
 
 While configuring a plan, use its preview to check the input and output destinations, renditions, and resources to be created. A rendition is one output with its own resolution, bitrate, or other characteristics. After changing a plan, check the updated output paths and warnings rather than relying on an earlier review.
 
-Browser drafts do not save every setting. They are kept for 7 days and are separated by user, organization, and creation context. VOD drafts retain filter settings, including image object paths and audio channel gains. Secrets, URLs, DRM, text-overlay content and imported JSON are excluded. After restoring a draft, fill in the omitted settings before running it.
+The browser keeps drafts for 7 days, separately by user, organization, and creation context. VOD drafts retain supported filter settings, including image object paths and audio channel gains. VOD DRM and text-overlay content are excluded. Live drafts can retain DRM settings and credential references. For both, review omitted secrets, URLs, and imported plan settings before running a restored draft.
 
 ### Reading status
 
@@ -313,6 +312,8 @@ A file name follows the job name until you type one. In a name you type, `?` and
 
 "Sources" has the input sequence editor ("Edit on timeline") in the 6-step screen as well. The files are then written from the edited sequence. While a sequence is on, it decides whether the files have audio: with audio switched off in the sequence, or with no clip on its audio track, every file is written without audio, and "Include audio" in "Format" reports it. The video and audio sources selected for a file are not used, because every file is made from the sequence. Using a saved image as an output logo adds a filter, which is a setting of "Ladder": the screen switches to the 8 steps, where the logo is shown and can be removed.
 
+For independent V1/A1 edits that cannot use direct cloud concatenation, choose writable S3-compatible or GCS HMAC output storage and select **Prepare encoding input** in Sources. The worker creates one re-encoded MP4 from 8-bit BT.709 SDR material, up to one hour and 4 GiB. Prepare it again after changing the edit or destination. [Timeline controls and limits (Japanese)](../vod-input-timeline.md)
+
 To use DRM, subtitles, filters, thumbnails, Per-Title, the multi-encoding partition of "Sources", or similar settings, select "Show all settings" to switch to the 8-step screen. What you have entered is kept. "Back to simple view" is available while no setting outside the 6-step screen is in use; otherwise the screen names the steps that hold such settings. While one is in use, "Review" does not list the files, because the job may write other outputs as well: "Plan preview" beside it shows every output.
 
 Jobs started from a preset, a saved template, or a copied job open the 8-step screen with the loaded settings. Drafts are stored separately for each purpose.
@@ -347,7 +348,9 @@ Presets and templates are starting points. After loading one, adapt the account,
 
 If plan JSON includes settings that the form cannot represent, keep it in JSON editing mode to preserve the original content. Avoid forcing it into the form and losing settings; check the validation results instead.
 
-Drafts are stored in the current browser for 7 days. They are separated by user, organization, and creation context. VOD drafts retain filter settings, including image object paths and audio channel gains. Secrets, URLs, DRM, text-overlay content and imported JSON are excluded. After restoring a draft, check omitted settings and output destinations. A draft does not replace a shared template or a complete configuration backup.
+When copying a job with a protected source, supply its replacement path before restoring a draft. If you replace an HDR10+ picture, also choose its matching JSON sidecar. Check the restored settings and output destinations in Review. Use shared templates for settings that other operators need.
+
+**Launch** in Templates submits with the settings and operator selected at the time. If the response is lost, use the offered retry with the same settings to check or resume that creation.
 
 ## 5. Advanced VOD settings
 
@@ -789,6 +792,8 @@ Live encoding continuously processes incoming video and audio and writes output 
 | Schedule | Planned input feed, program start and stop times, and a pre-program slate |
 | Review | Validation results, Live HD or Custom Live assessment, schedule and paths |
 
+For low-latency relay delivery with Player Web X, see [Experimental MoQ delivery](LIVE.md#experimental-moq-delivery).
+
 ![Sample Live settings screen](../../apps/site/public/screenshots/en/live-settings.png)
 
 Figure 7-1. Live ladder settings in the demo. The screen uses sample settings.
@@ -1023,7 +1028,7 @@ Recorded TS segments support HLS; fMP4 supports HLS and DASH. A progressive MP4 
 
 ### File inputs and Live encoders
 
-Pseudo-live repeatedly sends a stored MP4 at real-time speed as input to a live channel. The process sending the file is a “feeder”; a “session” covers 1 sending operation. This does not add a Live input type; it sends media to an existing RTMP or SRT input.
+Pseudo-live sends a stored MP4 at real-time speed to an existing RTMP or SRT input. The process sending the file is a “feeder,” and one sending operation is a “session.” The GUI sends in a loop. The feeder API can also send once and end at EOF. [Single-pass feeder contract (Japanese)](../feeder-single-pass.md)
 
 VIEWER users can view sessions. OPERATOR or ADMIN users can start, switch, stop and delete them. Prepare a credential that can read the input file and a live channel in advance. Chapter 7 covers channel configuration and startup; Chapter 8 covers monitoring during a broadcast.
 
@@ -1087,6 +1092,8 @@ For jobs without a QC mirror, eligible existing MP4 outputs can be used. The job
 
 Remeasurements from job details and reports created in the lab do not change the original encode's automatic quality-gate verdict. If a measurement for the same job is in progress, wait for it to finish or fail before starting another.
 
+For HDR base-layer measurement, choose an HDR model for an eligible finished job. It sets and locks **Existing HDR HLS output** and **Local CPU**. The default metric is **VMAF**. Select **VMAF + banding** to include CAMBI. The report identifies HDR PQ or HLG converted to PQ. [HDR measurement protocol](../HDR-QC.md)
+
 ### Execution targets and measurement methods
 
 “Local” calculates scores on the application's worker. The worker chooses the number of calculation threads and concurrent tasks based on the reference video's size, CPU and available memory. Decoding a large reference still requires memory even when the measured output is small. More parallel tasks do not necessarily run faster.
@@ -1129,7 +1136,9 @@ With the same model and reference conditions, a higher VMAF score indicates grea
 
 The displayed chart is reduced to at most 1,500 points, retaining the worst frame in each interval. This is display downsampling. In contrast, when a measurement samples every few frames, the intervening frames are not scored. Its minimum is therefore not necessarily the worst score across all frames. All stored scored frames can be downloaded as JSON or CSV, including PSNR values when measured. If a download is interrupted, discard the partial file and download it again.
 
-To compare reports, select reports with results in the lab and open “Compare selected”. Up to 6 reports can be overlaid at once. Match the reference, time range, model, scoring generation and sampling stride. Do not interpret higher and lower curves as encoder superiority while mixed-condition warnings or renditions without results remain unresolved.
+To compare reports, select up to 6 reports with results in the lab and open “Compare selected”. Match the reference, time range, model, scoring generation and sampling stride. HDR PQ, HLG and SDR appear in separate panels. When the reports represent two or three finished VOD jobs with accessible HLS or DASH outputs, the same page shows synchronized playback. Match the content and start time of the selected outputs.
+
+For synchronized playback without QC reports, select two or three finished jobs in **VOD Jobs** and choose **Compare outputs**. [Output comparison controls](VOD.md#packaging-and-playback)
 
 In a single report, “Open comparison preview” lets you select up to 2 VOD QC videos whose retained versions can be identified, and seek to a scored frame's time. Browser seeking or decoding may display a neighboring frame. This is unavailable for older reports or Live captures that were not retained. It does not show the current live stream as a substitute for previously measured frames.
 
@@ -1188,7 +1197,7 @@ This screen is for checking usage, not a replacement for invoices or incident mo
 
 ### Library records
 
-Use "Content Library" to find completed VOD jobs and their analysis, then organize them with titles and tags. VIEWER can browse the library; registration, editing, and retries require OPERATOR or higher.
+Use "Content Library" to find completed VOD jobs and their analysis by title or tag. VIEWER can browse the library. API registration and metadata updates, and operations such as retries, require OPERATOR or higher.
 
 The Library hides relative HTTPS paths that contain a query, which can grant private access even when its parameter has an unfamiliar name. It displays the exact object key when the capture or the original job identifies a storage input. A historical query path with no surviving input information appears blank.
 
@@ -1203,13 +1212,14 @@ Completed VOD jobs are normally imported automatically, with a content entry cre
 1. Open "Content Library" from the navigation.
 2. Search content by title or tag. If needed, filter by archive status or the presence of playback metadata. Choose grid or list view as preferred.
 3. Open an entry and review its linked sources, language, playback metadata, and analysis. "Playback metadata" means that a URL or other playback information is recorded; it does not establish that the current destination is reachable.
-4. Edit the title, description, tags, and language in the metadata editor, then save. Separate tags with commas.
 
-To group a source under different content, use the source registration action and choose either new or existing content. You can search existing content by title or tag. If another user updates the same content first, your save is rejected to prevent overwriting their changes. Keep a copy of your edits, reload the latest content, and apply your changes again.
+To register a source, attach it to the next revision of an existing entry, or change content metadata, use the [Library API](LIBRARY-AND-ADMIN.md#manage-content-records-through-the-api). If another operator has already saved an update, reload the current revision before retrying.
 
 Archiving organizes the catalog; it does not delete output videos from storage, and archived entries can be restored. Check source imports for queued, running, ready, or error states. After an error, correct the permissions or destination before retrying. Imported QC information is a snapshot of the information available at that time, not a new quality measurement. See Chapter 11 for quality assessment and remeasurement.
 
 ### Clips and trailer proposals
+
+Clip creation requires a configured local LLM and recent worker verification of GPU access. [Clip editing requirements and workflow](LIBRARY-AND-ADMIN.md#create-highlight-and-portrait-clips)
 
 - The catalog shows how many clips have a successful export. Open the count to view the export or the clips panel. Play each preview directly from its card on the content page. On desktop, drag the panel boundary to adjust the width.
 - Use “Watch export” to review the saved editing settings. The previous successful version stays available after a retry fails. Select “Re-edit” to open a new timeline from that version.
@@ -1663,7 +1673,7 @@ These scores describe one reference/output pair and measurement method. They do 
 | Live-to-VOD | Generating VOD manifests from live output after a broadcast. It is separate from an MP4 archive. |
 | Heartbeat | Periodic information about encoder input and state. It does not directly confirm viewer playback. |
 | Push / Poll | Push is a notification received from another system; Poll is a periodic status request sent by the app. |
-| Pseudo-live / Feeder | Sending stored media repeatedly at real-time speed as a live input, and the process that sends it. |
+| Pseudo-live / Feeder | Sending stored media at real-time speed as a live input, and the process that sends it. GUI sessions loop. |
 | Slate | A still image or video inserted into a live stream. Registration is separate from successful insertion and playback. |
 | RTMP | A protocol for sending video and audio to a live input, using a URL and stream key. |
 | SRT Caller / Listener | The initiating and listening sides of an SRT connection. Match the destination, port, and required encryption settings. |

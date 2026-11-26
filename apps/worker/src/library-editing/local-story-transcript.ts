@@ -14,6 +14,8 @@ import {
 	LocalStoryLegacyTranscriptError,
 	type LocalStoryLegacyTranscriptPrepared,
 	type LocalStoryLegacyTranscriptStoredValue,
+	type LegacyRawTranscriptSegment as RawTranscriptSegment,
+	type LegacySpeechInterval as SpeechInterval,
 } from "@bitovp/core/local-story-flow-server";
 import { analysisBudget, MAX_ANALYSIS_DURATION_US } from "./analysis-io";
 import type { LocalStoryArtifactStore } from "./local-story-artifacts";
@@ -23,10 +25,6 @@ import {
 	transcriptionCacheKey,
 	WHISPER_CPP_VERSION,
 } from "./transcription";
-import type {
-	RawTranscriptSegment,
-	SpeechInterval,
-} from "./transcription-quality";
 
 export type PreparedLocalStoryTranscript =
 	LocalStoryLegacyTranscriptPrepared & {

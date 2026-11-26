@@ -114,25 +114,25 @@ organization Player license and verified Web X bundle. Publishing-only plans
 can proceed. Relay connectivity and playback are checked once the run starts.
 
 Use **Play** to start MoQ playback and **Stop** to release the player. Playback
-starts muted by default. Open **Playback settings** to adjust the target buffer in
-milliseconds or the volume. Apply the buffer before or during playback. The
-video quality selector appears when the player offers another video track.
+starts muted by default. In **Playback settings**, enter the target buffer in
+milliseconds (default 2,000) and choose **Apply** before or during playback. Volume
+changes immediately. The video quality selector appears when the player offers a
+selectable alternative.
 The buffer target and volume carry over when restarting playback on the same
-page. Frame progress indicates received video; a successful
+page and reset when the page is reloaded. Frame progress indicates received video; a successful
 start request alone does not. Preview supports one namespace component and
 draft16/18. Missing configuration, a changed credential, or unavailable video
 remains explicit. Publisher tokens are never used as browser playback tokens.
 
 **Open player** opens the same preview at `/live/[id]/runs/[runId]/moq` for an
-OPERATOR. Both views show configured namespace/draft/catalog, received quality
-metadata, measured video FPS, resolution, frames, startup time and buffer level.
-The 2-second target buffer is a setting. **Video latency (barcode)** is the
-Player's timestamp-in-image estimate, requiring compatible live timestamp bars
-and synchronized source/client clocks; it is not RTT or a guaranteed compositor
-display measurement. Missing or stale values remain unmeasured. Configured
-Cloudflare Relay ID/expiry/permissions come from unverified subscriber-token
-claims, not server telemetry. Relay bytes/objects/RTT counters are not exposed
-by the Player API used here.
+OPERATOR. Both views show the measurements available for that playback session.
+**Player buffer** shows the observed level alongside the separately configured
+target. The charts distinguish video presentation FPS from Canvas image changes
+per second. **Video latency (barcode)** estimates delay from a compatible
+timecode encoded into the image and synchronized source and client clocks.
+An ordinary clock overlay can be read by eye. It does not populate this metric.
+Configured Cloudflare Relay ID, expiry, and permissions come from the
+subscriber token's claims. See [measurement sources](../verification/moq-observation-ui.md).
 
 Both pages retain observations after the run ends. A playback session saves
 Player latency, FPS, buffer source and frame counters on a UTC timeline, with
@@ -142,9 +142,10 @@ be trimmed to the recording limit. Canvas capture records video only. Play or
 download it from
 **Saved MoQ observations** after stopping. Recording covers the preview's
 received interval. The historical client clock estimates UTC from the saved
-browser capture time and the current recording position, even if capture
-began after the observation window. Recording status shows recording, saving, saved, unsupported or
-failure. Each run keeps up to five observation sessions. Saved data remains
+browser capture time and the current recording position. An older archive can
+use its single eligible recording-start or first-frame event. An ambiguous or
+missing timestamp leaves the playback clock blank. Each run keeps up to five
+observation sessions. Saved data remains
 available when the live player is inactive. Playback can start while history
 and Analytics are preparing. The playback stage timeline shows UTC timestamps
 for subscriber requests, observed frames, gaps, recovery, and termination.
@@ -163,6 +164,8 @@ independent latency clock or the native Analytics `LATENCY` field. Use
 **Refresh** after ending if ingestion is still pending. Input bitrate/FPS,
 cumulative packet anomalies and segment processing time retain their own units;
 segment processing time does not measure end-to-end video delay.
+See the [recorded Cloudflare draft 16 trial](../MOQ-LIVE-ENCODER-TEST-RESULTS.md)
+for its exact configuration and observations.
 
 Set `BITOVP_MOQ_ARCHIVE_DIR` to persistent local storage. The Web image includes
 FFprobe/FFmpeg for bounded validation and stream-copy remuxing; the Compose
@@ -221,7 +224,8 @@ Check these observations separately:
 1. The provider encoding reaches `RUNNING`.
 2. The delivery-status input card reports `CONNECTED`, with a fresh last-check
    time. Open input details for receive rates and events.
-3. Output manifests and media segments continue to progress.
+3. For HLS or DASH, output manifests and media segments continue to progress.
+   MoQ publishes a relay catalog. Check the MoQ preview for advancing video.
 4. The preview plays the expected video/audio and rendition changes.
 
 `RUNNING` does not establish input connection or viewer playback. Signed Push
@@ -256,6 +260,8 @@ and removes owned hooks after the run ends. Older encoders continue polling.
 Administrators can set the heartbeat interval in `/settings/live`. The default
 is 20 seconds; zero disables registration. Environment values provide deployment
 defaults. The interval is frozen for each new run.
+If registration succeeds but no Push arrives, check that the provider's POST
+can reach the [public webhook receiver](../OPERATIONS.md#public-ingress).
 
 Channel details show reception freshness, recent samples, status history, and
 input diagnostics. Open the detailed history to distinguish receipt time from
@@ -278,10 +284,21 @@ or a stopped encoder. Other channels continue to be monitored.
 
 Use `/live/feeders` to send stored media at real-time speed to a channel's RTMP
 or SRT input. `PUSHING` describes the local sender; verify `CONNECTED` and output
-at the destination too. Stop both feeder and channel when finished.
+at the destination too. The form loops the source. For an immediate one-time
+feed, use [single-pass playback through the API](../feeder-single-pass.md).
+The Feeder can finish while the channel keeps running. Confirm both have stopped
+when the broadcast is over.
 
-Channel schedules support start, stop, and slate insertion. A fired schedule
-means the action was dispatched; check the resulting media separately.
+In the channel details, **Schedule actions** lets you schedule channel starts,
+stops, and slate insertions. To schedule a file-fed RTMP program, include
+`schedule.programFeed.source` when creating the channel with
+`POST /api/live-channels`. The program is scheduled for `programStartAt`.
+If `streamUpAt` is earlier, include `schedule.slate.source` for the pre-program
+feed. The resulting feeder actions appear in schedule history.
+
+**Requested** (`FIRED`) means the scheduler claimed the action. A queue handoff
+and a confirmed outcome are separate. Check the outcome in schedule history
+and verify the resulting broadcast or media.
 
 Slates are insertable still images or video. Video must match the live ingest's
 frame rate, resolution, audio sample rate/channels, and codec requirements.
@@ -358,17 +375,28 @@ stop could not be queued, check that the feeder has actually exited. For AISA,
 retry finalization from the console to refresh the Analysis status and final
 result for that broadcast.
 
-A scheduled Start records the selected broadcast and its admission generation before dispatch. Retries use that same broadcast. A later manual Start or a revival has its own generation and leaves the earlier schedule's delivery result intact. If a pre-upgrade Start cannot be tied to its original broadcast, its schedule shows an unknown outcome. Check the channel before scheduling another start.
+A scheduled Start records the selected broadcast and its generation before
+dispatch. The worker can recover a missing queue job for that same broadcast.
+A later Start has its own generation and leaves the earlier result intact.
+If a pre-upgrade Start cannot be tied to its broadcast, it keeps an unknown
+outcome. For an AISA broadcast whose original startup cannot be attributed,
+check the channel before retrying.
 
-If an upgraded worker cannot identify the broadcast for a pending legacy Stop, it saves the missed-stop alert with the schedule outcome. A restarted worker can deliver that alert to the configured destinations. If several old Stop schedules refer to the same broadcast, the worker preserves a queued Stop even when an older schedule has an unknown outcome. If every delivery is lost and the encoder or feeder is still active, check the broadcast and choose **Stop channel**.
-
-If an upgrade finds a scheduled Stop that fired immediately before the old worker exited, it can finish admitting the Stop when the broadcast still owns its original encoder and no other admission has advanced its generation. Heartbeat polls do not affect that decision. If the old worker did not save a generation and another admission was possible, the schedule records an unknown outcome and raises a missed-schedule alert. Open the linked broadcast, confirm it is the one you intend to end, and choose Stop.
+After an upgrade, a pending legacy Stop can resume when the broadcast still
+owns the original encoder and the worker can establish that no other admission
+advanced its generation. Heartbeat polls do not affect that decision. If the
+worker cannot establish this binding, it saves the unknown outcome and a missed
+schedule alert for delivery, even across worker restarts. A separately queued
+Stop for the same broadcast can still run.
 
 An upgraded worker can reconcile an exhausted scheduled Stop from an older version by checking the recorded broadcast and encoder. If a job expires from the queue, the worker checks each recorded encoder. It can requeue the Stop under a new queue job ID when its exact handoff survives and the worker had yet to claim it. If an older handoff lacks that evidence and a stop cannot be confirmed, the channel can show **ERROR**. Open the affected airing and choose **Stop channel** to retry.
 
 If Bitmovin rejects creation of a stream, muxing or DRM resource with HTTP 401 or 403, correct the account credentials or permissions and retry Start for the same broadcast. For an explicit HTTP 429 on the create request, wait at least one minute before retrying. If DNS lookup for the original Bitmovin host failed before connecting, retry after name resolution recovers. If a request may already have reached Bitmovin, the worker looks for the resource under its original encoder or muxing before resuming. An empty lookup leaves that step unresolved.
 
-Clearing schedules keeps startup and shutdown records that the Worker still needs. If a current scheduled Stop exhausts delivery before the Worker claims it, the channel shows **ERROR** and the schedule shows **Unknown**. Use **Stop** again on that broadcast. The Worker also checks the database for startup admissions whose queue entry has disappeared, including a newly created channel. It resumes the same broadcast and generation. After an upgrade, an ambiguous earlier schedule keeps an unknown result. An AISA broadcast whose original startup cannot be attributed requires an operator to check the channel. If an old scheduled Start has no provable airing, check the channel before scheduling another start. An expired queue entry alone cannot confirm whether startup succeeded.
+Clearing schedules keeps startup and shutdown records that the worker still
+needs. If no queued Stop remains and the channel or feeder is still active,
+confirm the intended broadcast and choose **Stop channel**. The worker also
+checks for missing startup queue jobs when a channel is first created.
 
 A scheduled Stop keeps its admitted broadcast and encoder through queue retries. Its schedule-fired notification records queue handoff. A terminal status check confirms the broadcast ended. The schedule shows **Delivered** when the worker also has an acknowledgment for that schedule's own Stop request. Without that acknowledgment, observed termination leaves delivery **Unknown**.
 For new stops, confirmation records one notification per broadcast. The worker
@@ -400,7 +428,8 @@ prevent confirmed termination.
 
 A terminal provider encoding cannot restart. Broadcasting the channel again
 creates a new run and encoding; insertable content is registered for that run.
-Copy settings opens the wizard without starting work. See
+**Copy settings and edit** opens the wizard when it can reproduce the plan.
+Other supported plans open as editable JSON. Copying does not start work. See
 [Troubleshooting](./TROUBLESHOOTING.md) if state or cleanup remains uncertain.
 
 

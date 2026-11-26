@@ -89,10 +89,16 @@ The first correction at `44365877` measured
 It remains a failed sample: two older tests still selected obsolete internal
 option values, and typechecking rejected possibly undefined test-array entries.
 The next correction selects the visible options, preserves the copied-height
-assertion, and declares the fixed pair of controls as tuples. Product code and
-the worker policy are unchanged by that test correction. Complete CI still has
-to pass. Acceptance remains 420 seconds and 1,251 runner-seconds; prior samples
-do not establish a stable guarantee.
+assertion, and declares the fixed pair of controls as tuples.
+
+On `2946643d`, Web completed in
+[291 seconds / 997 runner-seconds](https://github.com/kazuhide/bitovp/actions/runs/44126936633/attempts/1)
+and [298 seconds / 976 runner-seconds](https://github.com/kazuhide/bitovp/actions/runs/44126936633/attempts/2).
+Each recorded 13,063 passes and 110 audited skips. The [merged main CI](https://github.com/kazuhide/bitovp/actions/runs/44129414735)
+on `3dcace5f` passed and completed the Web suite in 404 seconds. Its four
+shards used 1,249 runner-seconds. Including the 17-second aggregation job, the
+total was 1,266 runner-seconds, 15 over the 1,251-second budget. The recorded
+elapsed target was 420 seconds.
 
 ## Verified native HDR build reuse
 

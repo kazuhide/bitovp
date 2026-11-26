@@ -11,6 +11,8 @@ import {
 	type LegacyTranscriptWord,
 	LocalStoryLegacyAsrError,
 	parseLegacyWhisperTranscript,
+	type LegacyRawTranscriptSegment as RawTranscriptSegment,
+	type LegacySpeechInterval as SpeechInterval,
 } from "@bitovp/core/local-story-flow-server";
 import {
 	analysisBudget,
@@ -24,10 +26,6 @@ import {
 	verifyAsrModelFile,
 } from "./analysis-io";
 import { MediaOperationError, runMediaProcess } from "./process";
-import type {
-	RawTranscriptSegment,
-	SpeechInterval,
-} from "./transcription-quality";
 
 export const WHISPER_CPP_VERSION = "1.9.5";
 export const BASE_MODEL_SHA256 =

@@ -132,13 +132,6 @@ export function liveOutputKindForProvider(
 		: storageKindForProvider(provider);
 }
 
-/** Bucket label per output kind ("Container" for Azure, else "Bucket"). */
-export function outputLocationLabel(
-	kind: WizardState["output"]["kind"] | "LIVE_MEDIA_INGEST",
-): string {
-	return kind === "AZURE" ? "Container" : "Bucket";
-}
-
 /** The default Bitmovin output resource name for a kind. */
 export function outputNameForKind(kind: WizardState["output"]["kind"]): string {
 	switch (kind) {

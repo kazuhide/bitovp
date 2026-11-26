@@ -61,10 +61,30 @@ The graph keeps up to 1,500 points and preserves each bucket's worst frame.
 Large downloads arrive progressively; wait for the download to finish. If it is
 interrupted, discard the partial file and retry the export.
 
-The comparison preview fixes up to two renditions and seeks both to the selected
-measurement time. Browser seeking can show an adjacent frame; use decoded frame
-inspection when exact frame identity is required. Missing graph samples are not
-interpolated into measured scores.
+Inside a report, **Open comparison preview** selects up to two measured
+renditions and seeks both to the selected measurement time. Browser seeking can
+show an adjacent frame. Use decoded frame inspection for exact frame identity.
+
+**Compare selected** in VMAF Lab accepts up to six reports. When the selection
+represents two or three finished VOD jobs with accessible HLS or DASH outputs,
+the comparison also shows synchronized playback of their delivery outputs.
+Choose corresponding starts and content. The codec and dynamic range labels
+describe the encoding settings. The player and display determine playback and
+HDR presentation. Compare scores only with matching models, measurement
+conditions, and references. HDR PQ, HLG and SDR appear in separate panels.
+
+For playback without QC reports, use [Compare outputs in VOD Jobs](VOD.md#packaging-and-playback).
+
+### Manual HDR measurement
+
+In **Measure an existing job**, choose an HDR model for an eligible finished
+job. The model sets and locks **Existing HDR HLS output** and **Local CPU**.
+The default metric is **VMAF**. Select **VMAF + banding** to include CAMBI.
+The measurement compares a clear fMP4 HLS output with its direct source. The
+report identifies HDR10, the compatible Dolby Vision Profile 10.1 base layer,
+or HLG converted to PQ. Check Dolby Vision display mapping on a compatible
+display.
+[HDR protocol and supported inputs](../HDR-QC.md)
 
 ## Why alignment matters
 

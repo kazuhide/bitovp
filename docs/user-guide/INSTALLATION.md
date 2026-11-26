@@ -14,7 +14,8 @@ The details below also cover alternative ports and authentication modes.
 
 - Docker Engine or Docker Desktop, running.
 - Docker Compose 2.30.0 or newer.
-- Node.js 24 LTS with current security patches and pnpm 11 for initial setup.
+- Node.js 24 LTS with current security patches and the pnpm version pinned by
+  `packageManager` in `package.json` for initial setup.
 - Git if you choose to clone the source instead of downloading a release.
 - A current browser and outbound HTTPS access to image registries and providers.
 - Available ports: 3100 for the web application, 5432 for PostgreSQL, and 6379
@@ -23,6 +24,10 @@ The details below also cover alternative ports and authentication modes.
 
 Compose 2.30.0 is required because `env_file.format: raw` preserves the `$`
 characters in password hashes.
+
+If you need pnpm, install [Corepack](https://github.com/nodejs/corepack#manual-installs)
+if your Node.js distribution does not include it, then run
+`corepack enable pnpm`. Corepack uses the repository's pinned version.
 
 The Web container allows up to **1 GiB (1,024 MiB) of memory**, without swap.
 The former 512 MiB limit could terminate Web while opening pages.
@@ -33,13 +38,12 @@ to `1g` before recreating Web; the new default does not replace explicit values.
 ## 2. Get the application
 
 Download and extract a source archive from [Releases](https://github.com/kazuhide/bitovp/releases).
-Open a terminal in the extracted directory and start at `corepack enable` below.
+Open a terminal in the extracted directory and start at `pnpm install` below.
 Alternatively, clone the repository with the first two commands.
 
 ```bash
 git clone https://github.com/kazuhide/bitovp.git
 cd bitovp
-corepack enable
 pnpm install --frozen-lockfile
 pnpm --filter @bitovp/db build
 cp .env.example .env

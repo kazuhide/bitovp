@@ -511,9 +511,7 @@ export function initStepLog(ops: CompiledOperation[]): StepLogEntry[] {
  * literal id left `EncodingJob.bitmovinEncodingId` null and made every runtime
  * action 409 on an ordinary single-encoding job (review catch).
  *
- * null for a ladder is deliberate, not a fallback: with siblings there is no
- * unambiguous encoding, and denormalizing one of them would point cancel /
- * reprioritize / reschedule / transfer-retry at the wrong one.
+ * A multi-encoding plan has no single provider ID for runtime actions.
  *
  * Structural on purpose — a strict parse must not be able to hide the answer.
  */
@@ -521,23 +519,8 @@ export function soleEncodingStepId(stepLog: unknown): string | null {
 	if (!Array.isArray(stepLog)) {
 		return null;
 	}
-	// TWO signals, and the rationale I first wrote for this was FALSE. I claimed
-	// the worker sees CREATE while a status reader has only AWAIT/START — a
-	// reviewer showed there is no such split: the compiler emits both ids from the
-	// same `enc.step` in the same loop, and `initStepLog` seeds every op, so a
-	// persisted log carries the CREATE entry from the moment the row exists. They
-	// cannot disagree by construction.
-	//
-	// What actually made keying on CREATE alone go red was the TEST FIXTURES —
-	// `bitmovin-encoding-status.test.ts` contains no CREATE_ENCODING entries at
-	// all, so the suite was measuring its own fixture shape, not caller reality.
-	//
-	// Both are kept anyway: the refs signal answers for every current caller, and
-	// the CREATE signal is the only one that answers for a log with no
-	// AWAIT_ENCODING — i.e. a LIVE log, which does not use this helper yet
-	// (live-processor keys on `kind === "CREATE_ENCODING"` directly). Converting
-	// live is ledgered, and this keeps that conversion from running on an
-	// unexercised path.
+	// The compiler emits CREATE and references from the same encoding step.
+	// Reading both also handles stored logs that contain only one of the signals.
 	const created = new Set<string>();
 	const referenced = new Set<string>();
 	for (const raw of stepLog) {

@@ -1,6 +1,5 @@
 /**
- * `EncodingJob.status` — our orchestration state machine (NOT Bitmovin's
- * `Status`; see `lib/bitmovin-encoding-status.ts` for the remote one).
+ * `EncodingJob.status` is the application's orchestration state.
  *
  * UI-FREE on purpose: both the client list/detail views and the SERVER runtime
  * routes gate on `isActiveJobStatus`, and a server module must not import a

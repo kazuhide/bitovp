@@ -26,6 +26,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 - Default new VOD wizard configurations to Encoder 2.294.0 (Beta), preserving saved account defaults, drafts and imported version choices.
 - Document the Encoder 2.294.0 Live HLS `BANDWIDTH` / `AVERAGE-BANDWIDTH` correction: produced bitrate with a configured-bitrate floor. The provider supplies this behavior; bitovp does not rewrite these values, and VOD manifests are unchanged. See the [official release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
+- Align the VOD, Live, Content Library, and quality guides with the current workflows. Consolidate completed plans into the relevant guides and correct shell examples in the API reference.
 
 ### Fixed
 

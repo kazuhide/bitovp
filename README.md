@@ -36,17 +36,8 @@ The default local application address is **http://localhost:3100**.
 You configure Bitmovin accounts and storage credentials in the application.
 They are not required to open the application or check its health.
 
-For Content Library clip editing, configure the GPU-backed Local LLM and run
-`pnpm preview:editing up --local-llm` to start an isolated local Docker preview.
-Without `--local-llm`, the preview starts with clip editing disabled.
-It includes synthetic footage, an optional
-licensed animation demo, and a bundled dialogue sample for captions. Authored
-demo metadata is identified separately from real AISA results. Editing loads the
-encoding output and AISA automatically. Choose a length and create a project to
-open an edited timeline with immediate preview. MP4 encoding starts only after
-you review the timeline and choose Generate. Caption-enabled proposals use
-observed speech boundaries and identify uncertain edits for review.
-See the [Japanese preview guide](./docs/EDITING-PREVIEW.ja.md).
+For Content Library clip editing, the [Japanese preview guide](./docs/EDITING-PREVIEW.ja.md)
+shows how to configure a GPU-backed local model and start the isolated Docker preview.
 
 ## What you can configure
 
@@ -75,7 +66,8 @@ See the [changelog](./CHANGELOG.md) for released and unreleased changes.
 ## Installation requirements
 
 Use Docker and **Docker Compose 2.30.0** or newer. Initial database setup also
-requires Node.js 24 or newer and pnpm 11. The [installation guide](./docs/user-guide/INSTALLATION.md)
+requires Node.js 24 or newer and the pnpm version pinned in `package.json`.
+The [installation guide](./docs/user-guide/INSTALLATION.md)
 explains configuration, authentication, database roles, and startup.
 
 Authentication is required by default. There are no default sign-in credentials.

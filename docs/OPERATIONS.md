@@ -225,6 +225,8 @@ proof that production role privileges or a full rollback are correct.
 Before rollback, stop new billable work, identify compatible images/migrations,
 and reconcile in-flight jobs and remote resources. Keep required cleanup receipts
 and credentials. Do not reverse an irreversible migration without a tested plan.
+For the Web and Worker update order and rollback steps for single-pass
+pseudo-live playback, see the [Feeder contract](feeder-single-pass.md#導入と検証).
 
 ## Public ingress
 
@@ -242,6 +244,14 @@ The dynamic hostname permits only `/api/webhooks/*` and `/api/health` by default
 The UI hostname must be in `ALLOWED_ORIGIN_HOSTS` for management access. The
 bundled Compose service environment can override `.env` values; use a reviewed
 Compose override when exposing a UI hostname.
+
+Bitmovin sends the Heartbeat POST to `/api/webhooks/bitmovin/hb/<token>` without
+a browser session. If a reverse proxy or Cloudflare Access requires sign-in on
+the UI hostname, route this exact webhook path to BitOVP without the sign-in
+challenge. Keep UI authentication in place. BitOVP checks the registered token
+and the signature over the original request body. Confirm a fresh **Signed Push**
+receipt on the target broadcast. A successful registration can still be
+followed by a blocked delivery, while Poll data continues to appear.
 
 For externally reachable UI, use HTTPS, valid authentication, and narrowly
 configured trusted proxies. Trust only actual proxy source ranges, verify

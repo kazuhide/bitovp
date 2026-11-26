@@ -37,7 +37,7 @@ import {
 
 type Tone = "neutral" | "ok" | "warn" | "error";
 
-/* FIRED means dispatch, not delivery, and has no success tone of its own. Excluding it from this map forces callers to derive its tone from the observed outcome. */
+/* FIRED records the scheduler's claim. Derive the tone from the observed outcome. */
 const STATUS_TONE: Record<Exclude<LiveScheduleStatusKind, "FIRED">, Tone> = {
 	ARMED: "neutral",
 	COMPLETED: "ok",

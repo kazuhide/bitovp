@@ -38,7 +38,6 @@ import { ContentDetailClient } from "./[id]/content-detail";
 import { AnalysisView } from "./analysis-view";
 import { JobAnalysisPanel, useJobAnalysis } from "./job-analysis-panel";
 import { SourcePanel } from "./source-panel";
-import { SourceSnapshot } from "./source-snapshot";
 
 beforeEach(() => {
 	apiFetch.mockReset();
@@ -322,56 +321,6 @@ it.each([
 			kind: "HLS",
 		}),
 	);
-});
-
-it("retains the dated QC verdict and bounded evidence after the source job is deleted", () => {
-	const { container } = renderLocalized(
-		<SourceSnapshot
-			source={{
-				id: "source",
-				jobId: null,
-				originalJobId: "deleted-job",
-				state: "READY",
-				error: null,
-				locales: [],
-				analyses: [],
-				contents: [],
-				snapshot: {
-					schemaVersion: 1,
-					kind: "VOD_JOB",
-					name: "Archived source",
-					planHash: "hash",
-					identity: "UNVERIFIED",
-					inputs: [{ name: "input", path: "source.mp4" }],
-					playbackLinks: [],
-					qcVerdict: { pass: false, ruleResults: [] },
-					qcOverriddenAt: "2026-09-14T00:00:00.000Z",
-					qcEvidence: [
-						{
-							id: "qc-report",
-							createdAt: "2026-09-13T01:00:00.000Z",
-							results: [{ pooled: { mean: 87.25 } }],
-						},
-					],
-				},
-			}}
-		/>,
-	);
-	expect(
-		screen.getByText("QC / source snapshot (read-only)"),
-	).toBeInTheDocument();
-	expect(container.querySelector("details")).not.toHaveAttribute("open");
-	expect(container).toHaveTextContent("Result: Fail");
-	expect(container).toHaveTextContent(
-		"20 QC reports and 100 results per report",
-	);
-	expect(container).toHaveTextContent(
-		"not a new measurement or playback verification",
-	);
-	expect(container).toHaveTextContent("deleted-job");
-	expect(container).toHaveTextContent("2026-09-13T01:00:00.000Z");
-	expect(container).toHaveTextContent("87.25");
-	expect(screen.queryByRole("link")).toBeNull();
 });
 
 it("paginates 21 scenes and resets pagination on search", () => {

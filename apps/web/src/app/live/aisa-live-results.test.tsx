@@ -60,6 +60,35 @@ describe("key moment result presentation", () => {
 		}
 	});
 
+	it("waits for a final snapshot after the analysis has finished", () => {
+		const rendered = renderWithQuery(
+			<AisaLiveResults
+				{...props}
+				embedded
+				status="FINISHED"
+				acceptedSnapshot={{ ...snapshot, isFinal: false }}
+			/>,
+		);
+		const waiting = screen.getByText("Waiting for the final result.");
+		expect(waiting).toBeVisible();
+		expect(waiting).toHaveAttribute("role", "status");
+		expect(screen.getByText("Results may still change")).toBeVisible();
+		expect(screen.queryByText("Final result")).not.toBeInTheDocument();
+
+		rendered.rerender(
+			<AisaLiveResults
+				{...props}
+				embedded
+				status="FINISHED"
+				acceptedSnapshot={{ ...snapshot, sequence: 2 }}
+			/>,
+		);
+		expect(screen.getByText("Final result")).toBeVisible();
+		expect(
+			screen.queryByText("Waiting for the final result."),
+		).not.toBeInTheDocument();
+	});
+
 	it("keeps finality and retained-source errors outside the technical disclosure", () => {
 		renderWithQuery(
 			<AisaLiveResults {...props} embedded failed rejectedUpdate />,

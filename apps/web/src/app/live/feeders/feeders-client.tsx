@@ -37,9 +37,8 @@ import {
 type Page = { items: FeederSessionListItem[]; nextCursor?: string };
 
 /**
- * All feeder sessions across channels (lean list — loop counts and log
- * tails live on the detail view; sessions are created from a channel's
- * detail page where the target prefills apply).
+ * All feeder sessions across channels. Both creation entry points share the
+ * channel's form. Loop counts and log tails live on the session detail page.
  */
 export function FeedersClient() {
 	const { t } = useT();

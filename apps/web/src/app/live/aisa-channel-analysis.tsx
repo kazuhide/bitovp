@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { CopyableId } from "@/components/copyable-id";
 import { Button } from "@/components/ui/button";
 import {
+	AISA_TERMINAL,
 	type AisaAnalysis,
 	type AisaResultsResponse,
 	aisaResultSchema,
@@ -23,7 +24,6 @@ import { apiFetch } from "@/lib/api";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
 import { useT } from "@/lib/i18n/context";
 import { AisaLiveResults } from "./aisa-live-results";
-import { AISA_TERMINAL } from "./aisa-live-shared";
 
 type Props = {
 	accountId: string;

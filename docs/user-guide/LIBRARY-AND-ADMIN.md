@@ -13,6 +13,22 @@ Use `/storage` to browse supported storage credentials, buckets/containers, and
 objects. A successful list does not establish write permission. Input and output
 paths have different purposes; inspect each before starting work.
 
+### Manage content records through the API
+
+Operators can register a source with `POST /api/library`. Send `sourceId`,
+`title`, and one of the source's analysis locales as `locale`. Send
+`locale: "und"` when the source's `locales` list is empty. `description` and
+`tags` are optional and default to an empty string and an empty array.
+Include `contentId` and the current `expectedRevision` to make that source the
+next revision of an existing unarchived entry. Resend the current `description`
+and `tags` to carry them into the new revision. A successful request returns
+`201 {"id":"<contentId>"}`.
+
+To change a title, description, tags, or locale, send those fields with
+`expectedRevision` to `PATCH /api/library/<contentId>`. Reload the content
+before retrying if either write returns `409` for a changed revision.
+[API authentication](../API-USAGE.md)
+
 ### Create highlight and portrait clips
 
 Clip creation and editing require an operator-configured local LLM and fresh
@@ -29,6 +45,9 @@ one content can have multiple independent editing projects, including alternativ
 with the same duration and format. Each draft row shows a small thumbnail,
 its name, duration and format, and links directly to its editor. Generated content links back to its
 original and editing project. **Create another clip** preserves existing drafts.
+The catalog shows the number of exported clips. Open a content entry to play
+clips directly from their cards or resize the panel on desktop. **Generation
+history** opens earlier tasks and their results when available.
 
 Open a content detail and choose **Edit clips**. The normal flow loads the output
 and AISA for that encoding, reuses matching prepared material, and lets you choose
@@ -70,8 +89,12 @@ Missing context remains uncertain; the proposal does not guarantee story
 understanding or continuous recognition. Safe whole-frame presentation with a
 background preserves subjects when the available evidence does not support a crop.
 Measured tracking and local captions are used when supported by the source.
-Dedicated teaser/summary purposes and spoiler controls remain planned; the current
-story-led mode does not certify that a clip conceals a culprit or climax.
+
+For a source with AISA and local story analysis available, choose **Plan a trailer**.
+Enter a brief such as “Make a 30-second trailer. Avoid spoilers.” Review the
+interpreted duration and disclosure setting before creating the project. Sources
+with audio require a full-source transcript. Check the selected source ranges
+and review what the finished edit reveals before export.
 
 Advanced settings also offer metadata-based automatic highlights, scene continuity
 and closest whole-shot duration. These are explicit selection alternatives, not a

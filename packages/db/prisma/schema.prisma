@@ -2092,20 +2092,18 @@ enum LiveScheduleStatus {
   SKIPPED_STALE_GENERATION
 }
 
-/// What a schedule row DELIVERED, which is a different question from whether
-/// it fired. `status = FIRED` says only "the request left this system"; a
-/// SLATE_IN request may fire while the provider's scheduled entry goes ERROR
-/// and the picture never changes. Delivery therefore gets its own column.
+/// The observed result of a scheduled action. FIRED records the scheduler's
+/// claim, and dispatchedAt records a confirmed queue handoff. An outcome
+/// requires its own evidence from the worker, provider, or ingest.
 ///
 /// The first cut of this column collapsed the middle: it wrote `DELIVERED` the
 /// instant a feeder's ffmpeg started pushing (~16s before the provider bound
 /// the ingest) and the instant a slate's provider entry was ARMED (no
 /// segment/frame witness that it aired). "Delivered" was thus claimed
-/// before any media flowed. The states below split that single leap into the
-/// media progression, so a green means media was OBSERVED, not
-/// merely requested:
+/// before any media flowed. Each positive state now requires the evidence
+/// appropriate for its action:
 ///
-///   PENDING          — a writer is still expected (the job that fired it runs).
+///   PENDING          — the outcome is still expected.
 ///   PROCESS_PUSHING  — our feeder's ffmpeg is pushing bytes, but the provider
 ///                      has NOT confirmed it received them. Not a success.
 ///   INGEST_CONNECTED — the provider's live encoder reports a fresh CONNECTED
@@ -2116,9 +2114,8 @@ enum LiveScheduleStatus {
 ///   SLATE_ARMED      — the provider ARMED a scheduled insertion. The SDK has
 ///                      no played/finished status, so this is NOT a witness the
 ///                      slate aired — it stays short of a green.
-///   DELIVERED        — a lifecycle action reached its terminal positive: a
-///                      START whose channel reached RUNNING, or a STOP observed
-///                      terminal. Green.
+///   DELIVERED        — a START whose channel reached RUNNING, or a STOP with a
+///                      terminal observation and delivery evidence for that schedule.
 ///   FAILED           — a definitive non-delivery. STICKY: a later, weaker
 ///                      observation must not un-fail a feed that died.
 ///   UNKNOWN          — nobody will ever tell us: the deadline passed, the job
@@ -2128,7 +2125,7 @@ enum LiveScheduleStatus {
 ///                      relabel a past UNKNOWN as DELIVERED).
 ///
 /// PENDING / UNKNOWN / PROCESS_PUSHING / SLATE_ARMED all render amber-or-neutral
-/// (unconfirmed); only INGEST_CONNECTED and DELIVERED render green. The reader
+/// (unconfirmed); INGEST_CONNECTED and DELIVERED render green with valid evidence. The reader
 /// (`schedule-panel.tsx`) and the precedence writer (`schedule-outcome.ts`) are
 /// the two authorities and a test set-equals the enum against them.
 enum LiveScheduleOutcome {

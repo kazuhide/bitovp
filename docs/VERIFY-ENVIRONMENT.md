@@ -36,3 +36,7 @@ Credential presence alone is not success. If the applicable probe fails, the
 capability remains unsatisfied and the scenario is a named SKIP. If preflight
 declares it satisfied and the provider later fails, that is a runtime verdict,
 not an environment relabeling.
+
+For HEVC/HDR10+ verification, stage the declared HDR10 video and its matching
+metadata JSON. The harness checks both `HDR10_ASSET` and
+`TYPED_SOURCE_ASSETS` and cannot substitute its generic video for the pair.

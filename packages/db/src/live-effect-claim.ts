@@ -2922,7 +2922,7 @@ export async function markLiveEffectFailed(
 	return count === 1;
 }
 
-/** Fail an initial LOOP handoff whose worker never reached a stop or spawn. */
+/** Fail a LOOP effect only while its pre-dispatch owner still holds the lease. */
 export async function failUnstartedLoopFeederHandoff(
 	prisma: AppPrismaClient,
 	fence: {
@@ -2934,9 +2934,11 @@ export async function failUnstartedLoopFeederHandoff(
 		leaseNotBefore: Date;
 	},
 	reason: string,
+	claim?: Pick<LiveEffectClaimHandle, "id" | "token" | "action">,
 ): Promise<boolean> {
-	// A takeover cannot prove what the previous owner did before it died.
-	if (fence.ownerGeneration !== 1) return false;
+	// Discovering a handoff without a handle is safe only for the first owner.
+	if (!claim && fence.ownerGeneration !== 1) return false;
+	const spawn = claim?.action === "FEEDER_SPAWN";
 	return prisma.$transaction(async (tx) => {
 		// Use the same lock order as Live STOP and single-pass dispatch.
 		const [channel] = await tx.$queryRaw<
@@ -2957,7 +2959,9 @@ export async function failUnstartedLoopFeederHandoff(
 				AND COALESCE(current_run."bitmovinEncodingId", c."providerEncodingId") = c."providerEncodingId"
 				AND c.generation = ${channel.liveEffectFenceVersion}
 				AND c."targetId" = ${fence.id}
-				AND c.action IN ('FEEDER_START', 'FEEDER_COMMIT')
+				AND (c.action IN ('FEEDER_START', 'FEEDER_COMMIT') OR (${spawn} AND c.action = 'FEEDER_SPAWN'))
+				AND c.id = COALESCE(${claim?.id ?? null}::uuid, c.id)
+				AND c.token = COALESCE(${claim?.token ?? null}::uuid, c.token)
 				AND c.state = 'DISPATCHING'
 			FOR UPDATE OF c`;
 		if (!handoff) return false;
@@ -2969,10 +2973,14 @@ export async function failUnstartedLoopFeederHandoff(
 				AND "ownerId" = ${fence.ownerId}
 				AND "ownerGeneration" = ${fence.ownerGeneration}
 				AND "ownerLeaseAt" >= ${fence.leaseNotBefore}
-				AND status = 'DOWNLOADING' AND "playbackMode" = 'LOOP'
-				AND pid IS NULL AND "startedAt" IS NULL AND "committedAt" IS NULL
-				AND "playbackDispatchedAt" IS NULL
-				AND ("publisherClaimedAt" IS NULL OR "publisherReleasedAt" IS NOT NULL)
+				AND "playbackMode" = 'LOOP' AND "playbackDispatchedAt" IS NULL
+				AND (
+					(${spawn} AND status IN ('DOWNLOADING', 'PUSHING'))
+					OR (
+						status = 'DOWNLOADING' AND pid IS NULL AND "startedAt" IS NULL AND "committedAt" IS NULL
+						AND ("publisherClaimedAt" IS NULL OR "publisherReleasedAt" IS NOT NULL)
+					)
+				)
 			FOR UPDATE`;
 		return owner ? markLiveEffectFailed(tx, handoff, reason) : false;
 	});

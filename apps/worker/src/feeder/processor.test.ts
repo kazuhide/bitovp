@@ -999,19 +999,25 @@ function setup(
 						encodingId,
 						generation,
 						targetId,
+						spawn,
+						id,
+						token,
 					] = values;
 					return effectClaims.filter(
 						(claim) =>
 							effectMatches(claim, {
 								liveChannelId,
 								targetId,
+								id: id ?? undefined,
+								token: token ?? undefined,
 								state: "DISPATCHING",
 							}) &&
 							claim.liveChannelRunId === liveChannelRunId &&
 							claim.providerEncodingId === encodingId &&
 							claim.generation === generation &&
 							(claim.action === "FEEDER_START" ||
-								claim.action === "FEEDER_COMMIT") &&
+								claim.action === "FEEDER_COMMIT" ||
+								(spawn && claim.action === "FEEDER_SPAWN")) &&
 							run.id === liveChannelRunId &&
 							(run.bitmovinEncodingId ?? encodingId) === encodingId,
 					);
@@ -1024,6 +1030,7 @@ function setup(
 						ownerId,
 						ownerGeneration,
 						leaseNotBefore,
+						spawn,
 					] = values;
 					return sessions.filter(
 						(row) =>
@@ -1034,14 +1041,16 @@ function setup(
 							row.ownerGeneration === ownerGeneration &&
 							row.ownerLeaseAt instanceof Date &&
 							row.ownerLeaseAt >= (leaseNotBefore as Date) &&
-							row.status === "DOWNLOADING" &&
 							row.playbackMode === "LOOP" &&
-							row.pid === null &&
-							row.startedAt === null &&
-							row.committedAt === null &&
 							row.playbackDispatchedAt === null &&
-							(row.publisherClaimedAt === null ||
-								row.publisherReleasedAt !== null),
+							((spawn &&
+								["DOWNLOADING", "PUSHING"].includes(String(row.status))) ||
+								(row.status === "DOWNLOADING" &&
+									row.pid === null &&
+									row.startedAt === null &&
+									row.committedAt === null &&
+									(row.publisherClaimedAt === null ||
+										row.publisherReleasedAt !== null))),
 					);
 				}
 				if (query[0]?.includes("JOIN LATERAL")) {
@@ -1316,6 +1325,7 @@ describe("feeder processor — start", () => {
 		const claim = {
 			id: "bound-loop",
 			token: "bound-loop-token",
+			idempotencyKey: "bound-loop-commit",
 			action,
 			state: "DISPATCHING",
 			liveChannelId: s.channel.id,
@@ -1371,6 +1381,38 @@ describe("feeder processor — start", () => {
 		expect(s.effectClaims).toEqual([
 			expect.objectContaining({ action: "FEEDER_COMMIT", state: "FAILED" }),
 		]);
+		expect(s.killPid).not.toHaveBeenCalled();
+		expect(s.spawned).toHaveLength(0);
+	});
+
+	it.each([
+		false,
+		true,
+	])("only the current LOOP owner can fail an acquired commit handoff (taken over: %s)", async (takenOver) => {
+		const s = setup({
+			session: { commitAt: new Date(NOW), commitRequestedAt: new Date(NOW) },
+		});
+		const claim = bindLoopHandoff(s, "FEEDER_COMMIT");
+		const read = s.liveEffectClaim.findUnique.getMockImplementation();
+		if (!read) throw new Error("Missing commit effect fixture");
+		s.liveEffectClaim.findUnique.mockImplementation(async (args) => {
+			if (
+				args.where.idempotencyKey === claim.idempotencyKey &&
+				args.select?.expiresAt
+			) {
+				if (takenOver) {
+					s.session.ownerId = OWNER_B;
+					s.session.ownerGeneration = 2;
+				}
+				throw new Error("commit proof read failed");
+			}
+			return read(args);
+		});
+		await expect(s.processor.process(startJob)).rejects.toThrow(
+			"commit proof read failed",
+		);
+		expect(claim.state).toBe(takenOver ? "DISPATCHING" : "FAILED");
+		expect(s.session.status).toBe(takenOver ? "DOWNLOADING" : "ERROR");
 		expect(s.killPid).not.toHaveBeenCalled();
 		expect(s.spawned).toHaveLength(0);
 	});
@@ -6180,6 +6222,7 @@ describe("single-pass feeder processor", () => {
 	});
 
 	it.each([
+		["while staging", "scheduled"],
 		["after the publisher slot", "scheduled"],
 		["at the spawn claim check", "failed"],
 		["before final checks", "claimed"],
@@ -6205,7 +6248,18 @@ describe("single-pass feeder processor", () => {
 					generation: s.channel.liveEffectFenceVersion,
 				});
 		}
-		if (boundary === "after the publisher slot") {
+		if (boundary === "while staging") {
+			const work = vi.mocked(s.runner.run);
+			const defaultWork = work.getMockImplementation();
+			if (!defaultWork) throw new Error("Missing source-probe fixture");
+			work.mockImplementationOnce(async (...args) => {
+				const result = await defaultWork(...args);
+				expect(s.effectClaims).toHaveLength(0);
+				expect(s.session.publisherClaimedAt).toBeNull();
+				applyStop();
+				return result;
+			});
+		} else if (boundary === "after the publisher slot") {
 			const update = s.feederSession.updateMany.getMockImplementation();
 			if (!update) throw new Error("Missing publisher fixture");
 			s.feederSession.updateMany.mockImplementation(async (args) => {
@@ -6254,11 +6308,58 @@ describe("single-pass feeder processor", () => {
 		expect(s.session).toMatchObject({
 			status: "STOPPED",
 			playbackDispatchedAt: null,
-			publisherReleasedAt: expect.any(Date),
+			publisherReleasedAt:
+				boundary === "while staging" ? null : expect.any(Date),
 		});
 		expect(s.emitEvent).not.toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "FEEDER_ERROR" }),
 		);
+	});
+
+	it.each([
+		"source failure",
+		"lease takeover",
+	] as const)("preserves %s when a scheduled STOP races the first publisher check", async (outcome) => {
+		const s = setup({ session: { playbackMode: "ONCE" } });
+		const work = vi.mocked(s.runner.run);
+		const defaultWork = work.getMockImplementation();
+		if (!defaultWork) throw new Error("Missing source-probe fixture");
+		work.mockImplementationOnce(async (...args) => {
+			s.channel.status = "STOPPING";
+			s.channel.liveEffectFenceVersion = 1;
+			s.run.status = "RUNNING";
+			return outcome === "source failure"
+				? { code: 1, stdout: "", stderr: "source damaged" }
+				: defaultWork(...args);
+		});
+		if (outcome === "source failure") {
+			await expect(s.processor.process(startJob)).rejects.toThrow(
+				/ffprobe failed.*source damaged/,
+			);
+			expect(s.session.status).toBe("ERROR");
+		} else {
+			const update = s.feederSession.updateMany.getMockImplementation();
+			if (!update) throw new Error("Missing Feeder update fixture");
+			s.feederSession.updateMany.mockImplementation(async (args) => {
+				if (args.data.status === "STOPPED") {
+					s.session.ownerId = OWNER_B;
+					s.session.ownerGeneration = 2;
+				}
+				return update(args);
+			});
+			await expect(s.processor.process(startJob)).resolves.toMatchObject({
+				status: "TAKEN_OVER",
+			});
+			expect(s.session).toMatchObject({
+				status: "DOWNLOADING",
+				ownerId: OWNER_B,
+				ownerGeneration: 2,
+			});
+			expect(s.emitEvent).not.toHaveBeenCalled();
+		}
+		expect(s.effectClaims).toHaveLength(0);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.playbackDispatchedAt).toBeNull();
 	});
 
 	it("leaves a successor's exact spawn claim alone after preflight fails", async () => {

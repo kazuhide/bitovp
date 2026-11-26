@@ -231,7 +231,10 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 			).resolves.toMatchObject({ kind: "EXECUTE" });
 		});
 
-		it("rechecks the exact LOOP owner after waiting behind a lease takeover", async () => {
+		it.each([
+			false,
+			true,
+		])("rechecks the exact LOOP owner after waiting behind a lease takeover (has handle: %s)", async (hasHandle) => {
 			const oldLease = new Date();
 			const f = await fixture({
 				effectAction: "FEEDER_COMMIT",
@@ -287,6 +290,7 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 						leaseNotBefore: oldLease,
 					},
 					"previous owner's failure",
+					hasHandle ? f.effect : undefined,
 				).finally(() => {
 					settled = true;
 				});
@@ -309,6 +313,30 @@ describe.runIf(Boolean(adminUrl && appUrl))(
 					where: { id: f.effect.id },
 				}),
 			).resolves.toMatchObject({ state: "DISPATCHING", failure: null });
+
+			if (!hasHandle) return;
+			const successor = {
+				...f.fence,
+				ownerId: "replacement",
+				ownerGeneration: 2,
+				liveChannelId: f.effect.liveChannelId,
+				liveChannelRunId: f.effect.liveChannelRunId,
+				leaseNotBefore: takeoverCutoff,
+			};
+			await expect(
+				failUnstartedLoopFeederHandoff(f.tenant, successor, "wrong token", {
+					...f.effect,
+					token: randomUUID(),
+				}),
+			).resolves.toBe(false);
+			await expect(
+				failUnstartedLoopFeederHandoff(
+					f.tenant,
+					successor,
+					"preflight failed",
+					f.effect,
+				),
+			).resolves.toBe(true);
 		});
 
 		it("leaves ONCE, own spawn claims and potentially crossed LOOP commits alone", async () => {

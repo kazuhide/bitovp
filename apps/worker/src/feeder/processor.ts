@@ -711,19 +711,23 @@ export function createFeederProcessor(deps: FeederDeps) {
 	async function waitForChannelRunning(
 		liveChannelId: string,
 		controller: RunController,
-	): Promise<void> {
+	) {
 		const startedAt = Date.now();
 		for (;;) {
 			controller.throwIfStopped();
 			const channel = await deps.prisma.liveChannel.findUnique({
 				where: { id: liveChannelId },
-				select: { status: true },
+				select: {
+					status: true,
+					bitmovinEncodingId: true,
+					liveEffectFenceVersion: true,
+				},
 			});
 			if (!channel) {
 				throw new Error("Live channel no longer exists");
 			}
 			if (channel.status === "RUNNING") {
-				return;
+				return channel;
 			}
 			if (channel.status !== "CREATED" && channel.status !== "PROVISIONING") {
 				throw new Error(
@@ -1035,7 +1039,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			claimGeneration: number | null;
 			playbackReceipt?: Prisma.InputJsonValue;
 		},
-	): Promise<void> {
+	): Promise<boolean> {
 		const at = new Date(deps.now());
 		const releaseClaimGeneration =
 			evidence?.releaseClaim === true ? evidence.claimGeneration : null;
@@ -1083,7 +1087,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			console.warn(
 				`[feeder] session ${fence.id}: not writing ${status} — the owner lease was taken by another worker (generation ${fence.ownerGeneration} is no longer ours)`,
 			);
-			return;
+			return false;
 		}
 		if (status === "ERROR") {
 			/**
@@ -1122,6 +1126,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 				path: `/live/${liveChannelId}`,
 			});
 		}
+		return true;
 	}
 
 	async function start(feederSessionId: string): Promise<string> {
@@ -1642,14 +1647,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 		}, deps.leaseRenewalIntervalMs ?? FEEDER_LEASE_RENEWAL_MS);
 		leaseTicker.unref?.();
 
-		/**
-		 * Prove this owner generation still controls the session, then bind the
-		 * ingest effect to the session's exact run and that run's exact encoding.
-		 * Only a fresh provider RUNNING observation passes.
-		 */
-		async function assertProviderEffectBoundary(effect: string) {
+		async function assertFeederEffectOwner(): Promise<void> {
 			controller.throwIfStopped();
-			const checkedAt = new Date(deps.now());
 			const held = await deps.prisma.feederSession.findUnique({
 				where: { id: feederSessionId },
 				select: {
@@ -1668,7 +1667,32 @@ export function createFeederProcessor(deps: FeederDeps) {
 			) {
 				throw await lostFence(feederSessionId, controller);
 			}
+		}
 
+		async function throwIfSupersedingLiveStop(
+			admission: Parameters<typeof hasSupersedingFeederStop>[1],
+		): Promise<void> {
+			controller.throwIfStopped();
+			if (
+				await hasSupersedingFeederStop(deps.prisma, admission).catch(
+					() => false,
+				)
+			) {
+				await assertFeederEffectOwner();
+				throw new FeederStopError();
+			}
+		}
+
+		/**
+		 * Bind the current owner's ingest effect to its exact run and encoder.
+		 * A fresh RUNNING observation is required before proceeding.
+		 */
+		async function assertProviderEffectBoundary(
+			effect: string,
+			stopAdmission?: Parameters<typeof hasSupersedingFeederStop>[1] | null,
+		): Promise<void> {
+			const checkedAt = new Date(deps.now());
+			await assertFeederEffectOwner();
 			const [sessionRun, currentRun, channel] = await Promise.all([
 				row.liveChannelRunId === null
 					? Promise.resolve(null)
@@ -1690,11 +1714,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 				}),
 				deps.prisma.liveChannel.findUnique({
 					where: { id: row.liveChannelId },
-					select: {
-						status: true,
-						bitmovinEncodingId: true,
-						liveEffectFenceVersion: true,
-					},
+					select: { status: true, bitmovinEncodingId: true },
 				}),
 			]);
 			const identityRefusal = providerEffectIdentityRefusal({
@@ -1713,17 +1733,10 @@ export function createFeederProcessor(deps: FeederDeps) {
 				deriveProviderLifecycle(currentRun, checkedAt.getTime()),
 			);
 			const refusal = identityRefusal ?? channelRefusal ?? lifecycleRefusal;
-			if (refusal || !channel || !currentRun?.bitmovinEncodingId) {
-				throw new Error(
-					`${effect} refused: ${refusal ?? "the live run has no exact provider identity"}`,
-				);
+			if (refusal) {
+				if (stopAdmission) await throwIfSupersedingLiveStop(stopAdmission);
+				throw new Error(`${effect} refused: ${refusal}`);
 			}
-			return {
-				liveChannelId: row.liveChannelId,
-				liveChannelRunId: currentRun.id,
-				providerEncodingId: currentRun.bitmovinEncodingId,
-				generation: channel.liveEffectFenceVersion,
-			};
 		}
 
 		let activeEffectClaim: LiveEffectClaimHandle | null = null;
@@ -1842,41 +1855,51 @@ export function createFeederProcessor(deps: FeederDeps) {
 					crossedEffectBoundary)
 			)
 				return;
-			if (!claim) {
-				// An initial LOOP can fail before taking the Live worker's handoff.
-				// Only its still-current owner can prove the handoff was unsent.
-				if (
-					!acquiredSpawnClaim &&
-					row.status === "CREATED" &&
-					(row.playbackMode ?? "LOOP") === "LOOP" &&
-					row.liveChannelRunId !== null
-				)
-					await failUnstartedLoopFeederHandoff(
-						deps.prisma,
-						{
-							...fence,
-							liveChannelId: row.liveChannelId,
-							liveChannelRunId: row.liveChannelRunId,
-							leaseNotBefore: new Date(
-								effectNow().getTime() - FEEDER_LEASE_TAKEOVER_MS,
-							),
-						},
-						redactSecrets(reason),
-					);
-				return;
-			}
-			if (crossedEffectBoundary) {
+			if (!claim && (acquiredSpawnClaim || row.status !== "CREATED")) return;
+			if (claim && crossedEffectBoundary) {
 				await markLiveEffectAmbiguous(
 					deps.prisma,
 					claim,
 					`${reason}; the feeder effect crossed its stop/spawn boundary, so operator resolution is required`,
 				);
-			} else {
+			} else if ((row.playbackMode ?? "LOOP") === "LOOP") {
+				if (!row.liveChannelRunId) return;
+				// The same effect token can be adopted by the next LOOP owner.
+				await failUnstartedLoopFeederHandoff(
+					deps.prisma,
+					{
+						...fence,
+						liveChannelId: row.liveChannelId,
+						liveChannelRunId: row.liveChannelRunId,
+						leaseNotBefore: new Date(
+							effectNow().getTime() - FEEDER_LEASE_TAKEOVER_MS,
+						),
+					},
+					redactSecrets(reason),
+					claim ?? undefined,
+				);
+			} else if (claim) {
 				await markLiveEffectFailed(deps.prisma, claim, reason);
 			}
 		}
 		try {
-			await waitForChannelRunning(row.liveChannelId, controller);
+			const running = await waitForChannelRunning(
+				row.liveChannelId,
+				controller,
+			);
+			// A scheduled stop can supersede this airing while its source stages,
+			// before the publisher slot or a durable spawn claim exists.
+			const singlePassAdmission =
+				row.playbackMode === "ONCE" &&
+				row.liveChannelRunId &&
+				running.bitmovinEncodingId
+					? {
+							liveChannelId: row.liveChannelId,
+							liveChannelRunId: row.liveChannelRunId,
+							providerEncodingId: running.bitmovinEncodingId,
+							generation: running.liveEffectFenceVersion,
+						}
+					: null;
 
 			const credential = await deps.resolveCredential(row.sourceCredentialId);
 			const sealed = sealedIdentity(row);
@@ -2177,11 +2200,11 @@ export function createFeederProcessor(deps: FeederDeps) {
 
 				let seamBase: Date | null = null;
 				let attemptEvidenceNotBefore: Date | null = null;
-				// Keep the exact broadcast observed before taking the publisher
-				// slot. A scheduled STOP can win before there is a spawn claim.
-				const singlePassAdmission = singlePass
-					? await assertProviderEffectBoundary("Feeder publisher claim")
-					: null;
+				if (singlePass)
+					await assertProviderEffectBoundary(
+						"Feeder publisher claim",
+						singlePassAdmission,
+					);
 				const commitAt = row.commitAt ?? null;
 				if (commitAt !== null) {
 					const readyAt = new Date(deps.now());
@@ -2301,16 +2324,10 @@ export function createFeederProcessor(deps: FeederDeps) {
 					select: { id: true },
 				});
 				async function rethrowSpawnFailure(error: unknown): Promise<never> {
-					if (singlePassAdmission) {
-						controller.throwIfStopped();
-						if (
-							await hasSupersedingFeederStop(
-								deps.prisma,
-								activeEffectClaim ?? singlePassAdmission,
-							).catch(() => false)
-						)
-							throw new FeederStopError();
-					}
+					if (singlePassAdmission)
+						await throwIfSupersedingLiveStop(
+							activeEffectClaim ?? singlePassAdmission,
+						);
 					throw error;
 				}
 				const supervisor = createFeederSupervisor({
@@ -2856,13 +2873,20 @@ export function createFeederProcessor(deps: FeederDeps) {
 			if (controller.leaseLost) return TAKEN_OVER;
 			if (err instanceof FeederStopError) {
 				// Stop during a pre-push stage is a clean stop, not a failure.
-				await markTerminal(
+				const stopped = await markTerminal(
 					fence,
 					row.liveChannelId,
 					"STOPPED",
 					undefined,
 					terminalEvidence(),
 				);
+				if (!stopped && row.playbackMode === "ONCE") {
+					const current = await deps.prisma.feederSession.findUnique({
+						where: { id: feederSessionId },
+						select: { status: true },
+					});
+					if (current?.status !== "STOPPED") return TAKEN_OVER;
+				}
 				return "STOPPED";
 			}
 			if (err instanceof FeederReleasedError) {

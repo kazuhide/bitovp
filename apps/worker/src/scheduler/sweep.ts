@@ -723,6 +723,25 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 		row: ScheduleRow,
 		jobId: string,
 	): Promise<boolean> {
+		const at = deps.now();
+		if (
+			row.action === "START" &&
+			row.liveChannelRunId &&
+			typeof row.startAdmissionFenceVersion === "number"
+		) {
+			const recorded = await recordRetainedScheduledStart(
+				deps.prisma,
+				{
+					id: row.id,
+					liveChannelId: row.liveChannelId,
+					liveChannelRunId: row.liveChannelRunId,
+					startAdmissionFenceVersion: row.startAdmissionFenceVersion,
+				},
+				{ id: jobId, state: "waiting" },
+				at,
+			);
+			return recorded === "handoff";
+		}
 		const { count } = await deps.prisma.liveSchedule.updateMany({
 			where: {
 				id: row.id,
@@ -733,10 +752,15 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					liveChannelId: row.liveChannelId,
 					liveChannelRunId: row.liveChannelRunId,
 					startAdmissionFenceVersion: row.startAdmissionFenceVersion ?? null,
+					firstStartDispatchAt: null,
 					OR: [{ dispatchJobId: null }, { dispatchJobId: jobId }],
 				}),
 			},
-			data: { dispatchedAt: deps.now(), dispatchJobId: jobId },
+			data: {
+				dispatchedAt: at,
+				dispatchJobId: jobId,
+				...(row.action === "START" && { firstStartDispatchAt: at }),
+			},
 		});
 		return count === 1;
 	}
@@ -1067,6 +1091,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					status: "FIRED",
 					firedAt: deps.now(),
 					dispatchedAt: null,
+					firstStartDispatchAt: null,
 					dispatchJobId: scheduledStartJobId(row.id, expectedFenceVersion + 1),
 					liveChannelRunId: runId,
 					startAdmissionFenceVersion: expectedFenceVersion + 1,
@@ -2448,10 +2473,10 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					redispatched += 1;
 					return;
 				}
-				await markDispatched(row, jobId);
+				const firstHandoff = await markDispatched(row, jobId);
 				redispatched += 1;
 				// Notification follows the receipt and does not delay the next row.
-				void emitFired(row);
+				if (row.action !== "START" || firstHandoff) void emitFired(row);
 			},
 		});
 		redispatched += await redispatchStrandedStages(now);

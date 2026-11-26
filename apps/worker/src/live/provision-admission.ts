@@ -37,6 +37,7 @@ type ScheduledStartIdentity = {
 type ScheduledStartReceipt = {
 	dispatchJobId: string | null;
 	dispatchedAt: Date | null;
+	firstStartDispatchAt: Date | null;
 };
 
 export type ScheduledStartDelivery = {
@@ -277,8 +278,14 @@ export async function prepareScheduledStartDispatch(
 					...pendingStart(start),
 					dispatchJobId: receipt.dispatchJobId,
 					dispatchedAt: receipt.dispatchedAt,
+					firstStartDispatchAt: receipt.firstStartDispatchAt,
 				},
-				data: { dispatchJobId: id, dispatchedAt: null },
+				data: {
+					dispatchJobId: id,
+					dispatchedAt: null,
+					firstStartDispatchAt:
+						receipt.firstStartDispatchAt ?? receipt.dispatchedAt,
+				},
 			});
 			return changed.count === 1;
 		});
@@ -325,7 +332,7 @@ export async function claimScheduledStartLease(
 		)
 			return stale;
 		const [receipt] = await tx.$queryRaw<ScheduledStartReceipt[]>`
-			SELECT "dispatchJobId", "dispatchedAt" FROM "LiveSchedule"
+			SELECT "dispatchJobId", "dispatchedAt", "firstStartDispatchAt" FROM "LiveSchedule"
 			WHERE id = ${start.id}::uuid
 				AND "liveChannelId" = ${start.liveChannelId}::uuid
 				AND action = 'START' AND status = 'FIRED' AND outcome = 'PENDING'
@@ -358,8 +365,20 @@ export async function claimScheduledStartLease(
 			const { count } = await tx.liveChannel.updateMany(lease);
 			if (count !== 1) return { status: "BUSY", firstHandoff: false };
 		}
-		const firstHandoff = receipt.dispatchedAt === null;
-		if (firstHandoff || receipt.dispatchJobId === null) {
+		let firstHandoff = false;
+		if (receipt.dispatchedAt === null) {
+			const recorded = await recordRetainedScheduledStart(
+				tx,
+				start,
+				{ id: delivery.jobId, state: "active" },
+				at,
+			);
+			if (!recorded)
+				throw new Error(
+					"Scheduled START handoff changed while claiming its lease",
+				);
+			firstHandoff = recorded === "handoff";
+		} else if (receipt.dispatchJobId === null) {
 			const { count } = await tx.liveSchedule.updateMany({
 				where: {
 					...pendingStart(start),
@@ -368,7 +387,8 @@ export async function claimScheduledStartLease(
 				},
 				data: {
 					dispatchJobId: delivery.jobId,
-					...(firstHandoff && { dispatchedAt: at }),
+					firstStartDispatchAt:
+						receipt.firstStartDispatchAt ?? receipt.dispatchedAt,
 				},
 			});
 			if (count !== 1)
@@ -381,11 +401,11 @@ export async function claimScheduledStartLease(
 }
 
 export async function recordRetainedScheduledStart(
-	prisma: AppPrismaClient,
+	prisma: Pick<AppTransactionClient, "liveSchedule">,
 	start: ScheduledStartIdentity,
 	retained: { id: string; state: string },
 	at: Date,
-): Promise<false | "handoff" | "terminal"> {
+): Promise<false | "handoff" | "acknowledged" | "terminal"> {
 	const owned = pendingStart(start);
 	// Retention may evict the job before the next bounded recovery pass.
 	const failure =
@@ -400,19 +420,28 @@ export async function recordRetainedScheduledStart(
 					outcomeEvidenceAt: at,
 				} as const)
 			: undefined;
-	const { count } = await prisma.liveSchedule.updateMany({
-		where: {
-			...owned,
-			dispatchedAt: null,
-			OR: [{ dispatchJobId: null }, { dispatchJobId: retained.id }],
-		},
-		data: {
-			dispatchedAt: at,
-			dispatchJobId: retained.id,
-			...failure,
-		},
+	const unstamped = {
+		...owned,
+		dispatchedAt: null,
+		OR: [{ dispatchJobId: null }, { dispatchJobId: retained.id }],
+	};
+	const dispatch = {
+		dispatchedAt: at,
+		dispatchJobId: retained.id,
+		...failure,
+	};
+	const first = await prisma.liveSchedule.updateMany({
+		where: { ...unstamped, firstStartDispatchAt: null },
+		data: { ...dispatch, firstStartDispatchAt: at },
 	});
-	if (count === 1) return "handoff";
+	if (first.count === 1) return "handoff";
+	// A replacement can acknowledge its own job without repeating the
+	// notification for an admission already handed to the queue.
+	const replacement = await prisma.liveSchedule.updateMany({
+		where: { ...unstamped, firstStartDispatchAt: { not: null } },
+		data: dispatch,
+	});
+	if (replacement.count === 1) return "acknowledged";
 	if (!failure) return false;
 	// A prior or concurrent observer may already have stamped the same job.
 	// Preserve that handoff time while saving the new terminal observation.

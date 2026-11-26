@@ -60,6 +60,7 @@ describe("scheduled START final-delivery recovery", () => {
 		const updateMany = vi
 			.fn()
 			.mockResolvedValueOnce({ count: firstHandoff ? 1 : 0 })
+			.mockResolvedValueOnce({ count: 0 })
 			.mockResolvedValueOnce({ count: receiptCount });
 		const transaction = vi.fn(async () => {
 			throw new Error("retirement rolled back");
@@ -136,7 +137,7 @@ describe("scheduled START final-delivery recovery", () => {
 			}),
 			data: expect.objectContaining({ outcome: "UNKNOWN" }),
 		});
-		expect(updateMany.mock.invocationCallOrder[1]).toBeLessThan(
+		expect(updateMany.mock.invocationCallOrder[2]).toBeLessThan(
 			transaction.mock.invocationCallOrder[0] ?? 0,
 		);
 		expect(emit).not.toHaveBeenCalled();
@@ -171,7 +172,7 @@ describe("scheduled START final-delivery recovery", () => {
 		await expect(
 			recordFinalProvisionFailure(prisma, job, "queue worker lost", at),
 		).resolves.toBe(false);
-		expect(updateMany).toHaveBeenCalledTimes(2);
+		expect(updateMany).toHaveBeenCalledTimes(3);
 		expect(transaction).not.toHaveBeenCalled();
 	});
 });

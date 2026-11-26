@@ -1060,7 +1060,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			await admin.$executeRawUnsafe(bootstrap);
 		}
 
-		it("snapshots only pending upgrade generations across tenant-scoped START and STOP histories", async () => {
+		it("snapshots pending upgrade generations and existing START acknowledgments across tenants", async () => {
 			const pending = await fixture("PROVISIONING", null);
 			const stopped = await fixture("STOPPED", null);
 			const other = await otherTenant.liveChannel.create({
@@ -1072,6 +1072,62 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				},
 			});
 			await snapshotLegacyAdmissions();
+			const existingDispatch = new Date(now.getTime() - 1_000);
+			const createReceipt = (
+				scope: AppPrismaClient,
+				liveChannelId: string,
+				action: "START" | "STOP",
+				dispatchedAt: Date | null,
+			) =>
+				scope.liveSchedule.create({
+					data: {
+						action,
+						liveChannelId,
+						fireAt: now,
+						status: "FIRED",
+						dispatchedAt,
+					},
+				});
+			const started = await createReceipt(
+				tenant,
+				pending.channel.id,
+				"START",
+				existingDispatch,
+			);
+			const stoppedReceipt = await createReceipt(
+				tenant,
+				stopped.channel.id,
+				"STOP",
+				existingDispatch,
+			);
+			const waiting = await createReceipt(otherTenant, other.id, "START", null);
+			const otherStart = await createReceipt(
+				otherTenant,
+				other.id,
+				"START",
+				now,
+			);
+			const migration = readFileSync(
+				new URL(
+					"../../../../packages/db/prisma/migrations/20261126203000_live_start_first_dispatch/migration.sql",
+					import.meta.url,
+				),
+				"utf8",
+			);
+			await runtime.$executeRawUnsafe(
+				migration.slice(migration.indexOf("DO $$")),
+			);
+			for (const [scope, id, firstStartDispatchAt] of [
+				[tenant, started.id, existingDispatch],
+				[tenant, stoppedReceipt.id, null],
+				[otherTenant, waiting.id, null],
+				[otherTenant, otherStart.id, now],
+			] as const) {
+				await expect(
+					scope.liveSchedule.findUniqueOrThrow({ where: { id } }),
+				).resolves.toMatchObject({ firstStartDispatchAt });
+				await scope.liveSchedule.delete({ where: { id } });
+			}
 			expect(
 				(
 					await tenant.liveChannel.findUniqueOrThrow({
@@ -1399,7 +1455,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			expect(saved.dispatchJobId).toBe(`sched-${row.id}-start-1`);
 		});
 
-		it("stamps an accepted first START with its consumer lease when the Redis add reply is lost", async () => {
+		it.each([
+			{ deliveryKind: "newly admitted START", hasPriorHandoff: false },
+			{ deliveryKind: "replacement START", hasPriorHandoff: true },
+		])("stamps an accepted $deliveryKind with its consumer lease when the Redis add reply is lost", async ({
+			hasPriorHandoff,
+		}) => {
 			const f = await isolatedDispatchFixture(randomUUID());
 			const plan = JSON.parse(
 				readFileSync(
@@ -1450,6 +1511,30 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const delivery = queue[0];
 			if (!delivery?.job.plannedLiveChannelRunId)
 				throw new Error("missing scheduled delivery");
+			const previousAcknowledgment = new Date(now.getTime() - 1_000);
+			if (hasPriorHandoff) {
+				const legacyReceipt = await f.scope.liveSchedule.update({
+					where: { id: schedule.id },
+					data: {
+						firedAt: previousAcknowledgment,
+						dispatchJobId: `sched-${schedule.id}`,
+						dispatchedAt: previousAcknowledgment,
+					},
+				});
+				await expect(
+					prepareScheduledStartDispatch(
+						f.scope,
+						async () => undefined,
+						{
+							id: schedule.id,
+							liveChannelId: f.channel.id,
+							liveChannelRunId: delivery.job.plannedLiveChannelRunId,
+							startAdmissionFenceVersion: 1,
+						},
+						legacyReceipt,
+					),
+				).resolves.toEqual({ id, state: null });
+			}
 			const reserved = await f.scope.liveSchedule.findUniqueOrThrow({
 				where: { id: schedule.id },
 			});
@@ -1488,6 +1573,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				expect(reserved).toMatchObject({
 					dispatchJobId: id,
 					dispatchedAt: null,
+					firstStartDispatchAt: hasPriorHandoff ? previousAcknowledgment : null,
 				});
 				await expect(
 					f.scope.liveChannel.findUniqueOrThrow({
@@ -1503,16 +1589,21 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				).resolves.toMatchObject({
 					dispatchJobId: id,
 					dispatchedAt: now,
+					firstStartDispatchAt: hasPriorHandoff ? previousAcknowledgment : now,
 					outcome: "PENDING",
 				});
-				expect(emitEvent.mock.calls).toEqual([
-					[
-						expect.objectContaining({
-							kind: "SCHEDULE_FIRED",
-							scheduleId: schedule.id,
-						}),
-					],
-				]);
+				expect(emitEvent.mock.calls).toEqual(
+					hasPriorHandoff
+						? []
+						: [
+								[
+									expect.objectContaining({
+										kind: "SCHEDULE_FIRED",
+										scheduleId: schedule.id,
+									}),
+								],
+							],
+				);
 			} finally {
 				resume.release();
 				await Promise.allSettled([running]);
@@ -2541,7 +2632,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			);
 			const readJob = async (key: string) =>
 				key === id && data ? { data, getState: async () => state } : undefined;
-			const recover = createExhaustedProvisionRecovery(tenant, readJob, add);
+			const emitEvent = vi.fn(async (_event: unknown) => {});
+			const recover = createExhaustedProvisionRecovery(
+				tenant,
+				readJob,
+				add,
+				emitEvent,
+			);
 			for (let i = 0; i < 10 && !data; i++)
 				await recover(new Date()).catch((error) =>
 					expect(error).toMatchObject({
@@ -2572,14 +2669,19 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					now: () => acknowledgedAt,
 					enqueue: add,
 					readStartJob: readJob,
+					emitEvent,
 				}).dispatchPending();
 				await expect(
 					tenant.liveSchedule.findUniqueOrThrow({ where: { id: schedule.id } }),
 				).resolves.toMatchObject({
 					dispatchJobId: id,
 					dispatchedAt: acknowledgedAt,
+					firstStartDispatchAt: now,
 					outcome: "PENDING",
 				});
+				expect(emitEvent).not.toHaveBeenCalledWith(
+					expect.objectContaining({ scheduleId: schedule.id }),
+				);
 				expect(add.mock.calls.filter(([, key]) => key === id)).toHaveLength(1);
 			}
 			state = "failed";
@@ -2590,6 +2692,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						refuseProvisionRetirement(tenant, f.channel.id),
 						readJob,
 						add,
+						emitEvent,
 					),
 					failedAt,
 				);
@@ -2598,6 +2701,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				).resolves.toMatchObject({
 					dispatchJobId: id,
 					dispatchedAt: acknowledgedAt,
+					firstStartDispatchAt: now,
 					outcome: "UNKNOWN",
 					outcomeEvidenceAt: failedAt,
 				});

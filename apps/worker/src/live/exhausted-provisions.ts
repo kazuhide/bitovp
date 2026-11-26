@@ -76,6 +76,7 @@ export function createExhaustedProvisionRecovery(
 						outcome: string;
 						dispatchJobId: string | null;
 						dispatchedAt: Date | null;
+						firstStartDispatchAt: Date | null;
 				  }
 				| undefined;
 			let id: string,
@@ -102,6 +103,7 @@ export function createExhaustedProvisionRecovery(
 						outcome: true,
 						dispatchJobId: true,
 						dispatchedAt: true,
+						firstStartDispatchAt: true,
 					},
 					take: 2,
 				});
@@ -187,8 +189,7 @@ export function createExhaustedProvisionRecovery(
 						{ id: delivery.id, state: delivery.state ?? "waiting" },
 						at,
 					);
-					if (recorded === "handoff" && scheduled.dispatchedAt === null)
-						void emitScheduleFired(start, emitEvent);
+					if (recorded === "handoff") void emitScheduleFired(start, emitEvent);
 					if (delivery.state !== "failed" || !recorded) continue;
 				} else {
 					const job = await readOwnedJob(scheduled.dispatchJobId ?? id);

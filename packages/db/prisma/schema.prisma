@@ -2293,14 +2293,16 @@ model LiveSchedule {
   /// STOP the channel STOPPING) and only THEN call `queue.add`; a SIGKILL
   /// between the two lost the action forever, because the next sweep reads
   /// only ARMED rows. A FIRED row now means CLAIMED, and `dispatchedAt`
-  /// means HANDED TO THE QUEUE — it is written only after `add` resolves.
+  /// means HANDED TO THE QUEUE — a successful add or the actual queue job
+  /// can prove the handoff.
   /// FIRED + null is therefore the recoverable state the dispatcher pass
   /// re-adds (under the same deterministic job id, so a handoff that DID
   /// land dedupes instead of running twice).
   dispatchedAt          DateTime?
-  /// The BullMQ job id the handoff used. Forensics only — never the
-  /// re-dispatch INPUT, because a crash leaves it null by construction; the
-  /// dispatcher always DERIVES the id from the row id.
+  /// First acknowledged START handoff in this admission, even after its
+  /// original BullMQ job is replaced. Null means no handoff was observed.
+  firstStartDispatchAt  DateTime?
+  /// The BullMQ job id reserved for or acknowledged by this handoff.
   dispatchJobId         String?
   /// The STOP envelope committed with FIRED. Redis retries retain the admitted encoder and generation.
   stopProviderEncodingId String?

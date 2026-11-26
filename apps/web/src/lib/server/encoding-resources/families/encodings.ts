@@ -13,12 +13,14 @@ import type {
 	DvbSubtitleInputStream,
 	FileInputStream,
 	Fmp4Muxing,
+	FragmentedMuxingInformation,
 	H264PictureTimingTrimmingInputStream,
 	Hdr10PlusInputStream,
 	IngestInputStream,
 	Keyframe,
 	Mp4Muxing,
 	ProgressiveMovMuxing,
+	ProgressiveMuxingInformation,
 	ProgressiveTsMuxing,
 	ProgressiveWavMuxing,
 	ProgressiveWebmMuxing,
@@ -31,7 +33,7 @@ import type {
 	TsMuxing,
 	WebmMuxing,
 } from "@bitmovin/api-sdk";
-import { defineFamily } from "../family";
+import { defineFamily, type ResourceFields } from "../family";
 
 function hdr10PlusTrack(stream: Hdr10PlusInputStream) {
 	const { id, createdAt, modifiedAt, selectionMode, position } = stream;
@@ -51,6 +53,32 @@ function hdr10PlusTrack(stream: Hdr10PlusInputStream) {
 				? position
 				: undefined,
 	};
+}
+
+function outputInformation(
+	muxing: FragmentedMuxingInformation | ProgressiveMuxingInformation,
+): ResourceFields {
+	const fields: ResourceFields = {};
+	const { fileSize, containerBitrate, duration } = muxing;
+	if (
+		typeof fileSize === "number" &&
+		Number.isSafeInteger(fileSize) &&
+		fileSize >= 0
+	)
+		fields.fileSizeBytes = fileSize;
+	if (
+		typeof containerBitrate === "number" &&
+		Number.isFinite(containerBitrate) &&
+		containerBitrate >= 0
+	)
+		fields.containerBitrateBps = containerBitrate;
+	if (
+		typeof duration === "number" &&
+		Number.isFinite(duration) &&
+		duration >= 0
+	)
+		fields.durationSeconds = duration;
+	return fields;
 }
 
 export const encodings = {
@@ -369,6 +397,10 @@ export const encodings = {
 		fields: ["createdAt", "id", "modifiedAt", "name", "segmentLength"],
 		get: (api, { id, parent }) =>
 			api.encoding.encodings.muxings.fmp4.get(parent("encodingId"), id),
+		information: (api, { id, parent }) =>
+			api.encoding.encodings.muxings.fmp4.information
+				.get(parent("encodingId"), id)
+				.then(outputInformation),
 		list: (api, { parent }, page) =>
 			api.encoding.encodings.muxings.fmp4.list(parent("encodingId"), page),
 		remove: (api, { id, parent }) =>
@@ -379,6 +411,10 @@ export const encodings = {
 		fields: ["createdAt", "id", "modifiedAt", "name"],
 		get: (api, { id, parent }) =>
 			api.encoding.encodings.muxings.mp4.get(parent("encodingId"), id),
+		information: (api, { id, parent }) =>
+			api.encoding.encodings.muxings.mp4.information
+				.get(parent("encodingId"), id)
+				.then(outputInformation),
 		list: (api, { parent }, page) =>
 			api.encoding.encodings.muxings.mp4.list(parent("encodingId"), page),
 		remove: (api, { id, parent }) =>
@@ -387,6 +423,10 @@ export const encodings = {
 	CREATE_MUXING_PROGRESSIVE_MOV: defineFamily<ProgressiveMovMuxing>({
 		parents: ["encodingId"],
 		fields: ["createdAt", "id", "modifiedAt", "name"],
+		information: (api, { id, parent }) =>
+			api.encoding.encodings.muxings.progressiveMov.information
+				.get(parent("encodingId"), id)
+				.then(outputInformation),
 		get: (api, { id, parent }) =>
 			api.encoding.encodings.muxings.progressiveMov.get(
 				parent("encodingId"),
@@ -406,6 +446,10 @@ export const encodings = {
 	CREATE_MUXING_PROGRESSIVE_TS: defineFamily<ProgressiveTsMuxing>({
 		parents: ["encodingId"],
 		fields: ["createdAt", "id", "modifiedAt", "name", "segmentLength"],
+		information: (api, { id, parent }) =>
+			api.encoding.encodings.muxings.progressiveTs.information
+				.get(parent("encodingId"), id)
+				.then(outputInformation),
 		get: (api, { id, parent }) =>
 			api.encoding.encodings.muxings.progressiveTs.get(
 				parent("encodingId"),
@@ -425,6 +469,10 @@ export const encodings = {
 	CREATE_MUXING_PROGRESSIVE_WAV: defineFamily<ProgressiveWavMuxing>({
 		parents: ["encodingId"],
 		fields: ["createdAt", "modifiedAt", "type"],
+		information: (api, { id, parent }) =>
+			api.encoding.encodings.muxings.progressiveWav.information
+				.get(parent("encodingId"), id)
+				.then(outputInformation),
 		get: (api, { id, parent }) =>
 			api.encoding.encodings.muxings.progressiveWav.get(
 				parent("encodingId"),
@@ -444,6 +492,10 @@ export const encodings = {
 	CREATE_MUXING_PROGRESSIVE_WEBM: defineFamily<ProgressiveWebmMuxing>({
 		parents: ["encodingId"],
 		fields: ["createdAt", "id", "modifiedAt", "name", "segmentLength"],
+		information: (api, { id, parent }) =>
+			api.encoding.encodings.muxings.progressiveWebm.information
+				.get(parent("encodingId"), id)
+				.then(outputInformation),
 		get: (api, { id, parent }) =>
 			api.encoding.encodings.muxings.progressiveWebm.get(
 				parent("encodingId"),

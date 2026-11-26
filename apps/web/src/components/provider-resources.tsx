@@ -15,6 +15,7 @@ type Selection = {
 	hasList: boolean;
 	listScope?: "linked";
 	hasCustomData?: boolean;
+	hasInformation?: boolean;
 	childCollections?: ChildChoice[];
 	removalState?: string | null;
 	retainedForPublication?: boolean;
@@ -23,27 +24,44 @@ type Fields = Record<string, string | number | boolean>;
 const pageSize = 25;
 const keyOf = (r: Selection) => JSON.stringify([r.step, r.attempt, r.id]);
 
-function FieldList({ fields }: { fields: Fields }) {
+function FieldList({
+	fields,
+	labels,
+}: {
+	fields: Fields;
+	labels?: Record<string, string>;
+}) {
 	return (
 		<dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-[max-content_1fr]">
-			{Object.entries(fields).map(([label, value]) => (
-				<div key={label} className="contents">
-					<dt className="text-zinc-400">{label}</dt>
+			{Object.entries(fields).map(([name, value]) => (
+				<div key={name} className="contents">
+					<dt className="text-zinc-400">{labels?.[name] ?? name}</dt>
 					<dd className="break-all text-zinc-200">{String(value)}</dd>
 				</div>
 			))}
 		</dl>
 	);
 }
-function LookupFailure({ error, retry }: { error: Error; retry: () => void }) {
+function LookupFailure({
+	error,
+	retry,
+	information,
+}: {
+	error: Error;
+	retry: () => void;
+	information?: boolean;
+}) {
 	const { t } = useT();
+	const status = error instanceof ApiError ? error.status : undefined;
 	return (
 		<div className="flex flex-wrap items-center gap-2">
 			<p role="alert" className="text-xs text-amber-300">
 				{t(
-					error instanceof ApiError && error.status === 404
-						? "providerResources.missing"
-						: error instanceof ApiError && error.status === 409
+					status === 404
+						? information
+							? "providerResources.informationUnavailable"
+							: "providerResources.missing"
+						: status === 409
 							? "providerResources.changed"
 							: "providerResources.failed",
 				)}
@@ -192,10 +210,32 @@ function ResourceInspector({
 	canRemove: boolean;
 }) {
 	const { t } = useT();
-	const [view, setView] = useState<"detail" | "siblings" | "customData">(
-			"detail",
-		),
+	const [view, setView] = useState<
+			"detail" | "information" | "siblings" | "customData"
+		>("detail"),
 		[offset, setOffset] = useState(0);
+	const choices = [
+		{ view: "detail", label: "providerResources.detail", available: true },
+		{
+			view: "information",
+			label: "providerResources.information",
+			available: selected.hasInformation,
+		},
+		{
+			view: "siblings",
+			label:
+				selected.listScope === "linked"
+					? "providerResources.linked"
+					: "providerResources.siblings",
+			available: selected.hasList,
+		},
+		{
+			view: "customData",
+			label: "providerResources.metadata",
+			available: selected.hasCustomData,
+		},
+	] as const;
+	const available = choices.filter((choice) => choice.available);
 	const params = new URLSearchParams({
 		step: selected.step,
 		attempt: String(selected.attempt),
@@ -215,41 +255,24 @@ function ResourceInspector({
 	});
 	return (
 		<div className="space-y-3">
-			{(selected.hasList || selected.hasCustomData) &&
-				selected.removalState !== "REMOVED" && (
-					<div className="flex flex-wrap gap-2">
-						{(["detail", "siblings", "customData"] as const)
-							.filter(
-								(v) =>
-									v === "detail" ||
-									(v === "siblings"
-										? selected.hasList
-										: selected.hasCustomData),
-							)
-							.map((choice) => (
-								<Button
-									variant={view === choice ? "secondary" : "ghost"}
-									size="sm"
-									key={choice}
-									aria-pressed={view === choice}
-									onClick={() => {
-										setView(choice);
-										setOffset(0);
-									}}
-								>
-									{t(
-										choice === "detail"
-											? "providerResources.detail"
-											: choice === "customData"
-												? "providerResources.metadata"
-												: selected.listScope === "linked"
-													? "providerResources.linked"
-													: "providerResources.siblings",
-									)}
-								</Button>
-							))}
-					</div>
-				)}
+			{available.length > 1 && selected.removalState !== "REMOVED" && (
+				<div className="flex flex-wrap gap-2">
+					{available.map((choice) => (
+						<Button
+							variant={view === choice.view ? "secondary" : "ghost"}
+							size="sm"
+							key={choice.view}
+							aria-pressed={view === choice.view}
+							onClick={() => {
+								setView(choice.view);
+								setOffset(0);
+							}}
+						>
+							{t(choice.label)}
+						</Button>
+					))}
+				</div>
+			)}
 			{selected.removalState === "REMOVED" ? (
 				!canManage && <p role="status">{t("providerResources.removed")}</p>
 			) : data.isPending ? (
@@ -257,9 +280,31 @@ function ResourceInspector({
 					{t("providerResources.loading")}
 				</p>
 			) : data.isError ? (
-				<LookupFailure error={data.error} retry={() => data.refetch()} />
+				<LookupFailure
+					error={data.error}
+					retry={() => data.refetch()}
+					information={view === "information"}
+				/>
+			) : view === "information" &&
+				!Object.keys(data.data.fields ?? {}).length ? (
+				<p role="status" className="text-xs text-zinc-400">
+					{t("providerResources.informationUnavailable")}
+				</p>
 			) : view !== "siblings" && data.data.fields ? (
-				<FieldList fields={data.data.fields} />
+				<FieldList
+					fields={data.data.fields}
+					labels={
+						view === "information"
+							? {
+									fileSizeBytes: t("providerResources.fileSizeBytes"),
+									containerBitrateBps: t(
+										"providerResources.containerBitrateBps",
+									),
+									durationSeconds: t("providerResources.durationSeconds"),
+								}
+							: undefined
+					}
+				/>
 			) : data.data.items ? (
 				<div className="space-y-2">
 					<p role="status" className="text-xs text-zinc-400">

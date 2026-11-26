@@ -66,6 +66,126 @@ const read = (query: string) =>
 	vod(new Request(`http://fixture.invalid/resources?${query}`), {
 		params: Promise.resolve({ id: jobId }),
 	});
+
+const muxingInformationKinds = new Set([
+	"CREATE_MUXING_FMP4",
+	"CREATE_MUXING_MP4",
+	"CREATE_MUXING_PROGRESSIVE_MOV",
+	"CREATE_MUXING_PROGRESSIVE_TS",
+	"CREATE_MUXING_PROGRESSIVE_WAV",
+	"CREATE_MUXING_PROGRESSIVE_WEBM",
+]);
+
+it.each(
+	contracts.filter(({ kind }) => muxingInformationKinds.has(kind)),
+)("reads output information using the recorded encoding and muxing for $kind", async (contract) => {
+	const { steps, id, expected } = fixture(contract);
+	seeded(steps);
+	const index = await (await read("")).json();
+	expect(index.resources).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ id, step: "selected", hasInformation: true }),
+		]),
+	);
+	expect(transport).not.toHaveBeenCalled();
+	transport.mockImplementation(async (url: string, init: RequestInit) => {
+		expect(new URL(url).pathname).toBe(`${expected}/information`);
+		expect(init.method).toBe("GET");
+		expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+		return Response.json({
+			status: "SUCCESS",
+			data: {
+				result: {
+					fileSize: 0,
+					containerBitrate: 5321000,
+					duration: 12.25,
+					containerFormat: "s3://private-bucket",
+					audioTracks: [{ codec: "private-token" }],
+					byteRanges: [{ offset: 0, length: 1234 }],
+					customData: { apiKey: "private-token" },
+				},
+			},
+		});
+	});
+	const result = await read("step=selected&attempt=0&view=information");
+	expect(result.status).toBe(200);
+	expect(result.headers.get("cache-control")).toBe("private, no-store");
+	expect(await result.json()).toEqual({
+		fields: {
+			fileSizeBytes: 0,
+			containerBitrateBps: 5321000,
+			durationSeconds: 12.25,
+		},
+	});
+	expect(transport).toHaveBeenCalledOnce();
+});
+
+it("uses the selected resource's current attempt, parent and original account for information", async () => {
+	const contract = contracts.find(
+		(row) => row.kind === "CREATE_MUXING_PROGRESSIVE_WAV",
+	);
+	if (!contract) throw new Error("Missing WAV fixture");
+	const { steps } = fixture(contract),
+		[parent, muxing] = steps;
+	if (!parent || !muxing)
+		throw new Error("Missing recorded encoding or muxing");
+	seeded(steps);
+	const view = "step=selected&view=information";
+	expect((await read(`${view}&attempt=1`)).status).toBe(409);
+	parent.resourceAccount = { id: accountId, version: randomUUID() };
+	expect((await read(`${view}&attempt=0`)).status).toBe(409);
+	parent.resourceAccount = { id: accountId, version };
+	muxing.request = { refs: { encodingId: randomUUID() } };
+	expect((await read(`${view}&attempt=0`)).status).toBe(404);
+	expect(transport).not.toHaveBeenCalled();
+});
+
+it("refuses output information for unsupported recorded families without sending a request", async () => {
+	const contract = contracts.find((row) => row.kind === "CREATE_MUXING_WEBM");
+	if (!contract) throw new Error("Missing WebM fixture");
+	seeded(fixture(contract).steps);
+	expect((await read("step=selected&attempt=0&view=information")).status).toBe(
+		400,
+	);
+	expect(transport).not.toHaveBeenCalled();
+});
+
+it("omits invalid and absent measurements and reports unavailable information independently of the muxing", async () => {
+	const contract = contracts.find((row) => row.kind === "CREATE_MUXING_MP4");
+	if (!contract) throw new Error("Missing MP4 fixture");
+	seeded(fixture(contract).steps);
+	const view = "step=selected&attempt=0&view=information";
+	transport.mockResolvedValueOnce(
+		Response.json({
+			status: "SUCCESS",
+			data: {
+				result: {
+					fileSize: "private-path",
+					duration: -1,
+					containerBitrate: null,
+				},
+			},
+		}),
+	);
+	expect(await (await read(view)).json()).toEqual({ fields: {} });
+	transport.mockResolvedValueOnce(
+		Response.json({
+			status: "SUCCESS",
+			data: { result: { id: randomUUID(), fileSize: 800 } },
+		}),
+	);
+	expect((await read(view)).status).toBe(502);
+	transport.mockResolvedValueOnce(
+		Response.json(
+			{ status: "ERROR", data: { message: "private-path" } },
+			{ status: 404 },
+		),
+	);
+	const missing = await read(view);
+	expect(missing.status).toBe(404);
+	expect(await missing.text()).toContain("output information");
+});
+
 it.each(
 	contracts,
 )("reaches the official typed transport for $kind and projects public fields", async (contract) => {

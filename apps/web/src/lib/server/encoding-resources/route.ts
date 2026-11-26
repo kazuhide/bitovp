@@ -38,6 +38,7 @@ const query = z
 		view: z
 			.enum([
 				"detail",
+				"information",
 				"siblings",
 				"customData",
 				"children",
@@ -250,6 +251,10 @@ export function resourceSdk(
 			const path = new URL(String(url)).pathname.replace(/\/$/, "");
 			if (path.toLowerCase().endsWith("/customdata")) {
 				if (!object(result.customData)) throw new InvalidResourceResponse();
+			} else if (path.endsWith(`/${encodeURIComponent(id)}/information`)) {
+				// Information describes the addressed muxing and omits its ID.
+				if (result.id !== undefined && result.id !== id)
+					throw new InvalidResourceResponse();
 			} else if (path.endsWith(`/${encodeURIComponent(id)}`)) {
 				if (result.id !== id) throw new InvalidResourceResponse();
 			} else if (
@@ -334,6 +339,8 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 			);
 		if (view === "siblings" && !family.list)
 			return jsonError(400, "This resource has no collection.");
+		if (view === "information" && !family.information)
+			return jsonError(400, "This resource has no output information view.");
 		if (view === "customData" && !family.customData)
 			return jsonError(400, "This resource has no metadata view.");
 		const collections = childCollectionsFor(entry.kind);
@@ -396,6 +403,8 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 				return respond(
 					await family.list(api, address, { offset, limit: pageSize }),
 				);
+			if (view === "information" && family.information)
+				return respond({ fields: await family.information(api, address) });
 			if (view === "customData" && family.customData) {
 				const value = object(
 					(await family.customData(api, address)).customData,
@@ -421,7 +430,12 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 		} catch (err) {
 			const status = object(err)?.httpStatusCode;
 			if (status === 404)
-				return jsonError(404, "The provider no longer has this resource.");
+				return jsonError(
+					404,
+					view === "information"
+						? "The provider has no output information for this resource."
+						: "The provider no longer has this resource.",
+				);
 			return jsonError(
 				502,
 				err instanceof InvalidResourceResponse

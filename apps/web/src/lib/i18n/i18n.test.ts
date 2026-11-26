@@ -161,7 +161,8 @@ describe("catalogue parity", () => {
 		// Four short labels cover instance queue usage and availability.
 		// MoQ playback controls add five unique short labels (runtime measured: 3511).
 		// HDR10+, HE-AAC, and notification delivery states.
-		pinWithDriftAid(short.size, 3592, "short");
+		// The recorded muxing information view adds five short labels.
+		pinWithDriftAid(short.size, 3597, "short");
 	});
 
 	/**

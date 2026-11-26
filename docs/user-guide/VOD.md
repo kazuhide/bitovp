@@ -264,6 +264,10 @@ selection when available. They omit the video and JSON paths and the metadata
 contents. HEVC and HEVC v2, PCM and audio passthrough configurations, and
 Progressive WAV muxings can also be inspected from their recorded steps.
 
+For a recorded fMP4, MP4, Progressive MOV, Progressive TS, Progressive WAV, or
+Progressive WebM muxing, open **Output information** to see the size, container
+bitrate, and duration when the provider returns those measurements.
+
 Select a recorded fMP4, MP4, TS, Progressive TS, WebM or Progressive WebM muxing to see its DRM systems. Progressive TS also exposes ID3 tags. Choose a type, then open a row to see its public details or check whether its metadata identifies this job. The general DRM list shows the entries the provider returned. Choose a specific DRM system to browse further pages.
 
 For protected DASH or Smooth manifests, select the representation or content-protection creation step to inspect the recorded provider resource and its collection. BitOVP checks the manifest hierarchy and the encoding, muxing and DRM references saved by that step.

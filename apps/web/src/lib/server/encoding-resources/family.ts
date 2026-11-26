@@ -28,6 +28,10 @@ export type ResourceFamily = {
 		address: ResourceAddress,
 	) => Promise<{ customData?: Record<string, unknown> }>;
 	detail(api: BitmovinApi, address: ResourceAddress): Promise<ResourceFields>;
+	information?: (
+		api: BitmovinApi,
+		address: ResourceAddress,
+	) => Promise<ResourceFields>;
 	list?: (
 		api: BitmovinApi,
 		address: ResourceAddress,
@@ -68,6 +72,7 @@ export function defineFamily<T extends ProviderResource>(definition: {
 	listScope?: "linked";
 	customData?: ResourceFamily["customData"];
 	get: (api: BitmovinApi, address: ResourceAddress) => Promise<T>;
+	information?: ResourceFamily["information"];
 	list?: (
 		api: BitmovinApi,
 		address: ResourceAddress,
@@ -83,6 +88,7 @@ export function defineFamily<T extends ProviderResource>(definition: {
 		parents: definition.parents,
 		listScope: definition.listScope,
 		customData: definition.customData,
+		information: definition.information,
 		async detail(api, address) {
 			const model = await definition.get(api, address);
 			if (model?.id !== address.id) throw new InvalidResourceResponse();

@@ -19,14 +19,14 @@ export async function readLegacyScheduledStop(
 			action: "STOP",
 			status: "FIRED",
 			stopDeliveryToken: null,
+			stopAdmissionFenceVersion: null,
+			stopProviderEncodingId: null,
 			outcome: { in: ["PENDING", "FAILED"] },
 			OR: [{ dispatchJobId: null }, { dispatchJobId: `sched-${scheduleId}` }],
 		},
 		select: {
 			outcome: true,
 			outcomeEvidenceKind: true,
-			stopAdmissionFenceVersion: true,
-			stopProviderEncodingId: true,
 			liveChannelRunId: true,
 			liveChannel: {
 				select: {
@@ -95,10 +95,7 @@ export async function readLegacyScheduledStop(
 	let effect: LiveEffectIntent | undefined;
 	if (
 		channel.status === "STOPPING" &&
-		(receipt.stopAdmissionFenceVersion ??
-			channel.legacyAdmissionFenceVersion) != null &&
-		(receipt.stopAdmissionFenceVersion ??
-			channel.legacyAdmissionFenceVersion) === channel.liveEffectFenceVersion &&
+		channel.legacyAdmissionFenceVersion === channel.liveEffectFenceVersion &&
 		run?.id === liveChannelRunId &&
 		(!expectedRunId || expectedRunId === liveChannelRunId)
 	) {
@@ -107,11 +104,7 @@ export async function readLegacyScheduledStop(
 				? channel.bitmovinEncodingId
 				: null
 			: await bindArchivedStopTarget(prisma, liveChannelId, liveChannelRunId);
-		if (
-			!id ||
-			(receipt.stopProviderEncodingId && receipt.stopProviderEncodingId !== id)
-		)
-			return { liveChannelRunId, effect };
+		if (!id) return { liveChannelRunId, effect };
 
 		effect = {
 			idempotencyKey: `schedule:${scheduleId}:stop`,

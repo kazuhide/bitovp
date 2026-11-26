@@ -44,6 +44,7 @@ type Row = {
 	/** : the queue-handoff outbox stamp. */
 	dispatchedAt: Date | null;
 	dispatchJobId: string | null;
+	stopDeliveryToken?: string | null;
 	note: string | null;
 	error: string | null;
 	/**  creation-time slate fields. */
@@ -78,6 +79,12 @@ type SessionRow = {
 	readyAt: Date | null;
 	error: string | null;
 };
+
+function storedStopJobId(row: Row | undefined): string {
+	if (!row?.stopDeliveryToken)
+		throw new Error("Missing stored STOP delivery token");
+	return `sched-${row.id}-stop-${row.stopDeliveryToken}`;
+}
 
 type Channel = {
 	id: string;
@@ -763,7 +770,9 @@ function makeStore(
 							// write may replace (an absent outcome is PENDING).
 							if (
 								args.where.outcome &&
-								!args.where.outcome.in.includes(row.outcome ?? "PENDING")
+								(typeof args.where.outcome === "string"
+									? args.where.outcome !== (row.outcome ?? "PENDING")
+									: !args.where.outcome.in.includes(row.outcome ?? "PENDING"))
 							) {
 								continue;
 							}
@@ -1968,9 +1977,10 @@ describe("STOP — claims like the route, waits out transitions (review-190 C2)"
 		const stats = await sweep();
 		expect(stats.fired).toBe(1);
 		expect(store.channels[0]).toMatchObject({ status: "STOPPING" });
+		expect(store.rows[0]?.dispatchJobId).toBe(storedStopJobId(store.rows[0]));
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: CH, action: "stop" }),
-			`sched-${ROW_ID}`,
+			storedStopJobId(store.rows[0]),
 		);
 	});
 
@@ -2143,7 +2153,7 @@ describe("STOP — claims like the route, waits out transitions (review-190 C2)"
 		await sweep();
 		expect(store.rows[0]).toMatchObject(receipt);
 		expect(enqueue).toHaveBeenCalledTimes(1);
-		expect(fired.dispatchJobId).toBe(`sched-${fired.id}`);
+		expect(fired.dispatchJobId).toBe(storedStopJobId(fired));
 		expect(store.prisma.liveEffectClaim.findFirst).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: expect.objectContaining({
@@ -2707,12 +2717,10 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 		expect(stats.capStops).toBe(1);
 		expect(store.channels[0]).toMatchObject({ status: "STOPPING" });
 		const deadline = T0 + 60 * 60_000;
-		// : ONE id rule — derived from the epoch ROW (itself
-		// unique per channel+deadline under the partial index), so the
-		// outbox dispatcher can rebuild it after a crash.
+		// The outbox stores this delivery's ID before entering the queue.
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: CH, action: "stop" }),
-			`sched-${store.rows[0]?.id}`,
+			storedStopJobId(store.rows[0]),
 		);
 		expect(store.rows[0]).toMatchObject({
 			action: "STOP",
@@ -2806,12 +2814,10 @@ describe("maxRunMinutes cap (runningSince column, atomic claim)", () => {
 		});
 		const stats = await sweep();
 		expect(stats.capStops).toBe(1);
-		// Same deterministic id — BullMQ dedupes if the job DID survive. The
-		// id comes from the EXISTING epoch row the P2002 lookup found
-		// , which is what keeps it stable across the collision.
+		// Reuse the existing schedule while allocating a fresh delivery ID.
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: CH, action: "stop" }),
-			"sched-44444444-4444-4444-8444-444444444444",
+			storedStopJobId(store.rows[0]),
 		);
 		expect(store.rows).toHaveLength(1); // no second epoch row
 	});
@@ -3279,7 +3285,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		expect(store.channels[0]).toMatchObject({ status: "STOPPING" });
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: CH, action: "stop" }),
-			`sched-${ROW_ID}`,
+			storedStopJobId(store.rows[0]),
 		);
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
 	});
@@ -3502,7 +3508,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 			note: "max-run-cap",
 			dispatchedAt: null,
 		});
-		const capRowId = store.rows[0]?.id as string;
+		const capJobId = storedStopJobId(store.rows[0]);
 
 		const { sweep, enqueue } = makeSweep(store, {
 			// The crash instant + 61s: past DISPATCH_GRACE_MS (2 × 30s).
@@ -3515,7 +3521,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		expect(store.rows).toHaveLength(1);
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: CH, action: "stop" }),
-			`sched-${capRowId}`,
+			capJobId,
 		);
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
 	});
@@ -3749,7 +3755,7 @@ describe("row #245 — the due scan cannot starve (paged, resuming cursor)", () 
 		expect(stats.fired).toBe(1);
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: OTHER, action: "stop" }),
-			`sched-${VICTIM}`,
+			storedStopJobId(store.rows.find((row) => row.id === VICTIM)),
 		);
 		expect(store.channels[1]).toMatchObject({ status: "STOPPING" });
 	});
@@ -3775,7 +3781,7 @@ describe("row #245 — the due scan cannot starve (paged, resuming cursor)", () 
 		expect(enqueue).toHaveBeenCalledTimes(1);
 		expect(enqueue).toHaveBeenCalledWith(
 			expect.objectContaining({ liveChannelId: OTHER, action: "stop" }),
-			`sched-${VICTIM}`,
+			storedStopJobId(store.rows.find((row) => row.id === VICTIM)),
 		);
 	});
 
@@ -4973,7 +4979,7 @@ describe("generation bind — a row fires only into the airing it was armed for 
 				plannedLiveChannelRunId: RUN_2,
 				effect: expect.objectContaining({ action: "STOP" }),
 			}),
-			`sched-${ROW_ID}`,
+			storedStopJobId(store.rows[0]),
 		);
 	});
 
@@ -5280,7 +5286,7 @@ describe("a panel-armed row survives a re-air it never saw (row #241)", () => {
 				plannedLiveChannelRunId: RUN_2,
 				effect: expect.objectContaining({ action: "STOP" }),
 			}),
-			`sched-${CREATION_ROW}`,
+			storedStopJobId(store.rows.find((row) => row.id === CREATION_ROW)),
 		);
 	});
 });

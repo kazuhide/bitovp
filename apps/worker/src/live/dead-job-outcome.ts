@@ -2,12 +2,13 @@ import {
 	type LiveEffectIntent,
 	liveChannelJobSchema,
 	redactSecrets,
+	scheduledStopJobId,
+	scheduledStopScheduleId,
 } from "@bitovp/core";
 import {
 	type AppPrismaClient,
 	competingScheduledStop,
 	isLiveStopAdmissionFence,
-	liveEffectSendUncertainty,
 	settleExhaustedStopSchedules,
 } from "@bitovp/db";
 import { feederLeaseIsFresh } from "../feeder/ownership";
@@ -83,6 +84,14 @@ function boundStopIntent(job: DeadLiveJob) {
 	) {
 		return null;
 	}
+	const { effect } = parsed.data;
+	if (
+		effect.stopDeliveryToken &&
+		(!effect.scheduleId ||
+			job?.id !==
+				scheduledStopJobId(effect.scheduleId, effect.stopDeliveryToken))
+	)
+		return null;
 	return {
 		liveChannelId: parsed.data.liveChannelId,
 		...parsed.data.effect,
@@ -519,7 +528,8 @@ export async function recordFinalStopFailure(
 			);
 		if (
 			intent.scheduleId &&
-			job?.id === `sched-${intent.scheduleId}` &&
+			job?.id ===
+				scheduledStopJobId(intent.scheduleId, intent.stopDeliveryToken) &&
 			intent.idempotencyKey === `schedule:${intent.scheduleId}:stop`
 		) {
 			await recordScheduleOutcome(
@@ -716,7 +726,7 @@ async function recordExhaustedScheduledStop(
 	at: Date,
 ) {
 	const parsed = liveChannelJobSchema.safeParse(job?.data);
-	const id = legacyScheduleId(job?.id);
+	const id = scheduledStopScheduleId(job?.id);
 	if (
 		!id ||
 		!parsed.success ||
@@ -726,8 +736,10 @@ async function recordExhaustedScheduledStop(
 	)
 		return;
 	const { liveChannelId, plannedLiveChannelRunId, effect } = parsed.data;
+	const expectedJobId = scheduledStopJobId(id, effect.stopDeliveryToken);
 	if (
 		effect.action !== "STOP" ||
+		job?.id !== expectedJobId ||
 		effect.scheduleId !== id ||
 		effect.idempotencyKey !== `schedule:${id}:stop` ||
 		(plannedLiveChannelRunId &&
@@ -746,7 +758,7 @@ async function recordExhaustedScheduledStop(
 							effect?.liveChannelRunId ?? plannedLiveChannelRunId,
 					}
 				: {}),
-			OR: [{ dispatchJobId: null }, { dispatchJobId: `sched-${id}` }],
+			OR: [{ dispatchJobId: null }, { dispatchJobId: expectedJobId }],
 		},
 		select: { liveChannelRunId: true },
 	});

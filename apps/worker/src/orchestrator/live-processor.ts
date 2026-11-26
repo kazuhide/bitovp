@@ -73,6 +73,8 @@ import {
 	restoreLiveProvisionEvidence,
 	type SlateSource,
 	type StepLogEntry,
+	scheduledStopJobId,
+	scheduledStopScheduleId,
 	selectRtmpIngestPoints,
 	slateConversionDestination,
 	stepLogSchema,
@@ -104,7 +106,7 @@ import {
 	persistLiveToVodAttempt,
 	type RtmpRetirementReceipt,
 	readAiringEffectHistory,
-	recordConfirmedStopDelivery,
+	recordConfirmedLiveStopNotification,
 	recordLiveStopFailure,
 	reserveAisaStop,
 	resolveLiveEffectsAfterConfirmedStop,
@@ -5110,6 +5112,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 		options: {
 			supersedeOpen?: boolean;
 			legacyStopDelivery?: "FIRST" | "UNKNOWN";
+			bareScheduledStop?: boolean;
 		} = {},
 	): Promise<PreparedLiveEffect> {
 		const intent = job.effect;
@@ -5135,6 +5138,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			}
 			return { kind: "RETURN", result: effectResult(job, "EFFECT_REFUSED") };
 		}
+		const { bareScheduledStop, ...beginOptions } = options;
 		const begun = await beginLiveEffect(deps.prisma, {
 			idempotencyKey: intent.idempotencyKey,
 			...(intent.requestSha256 ? { requestSha256: intent.requestSha256 } : {}),
@@ -5153,7 +5157,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			expiresAt: new Date(Date.parse(deps.now()) + 20 * 60_000),
 			allowedChannelStatuses,
 			...(expectedAction === "STOP" ? { resumeAisaFinalization: true } : {}),
-			...options,
+			...beginOptions,
 		});
 		if (begun.kind === "EXECUTE") {
 			return {
@@ -5175,7 +5179,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			};
 		}
 		if (begun.kind === "STALE") {
-			if (intent.scheduleId) {
+			if (intent.scheduleId && !bareScheduledStop) {
 				await transitionScheduleToStale(deps.prisma, {
 					scheduleId: intent.scheduleId,
 					...(expectedAction === "STOP"
@@ -5956,11 +5960,10 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					if (runWrite.count !== 1)
 						throw new ProvisionLeaseLostError(liveChannelId);
 					if (outcome.status === "STOPPED")
-						await recordConfirmedStopDelivery(tx, {
+						await recordConfirmedLiveStopNotification(tx, {
 							liveChannelId,
 							liveChannelRunId: runId,
 							channelName: channel.name,
-							scheduleIds: [],
 							status: "STOPPED",
 							at: new Date(deps.now()),
 							notificationEligible: stopNotificationHistoryEligible(
@@ -7732,7 +7735,20 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 	): Promise<LiveChannelResult> {
 		const job = liveChannelJobSchema.parse(jobData);
 		const { liveChannelId } = job;
-		const scheduleId = legacyScheduleId(queueJobId);
+		const scheduleId =
+			job.action === "stop"
+				? scheduledStopScheduleId(queueJobId)
+				: legacyScheduleId(queueJobId);
+		const stopScheduleId = job.effect?.scheduleId ?? scheduleId;
+		if (
+			job.action === "stop" &&
+			queueJobId &&
+			(job.effect?.stopDeliveryToken || scheduleId) &&
+			(!stopScheduleId ||
+				queueJobId !==
+					scheduledStopJobId(stopScheduleId, job.effect?.stopDeliveryToken))
+		)
+			return effectResult(job, "SKIPPED_STALE_GENERATION");
 		if (
 			job.action === "stop" &&
 			scheduleId &&
@@ -7938,6 +7954,17 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					legacy?.effect &&
 					legacy.liveChannelRunId === job.plannedLiveChannelRunId
 				) {
+					if (legacyId)
+						await recordScheduledStopHandoff(
+							deps.prisma,
+							{
+								id: legacyId,
+								liveChannelId,
+								liveChannelRunId: legacy.liveChannelRunId,
+							},
+							new Date(deps.now()),
+							null,
+						);
 					job.effect = legacy.effect;
 					if (!legacy.alreadyAdopted)
 						legacyStopDelivery = firstQueueDelivery ? "FIRST" : "UNKNOWN";
@@ -7951,6 +7978,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					["RUNNING", "STOPPING", "ERROR", "STOPPED"],
 					{
 						supersedeOpen: true,
+						bareScheduledStop: !!legacy?.effect,
 						...(legacyStopDelivery ? { legacyStopDelivery } : {}),
 					},
 				);

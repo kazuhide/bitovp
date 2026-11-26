@@ -10,6 +10,7 @@ import {
 	productEventSchema,
 	readLiveAutoShutdownUpdate,
 	type StepLogEntry,
+	scheduledStopJobId,
 } from "@bitovp/core";
 import { AisaLiveError } from "@bitovp/core/aisa-live-client";
 import {
@@ -1992,7 +1993,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"wrong target",
 			"new generation",
 		] as const)("recovers only the admitted current STOP after a lost terminal callback (%s)", async (scenario) => {
-			const f = await dispatchFixture();
+			const { scope: tenant, ...f } = await isolatedDispatchFixture();
 			const schedule = await tenant.liveSchedule.create({
 				data: {
 					liveChannelId: f.channel.id,
@@ -2013,9 +2014,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				enqueue,
 			});
 			await sweep();
-			const id = `sched-${schedule.id}`;
-			const original = jobs.get(id);
-			if (!original?.effect) throw new Error("missing original STOP");
+			const [jobId, queued] =
+				[...jobs].find(([, job]) => job.effect?.scheduleId === schedule.id) ??
+				[];
+			if (!jobId || !queued?.effect) throw new Error("missing original STOP");
+			let id = jobId;
+			const original = { ...queued, effect: queued.effect };
 			const migratedFailure = scenario.startsWith("migrated failed claim");
 			const terminalMigration = scenario.includes("with terminal encoder");
 			const failedClaim =
@@ -2028,6 +2032,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					scenario === "bare failed claim" ||
 					migratedFailure
 				) {
+					id = scheduledStopJobId(schedule.id);
+					delete original.effect.stopDeliveryToken;
 					await tenant.liveChannel.update({
 						where: { id: f.channel.id },
 						data: {
@@ -2040,6 +2046,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						data: {
 							stopAdmissionFenceVersion: null,
 							stopProviderEncodingId: null,
+							stopDeliveryToken: null,
+							dispatchJobId: id,
 						},
 					});
 				}
@@ -2168,7 +2176,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 							stopDeliveryToken: expect.any(String),
 						},
 					},
-					id,
+					expect.stringMatching(new RegExp(`^sched-${schedule.id}-stop-`)),
 				);
 			else expect(resume).not.toHaveBeenCalled();
 			expect(
@@ -2386,7 +2394,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 							liveChannelRunId: f.run.id,
 						}),
 					}),
-					`sched-${row.id}`,
+					expect.stringMatching(new RegExp(`^sched-${row.id}-stop-`)),
 				);
 				expect(
 					(
@@ -2454,11 +2462,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			expect(
 				(await tenant.liveSchedule.findUniqueOrThrow({ where: { id: row.id } }))
 					.outcome,
-			).toBe(
-				["unknown", "evicted terminal unknown"].includes(scenario)
-					? "UNKNOWN"
-					: "DELIVERED",
-			);
+			).toBe("UNKNOWN");
 		});
 
 		it.each([
@@ -2605,7 +2609,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					expect.objectContaining({
 						effect: expect.objectContaining(queuedStop.effect),
 					}),
-					`sched-${next.id}`,
+					expect.stringMatching(new RegExp(`^sched-${next.id}-stop-`)),
 				);
 			}
 		});
@@ -2863,7 +2867,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					dispatchedAt: expect.any(Date),
 				});
 			}
-			const queueReceipt = (id: string, fence: number, state: string) => ({
+			const queueReceipt = (
+				id: string,
+				fence: number,
+				state: string,
+				stopDeliveryToken?: string | null,
+			) => ({
 				data: {
 					action: "stop",
 					liveChannelId: f.channel.id,
@@ -2874,6 +2883,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						idempotencyKey: `schedule:${id}:stop`,
 						scheduleId: id,
 						admissionFenceVersion: fence,
+						...(stopDeliveryToken && { stopDeliveryToken }),
 					},
 				},
 				getState: async () => state,
@@ -2906,8 +2916,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					},
 				});
 			}
-			if (currentDelivery !== "evicted")
-				jobs.set(`sched-${current.id}`, queueReceipt(current.id, 2, "failed"));
+			if (currentDelivery !== "evicted") {
+				const receipt = await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: current.id },
+				});
+				jobs.set(
+					receipt.dispatchJobId ?? scheduledStopJobId(receipt.id),
+					queueReceipt(receipt.id, 2, "failed", receipt.stopDeliveryToken),
+				);
+			}
 			f.sdk.getEncodingStatus = vi.fn(async () => ({ status: "RUNNING" }));
 			const recover = createExhaustedScheduledStopRecovery(
 				f.deps,
@@ -3214,6 +3231,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				);
 				if (mode !== "legacy admission") {
 					const { effect: _oldEffect, ...bareJob } = job;
+					if (mode === "saved admission")
+						expect(await process(bareJob, key)).toMatchObject({
+							status: "EFFECT_REFUSED",
+						});
 					await recordDeadJobScheduleOutcomes(
 						tenant,
 						{ id: key, data: bareJob, attemptsMade: 3, opts: { attempts: 3 } },
@@ -3247,7 +3268,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					expect.objectContaining({
 						effect: expect.objectContaining({ admissionFenceVersion: 2 }),
 					}),
-					key,
+					expect.stringMatching(new RegExp(`^sched-${row.id}-stop-`)),
 				);
 			} else {
 				for (let i = 0; i < 3; i++) await recover();
@@ -3307,7 +3328,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				});
 				expect(enqueue).toHaveBeenCalledWith(
 					expect.anything(),
-					`sched-${row.id}`,
+					expect.stringMatching(new RegExp(`^sched-${row.id}-stop-`)),
 				);
 			}
 			const resend = vi.fn(),
@@ -3361,16 +3382,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 			expect(rows.map((row) => row.id)).toContain(claim.scheduleId);
 			for (const row of rows) {
-				const acknowledged = row.id === claim.scheduleId;
 				expect(
 					await tenant.liveSchedule.findUniqueOrThrow({
 						where: { id: row.id },
 					}),
 				).toMatchObject({
-					outcome: acknowledged ? "DELIVERED" : "UNKNOWN",
-					outcomeEvidenceKind: acknowledged
-						? "PROVIDER_TERMINAL"
-						: "JOB_TERMINAL_UNKNOWN",
+					outcome: "UNKNOWN",
+					outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
 					outcomeAt: expect.any(Date),
 				});
 			}
@@ -3525,6 +3543,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			"older failed callback for same admission",
 			"managed AISA owner",
 			"managed AISA completes after encoder Stop",
+			"managed AISA completes after encoder Stop with an unread encoder",
+			"managed AISA completes after encoder Stop with an active encoder",
 			"managed AISA terminal before request",
 		] as const)("records only proved delivery when the rebuilt Stop is requeued after a stale sample (%s)", async (winner) => {
 			const { scope: tenant, ...f } = await isolatedDispatchFixture(
@@ -3605,16 +3625,19 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			);
 			let currentJob: typeof job & { effect: { stopDeliveryToken?: string } } =
 				job;
+			let currentJobId = jobId;
 			const captureReplacement = () => {
-				const delivery = requeue.mock.calls[0]?.[0];
+				const [delivery, key] = requeue.mock.calls[0] ?? [];
 				expect(delivery).toMatchObject({
 					...job,
 					effect: { ...job.effect, stopDeliveryToken: expect.any(String) },
 				});
 				const stopDeliveryToken = delivery?.effect?.stopDeliveryToken;
-				if (!stopDeliveryToken)
+				if (!stopDeliveryToken || !key)
 					throw new Error("expected a distinct queue delivery token");
 				currentJob = { ...job, effect: { ...job.effect, stopDeliveryToken } };
+				currentJobId = key;
+				expect(currentJobId).toBe(scheduledStopJobId(id, stopDeliveryToken));
 			};
 			const interruptOwner = async () => {
 				const result = await beginLiveEffect(tenant, {
@@ -3691,7 +3714,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				expect(
 					await recordFinalStopFailure(
 						tenant,
-						{ ...failedDelivery, data: currentJob },
+						{ ...failedDelivery, id: currentJobId, data: currentJob },
 						"current job exhausted",
 						emitEvent,
 					),
@@ -3719,7 +3742,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			await recordDeadJobScheduleOutcomes(
 				tenant,
 				{
-					id: jobId,
+					id: currentJobId,
 					data: currentJob,
 					finishedOn: now.getTime(),
 				},
@@ -3741,10 +3764,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					}),
 			};
 			const observe = createUncertainStopReconciler(observerDeps, vi.fn());
+			const deferredAisa = winner.startsWith(
+				"managed AISA completes after encoder Stop",
+			);
 			let resumeAisaResults: (() => void) | undefined;
 			if (
 				winner === "managed AISA owner" ||
-				winner === "managed AISA completes after encoder Stop" ||
+				deferredAisa ||
 				winner === "managed AISA terminal before request"
 			) {
 				const analysisId = randomUUID();
@@ -3776,8 +3802,15 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					data: { aisaAnalysisId: analysisId, aisaStatus: "RUNNING" },
 				});
 				let analysisStopped = false;
-				let resultReady =
-					winner !== "managed AISA completes after encoder Stop";
+				let resultReady = !deferredAisa;
+				f.sdk.getEncodingStatus = vi.fn(async () => {
+					if (!stopped) return { status: "RUNNING" };
+					if (!resultReady && winner.endsWith("an unread encoder"))
+						throw new Error("temporary encoding status read failure");
+					if (!resultReady && winner.endsWith("an active encoder"))
+						return { status: "RUNNING" };
+					return { status: "FINISHED" };
+				});
 				resumeAisaResults = () => {
 					resultReady = true;
 				};
@@ -3838,7 +3871,10 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					await reader;
 					return { status: "FINISHED" };
 				});
-				const drive = createLiveChannelProcessor(f.deps)(currentJob);
+				const drive = createLiveChannelProcessor(f.deps)(
+					currentJob,
+					currentJobId,
+				);
 				try {
 					await started;
 					await observe();
@@ -3872,14 +3908,14 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				).toMatchObject({ attempt: 2 });
 			} else {
 				const process = createLiveChannelProcessor(f.deps);
-				if (winner === "managed AISA completes after encoder Stop") {
-					await expect(process(currentJob)).rejects.toThrow();
+				if (deferredAisa) {
+					await expect(process(currentJob, currentJobId)).rejects.toThrow();
 					expect(
 						await tenant.liveSchedule.findUniqueOrThrow({ where: { id } }),
 					).toMatchObject({ outcome: "UNKNOWN" });
 					resumeAisaResults?.();
 				}
-				expect(await process(currentJob)).toMatchObject({
+				expect(await process(currentJob, currentJobId)).toMatchObject({
 					status: "STOPPED",
 				});
 			}
@@ -3896,11 +3932,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			).toMatchObject({
 				scheduleId: id,
 				state: "ACKED",
-				generation:
-					winner === "expired unsent owner" ||
-					winner === "managed AISA completes after encoder Stop"
-						? 4
-						: 3,
+				generation: winner === "expired unsent owner" || deferredAisa ? 4 : 3,
 			});
 			expect(
 				await tenant.liveSchedule.findUniqueOrThrow({ where: { id } }),
@@ -3960,6 +3992,190 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				outcome: "UNKNOWN",
 				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
 			});
+		});
+
+		it("keeps the newest STOP delivery ready when two sweeps replace a missing Redis job", async () => {
+			const { scope, ...f } = await isolatedDispatchFixture();
+			await scope.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "STOPPING", legacyAdmissionFenceVersion: 0 },
+			});
+			await scope.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			const scheduleId = randomUUID();
+			const key = `schedule:${scheduleId}:stop`;
+			await scope.liveSchedule.create({
+				data: {
+					id: scheduleId,
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					action: "STOP",
+					status: "FIRED",
+					fireAt: now,
+					firedAt: now,
+					dispatchedAt: now,
+					dispatchJobId: `sched-${scheduleId}`,
+					stopAdmissionFenceVersion: 0,
+					stopProviderEncodingId: f.encodingId,
+				},
+			});
+			let stopped = false;
+			f.sdk.getEncodingStatus = vi.fn(async () => ({
+				status: stopped ? "FINISHED" : "RUNNING",
+			}));
+			f.sdk.stopLiveEncoding = vi.fn(async () => {
+				stopped = true;
+			});
+			type Delivery = import("@bitovp/core").LiveChannelJob;
+			const redis = new Map<string, Delivery>();
+			const read = async (id: string) => {
+				const data = redis.get(id);
+				return data ? { data, getState: async () => "waiting" } : undefined;
+			};
+			const heldSweep = () => {
+				const held = barrier();
+				const release = barrier();
+				const enqueue = vi.fn(async (delivery: Delivery, id: string) => {
+					held.release();
+					await release.ready;
+					if (!redis.has(id)) redis.set(id, delivery);
+				});
+				const run = createExhaustedScheduledStopRecovery(
+					f.deps,
+					read,
+					enqueue,
+				)();
+				return { held, release, enqueue, run };
+			};
+			const first = heldSweep();
+			let second: ReturnType<typeof heldSweep> | undefined;
+			try {
+				await reach(first.held.ready, first.run);
+				second = heldSweep();
+				await reach(second.held.ready, second.run);
+				first.release.release();
+				await first.run;
+			} finally {
+				first.release.release();
+				second?.release.release();
+				await Promise.allSettled([first.run, second?.run]);
+			}
+			const [oldJob, oldId] = first.enqueue.mock.calls[0] ?? [];
+			const [current, currentId] = second?.enqueue.mock.calls[0] ?? [];
+			expect(redis.size).toBe(2);
+			if (!currentId || !oldId || !current?.effect || !oldJob?.effect)
+				throw new Error(
+					"both outbox replacements must publish exact envelopes",
+				);
+			expect(current.effect.idempotencyKey).toBe(key);
+			expect(oldJob.effect.idempotencyKey).toBe(key);
+			expect(current.effect.stopDeliveryToken).not.toBe(
+				oldJob.effect.stopDeliveryToken,
+			);
+			expect(
+				await scope.liveSchedule.findUniqueOrThrow({
+					where: { id: scheduleId },
+				}),
+			).toMatchObject({
+				dispatchJobId: currentId,
+				stopDeliveryToken: current.effect.stopDeliveryToken,
+			});
+			const process = createLiveChannelProcessor(f.deps);
+			expect(await process(redis.get(oldId), oldId)).toMatchObject({
+				status: "SKIPPED_STALE_GENERATION",
+			});
+			await recordDeadJobScheduleOutcomes(
+				scope,
+				{ id: oldId, data: oldJob, finishedOn: now.getTime() },
+				"superseded delivery",
+				now,
+			);
+			expect(
+				await scope.liveSchedule.findUniqueOrThrow({
+					where: { id: scheduleId },
+				}),
+			).toMatchObject({ outcome: "PENDING" });
+			expect(await process(redis.get(currentId), currentId)).toMatchObject({
+				status: "STOPPED",
+			});
+			expect(f.sdk.stopLiveEncoding).toHaveBeenCalledExactlyOnceWith(
+				f.encodingId,
+			);
+			expect(
+				await scope.liveSchedule.findUniqueOrThrow({
+					where: { id: scheduleId },
+				}),
+			).toMatchObject({ outcome: "DELIVERED" });
+		});
+
+		it("closes an independently ended encoder without attributing a reserved STOP to its schedule", async () => {
+			const { scope, ...f } = await isolatedDispatchFixture();
+			await scope.liveChannel.update({
+				where: { id: f.channel.id },
+				data: { status: "STOPPING" },
+			});
+			await scope.liveChannelRun.update({
+				where: { id: f.run.id },
+				data: { status: "STOPPING" },
+			});
+			const scheduleId = randomUUID();
+			await scope.liveSchedule.create({
+				data: {
+					id: scheduleId,
+					liveChannelId: f.channel.id,
+					liveChannelRunId: f.run.id,
+					fireAt: now,
+					firedAt: now,
+					dispatchedAt: now,
+					dispatchJobId: scheduledStopJobId(scheduleId),
+					action: "STOP",
+					status: "FIRED",
+					stopProviderEncodingId: f.encodingId,
+					stopAdmissionFenceVersion: 0,
+				},
+			});
+			const expiresAt = new Date(now.getTime() + 1_000);
+			const admitted = await beginLiveEffect(scope, {
+				...f.identity,
+				liveChannelId: f.channel.id,
+				scheduleId,
+				idempotencyKey: `schedule:${scheduleId}:stop`,
+				expectedFenceVersion: 0,
+				ownerId: "worker-crashed-before-POST",
+				now,
+				expiresAt,
+			});
+			if (admitted.kind !== "EXECUTE")
+				throw new Error("Expected initial STOP lease");
+			expect(
+				await claimLiveStopSend(scope, admitted.claim, f.encodingId, now),
+			).toBe(true);
+			const tick = createUncertainStopReconciler({
+				...f.deps,
+				now: () => expiresAt.toISOString(),
+			});
+			expect(await tick()).toBe(1);
+			expect(
+				await scope.liveChannel.findUniqueOrThrow({
+					where: { id: f.channel.id },
+				}),
+			).toMatchObject({ status: "STOPPED" });
+			expect(
+				await scope.liveEffectClaim.findUniqueOrThrow({
+					where: { id: admitted.claim.id },
+				}),
+			).toMatchObject({ state: "ACKED" });
+			expect(
+				await scope.liveSchedule.findUniqueOrThrow({
+					where: { id: scheduleId },
+				}),
+			).toMatchObject({
+				outcome: "UNKNOWN",
+				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+			});
+			expect(f.sdk.stopLiveEncoding).not.toHaveBeenCalled();
 		});
 
 		it("finishes a pre-upgrade STOP admission interrupted after FIRED only for unchanged airing owners", async () => {
@@ -4287,7 +4503,12 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				resume.release();
 			}
 			await pending;
-			const job = retained.get(`sched-${original.id}`);
+			const dispatched = await tenant.liveSchedule.findUniqueOrThrow({
+				where: { id: original.id },
+			});
+			const job = dispatched.dispatchJobId
+				? retained.get(dispatched.dispatchJobId)
+				: undefined;
 			expect(job?.effect?.liveChannelRunId).toBe(f.run.id);
 			const channel = await tenant.liveChannel.findUniqueOrThrow({
 				where: { id: f.channel.id },
@@ -4342,7 +4563,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			if (status === "ARMED") await sweep();
 			else await sweep.dispatchPending();
 			const job = enqueue.mock.calls.find(
-				([, id]) => id === `sched-${active.id}`,
+				([data]) => data.effect?.scheduleId === active.id,
 			)?.[0];
 			expect(job?.effect?.providerEncodingId).toBe(f.encodingId);
 			expect((await createLiveChannelProcessor(f.deps)(job)).status).toBe(
@@ -4417,31 +4638,42 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			);
 			const handoffAt =
 				format === "legacy" ? new Date(now.getTime() + 600_000) : now;
+			let handoffJobId = job.id;
 			if (format === "legacy") {
 				expect(
 					await tenant.liveSchedule.findUniqueOrThrow({
 						where: { id: row.id },
 					}),
 				).toMatchObject({ outcome: "PENDING", dispatchedAt: null });
-				const enqueue = vi.fn(
-					async (
-						_job: import("@bitovp/core").LiveChannelJob,
-						_id: string,
-					) => {},
-				);
+				const retained = new Map<string, unknown>([[job.id, job.data]]);
+				const enqueue = async (
+					data: import("@bitovp/core").LiveChannelJob,
+					id: string,
+				) => {
+					if (!retained.has(id)) retained.set(id, data);
+				};
 				await createScheduleSweep({
 					prisma: tenant,
 					now: () => handoffAt,
 					enqueue,
 				}).dispatchPending();
-				const delivery = enqueue.mock.calls.find(
-					([, id]) => id === job.id,
-				)?.[0];
-				if (!delivery?.effect) throw new Error("Missing durable STOP handoff");
+				const receipt = await tenant.liveSchedule.findUniqueOrThrow({
+					where: { id: row.id },
+				});
+				handoffJobId = receipt.dispatchJobId ?? job.id;
+				const delivery = retained.get(handoffJobId) as
+					| import("@bitovp/core").LiveChannelJob
+					| undefined;
+				expect(delivery?.effect?.scheduleId).toBe(row.id);
+				expect(handoffJobId).not.toBe(job.id);
+				expect(
+					await createLiveChannelProcessor(f.deps)(job.data, job.id),
+				).toMatchObject({ status: "EFFECT_REFUSED" });
 				await recordDeadJobScheduleOutcomes(
 					tenant,
 					{
 						...job,
+						id: handoffJobId,
 						data: delivery,
 					},
 					"identified scheduled stop exhausted",
@@ -4456,7 +4688,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				await tenant.liveSchedule.findUnique({ where: { id: row.id } }),
 			).toMatchObject({
 				outcome: "UNKNOWN",
-				dispatchJobId: job.id,
+				dispatchJobId: handoffJobId,
 				dispatchedAt: handoffAt,
 			});
 			expect(
@@ -4623,10 +4855,11 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			const row = await tenant.liveSchedule.findFirstOrThrow({
 				where: { liveChannelId: f.channel.id },
 			});
+			const currentJobId = scheduledStopJobId(row.id, row.stopDeliveryToken);
 			expect(row).toMatchObject({
 				status: "FIRED",
 				liveChannelRunId: successorId,
-				dispatchJobId: `sched-${row.id}`,
+				dispatchJobId: currentJobId,
 			});
 			expect(enqueue).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -4636,7 +4869,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						scheduleId: row.id,
 					}),
 				}),
-				`sched-${row.id}`,
+				currentJobId,
 			);
 		});
 
@@ -7320,6 +7553,9 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				([job]) => job.liveChannelId === f.channel.id,
 			);
 			expect(jobs).toHaveLength(1);
+			const handed = await tenant.liveSchedule.findUniqueOrThrow({
+				where: { id: schedule.id },
+			});
 			expect(jobs[0]).toEqual([
 				expect.objectContaining({
 					action: "stop",
@@ -7331,7 +7567,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 						scheduleId: schedule.id,
 					}),
 				}),
-				`sched-${schedule.id}`,
+				scheduledStopJobId(handed.id, handed.stopDeliveryToken),
 			]);
 			const result = await createLiveChannelProcessor(f.deps)(jobs[0]?.[0]);
 			expect(result.status).toBe("STOPPED");
@@ -8486,8 +8722,8 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 			});
 			expect(receipt).toMatchObject({
 				status: "FIRED",
-				outcome: "DELIVERED",
-				outcomeEvidenceKind: "PROVIDER_TERMINAL",
+				outcome: "UNKNOWN",
+				outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
 				outcomeEvidenceAt: now,
 			});
 			expect(

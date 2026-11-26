@@ -130,7 +130,7 @@ const MAY_REPLACE: Record<
  * `status`, so the dead-job handler can flip a row to ERROR and record its
  * outcome in either order without one write silently disqualifying the other.
  *
- * START and STOP jobs have a stable sched-<row> queue identity.
+ * A START or STOP is correlated by schedule ID even if its queue job changes.
  * Scheduled STOPs carry their exact row, channel and airing in the durable intent.
  * A manual STOP never owns a schedule.
  */

@@ -1139,6 +1139,8 @@ export {
 	QUEUE_NAMES,
 	SLATE_NORMALIZE_PROMOTE_JOB,
 	type SlateNormalizeJob,
+	scheduledStopJobId,
+	scheduledStopScheduleId,
 	slateNormalizeJobSchema,
 	storageInspectJobSchema,
 	vmafJobSchema,

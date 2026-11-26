@@ -25,7 +25,7 @@ import {
 	liveChannelAccountId,
 	liveStopFeederWhere,
 	readAiringEffectHistory,
-	recordConfirmedStopDelivery,
+	recordConfirmedLiveStopNotification,
 	replaceLiveRunStepLogSnapshot,
 	stopNotificationHistoryEligible,
 } from "@bitovp/db";
@@ -915,10 +915,9 @@ export function createProviderLifecycleReconciler(deps: {
 					});
 					if (occupied.length) throw new TerminalFeedersPending(occupied);
 					if (status === "STOPPED") {
-						await recordConfirmedStopDelivery(tx, {
+						await recordConfirmedLiveStopNotification(tx, {
 							liveChannelId: args.channelId,
 							liveChannelRunId: args.run.id,
-							scheduleIds: [],
 							channelName: currentChannelName,
 							notificationEligible,
 							status,

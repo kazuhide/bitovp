@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { scheduledStopJobId } from "@bitovp/core";
 import type { AppPrismaClient, AppTransactionClient, Prisma } from "@bitovp/db";
 
 export const MISSED_UNOWNED_STOP_REASON =
@@ -16,7 +17,7 @@ const LEGACY_UNSTAMPED_STOP = {
 	stopDeliveryToken: null,
 } as const;
 
-/** The queue key is reused when a legacy schedule refires for the same airing. */
+/** Fence the receipt even when a legacy queue key was reused for the same airing. */
 export function scheduledStopAdmissionWhere(
 	admission?: ScheduledStopAdmission,
 ): Prisma.LiveScheduleWhereInput {
@@ -72,7 +73,7 @@ export async function recordScheduledStopHandoff(
 	prisma: AppPrismaClient,
 	row: { id: string; liveChannelId: string; liveChannelRunId: string },
 	at: Date,
-	admission?: ScheduledStopAdmission | null,
+	admission: ScheduledStopAdmission | null,
 ): Promise<void> {
 	await prisma.$transaction(async (tx) => {
 		const { count } = await tx.liveSchedule.updateMany({
@@ -85,7 +86,11 @@ export async function recordScheduledStopHandoff(
 				status: "FIRED",
 				dispatchedAt: null,
 			},
-			data: { dispatchedAt: at, dispatchJobId: `sched-${row.id}`, error: null },
+			data: {
+				dispatchedAt: at,
+				dispatchJobId: scheduledStopJobId(row.id, admission?.stopDeliveryToken),
+				error: null,
+			},
 		});
 		if (!count) return;
 		await writeScheduledStopNotification(tx, row, "SCHEDULE_FIRED", at);

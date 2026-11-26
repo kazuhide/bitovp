@@ -3,6 +3,7 @@ import {
 	classifyProviderStatusWord,
 	isAisaManagedLivePlan,
 	type LiveChannelJob,
+	scheduledStopJobId,
 } from "@bitovp/core";
 import {
 	canObserveLiveStop,
@@ -206,7 +207,7 @@ export function createUncertainStopReconciler(
 						if (activeTargets.size && resumeUnsent) {
 							// The next owner CASes the current claim generation. Keep the
 							// outbox's original fence on the job for its delivery receipt.
-							const schedule =
+							const saved =
 								claim.scheduleId &&
 								claim.idempotencyKey === `schedule:${claim.scheduleId}:stop`
 									? await deps.prisma.liveSchedule.findFirst({
@@ -217,15 +218,22 @@ export function createUncertainStopReconciler(
 												action: "STOP",
 												status: "FIRED",
 												dispatchedAt: { not: null },
-												dispatchJobId: `sched-${claim.scheduleId}`,
 												stopProviderEncodingId: claim.providerEncodingId,
 												stopAdmissionFenceVersion: { lt: claim.generation },
 											},
 											select: {
+												id: true,
+												dispatchJobId: true,
 												stopAdmissionFenceVersion: true,
 												stopDeliveryToken: true,
 											},
 										})
+									: null;
+							const schedule =
+								saved &&
+								saved.dispatchJobId ===
+									scheduledStopJobId(saved.id, saved.stopDeliveryToken)
+									? saved
 									: null;
 							// Re-enter the original exact intent. beginLiveEffect fences owner
 							// takeover; the per-ID journal suppresses every prior reservation.

@@ -1,4 +1,5 @@
-import { redactSecrets } from "@bitovp/core";
+import { redactSecrets, scheduledStopJobId } from "@bitovp/core";
+import type { Prisma } from "../generated/client";
 import type { AppTransactionClient } from "./client";
 
 export const CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION = 1;
@@ -18,8 +19,8 @@ export function isLiveStopAdmissionFence(
 	return legacyFence === generation - claim.attempt;
 }
 
-/** Terminal readback resolves a superseded claim without proving its own POST. */
-export async function recordSupersededScheduledStop(
+/** A terminal observation alone leaves this schedule's delivery unknown. */
+export async function recordObservedScheduledStop(
 	tx: AppTransactionClient,
 	input: {
 		scheduleId: string;
@@ -49,7 +50,7 @@ export async function recordSupersededScheduledStop(
 		data: {
 			outcome: "UNKNOWN",
 			outcomeNote:
-				"Another STOP confirmed the broadcast ended. Delivery of this scheduled STOP could not be confirmed.",
+				"The broadcast ended. Delivery of this scheduled STOP could not be confirmed.",
 			outcomeAt: input.at,
 			outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
 			outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
@@ -87,7 +88,7 @@ export async function settleExhaustedStopSchedules(
 			AND s."liveChannelRunId" = ${input.liveChannelRunId}::uuid
 			AND s."action" = 'STOP' AND s."status" = 'FIRED' AND s."outcome" = 'PENDING'
 			AND s."dispatchedAt" IS NOT NULL
-			AND (s."dispatchJobId" IS NULL OR s."dispatchJobId" = 'sched-' || s.id::text)
+			AND (s."dispatchJobId" IS NULL OR s."dispatchJobId" = 'sched-' || s.id::text || COALESCE('-stop-' || s."stopDeliveryToken"::text, ''))
 			AND s."legacyStopExhaustedFence" = ${input.admissionFence}
 			AND ((s."stopProviderEncodingId" IS NULL AND s."stopAdmissionFenceVersion" IS NULL)
 				OR (s."stopProviderEncodingId" = ${input.providerEncodingId}
@@ -123,6 +124,40 @@ export async function recordOwnedScheduledStopDelivery(
 		at: Date;
 	},
 ) {
+	const receipt = await tx.liveSchedule.findFirst({
+		where: {
+			id: input.scheduleId,
+			liveChannelId: input.liveChannelId,
+			liveChannelRunId: input.liveChannelRunId,
+			outcome: { in: ["PENDING", "FAILED", "UNKNOWN"] },
+		},
+		select: {
+			stopDeliveryToken: true,
+			stopAdmissionFenceVersion: true,
+			stopProviderEncodingId: true,
+		},
+	});
+	if (!receipt) return;
+	const legacy =
+		receipt.stopDeliveryToken === null &&
+		receipt.stopAdmissionFenceVersion === null &&
+		receipt.stopProviderEncodingId === null;
+	const expectedJobId = scheduledStopJobId(
+		input.scheduleId,
+		receipt.stopDeliveryToken,
+	);
+	const outcomes: Prisma.LiveScheduleWhereInput[] = [
+		{ outcome: "PENDING" },
+		{ outcome: "FAILED", outcomeEvidenceKind: "EFFECT_FAILED" },
+	];
+	if (!legacy)
+		outcomes.push({
+			outcome: "UNKNOWN",
+			outcomeEvidenceKind: {
+				in: ["JOB_TERMINAL_UNKNOWN", "PROVIDER_STATUS_UNKNOWN"],
+			},
+			outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+		});
 	await tx.liveSchedule.updateMany({
 		where: {
 			id: input.scheduleId,
@@ -130,15 +165,13 @@ export async function recordOwnedScheduledStopDelivery(
 			liveChannelRunId: input.liveChannelRunId,
 			action: "STOP",
 			status: "FIRED",
-			outcome: "UNKNOWN",
-			outcomeEvidenceKind: {
-				in: ["JOB_TERMINAL_UNKNOWN", "PROVIDER_STATUS_UNKNOWN"],
-			},
-			outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
-			dispatchedAt: { not: null },
-			dispatchJobId: `sched-${input.scheduleId}`,
-			stopProviderEncodingId: input.providerEncodingId,
-			stopAdmissionFenceVersion: input.admissionFence,
+			stopDeliveryToken: receipt.stopDeliveryToken,
+			stopProviderEncodingId: legacy ? null : input.providerEncodingId,
+			stopAdmissionFenceVersion: legacy ? null : input.admissionFence,
+			...(legacy
+				? { OR: [{ dispatchJobId: null }, { dispatchJobId: expectedJobId }] }
+				: { dispatchedAt: { not: null }, dispatchJobId: expectedJobId }),
+			AND: [{ OR: outcomes }],
 		},
 		data: {
 			outcome: "DELIVERED",
@@ -151,45 +184,19 @@ export async function recordOwnedScheduledStopDelivery(
 	});
 }
 
-/** Called inside the transaction that ACKs the proven STOP(s) for this exact airing. */
-export async function recordConfirmedStopDelivery(
+/** Called inside the transaction that confirms termination of this exact airing. */
+export async function recordConfirmedLiveStopNotification(
 	tx: AppTransactionClient,
 	input: {
 		liveChannelId: string;
 		liveChannelRunId: string;
-		scheduleIds: readonly string[];
 		channelName: string;
 		notificationEligible: boolean;
 		status: "STOPPED" | "ERROR";
 		at: Date;
 	},
 ): Promise<void> {
-	const { liveChannelId, liveChannelRunId, scheduleIds, at } = input;
-	if (scheduleIds.length) {
-		await tx.liveSchedule.updateMany({
-			where: {
-				id: { in: [...scheduleIds] },
-				liveChannelId,
-				liveChannelRunId,
-				action: "STOP",
-				status: "FIRED",
-				// The very same effect may have had a conclusively pre-send failure
-				// before its retry. Its terminal proof supersedes that failed attempt.
-				OR: [
-					{ outcome: "PENDING" },
-					{ outcome: "FAILED", outcomeEvidenceKind: "EFFECT_FAILED" },
-				],
-			},
-			data: {
-				outcome: "DELIVERED",
-				outcomeAt: at,
-				outcomeNote: null,
-				outcomeEvidenceKind: "PROVIDER_TERMINAL",
-				outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
-				outcomeEvidenceAt: at,
-			},
-		});
-	}
+	const { liveChannelId, liveChannelRunId, at } = input;
 	const kind = input.status === "ERROR" ? "CHANNEL_ERROR" : "CHANNEL_STOPPED";
 	const first = await tx.liveChannelRun.updateMany({
 		where: { id: liveChannelRunId, liveChannelId, stopNotificationAt: null },

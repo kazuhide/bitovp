@@ -131,7 +131,7 @@ export {
 export {
 	CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
 	isLiveStopAdmissionFence,
-	recordConfirmedStopDelivery,
+	recordConfirmedLiveStopNotification,
 	settleExhaustedStopSchedules,
 } from "./live-stop-delivery";
 export {

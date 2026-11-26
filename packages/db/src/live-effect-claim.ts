@@ -6,16 +6,17 @@ import {
 	feederOccupancyWhere,
 	hasAisaLiveBinding,
 	isAisaManagedLivePlan,
+	scheduledStopJobId,
 	stepLogSchema,
 } from "@bitovp/core";
 import type { Prisma } from "../generated/client";
 import type { AppPrismaClient, AppTransactionClient } from "./client";
 import {
 	isLiveStopAdmissionFence,
-	recordConfirmedStopDelivery,
+	recordConfirmedLiveStopNotification,
+	recordObservedScheduledStop,
 	recordOwnedScheduledStopDelivery,
 	recordStopScheduleFailure,
-	recordSupersededScheduledStop,
 	settleExhaustedStopSchedules,
 } from "./live-stop-delivery";
 
@@ -131,7 +132,11 @@ export type ResolveLiveEffectsAfterConfirmedStopInput = {
 		providerStatus: string;
 		encodings?: readonly { id: string; status: string }[];
 		/** Recover an interrupted legacy failure without acknowledging a send. */
-		exhaustedFailedSchedule?: { id: string; claimToken: string };
+		exhaustedFailedSchedule?: {
+			id: string;
+			claimToken: string;
+			stopDeliveryToken?: string;
+		};
 	};
 };
 
@@ -876,7 +881,6 @@ export function savedStopReadbacks(
 type ScheduledStopAcceptance = {
 	admissionFence: number;
 	accountId: string;
-	providerStatus: string;
 };
 
 function savedScheduledStopAcceptance(claim: {
@@ -892,15 +896,12 @@ function savedScheduledStopAcceptance(claim: {
 		!Number.isSafeInteger(saved.admissionFence) ||
 		saved.admissionFence < 0 ||
 		typeof saved.accountId !== "string" ||
-		!saved.accountId ||
-		typeof saved.providerStatus !== "string" ||
-		classifyProviderStatusWord(saved.providerStatus) !== "TERMINAL"
+		!saved.accountId
 	)
 		return undefined;
 	return {
 		admissionFence: saved.admissionFence,
 		accountId: saved.accountId,
-		providerStatus: saved.providerStatus,
 	};
 }
 
@@ -1175,6 +1176,7 @@ export async function beginLiveEffect(
 					liveChannelId: true,
 					liveChannelRunId: true,
 					stopDeliveryToken: true,
+					dispatchJobId: true,
 					stopProviderEncodingId: true,
 					stopAdmissionFenceVersion: true,
 					action: true,
@@ -1185,6 +1187,8 @@ export async function beginLiveEffect(
 				(saved?.stopDeliveryToken || input.stopDeliveryToken) &&
 				(!saved ||
 					saved.stopDeliveryToken !== input.stopDeliveryToken ||
+					saved.dispatchJobId !==
+						scheduledStopJobId(input.scheduleId, input.stopDeliveryToken) ||
 					saved.liveChannelId !== input.liveChannelId ||
 					saved.liveChannelRunId !== input.liveChannelRunId ||
 					saved.stopProviderEncodingId !== input.providerEncodingId ||
@@ -1242,7 +1246,12 @@ export async function beginLiveEffect(
 					},
 					OR: [
 						{ dispatchJobId: null },
-						{ dispatchJobId: `sched-${input.scheduleId}` },
+						{
+							dispatchJobId: scheduledStopJobId(
+								input.scheduleId,
+								input.stopDeliveryToken,
+							),
+						},
 					],
 				},
 				select: { id: true, firedAt: true },
@@ -1850,7 +1859,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				stopClaim.action !== "STOP"
 			)
 				return blocked("the exact STOP identity changed");
-			const confirmOwnedSchedule = async (
+			const settleSchedule = async (
 				claim: Pick<
 					typeof stopClaim,
 					| "id"
@@ -1862,14 +1871,20 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					| "stopSendEncodingIds"
 					| "stopOutcomeEvidence"
 				> = stopClaim,
+				recordObservation = true,
 			) => {
 				if (
 					!claim.scheduleId ||
-					claim.idempotencyKey !== `schedule:${claim.scheduleId}:stop` ||
-					claim.stopProtocolVersion !== 1 ||
-					!claim.stopSendEncodingIds.includes(input.providerEncodingId)
+					claim.idempotencyKey !== `schedule:${claim.scheduleId}:stop`
 				)
 					return;
+				const target = {
+					scheduleId: claim.scheduleId,
+					liveChannelId: input.liveChannelId,
+					liveChannelRunId: input.liveChannelRunId,
+					providerEncodingId: input.providerEncodingId,
+					at: input.at,
+				};
 				const currentAcceptance =
 					claim.id === stopClaim.id &&
 					owner?.token === claim.token &&
@@ -1887,20 +1902,25 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 						? saved.admissionFence
 						: undefined;
 				const admissionFence = currentAcceptance ?? savedAcceptance;
-				if (admissionFence === undefined) return;
-				await recordOwnedScheduledStopDelivery(tx, {
-					scheduleId: claim.scheduleId,
-					liveChannelId: input.liveChannelId,
-					liveChannelRunId: input.liveChannelRunId,
-					providerEncodingId: input.providerEncodingId,
-					admissionFence,
-					at: input.at,
-				});
+				if (
+					admissionFence !== undefined &&
+					claim.stopProtocolVersion === 1 &&
+					claim.stopSendEncodingIds.includes(input.providerEncodingId)
+				)
+					await recordOwnedScheduledStopDelivery(tx, {
+						...target,
+						admissionFence,
+					});
+				if (recordObservation)
+					await recordObservedScheduledStop(tx, {
+						...target,
+						generation: claim.generation,
+					});
 			};
 			if (stopClaim.state === "ACKED") {
 				// A periodic observer can win while the owner is returning its own
 				// successful POST and terminal reads. Only repair the exact receipt.
-				await confirmOwnedSchedule();
+				await settleSchedule(stopClaim, false);
 				return { kind: "ALREADY_ACKED" };
 			}
 			const exhausted = proof?.exhaustedFailedSchedule;
@@ -1939,6 +1959,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 							action: "STOP",
 							status: "FIRED",
 							legacyStopExhaustedFence: stopGeneration,
+							stopDeliveryToken: exhausted.stopDeliveryToken ?? null,
 							AND: [
 								{
 									OR: [
@@ -1949,7 +1970,12 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 								{
 									OR: [
 										{ dispatchJobId: null },
-										{ dispatchJobId: `sched-${exhausted.id}` },
+										{
+											dispatchJobId: scheduledStopJobId(
+												exhausted.id,
+												exhausted.stopDeliveryToken,
+											),
+										},
 									],
 								},
 								{
@@ -2290,22 +2316,10 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				});
 				if (finished.count !== 1)
 					throw new Error("LIVE_STOP_RECONCILIATION_SIBLING_FENCE_LOST");
-				if (
-					sibling.scheduleId &&
-					sibling.idempotencyKey === `schedule:${sibling.scheduleId}:stop`
-				) {
-					await recordSupersededScheduledStop(tx, {
-						scheduleId: sibling.scheduleId,
-						liveChannelId: input.liveChannelId,
-						liveChannelRunId: input.liveChannelRunId,
-						providerEncodingId: input.providerEncodingId,
-						generation: sibling.generation,
-						at: input.at,
-					});
-					await confirmOwnedSchedule(sibling);
-				}
+				await settleSchedule(sibling);
 			}
-			await recordConfirmedStopDelivery(tx, {
+			if (!exhausted) await settleSchedule();
+			await recordConfirmedLiveStopNotification(tx, {
 				channelName: channel.name,
 				// Older workers could emit an unkeyed notification before persisting the ACK.
 				notificationEligible:
@@ -2320,10 +2334,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				liveChannelRunId: run.id,
 				status: confirmedStatus,
 				at: input.at,
-				scheduleIds:
-					!exhausted && stopClaim.scheduleId ? [stopClaim.scheduleId] : [],
 			});
-			await confirmOwnedSchedule();
 			const admissionFence = channel.legacyAdmissionFenceVersion;
 			if (isLiveStopAdmissionFence(admissionFence, stopGeneration, stopClaim)) {
 				await settleExhaustedStopSchedules(tx, {
@@ -2674,13 +2685,12 @@ export async function recordLiveStopFailure(
 			delivery?.stopProtocolVersion === 1 &&
 			claim.idempotencyKey === `schedule:${claim.scheduleId}:stop` &&
 			delivery.stopSendEncodingIds.includes(claim.providerEncodingId)
-				? primary &&
+				? accountMatches &&
 					input.accountId &&
 					input.acceptedScheduleAdmission !== undefined
 					? {
 							admissionFence: input.acceptedScheduleAdmission,
 							accountId: input.accountId,
-							providerStatus: primary.status,
 						}
 					: savedScheduledStopAcceptance(delivery)
 				: undefined;

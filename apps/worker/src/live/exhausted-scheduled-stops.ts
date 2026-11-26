@@ -3,6 +3,7 @@ import {
 	classifyProviderStatusWord,
 	type LiveChannelJob,
 	liveChannelJobSchema,
+	scheduledStopJobId,
 } from "@bitovp/core";
 import {
 	beginLiveEffect,
@@ -125,7 +126,7 @@ export function createExhaustedScheduledStopRecovery(
 			const channel = row.liveChannel,
 				run = channel.runs[0],
 				encodingId = channel.bitmovinEncodingId;
-			const jobId = `sched-${row.id}`;
+			const jobId = scheduledStopJobId(row.id, row.stopDeliveryToken);
 			if (
 				!run ||
 				(run.status !== "STOPPING" &&
@@ -458,6 +459,9 @@ export function createExhaustedScheduledStopRecovery(
 								exhaustedFailedSchedule: {
 									id: row.id,
 									claimToken: failedClaim.token,
+									...(row.stopDeliveryToken && {
+										stopDeliveryToken: row.stopDeliveryToken,
+									}),
 								},
 							},
 						},
@@ -497,6 +501,10 @@ export function createExhaustedScheduledStopRecovery(
 						// job's payload. Replace its authority before publishing a
 						// new Redis job, under the same lock as effect acquisition.
 						const stopDeliveryToken = randomUUID();
+						const replacementJobId = scheduledStopJobId(
+							row.id,
+							stopDeliveryToken,
+						);
 						const replaced = await deps.prisma.$transaction(async (tx) => {
 							const [held] = await tx.$queryRaw<{ id: string }[]>`
 								SELECT id FROM "LiveChannel"
@@ -537,14 +545,18 @@ export function createExhaustedScheduledStopRecovery(
 									stopProviderEncodingId: encodingId,
 									stopDeliveryToken: row.stopDeliveryToken,
 								},
-								data: { stopDeliveryToken, legacyStopExhaustedFence: null },
+								data: {
+									stopDeliveryToken,
+									dispatchJobId: replacementJobId,
+									legacyStopExhaustedFence: null,
+								},
 							});
 							return marked.count === 1;
 						});
 						if (replaced) {
 							await reenqueue(
 								{ ...original, effect: { ...effect, stopDeliveryToken } },
-								jobId,
+								replacementJobId,
 							);
 							continue;
 						}

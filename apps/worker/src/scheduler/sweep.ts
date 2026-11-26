@@ -25,6 +25,7 @@ import {
 	reseedFailedSteps,
 	restoreCompiledLiveProvisionGraph,
 	restoreLiveProvisionEvidence,
+	scheduledStopJobId,
 	sealedFeederSourceSchema,
 	slateSourceSchema,
 	stepLogSchema,
@@ -52,6 +53,7 @@ import {
 import {
 	MISSED_UNOWNED_STOP_REASON,
 	recordScheduledStopHandoff,
+	type ScheduledStopAdmission,
 	writeScheduledStopNotification,
 } from "./stop-handoff";
 
@@ -90,8 +92,8 @@ import {
  *   and claims atomically: the channel claim RUNNING→STOPPING is the
  *   lock, the synthetic row's fireAt is the DETERMINISTIC epoch deadline
  *   under a partial unique index (P2002 = already recorded), and the
- *   queue jobId derives from the same deadline so a re-enqueue after a
- *   crash dedupes instead of double-stopping.
+ *   outbox stores the same queue delivery identity for retries within the
+ *   admission.
  * - runOnce is reentrancy-guarded: a tick that outruns the interval skips
  *   instead of overlapping itself.
  *
@@ -516,6 +518,19 @@ type ScheduleRow = {
 	feederSessionId?: string | null;
 	stagedAt?: Date | null;
 };
+
+function storedStopAdmission(row: ScheduleRow): ScheduledStopAdmission | null {
+	if (
+		!row.stopProviderEncodingId ||
+		typeof row.stopAdmissionFenceVersion !== "number"
+	)
+		return null;
+	return {
+		providerEncodingId: row.stopProviderEncodingId,
+		admissionFenceVersion: row.stopAdmissionFenceVersion,
+		...(row.stopDeliveryToken && { stopDeliveryToken: row.stopDeliveryToken }),
+	};
+}
 
 /**
  * (row 266): stamp WHICH airing a scheduled job is
@@ -1504,6 +1519,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						}
 						const effect = await effectIntentFor(row, "STOP", undefined, 1, tx);
 						if (!effect) throw new UnownedScheduledStop();
+						const stopDeliveryToken = randomUUID();
 						const changed = await tx.liveChannel.updateMany({
 							where: {
 								id: row.liveChannelId,
@@ -1533,9 +1549,10 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 							data: {
 								stopProviderEncodingId: effect.providerEncodingId,
 								stopAdmissionFenceVersion: effect.admissionFenceVersion,
+								stopDeliveryToken,
 							},
 						});
-						return effect;
+						return { ...effect, stopDeliveryToken };
 					})
 					.catch((error: unknown) => {
 						if (error instanceof UnownedScheduledStop) return null;
@@ -1561,7 +1578,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 							...plannedRunStamp(row.liveChannelRunId),
 							effect,
 						},
-						scheduleJobId(row.id),
+						scheduledStopJobId(row.id, effect.stopDeliveryToken),
 					);
 				} catch {
 					// A rejected add can already be executing in Redis. Leave FIRED
@@ -1577,6 +1594,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						liveChannelRunId: effect.liveChannelRunId,
 					},
 					deps.now(),
+					effect,
 				);
 				stats.fired += 1;
 				return;
@@ -2300,6 +2318,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 								liveChannelRunId: row.liveChannelRunId,
 							},
 							deps.now(),
+							storedStopAdmission(row),
 						);
 					return;
 				}
@@ -2336,7 +2355,10 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				if (!job) {
 					return;
 				}
-				const jobId = scheduleJobId(row.id);
+				const jobId =
+					job.action === "stop"
+						? scheduledStopJobId(row.id, job.effect?.stopDeliveryToken)
+						: scheduleJobId(row.id);
 				try {
 					await deps.enqueue(job, jobId);
 				} catch (err) {
@@ -2361,6 +2383,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 							liveChannelRunId: row.liveChannelRunId,
 						},
 						deps.now(),
+						job.effect ?? null,
 					);
 					redispatched += 1;
 					return;
@@ -2490,26 +2513,20 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 			// stranded STOP was FIRED, so its bind is set — carry it so the
 			// recovery add fences on the SAME airing a healthy dispatch would.
 			let effect: LiveEffectIntent | null = null;
-			if (
-				row.liveChannelRunId &&
-				row.stopProviderEncodingId &&
-				typeof row.stopAdmissionFenceVersion === "number"
-			) {
+			const admission = storedStopAdmission(row);
+			if (row.liveChannelRunId && admission) {
 				effect = {
 					action: "STOP",
 					scheduleId: row.id,
 					liveChannelRunId: row.liveChannelRunId,
-					providerEncodingId: row.stopProviderEncodingId,
-					admissionFenceVersion: row.stopAdmissionFenceVersion,
-					...(row.stopDeliveryToken && {
-						stopDeliveryToken: row.stopDeliveryToken,
-					}),
+					...admission,
 					idempotencyKey: `schedule:${row.id}:stop`,
 				};
 			} else if (row.liveChannelRunId) {
 				const runId = row.liveChannelRunId;
 				try {
 					effect = await deps.prisma.$transaction(async (tx) => {
+						await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${row.liveChannelId}::uuid FOR UPDATE`;
 						await bindArchivedStopTargetInTransaction(
 							tx,
 							row.liveChannelId,
@@ -2538,6 +2555,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 							tx,
 						);
 						if (!recovered) throw new UnownedScheduledStop();
+						const stopDeliveryToken = randomUUID();
 						// Once a pre-upgrade intent has been recovered, later passes must
 						// reuse it even when Redis accepted the first job but lost its reply.
 						const saved = await tx.liveSchedule.updateMany({
@@ -2554,10 +2572,11 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 							data: {
 								stopProviderEncodingId: recovered.providerEncodingId,
 								stopAdmissionFenceVersion: recovered.admissionFenceVersion,
+								stopDeliveryToken,
 							},
 						});
 						if (!saved.count) throw new RecoveredScheduledStop();
-						return recovered;
+						return { ...recovered, stopDeliveryToken };
 					});
 				} catch (err) {
 					if (err instanceof RecoveredScheduledStop) return null;
@@ -2932,6 +2951,8 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 				continue;
 			}
 			let scheduleId: string | null = null;
+			const stopDeliveryToken = randomUUID();
+			const admissionFenceVersion = channel.liveEffectFenceVersion + 1;
 			try {
 				scheduleId = await deps.prisma.$transaction(async (tx) => {
 					const locked = await tx.liveChannel.updateMany({
@@ -2984,14 +3005,34 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						throw new Error(
 							"runtime cap found a different or already dispatched schedule for this deadline",
 						);
+					const receipt = {
+						stopProviderEncodingId: providerEncodingId,
+						stopAdmissionFenceVersion: admissionFenceVersion,
+						stopDeliveryToken,
+					};
+					if (prior) {
+						const renewed = await tx.liveSchedule.updateMany({
+							where: {
+								id: prior.id,
+								liveChannelRunId: run.id,
+								status: "FIRED",
+								outcome: "PENDING",
+								dispatchedAt: null,
+							},
+							data: receipt,
+						});
+						if (renewed.count !== 1)
+							throw new Error(
+								"runtime cap STOP handoff changed during admission",
+							);
+					}
 					const row =
 						prior ??
 						(await tx.liveSchedule.create({
 							data: {
 								...epoch,
+								...receipt,
 								liveChannelRunId: run.id,
-								stopProviderEncodingId: providerEncodingId,
-								stopAdmissionFenceVersion: channel.liveEffectFenceVersion + 1,
 								action: "STOP",
 								status: "FIRED",
 								firedAt: now,
@@ -3005,20 +3046,22 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					return row.id;
 				});
 				if (!scheduleId) continue;
-				const jobId = scheduleJobId(scheduleId);
+				const jobId = scheduledStopJobId(scheduleId, stopDeliveryToken);
+				const effect: LiveEffectIntent = {
+					action: "STOP",
+					scheduleId,
+					liveChannelRunId: run.id,
+					providerEncodingId,
+					idempotencyKey: `schedule:${scheduleId}:stop`,
+					admissionFenceVersion,
+					stopDeliveryToken,
+				};
 				await deps.enqueue(
 					{
 						liveChannelId: channel.id,
 						action: "stop",
 						plannedLiveChannelRunId: run.id,
-						effect: {
-							action: "STOP",
-							scheduleId,
-							liveChannelRunId: run.id,
-							providerEncodingId,
-							idempotencyKey: `schedule:${scheduleId}:stop`,
-							admissionFenceVersion: channel.liveEffectFenceVersion + 1,
-						},
+						effect,
 					},
 					jobId,
 				);
@@ -3030,12 +3073,18 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						liveChannelRunId: run.id,
 					},
 					deps.now(),
+					effect,
 				);
 			} catch (err) {
 				const reason = `runtime-cap STOP handoff failed: ${err instanceof Error ? err.message : String(err)}`;
 				if (scheduleId) {
 					await deps.prisma.liveSchedule.updateMany({
-						where: { id: scheduleId, status: "FIRED", dispatchedAt: null },
+						where: {
+							id: scheduleId,
+							status: "FIRED",
+							dispatchedAt: null,
+							stopDeliveryToken,
+						},
 						data: { error: reason },
 					});
 				} else {

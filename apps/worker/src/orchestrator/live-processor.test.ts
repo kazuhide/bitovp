@@ -391,14 +391,7 @@ function setup(
 					ownerHost?: string | null;
 				}[],
 		),
-		findFirst: vi.fn(
-			async () =>
-				null as {
-					id: string;
-					dispatchJobId?: string;
-					dispatchedAt?: Date;
-				} | null,
-		),
+		findFirst: vi.fn(async () => null as { id: string } | null),
 		//  — scheduled feeder starts create sessions here.
 		count: vi.fn(async () => 0),
 		create: vi.fn(async (args: { data: Record<string, unknown> }) => {
@@ -501,7 +494,14 @@ function setup(
 			feederSessionId: scheduleRow.feederSessionId,
 			status: scheduleRow.status,
 		})),
-		findFirst: vi.fn(async () => null as { id: string } | null),
+		findFirst: vi.fn(
+			async () =>
+				null as {
+					id: string;
+					dispatchJobId?: string;
+					dispatchedAt?: Date;
+				} | null,
+		),
 	};
 	//  PR2: a minimal STATEFUL run-row stub — ensureCurrentRun
 	// creates, mirror reads the latest back, update records the mirrored

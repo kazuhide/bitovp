@@ -1305,7 +1305,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					return;
 				}
 				stats.fired += 1;
-				if (await markDispatched(row, jobId)) await emitFired(row);
+				if (await markDispatched(row, jobId)) void emitFired(row);
 				return;
 			}
 			case "STOPPED": {
@@ -1432,7 +1432,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					return;
 				}
 				stats.fired += 1;
-				if (await markDispatched(row, jobId)) await emitFired(row);
+				if (await markDispatched(row, jobId)) void emitFired(row);
 				return;
 			}
 			default:

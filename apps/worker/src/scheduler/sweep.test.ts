@@ -1270,6 +1270,39 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 	});
 
 	it.each([
+		"CREATED",
+		"STOPPED",
+	] as const)("%s START completes the scan while its notification is still pending", async (status) => {
+		const store = makeStore([makeRow()], [makeChannel({ status })]);
+		const { sweep, emitEvent } = makeSweep(store);
+		let notifyStarted!: () => void;
+		let releaseNotify!: () => void;
+		const started = new Promise<void>((resolve) => {
+			notifyStarted = resolve;
+		});
+		const blocked = new Promise<void>((resolve) => {
+			releaseNotify = resolve;
+		});
+		emitEvent.mockImplementation(() => {
+			notifyStarted();
+			return blocked;
+		});
+		const scanning = sweep();
+		try {
+			await started;
+			expect(
+				await Promise.race([
+					scanning.then(({ fired }) => fired),
+					new Promise<null>((resolve) => setImmediate(() => resolve(null))),
+				]),
+			).toBe(1);
+		} finally {
+			releaseNotify();
+			await scanning;
+		}
+	});
+
+	it.each([
 		"STOPPED",
 		"ERROR",
 	])("refuses %s re-air with the specific MSL5 floor issue before claiming or enqueueing", async (status) => {

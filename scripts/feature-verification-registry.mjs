@@ -8,7 +8,7 @@ export const FEATURES = Object.freeze(
 			description: "QC memory/thread planning and detector reservations",
 			files: {
 				"src/vmaf/resource-plan.test.ts": 12,
-				"src/vmaf/banding-resources.test.ts": 2,
+				"src/vmaf/banding-resources.test.ts": 3,
 				"src/vmaf/processor.test.ts": 255,
 			},
 		},

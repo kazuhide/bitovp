@@ -32,6 +32,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Keep the VOD and Live Quick Launch settings and operator that initiated a request when the browser resumes it after going offline.
 - Require matching HDR10+ metadata when replacing a withheld picture and retain both source roles when the original job is deleted.
 - Protect private VOD source locations and keep output format summaries available in Compare.
+- Allow a worker with shared resource admission to run compatible local QC measurements concurrently within the host CPU and memory budget. Apply the reserved decoder limits to CAMBI scoring and frame-timing probes.
 
 ## [1.3.5] - 2026-11-25
 

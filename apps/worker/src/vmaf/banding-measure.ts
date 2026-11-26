@@ -114,6 +114,7 @@ export async function measureBanding(
 			allocation?.threads ?? 1,
 			request.probe,
 			request.hdrMethod,
+			allocation?.decoderThreads ?? 1,
 		);
 		result = {
 			frames: cpu.frames,

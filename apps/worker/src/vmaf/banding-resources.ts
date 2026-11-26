@@ -40,8 +40,8 @@ export function bandingResourcePair(video: ResourceVideo): ResourcePair {
 	};
 }
 
-/** CAMBI starts with a conservative exclusive reservation, never a VMAF
- * calibration profile. Future measured profiles need their own qualification. */
+/** CAMBI uses its own full-frame estimate and retains whole-device credits.
+ * A composite keeps the base plan's host exclusivity and decoder allocation. */
 export function createBandingResourcePlanner(deps: {
 	runner: ProcessRunner;
 	nativePath: string;
@@ -77,12 +77,34 @@ export function createBandingResourcePlanner(deps: {
 			...plan,
 			estimatedBytes: plan.estimatedBytes + (basePlan?.estimatedBytes ?? 0),
 			threads: Math.max(plan.threads, basePlan?.threads ?? 1),
+			decoderThreads: Math.max(
+				plan.decoderThreads ?? 1,
+				basePlan?.decoderThreads ?? 1,
+			),
+			exclusive: basePlan?.exclusive ?? Boolean(selected),
 			...(selected || basePlan?.gpu
 				? { nativeInflightFrames: 1 as const }
 				: {}),
 		};
 		if (!budgetBytes || merged.estimatedBytes > budgetBytes)
 			throw new ResourceUnavailableError("estimate");
+		merged.cpuChargePerComparison = Math.max(
+			basePlan?.cpuChargePerComparison ?? 0,
+			merged.threads + 2 * merged.decoderThreads + 1,
+		);
+		merged.concurrency =
+			merged.exclusive || selected
+				? 1
+				: Math.max(
+						1,
+						Math.min(
+							32,
+							basePlan?.concurrency ?? 32,
+							deps.configured?.concurrency ?? 32,
+							Math.floor(current.cpuCapacity / merged.cpuChargePerComparison),
+							Math.floor(budgetBytes / merged.estimatedBytes),
+						),
+					);
 		if (!selected) return merged;
 		const inspect = deps.inspect ?? inspectNativeDevice;
 		const readDevice = () =>
@@ -150,6 +172,13 @@ export function createBandingResourcePlanner(deps: {
 			.digest("hex");
 		return {
 			...merged,
+			// Shared-RAM GPUs and unknown device headroom keep the original
+			// whole-host reservation; the composite is not a new GPU profile.
+			exclusive:
+				merged.exclusive ||
+				info.device.integrated ||
+				total === null ||
+				info.device.memoryAvailableBytes === null,
 			profileKey,
 			nativeDevice: selected.device,
 			gpu: {

@@ -73,14 +73,17 @@ describe the encoding settings. The player and display determine playback and
 HDR presentation. Compare scores only with matching models, measurement
 conditions, and references. HDR PQ, HLG and SDR appear in separate panels.
 
+For playback without QC reports, use [Compare outputs in VOD Jobs](VOD.md#packaging-and-playback).
+
 ### Manual HDR measurement
 
-In **Measure an existing job**, choose an HDR model, **Existing HDR HLS output**,
-and **Local CPU**. This measures an eligible, finished, clear fMP4 HLS output
-against its direct source. The report identifies the measured base video for
-HDR10, compatible Dolby Vision Profile 10.1, or HLG converted to PQ. It shows
-the quality and banding scores under the recorded HDR conditions. To evaluate
-Dolby Vision display mapping, check playback on a compatible display.
+In **Measure an existing job**, choose an HDR model for an eligible finished
+job. The model sets and locks **Existing HDR HLS output** and **Local CPU**.
+The default metric is **VMAF**. Select **VMAF + banding** to include CAMBI.
+The measurement compares a clear fMP4 HLS output with its direct source. The
+report identifies HDR10, the compatible Dolby Vision Profile 10.1 base layer,
+or HLG converted to PQ. Check Dolby Vision display mapping on a compatible
+display.
 [HDR protocol and supported inputs](../HDR-QC.md)
 
 ## Why alignment matters

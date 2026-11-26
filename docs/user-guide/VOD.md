@@ -193,6 +193,14 @@ provider resources, input/output identity, and manifest URLs. After `FINISHED`,
 play the output and check the expected video and audio renditions. A terminal
 encoding status alone does not prove CDN delivery or browser playback.
 
+To play delivery outputs together, select two or three finished jobs in
+**VOD Jobs** and choose **Compare outputs**. Pick playable HLS or DASH outputs
+with the same content and start point. Use the shared play, pause and seek
+controls and choose one audio source. This view is available without QC reports.
+The original two-output comparison exercised these controls with synthetic HLS
+in [Installed GUI](https://github.com/kazuhide/bitovp/actions/runs/43829369516/job/133170822700).
+Verify Dolby Vision display on the intended playback hardware.
+
 ## Quality checks and scene analysis
 
 Optional VMAF compares the output with a reference source. Select local execution

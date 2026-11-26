@@ -138,6 +138,8 @@ upstream security fix; see [the dependency contract](./picomatch-mitigation.md).
 
 Completion requires the integrated candidate's test/build output, two independent
 reviews of the final source identity, all required CI, and equality between the
-reviewed tree and the actual merged main tree. Production deployment, provider
-behavior outside the fixtures and video-quality measurements remain separate
-tasks. Finite tests cannot establish that all unknown defects are absent.
+reviewed tree and the actual merged main tree. The foundation's integration
+history and receipts are linked from [PR #155](https://github.com/kazuhide/bitovp/pull/155).
+Production deployment, provider behavior outside the fixtures and video-quality
+measurements remain separate tasks. Finite tests cannot establish that all unknown
+defects are absent.

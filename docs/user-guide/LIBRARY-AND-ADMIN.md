@@ -16,9 +16,12 @@ paths have different purposes; inspect each before starting work.
 ### Manage content records through the API
 
 Operators can register a source with `POST /api/library`. Send `sourceId`,
-`title`, and the source's `locale`, with optional `description` and `tags`.
+`title`, and one of the source's analysis locales as `locale`. Send
+`locale: "und"` when the source's `locales` list is empty. `description` and
+`tags` are optional and default to an empty string and an empty array.
 Include `contentId` and the current `expectedRevision` to make that source the
-next revision of an existing unarchived entry. A successful request returns
+next revision of an existing unarchived entry. Resend the current `description`
+and `tags` to carry them into the new revision. A successful request returns
 `201 {"id":"<contentId>"}`.
 
 To change a title, description, tags, or locale, send those fields with

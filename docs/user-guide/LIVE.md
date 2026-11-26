@@ -289,10 +289,16 @@ feed, use [single-pass playback through the API](../feeder-single-pass.md).
 The Feeder can finish while the channel keeps running. Confirm both have stopped
 when the broadcast is over.
 
-Channel schedules support channel start and stop, slate insertion, and feeder
-start and switch. **Requested** (`FIRED`) means the scheduler claimed the action.
-A queue handoff and a confirmed outcome are separate. Check the outcome in
-schedule history and verify the resulting broadcast or media.
+In the channel details, **Schedule actions** lets you schedule channel starts,
+stops, and slate insertions. To schedule a file-fed RTMP program, include
+`schedule.programFeed.source` when creating the channel with
+`POST /api/live-channels`. The program is scheduled for `programStartAt`.
+If `streamUpAt` is earlier, include `schedule.slate.source` for the pre-program
+feed. The resulting feeder actions appear in schedule history.
+
+**Requested** (`FIRED`) means the scheduler claimed the action. A queue handoff
+and a confirmed outcome are separate. Check the outcome in schedule history
+and verify the resulting broadcast or media.
 
 Slates are insertable still images or video. Video must match the live ingest's
 frame rate, resolution, audio sample rate/channels, and codec requirements.

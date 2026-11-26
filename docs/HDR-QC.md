@@ -1,9 +1,10 @@
 # HDR QC — Dolby Vision, HDR10 and HLG
 
 From VMAF Lab, choose **Measure an existing job…** and select a finished job and
-an HDR model with the frame-rate range below. This measurement runs on the
-local CPU using the [isolated HDR runtime](FFMPEG-BUILD.md#isolated-hdr-qc-runtime)
-included in the normal Docker Worker image.
+an HDR model with the frame-rate range below. It sets and locks **Existing HDR
+HLS output** and **Local CPU**. Select **VMAF + banding** to include CAMBI with
+the default VMAF measurement. The [isolated HDR runtime](FFMPEG-BUILD.md#isolated-hdr-qc-runtime)
+is included in the normal Docker Worker image.
 
 For a machine client, send the finished job ID, `source: "OUTPUT_HLS"`, an
 explicit HDR `model`, and `execution: {"backend":"LOCAL","localMode":"CPU"}`.
@@ -58,6 +59,9 @@ output with an unambiguous video target for each selected rendition and a
 direct reference source. For a Dolby Vision plan with separate metadata, the
 reference is its original video source. Transformed, encrypted, ambiguous or
 incomplete targets are refused.
+Use `S3` or `GENERIC_S3` output storage with read and upload permissions.
+The worker reads the existing HLS objects and uploads the retained measurement
+copy to the same storage.
 
 Read only storage objects bound to the encoding plan and selected HLS target.
 Enforce finite VOD playlists, URI containment, resource limits and immutable

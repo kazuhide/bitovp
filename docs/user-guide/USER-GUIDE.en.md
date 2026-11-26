@@ -1092,7 +1092,7 @@ For jobs without a QC mirror, eligible existing MP4 outputs can be used. The job
 
 Remeasurements from job details and reports created in the lab do not change the original encode's automatic quality-gate verdict. If a measurement for the same job is in progress, wait for it to finish or fail before starting another.
 
-For HDR base-layer measurement, choose an HDR model, **Existing HDR HLS output**, and **Local CPU** for an eligible finished job. The report identifies HDR PQ or HLG converted to PQ. [HDR measurement protocol](../HDR-QC.md)
+For HDR base-layer measurement, choose an HDR model for an eligible finished job. It sets and locks **Existing HDR HLS output** and **Local CPU**. The default metric is **VMAF**. Select **VMAF + banding** to include CAMBI. The report identifies HDR PQ or HLG converted to PQ. [HDR measurement protocol](../HDR-QC.md)
 
 ### Execution targets and measurement methods
 
@@ -1137,6 +1137,8 @@ With the same model and reference conditions, a higher VMAF score indicates grea
 The displayed chart is reduced to at most 1,500 points, retaining the worst frame in each interval. This is display downsampling. In contrast, when a measurement samples every few frames, the intervening frames are not scored. Its minimum is therefore not necessarily the worst score across all frames. All stored scored frames can be downloaded as JSON or CSV, including PSNR values when measured. If a download is interrupted, discard the partial file and download it again.
 
 To compare reports, select up to 6 reports with results in the lab and open “Compare selected”. Match the reference, time range, model, scoring generation and sampling stride. HDR PQ, HLG and SDR appear in separate panels. When the reports represent two or three finished VOD jobs with accessible HLS or DASH outputs, the same page shows synchronized playback. Match the content and start time of the selected outputs.
+
+For synchronized playback without QC reports, select two or three finished jobs in **VOD Jobs** and choose **Compare outputs**. [Output comparison controls](VOD.md#packaging-and-playback)
 
 In a single report, “Open comparison preview” lets you select up to 2 VOD QC videos whose retained versions can be identified, and seek to a scored frame's time. Browser seeking or decoding may display a neighboring frame. This is unavailable for older reports or Live captures that were not retained. It does not show the current live stream as a substitute for previously measured frames.
 

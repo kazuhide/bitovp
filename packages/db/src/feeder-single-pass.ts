@@ -38,7 +38,7 @@ export async function hasSupersedingFeederStop(
 						AND stop."liveChannelRunId" = current_run.id
 						AND stop."providerEncodingId" = c."bitmovinEncodingId"
 						AND stop.action = 'STOP' AND stop.generation = c."liveEffectFenceVersion"
-						AND stop.state IN ('DISPATCHING', 'ACKED', 'AMBIGUOUS', 'RESOLVED')
+						AND stop.state IN ('DISPATCHING', 'ACKED', 'AMBIGUOUS', 'RESOLVED', 'FAILED')
 				)
 			)`;
 	return Boolean(stop);

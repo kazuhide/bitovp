@@ -811,7 +811,7 @@ function setup(
 	};
 	const liveEffectClaim = {
 		findUnique: vi.fn(
-			async ({ where }: { where: Row }) =>
+			async ({ where }: { where: Row; select?: Row }) =>
 				effectClaims.find((claim) => effectMatches(claim, where)) ?? null,
 		),
 		findFirst: vi.fn(
@@ -1006,9 +1006,13 @@ function setup(
 							claim.providerEncodingId === encodingId &&
 							claim.action === "STOP" &&
 							claim.generation === channel.liveEffectFenceVersion &&
-							["DISPATCHING", "ACKED", "AMBIGUOUS", "RESOLVED"].includes(
-								claim.state as string,
-							),
+							[
+								"DISPATCHING",
+								"ACKED",
+								"AMBIGUOUS",
+								"RESOLVED",
+								...(query.join("").includes("'FAILED'") ? ["FAILED"] : []),
+							].includes(claim.state as string),
 					);
 					return scheduled || claimed ? [{ id }] : [];
 				}
@@ -1226,6 +1230,7 @@ function setup(
 		sleep,
 		feederSession,
 		liveSchedule,
+		liveEffectClaim,
 		effectClaims,
 		pushAttempts,
 		feederPushAttempt,
@@ -6054,28 +6059,42 @@ describe("single-pass feeder processor", () => {
 	});
 
 	it.each([
+		["at the spawn claim check", "failed"],
 		["before final checks", "claimed"],
+		["before final checks", "failed"],
 		["at the dispatch lock", "claimed"],
 		["before final checks", "scheduled"],
 		["at the dispatch lock", "scheduled"],
 	] as const)("uses the exact Live STOP when it wins %s (%s)", async (boundary, stop) => {
 		const s = setup({ session: { playbackMode: "ONCE" } });
 		function applyStop() {
-			s.channel.status = "STOPPING";
+			s.channel.status = stop === "failed" ? "RUNNING" : "STOPPING";
 			s.channel.liveEffectFenceVersion =
 				(s.channel.liveEffectFenceVersion as number) + 1;
-			if (stop === "claimed")
+			if (stop === "scheduled") s.run.status = "RUNNING";
+			else
 				s.effectClaims.push({
 					id: "winning-stop",
 					action: "STOP",
-					state: "DISPATCHING",
+					state: stop === "failed" ? "FAILED" : "DISPATCHING",
 					liveChannelId: s.channel.id,
 					liveChannelRunId: s.run.id,
 					providerEncodingId: s.run.bitmovinEncodingId,
 					generation: s.channel.liveEffectFenceVersion,
 				});
 		}
-		if (boundary === "at the dispatch lock") {
+		if (boundary === "at the spawn claim check") {
+			const read = s.liveEffectClaim.findUnique.getMockImplementation();
+			if (!read) throw new Error("Missing ledger fixture");
+			s.liveEffectClaim.findUnique.mockImplementation(async (args) => {
+				if (
+					args.select?.expiresAt &&
+					s.effectClaims.every((row) => row.action !== "STOP")
+				)
+					applyStop();
+				return read(args);
+			});
+		} else if (boundary === "at the dispatch lock") {
 			const query = s.queryRaw.getMockImplementation();
 			if (!query) throw new Error("Missing database fixture");
 			s.queryRaw.mockImplementation(async (sql, ...values) => {
@@ -6107,6 +6126,33 @@ describe("single-pass feeder processor", () => {
 		expect(s.emitEvent).not.toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "FEEDER_ERROR" }),
 		);
+	});
+
+	it("leaves a successor's exact spawn claim alone after preflight fails", async () => {
+		const successor = {
+			id: "replacement-spawn",
+			token: "successor-token",
+			action: "FEEDER_SPAWN",
+			state: "DISPATCHING",
+			liveChannelId: CHANNEL_ID,
+			targetId: SESSION_ID,
+			expiresAt: new Date(Date.parse(NOW) + 60_000),
+		};
+		let s: ReturnType<typeof setup>;
+		s = setup({
+			session: { playbackMode: "ONCE" },
+			fetchSource: async () => {
+				s.session.ownerId = OWNER_B;
+				s.session.ownerGeneration = (s.session.ownerGeneration as number) + 1;
+				s.effectClaims.push(successor);
+				throw new Error("preflight download interrupted");
+			},
+		});
+		await expect(s.processor.process(startJob)).rejects.toThrow(
+			/preflight download interrupted/,
+		);
+		expect(successor.state).toBe("DISPATCHING");
+		expect(s.spawned).toHaveLength(0);
 	});
 
 	it("settles its exact pre-spawn effect after a feeder STOP revokes its lease from another worker", async () => {

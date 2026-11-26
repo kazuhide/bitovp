@@ -1,5 +1,33 @@
 import type { ProcessRunner } from "./supervisor";
 
+type AudioTrack = {
+	index: number;
+	sampleRate?: string;
+	timeBase?: string;
+};
+
+/** A whole priming packet can be included in the copy, unlike a partial edit. */
+function isCompletePreroll(
+	line: string,
+	skip: string | undefined,
+	audio: AudioTrack | undefined,
+) {
+	if (!skip || !audio?.sampleRate || !audio.timeBase) return false;
+	const duration = /(?:^|\|)duration=([1-9]\d*)(?:\||$)/.exec(line)?.[1];
+	const scale = /^([1-9]\d*)\/([1-9]\d*)$/.exec(audio.timeBase);
+	if (
+		!duration ||
+		!scale?.[1] ||
+		!scale[2] ||
+		!/^[1-9]\d*$/.test(audio.sampleRate)
+	)
+		return false;
+	return (
+		BigInt(skip) * BigInt(scale[2]) ===
+		BigInt(duration) * BigInt(scale[1]) * BigInt(audio.sampleRate)
+	);
+}
+
 /**
  * Count packets after demux and reject timeline edits the live muxers cannot
  * express. FFmpeg streamcopy can carry a discard-marked picture across the
@@ -10,7 +38,7 @@ export async function inspectSinglePassPackets(
 	runner: Pick<ProcessRunner, "run">,
 	ffprobe: string,
 	path: string,
-	tracks: { video: number; audio?: number },
+	tracks: { video: number; audio?: AudioTrack },
 	signal: AbortSignal,
 ): Promise<{ video: number; audio: number } | { error: string }> {
 	const counts = { video: 0, audio: 0 };
@@ -23,7 +51,7 @@ export async function inspectSinglePassPackets(
 			"error",
 			"-show_packets",
 			"-show_entries",
-			"packet=stream_index,flags:packet_side_data=side_data_type,skip_samples,discard_padding",
+			"packet=stream_index,duration,flags:packet_side_data=side_data_type,skip_samples,discard_padding",
 			"-of",
 			"compact=p=0:nk=0",
 			path,
@@ -32,9 +60,10 @@ export async function inspectSinglePassPackets(
 			signal,
 			onStdoutLine(line) {
 				if (!line.trim()) return;
-				const fields = /^stream_index=(\d+)\|flags=([A-Z_]+)(?:\||$)/.exec(
-					line,
-				);
+				const fields =
+					/^stream_index=(\d+)\|(?:duration=[^|]+\|)?flags=([A-Z_]+)(?:\||$)/.exec(
+						line,
+					);
 				if (!fields) {
 					invalid = true;
 					return;
@@ -43,23 +72,30 @@ export async function inspectSinglePassPackets(
 				const track =
 					index === tracks.video
 						? "video"
-						: index === tracks.audio
+						: index === tracks.audio?.index
 							? "audio"
 							: undefined;
 				if (!track) return;
 				const flags = fields[2] ?? "";
 				if (flags.includes("C")) invalid = true;
-				if (
-					flags.includes("D") &&
-					(track !== "audio" ||
-						counts.audio !== 0 ||
-						!/(?:^|\|)(?:[^|=]+:)?side_data_type=Skip Samples(?:\||$)/.test(
-							line,
-						) ||
-						!/(?:^|\|)(?:[^|=]+:)?skip_samples=[1-9]\d*(?:\||$)/.test(line) ||
-						!/(?:^|\|)(?:[^|=]+:)?discard_padding=0(?:\||$)/.test(line))
-				) {
-					unsupportedEdit = true;
+				const sampleEdit =
+					/(?:^|\|)(?:[^|=]+:)?side_data_type=Skip Samples(?:\||$)/.test(line);
+				const discard = flags.includes("D");
+				if (discard || sampleEdit) {
+					const skipped = /(?:^|\|)(?:[^|=]+:)?skip_samples=(\d+)(?:\||$)/.exec(
+						line,
+					)?.[1];
+					const padding =
+						/(?:^|\|)(?:[^|=]+:)?discard_padding=(\d+)(?:\||$)/.exec(line)?.[1];
+					const unedited = !discard && skipped === "0" && padding === "0";
+					const priming =
+						discard &&
+						sampleEdit &&
+						track === "audio" &&
+						counts.audio === 0 &&
+						padding === "0" &&
+						isCompletePreroll(line, skipped, tracks.audio);
+					if (!unedited && !priming) unsupportedEdit = true;
 				}
 				counts[track] += 1;
 			},

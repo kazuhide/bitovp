@@ -51,6 +51,7 @@ export type ProbeStream = {
 	r_frame_rate?: string;
 	avg_frame_rate?: string;
 	sample_rate?: string;
+	time_base?: string;
 	channels?: number;
 	/** : stream timing as ffprobe prints it (decimal seconds / integer), read by the feeder's normalizer. */
 	start_time?: string;

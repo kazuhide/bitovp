@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildFeederCommand } from "./command";
+import { buildFeederCommand, parseProbeJson, probeArgs } from "./command";
 import { inspectSinglePassPackets } from "./packet-coverage";
 import { createNodeProcessRunner } from "./process-runner";
 import { createFeederSupervisor, type ProcessRunner } from "./supervisor";
@@ -53,7 +53,7 @@ for (const videoOnly of [false, true])
 			const source = join(root, "source.mp4");
 			const output = join(root, videoOnly ? "once.ts" : "once.flv");
 			const expectedFrames = videoOnly ? 8 : 60;
-			const durationSec = videoOnly ? 4 : 2.4;
+			const durationSec = videoOnly ? 4 : 106_496 / 48_000;
 			exec("ffmpeg", [
 				"-hide_banner",
 				"-v",
@@ -73,7 +73,7 @@ for (const videoOnly of [false, true])
 							"-f",
 							"lavfi",
 							"-i",
-							"sine=frequency=440:sample_rate=44100:duration=2.4",
+							"sine=frequency=440:sample_rate=48000,atrim=end_sample=106496",
 						]),
 				"-c:v",
 				"libx264",
@@ -91,6 +91,8 @@ for (const videoOnly of [false, true])
 				"aac",
 				"-threads:a",
 				"1",
+				"-movie_timescale",
+				"48000",
 				source,
 			]);
 			const sourceVideo = JSON.parse(
@@ -141,7 +143,22 @@ for (const videoOnly of [false, true])
 				video: sourceVideoPackets.length,
 				audio: sourceAudioPackets.length,
 			};
-			const tracks = videoOnly ? { video: 0 } : { video: 0, audio: 1 };
+			const probe = parseProbeJson(exec("ffprobe", probeArgs(source)));
+			const audio = probe.streams?.find(
+				(track) => track.codec_type === "audio",
+			);
+			if (!videoOnly) assert.equal(audio?.index, 1);
+			const tracks = {
+				video: 0,
+				audio:
+					audio?.index === undefined
+						? undefined
+						: {
+								index: audio.index,
+								sampleRate: audio.sample_rate,
+								timeBase: audio.time_base,
+							},
+			};
 			const signal = new AbortController().signal;
 			const sourcePackets = await inspectSinglePassPackets(
 				realRunner,
@@ -173,6 +190,24 @@ for (const videoOnly of [false, true])
 				);
 				assert.ok("error" in coverage);
 				assert.match(coverage.error, /preserve.*edit list/);
+
+				const audioEdit = join(root, "partially-trimmed-aac.mp4");
+				const audioBytes = readFileSync(source);
+				const audioList = audioBytes.indexOf("elst", edit + 4);
+				assert.ok(audioList > edit);
+				assert.equal(audioBytes.readUInt32BE(audioList + 8), 1);
+				assert.equal(audioBytes.readInt32BE(audioList + 16), 1024);
+				audioBytes.writeInt32BE(1536, audioList + 16);
+				writeFileSync(audioEdit, audioBytes);
+				const audioCoverage = await inspectSinglePassPackets(
+					realRunner,
+					"ffprobe",
+					audioEdit,
+					tracks,
+					signal,
+				);
+				assert.ok("error" in audioCoverage);
+				assert.match(audioCoverage.error, /preserve.*edit list/);
 			}
 			const tail: string[][] = [];
 			const supervisor = createFeederSupervisor({

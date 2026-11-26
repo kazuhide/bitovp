@@ -50,6 +50,30 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
+describe("streaming process exit", () => {
+	it("keeps a spawned publisher owned after both termination signals are denied", () => {
+		const t = fixture();
+		const events = {
+			onExit: vi.fn(),
+			onStdoutLine: vi.fn(),
+			onStderrLine: vi.fn(),
+		};
+		t.child.kill.mockImplementation((signal?: string) => {
+			t.child.emit("error", new Error(`kill ${signal} EPERM`));
+			return false;
+		});
+		const publisher = createNodeProcessRunner().spawn("fixture", [], events);
+		publisher.kill("SIGTERM");
+		publisher.kill("SIGKILL");
+		expect(events.onExit).not.toHaveBeenCalled();
+		expect(events.onStderrLine).toHaveBeenCalledWith(
+			expect.stringContaining("EPERM"),
+		);
+		t.child.emit("close", null, "SIGTERM");
+		expect(events.onExit).toHaveBeenCalledExactlyOnceWith(null, "SIGTERM");
+	});
+});
+
 describe("one-shot abort grace ownership", () => {
 	it("holds an opted-in child when its first SIGTERM attempt emits a normal error", async () => {
 		const t = fixture();

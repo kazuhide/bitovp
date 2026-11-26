@@ -33,33 +33,24 @@ export function createNodeProcessRunner(): ProcessRunner {
 					events.onStderrLine(line),
 				);
 			}
-			let settled = false;
-			const settle = (code: number | null, signal: string | null) => {
-				if (!settled) {
-					settled = true;
-					events.onExit(code, signal);
-				}
-			};
-			// A missing binary emits 'error' (never 'close') — surface it as an
-			// exit so the supervisor's backoff/error path engages instead of
-			// hanging forever on the exit promise.
 			child.on("error", (err) => {
-				events.onStderrLine(`[feeder] spawn failed: ${err.message}`);
-				settle(null, null);
+				// A failed signal can emit an error while the publisher is alive.
+				events.onStderrLine(
+					`[feeder] process operation failed: ${err.message}`,
+				);
 			});
-			// 'close', not 'exit': 'close' fires only after the stdio streams
-			// have drained, so the readline interfaces deliver ffmpeg's final
-			// stderr lines (the crash reason) into the tail BEFORE the
-			// supervisor records the exit. The settled guard keeps this safe
-			// alongside the 'error' path above.
-			child.on("close", (code, signal) => settle(code, signal));
+			// Node emits close after exit or a failed spawn, after stdio drains.
+			// Retain the publisher until that event, including after a kill error.
+			child.once("close", (code, signal) => events.onExit(code, signal));
 			return {
 				pid: child.pid,
 				kill(signal) {
 					try {
 						child.kill(signal);
-					} catch {
-						// Already gone — exit handling owns the state transition.
+					} catch (error) {
+						events.onStderrLine(
+							`[feeder] process signal failed: ${error instanceof Error ? error.message : String(error)}`,
+						);
 					}
 				},
 			};

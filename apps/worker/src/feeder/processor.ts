@@ -1730,6 +1730,16 @@ export function createFeederProcessor(deps: FeederDeps) {
 				now: effectNow(),
 			});
 			if (handed.kind === "DISPATCHING") {
+				// Single passes are manual starts. They must own the spawn
+				// claim they acquired, never one left by a different owner.
+				if (row.playbackMode === "ONCE")
+					throw new Error("Single-pass spawn already has a durable claim");
+				// A staged switch may not own the publisher yet, but the
+				// exact feeder lease must still be current to use its handoff.
+				const owner = await deps.prisma.feederSession.count({
+					where: { ...fence, status: { in: ["DOWNLOADING", "PUSHING"] } },
+				});
+				if (owner !== 1) throw await lostFence(feederSessionId, controller);
 				activeEffectClaim = handed.claim;
 				return handed.claim;
 			}
@@ -1795,11 +1805,14 @@ export function createFeederProcessor(deps: FeederDeps) {
 		): Promise<void> {
 			const claim = await acquireSpawnClaim(spawnOrdinal);
 			if (!(await assertLiveEffectCurrent(deps.prisma, claim, effectNow()))) {
-				await markLiveEffectFailed(
-					deps.prisma,
-					claim,
-					`${label} lost its exact run/generation fence before spawn`,
-				);
+				controller.throwIfStopped();
+				if (
+					row.playbackMode === "ONCE" &&
+					(await hasSupersedingFeederStop(deps.prisma, claim).catch(
+						() => false,
+					))
+				)
+					throw new FeederStopError();
 				throw new Error(
 					`${label} refused: the exact run/generation fence is no longer current`,
 				);
@@ -1810,7 +1823,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			reason: string,
 			revoked: boolean,
 		): Promise<void> {
-			let claim = activeEffectClaim;
+			const claim = activeEffectClaim;
 			// After lease loss, settle only this run's exact claim with local
 			// proof that its single-pass process was never invoked.
 			if (
@@ -1821,14 +1834,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 					crossedEffectBoundary)
 			)
 				return;
-			if (!claim) {
-				const handed = await loadLiveEffectTargetClaim(deps.prisma, {
-					liveChannelId: row.liveChannelId,
-					targetId: feederSessionId,
-					now: effectNow(),
-				});
-				if (handed.kind === "DISPATCHING") claim = handed.claim;
-			}
+			// A preflight failure can arrive after another owner acquired its
+			// own claim. Cleanup can only settle a handle held by this invocation.
 			if (!claim) return;
 			if (crossedEffectBoundary) {
 				await markLiveEffectAmbiguous(
@@ -1995,7 +2002,17 @@ export function createFeederProcessor(deps: FeederDeps) {
 							deps.runner,
 							deps.ffprobePath,
 							fetched.path,
-							{ video: video.index, audio: audio?.index },
+							{
+								video: video.index,
+								audio:
+									audio?.index === undefined
+										? undefined
+										: {
+												index: audio.index,
+												sampleRate: audio.sample_rate,
+												timeBase: audio.time_base,
+											},
+							},
 							controller.signal,
 						);
 						controller.throwIfStopped();

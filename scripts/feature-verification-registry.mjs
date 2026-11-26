@@ -29,7 +29,7 @@ export const FEATURES = Object.freeze(
 				"src/vmaf/resource-admission.test.ts": 10,
 				"src/vmaf/resource-admission.property.test.ts": 4,
 				"src/vmaf/supervised-runner.test.ts": 4,
-				"src/feeder/process-runner-abort.test.ts": 19,
+				"src/feeder/process-runner-abort.test.ts": 20,
 				"src/vmaf/deadline.test.ts": 5,
 				"src/vmaf/deadline.property.test.ts": 2,
 			},

@@ -38,6 +38,7 @@ import {
 	renameOutputBase,
 	splitOutputFolder,
 } from "@/lib/output-path";
+import { protectedVodCopyLayout } from "@/lib/protected-vod-copy";
 import type { VodFlow } from "@/lib/vod-flow";
 import {
 	draftFingerprint,
@@ -56,6 +57,7 @@ import {
 	buildPlan,
 	DEFAULT_WIZARD_STATE,
 	hasInvalidHevcV2Ladder,
+	type WizardInputFile,
 	type WizardState,
 	wizardUsesCodecEncodingMode,
 } from "./build-plan";
@@ -293,6 +295,9 @@ export function VodWizard({
 				}).length > 0),
 	);
 	const draftBase = useRef(fresh);
+	const draftReplacements = useRef<
+		ReadonlyMap<string, WizardInputFile> | undefined
+	>(undefined);
 	// The file flow opens on its short view; every step stays one click away.
 	const [expanded, setExpanded] = useState(false);
 	const simple = fileFlow && !expanded;
@@ -494,6 +499,7 @@ export function VodWizard({
 		replacementVersion,
 	);
 	const presetBody = replacement.body;
+	const hasProtectedInputs = replacement.resolvedPaths !== undefined;
 	const presetLabel = deliveryPresetId
 		? deliveryPreset.data?.spec.name
 		: loadPresetId
@@ -530,6 +536,7 @@ export function VodWizard({
 			return;
 		}
 		const mapping = tryImportPresetIntoWizard(presetBody);
+		draftReplacements.current = undefined;
 		setAppliedPreset(presetKey);
 		// Keep the CAS token with the body actually applied to this edit session.
 		// Another reader refreshing React Query must not silently advance it.
@@ -554,14 +561,21 @@ export function VodWizard({
 			setImported(null);
 			setShowImport(false);
 			setFallbackReason(null);
-			setState(mapping.state);
-			draftBase.current = mapping.state;
+			const protectedLayout = hasProtectedInputs
+				? protectedVodCopyLayout(publicPresetBody, presetBody, mapping.state)
+				: null;
+			const appliedState = protectedLayout?.state ?? mapping.state;
+			setState(appliedState);
+			draftBase.current = appliedState;
+			draftReplacements.current = protectedLayout?.replacements;
 			setAppliedDraftContext(
-				editPresetId
-					? presetUpdatedAt
-						? `edit:${editPresetId}:${presetUpdatedAt}`
-						: null
-					: `${presetKey}:${presetUpdatedAt ?? draftFingerprint(publicPresetBody)}`,
+				hasProtectedInputs && !protectedLayout
+					? null
+					: editPresetId
+						? presetUpdatedAt
+							? `edit:${editPresetId}:${presetUpdatedAt}`
+							: null
+						: `${presetKey}:${presetUpdatedAt ?? draftFingerprint(publicPresetBody)}`,
 			);
 			setStep(0);
 			setMappedPresetName(presetLabel ?? null);
@@ -581,6 +595,7 @@ export function VodWizard({
 		presetUpdatedAt,
 		presetBody,
 		publicPresetBody,
+		hasProtectedInputs,
 		appliedPreset,
 		presetKey,
 		editPresetId,
@@ -630,11 +645,11 @@ export function VodWizard({
 		? countPendingPlaceholders(imported.raw)
 		: 0;
 	const draftSource = presetKey === undefined ? fresh : draftBase.current;
+	const replacementFiles =
+		presetKey === undefined ? undefined : draftReplacements.current;
 	const draft = useWizardDraft({
 		kind: "vod",
-		legacyCopiedJobId: replacement.resolvedPaths?.length
-			? copiedJob?.id
-			: undefined,
+		legacyCopiedJobId: replacementFiles ? copiedJob?.id : undefined,
 		context:
 			imported || jsonLoadedForEditing
 				? null
@@ -652,7 +667,7 @@ export function VodWizard({
 			const restored = restoreVodWizardDraft(
 				draftSource,
 				saved,
-				replacement.resolvedPaths,
+				replacementFiles,
 			);
 			// Source facts and preview tasks are deliberately absent from the draft.
 			// Mount their preparation before resuming a later wizard step.

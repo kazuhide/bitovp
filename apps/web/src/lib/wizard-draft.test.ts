@@ -4,7 +4,11 @@ import {
 	markWithheldPlanSources,
 	withheldPlanSources,
 } from "@bitovp/core";
-import { applyVodInputFavorite, planToWizardState } from "@bitovp/core/wizard";
+import {
+	applyVodInputFavorite,
+	planToWizardState,
+	tryImportPresetIntoWizard,
+} from "@bitovp/core/wizard";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
 	buildLiveChannelPlan,
@@ -21,6 +25,7 @@ import {
 	addVodVideo,
 	updateVodVideoHeight,
 } from "@/app/vod/new/rendition-copy";
+import { protectedVodCopyLayout } from "./protected-vod-copy";
 import {
 	draftIdentity,
 	draftKey,
@@ -542,14 +547,16 @@ it("keeps the replacement entered on reopen when the draft omitted its prior URL
 		}),
 	};
 	expect(JSON.stringify(saved.value)).not.toContain("OLD_FIXTURE");
-	const restored = restoreVodWizardDraft(base, saved, [
-		{ inputKey: input.inputKey, path: input.path },
-	]);
+	const restored = restoreVodWizardDraft(
+		base,
+		saved,
+		new Map([[input.key, input]]),
+	);
 	expect(restored.name).toBe("Keep the editorial change");
 	expect(restored.inputFiles.map((row) => row.path)).toEqual([input.path, ""]);
 });
 
-it("keeps each burn-in replacement with its rendition when two paths now refer to the same file", () => {
+it("repairs a blank subtitle only when its original storage identity remains unchanged", () => {
 	const base = structuredClone(DEFAULT_WIZARD_STATE);
 	const primary = base.inputFiles[0];
 	const video = base.videos[0];
@@ -589,25 +596,30 @@ it("keeps each burn-in replacement with its rendition when two paths now refer t
 		{ path: "" },
 		{ path: third.path },
 	]);
-	const newThirdPath = "subtitles/third-replacement.srt";
-	base.inputFiles = [
-		primary,
-		first,
-		{ ...third, key: second.key, path: newThirdPath },
-	];
+	const replacement = { ...second, path: first.path };
+	base.inputFiles = [primary, first, replacement, third];
 	base.videos = [
 		rendition("first", first.key),
-		rendition("second", first.key),
-		rendition("third", second.key),
+		rendition("second", second.key),
+		rendition("third", third.key),
 	];
-	const restored = restoreVodWizardDraft(base, { step: 2, value: saved }, [
-		{ inputKey: source.inputKey, path: first.path },
-		{ inputKey: source.inputKey, path: newThirdPath },
-	]);
+	const restored = restoreVodWizardDraft(
+		base,
+		{ step: 2, value: saved },
+		new Map([[second.key, replacement]]),
+	);
 	const restoredSecondFile = restored.videos[1]?.extras?.burnInSrt?.inputFile;
 	expect(
 		restored.inputFiles.find((file) => file.key === restoredSecondFile)?.path,
 	).toBe(first.path);
+	const mismatched = restoreVodWizardDraft(
+		base,
+		{ step: 2, value: saved },
+		new Map([[second.key, { ...replacement, bucket: "different.example" }]]),
+	);
+	expect(
+		mismatched.inputFiles.find((file) => file.key === second.key)?.path,
+	).toBe("");
 });
 
 it.each([
@@ -698,10 +710,17 @@ it.each([
 			.filter((file) => file.inputKey === "captions")
 			.map((file) => file.path),
 	).toEqual([shared, distinct]);
+	const layout = protectedVodCopyLayout(protectedPlan, replacementPlan, base);
+	if (!layout) throw new Error("Could not recover the original file slots");
+	expect(
+		layout.state.inputFiles
+			.filter((file) => file.inputKey === "captions")
+			.map((file) => file.path),
+	).toEqual([shared, shared, distinct]);
 	const restored = restoreVodWizardDraft(
-		base,
+		layout.state,
 		draft,
-		sources.resolvedInputPaths(replacementPlan),
+		layout.replacements,
 	);
 	const built = encodingPlanSchema.parse(buildPlan(restored));
 	expect(restored.name).toBe("Edited caption copy");
@@ -728,57 +747,84 @@ it.each([
 				index === 1 ? { ...row, codec: "H264" } : row,
 			),
 		});
-		const unresolved = restoreVodWizardDraft(
-			base,
+		const edited = restoreVodWizardDraft(
+			layout.state,
 			{ step: 3, value: ambiguous },
-			sources.resolvedInputPaths(replacementPlan),
+			layout.replacements,
 		);
 		expect(
-			unresolved.videos.map(
+			edited.videos.map(
 				(video) =>
-					unresolved.inputFiles.find(
+					edited.inputFiles.find(
 						(file) => file.key === video.extras?.burnInSrt?.inputFile,
 					)?.path,
 			),
-		).toEqual(["", "", distinct]);
+		).toEqual([shared, shared, distinct]);
 	}
 });
 
 it("retains both parts of the HDR10+ replacement when restoring a draft without its old picture", () => {
-	const base = structuredClone(DEFAULT_WIZARD_STATE);
-	const [main] = base.inputFiles;
+	const earlier = structuredClone(DEFAULT_WIZARD_STATE);
+	earlier.name = "HDR10+ copy";
+	const [main] = earlier.inputFiles;
 	if (!main) throw new Error("Missing primary file");
-	base.inputFiles = [{ ...main, path: "fresh/take.mxf" }];
-	base.sources = {
+	const credentialId = "11111111-1111-4111-8111-111111111111";
+	const picture = {
+		...main,
+		credentialId,
+		bucket: "input",
+		path: "/clips:day@camera/take.mxf",
+	};
+	earlier.inputFiles = [picture];
+	earlier.output = { ...earlier.output, credentialId, bucket: "output" };
+	earlier.sources = {
 		hdr10PlusStreams: [
 			{
 				key: "picture",
 				videoInputFile: main.key,
-				metadataInputPath: "fresh/take.json",
+				metadataInputPath: "earlier/take.json",
 				selectionMode: "AUTO",
 			},
 		],
 	};
-	const earlier = {
-		...base,
-		inputFiles: [{ ...main, path: "/clips:day@camera/take.mxf" }],
-		sources: {
-			hdr10PlusStreams: [
-				{
-					key: "picture",
-					videoInputFile: main.key,
-					metadataInputPath: "earlier/take.json",
-					selectionMode: "AUTO" as const,
-				},
-			],
-		},
-	};
-	const value = projectWizardDraft("vod", earlier);
+	earlier.videos = earlier.videos.map((video) => ({
+		...video,
+		codec: "H265",
+		h265: { dynamicRangeFormat: "HDR10", profile: "MAIN10" },
+		extras: { ...video.extras, source: "picture" },
+	}));
+	const plan = buildPlan(earlier);
+	encodingPlanSchema.parse(plan);
+	const old = tryImportPresetIntoWizard(plan);
+	if (!old.ok) throw new Error(old.reasonKey);
+	const value = projectWizardDraft("vod", old.state);
 	expect(value.inputFiles).toMatchObject([{ path: "" }]);
-	const restored = restoreVodWizardDraft(base, { step: 2, value }, [
-		{ inputKey: main.inputKey, path: "fresh/take.mxf" },
-		{ inputKey: main.inputKey, path: "fresh/take.json" },
+	const projection = markWithheldPlanSources(plan, {
+		...plan,
+		ingest: plan.ingest?.map((track) =>
+			track.inputPath === picture.path ? { ...track, inputPath: "" } : track,
+		),
+		hdr10PlusStreams: plan.hdr10PlusStreams?.map((row) => ({
+			...row,
+			videoInputPath: "",
+		})),
+	});
+	const sources = withheldPlanSources(projection);
+	expect(sources?.labels).toMatchObject([
+		expect.any(String),
+		"picture:metadata",
 	]);
+	const filled = sources?.fill(["fresh/take.mxf", "fresh/take.json"]);
+	if (!filled) throw new Error("Missing replacement picture and metadata");
+	const fresh = tryImportPresetIntoWizard(filled);
+	if (!fresh.ok) throw new Error(fresh.reasonKey);
+	const layout = protectedVodCopyLayout(projection, filled, fresh.state);
+	if (!layout) throw new Error("Could not recover the original picture slot");
+	const restored = restoreVodWizardDraft(
+		layout.state,
+		{ step: 2, value },
+		layout.replacements,
+	);
 	expect(buildPlan(restored).hdr10PlusStreams).toMatchObject([
 		{ videoInputPath: "fresh/take.mxf", metadataInputPath: "fresh/take.json" },
 	]);

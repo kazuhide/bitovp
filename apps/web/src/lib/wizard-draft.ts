@@ -31,7 +31,7 @@ import {
 import {
 	availableImplicitTrackKey,
 	mainPictureSourceKey,
-	videoKeys,
+	type WizardInputFile,
 	type WizardState,
 } from "@bitovp/core/wizard";
 import { z } from "zod";
@@ -1533,76 +1533,15 @@ export function legacyVodMetadataOnly(
 	);
 }
 
-const draftVideoKeyRows = z.array(
-	z.object({
-		height: z.number().nullable(),
-		bitrate: z.number().nullable(),
-		codec: z.string().optional(),
-		extras: z.object({ key: z.string().optional() }).optional(),
-	}),
-);
-
-function copyBurnInFiles(base: WizardState, videos: unknown) {
-	const files = new Map<string, string | null>();
-	if (!Array.isArray(videos)) return files;
-	const saved = draftVideoKeyRows.safeParse(videos);
-	const originalKeys = videoKeys(base.videos);
-	const identities = saved.success
-		? videoKeys(saved.data)
-		: videos.map((row) =>
-				draftRecord(row) &&
-				draftRecord(row.extras) &&
-				typeof row.extras.key === "string"
-					? row.extras.key
-					: undefined,
-			);
-	// Several unkeyed Per-Title rows can trade videoN names when reordered.
-	const singlePositionalRow =
-		saved.success &&
-		saved.data.filter((row) => row.height === null).length === 1 &&
-		base.videos.filter((row) => row.height === null).length === 1;
-	for (const [index, video] of videos.entries()) {
-		if (!draftRecord(video)) continue;
-		const extras = draftRecord(video.extras) ? video.extras : null;
-		const burnIn = extras?.burnInSrt;
-		if (!draftRecord(burnIn) || typeof burnIn.inputFile !== "string") continue;
-		// The input file key can shift when protected paths dedupe. Match the
-		// effective rendition key, including defaults omitted by the importer.
-		const key = identities[index];
-		const ambiguousPosition =
-			video.height === null &&
-			extras?.key === undefined &&
-			!singlePositionalRow;
-		const matches =
-			key &&
-			!ambiguousPosition &&
-			identities.indexOf(key) === identities.lastIndexOf(key)
-				? base.videos.filter(
-						(_, originalIndex) => originalKeys[originalIndex] === key,
-					)
-				: [];
-		const file =
-			matches.length === 1
-				? (matches[0]?.extras?.burnInSrt?.inputFile ?? null)
-				: null;
-		const previous = files.get(burnIn.inputFile);
-		files.set(
-			burnIn.inputFile,
-			previous === undefined || previous === file ? file : null,
-		);
-	}
-	return files;
-}
-
 export function restoreVodWizardDraft(
 	base: WizardState,
 	draft: WizardDraft,
-	replacementPaths?: readonly { inputKey: string; path: string }[],
+	replacements?: ReadonlyMap<string, WizardInputFile>,
 ): WizardState {
 	let value = missingLegacyFilters(base, draft)
 		? null
 		: recoverRenditionSettings(base, "vod", draft);
-	if (Array.isArray(value?.inputFiles) && replacementPaths?.length) {
+	if (Array.isArray(value?.inputFiles) && replacements?.size) {
 		const sameInput = [
 			"inputKey",
 			"kind",
@@ -1610,7 +1549,6 @@ export function restoreVodWizardDraft(
 			"bucket",
 			"region",
 		] as const;
-		const burnInFiles = copyBurnInFiles(base, value.videos);
 		const repairedFiles = new Set<string>();
 		const inputFiles = value.inputFiles.map((saved: unknown) => {
 			if (
@@ -1619,20 +1557,10 @@ export function restoreVodWizardDraft(
 				saved.path !== ""
 			)
 				return saved;
-			const pairedFile = burnInFiles.get(saved.key);
-			const fileKey = pairedFile === undefined ? saved.key : pairedFile;
-			const replacement = base.inputFiles.find(
-				(row) =>
-					row.key === fileKey &&
-					sameInput.every((field) => row[field] === saved[field]),
-			);
+			const replacement = replacements.get(saved.key);
 			if (
 				!replacement ||
-				!replacementPaths.some(
-					(path) =>
-						path.inputKey === replacement.inputKey &&
-						path.path === replacement.path,
-				)
+				!sameInput.every((field) => replacement[field] === saved[field])
 			)
 				return saved;
 			repairedFiles.add(saved.key);

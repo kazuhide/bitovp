@@ -1,4 +1,11 @@
-import { encodingPlanSchema, INTERNAL_HEVC_V2_BCF_VERSION } from "@bitovp/core";
+import {
+	encodingPlanSchema,
+	INTERNAL_HEVC_V2_BCF_VERSION,
+	markWithheldPlanSources,
+	publicVodSourceProjection,
+	withheldPlanSources,
+} from "@bitovp/core";
+import { tryImportPresetIntoWizard } from "@bitovp/core/wizard";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
@@ -72,6 +79,136 @@ beforeEach(() => {
 	apiFetch.mockImplementation(async (url: string) =>
 		url === `/api/encoding-jobs/${ID}` ? { name: "Copied source", plan } : [],
 	);
+});
+
+it.each([
+	"swap bitrates",
+	"remove the sibling",
+	"reassign an existing subtitle",
+] as const)("restores the saved subtitle source when editors %s", async (edit) => {
+	const reassigned = edit === "reassign an existing subtitle";
+	const original = structuredClone(sourceState);
+	original.inputFiles.push(
+		...[0, 1, 2].map((index) => ({
+			key: `caption-${index}`,
+			inputKey: "captions",
+			kind: "HTTPS" as const,
+			credentialId: "",
+			bucket: "media.example",
+			path: `subtitles/track-${index}.srt?ticket=PRIVATE_FIXTURE`,
+		})),
+	);
+	original.videos = [1080, 720, 540].map((height, index) => ({
+		height: reassigned ? height : 1080,
+		bitrate: index === 2 ? 1_000_000 : 2_000_000,
+		codec: index === 1 ? "H265" : "H264",
+		encodingMode: "SINGLE_PASS",
+		extras: {
+			burnInSrt: {
+				inputFile: `caption-${index}`,
+				characterEncoding: "UTF_8",
+			},
+		},
+	}));
+	const raw = buildPlan(original);
+	const imported = tryImportPresetIntoWizard(raw);
+	if (!imported.ok) throw new Error(imported.reasonKey);
+	const [first, sibling, last] = imported.state.videos;
+	if (!first || !sibling || !last)
+		throw new Error("Missing fixture renditions");
+	expect(imported.state.videos.map((row) => row.extras?.key)).toEqual([
+		undefined,
+		undefined,
+		undefined,
+	]);
+	if (edit === "swap bitrates") {
+		[first.bitrate, last.bitrate] = [last.bitrate, first.bitrate];
+	} else if (edit === "remove the sibling") {
+		imported.state.videos = [first, last];
+	} else {
+		if (!first.extras || !sibling.extras?.burnInSrt)
+			throw new Error("Missing fixture subtitle");
+		first.extras.burnInSrt = sibling.extras.burnInSrt;
+		delete sibling.extras.burnInSrt;
+	}
+	imported.state.name = "Subtitles after edit";
+	const key = draftKey(
+		["org", "user"],
+		"vod",
+		`job:${ID}:${draftFingerprint(raw)}`,
+	);
+	writeWizardDraft(key, "vod", imported.state, 0);
+	expect(localStorage.getItem(key)).not.toContain("PRIVATE_FIXTURE");
+
+	const projected = publicVodSourceProjection({ plan: raw }, raw);
+	const copyPlan = markWithheldPlanSources(raw, projected.plan);
+	const sources = withheldPlanSources(copyPlan);
+	if (!sources) throw new Error("Missing protected subtitles");
+	const shared = "subtitles/shared.srt";
+	const distinct = "subtitles/distinct.srt";
+	const replacements = reassigned
+		? [shared, distinct, shared]
+		: [shared, shared, distinct];
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) =>
+		url === `/api/encoding-jobs/${ID}`
+			? { plan: copyPlan }
+			: init?.method === "POST"
+				? { id: ID }
+				: [],
+	);
+	renderWithQuery(<CopyVodJob source={ID} />);
+	for (const [index, label] of sources.labels.entries()) {
+		fireEvent.change(await screen.findByLabelText(label), {
+			target: { value: replacements[index] },
+		});
+	}
+	fireEvent.click(screen.getByRole("button", { name: /use replacement/i }));
+	const name = await screen.findByRole("textbox", { name: /job name/i });
+	fireEvent.click(await screen.findByRole("button", { name: "Restore" }));
+	expect(name).toHaveValue("Subtitles after edit");
+	fireEvent.click(screen.getByRole("button", { name: /^8\. Review$/ }));
+	const start = screen.getByRole("button", { name: /start encoding$/i });
+	expect(
+		start,
+		screen
+			.queryAllByRole("alert")
+			.map((alert) => alert.textContent)
+			.join("\n"),
+	).toBeEnabled();
+	fireEvent.click(start);
+	await waitFor(() =>
+		expect(
+			apiFetch.mock.calls.some(([, init]) => init?.method === "POST"),
+		).toBe(true),
+	);
+	const post = apiFetch.mock.calls.find(([, init]) => init?.method === "POST");
+	if (!post) throw new Error("Expected explicit job submission");
+	const saved = encodingPlanSchema.parse(JSON.parse(post[1].body).plan);
+	expect(
+		saved.renditions.flatMap((row) =>
+			row.codec === "H264" || row.codec === "H265"
+				? [[row.height, row.bitrate, row.burnInSrt?.inputPath ?? null]]
+				: [],
+		),
+	).toEqual(
+		reassigned
+			? [
+					[1080, 2_000_000, distinct],
+					[720, 2_000_000, null],
+					[540, 1_000_000, shared],
+				]
+			: edit === "swap bitrates"
+				? [
+						[1080, 1_000_000, shared],
+						[1080, 2_000_000, shared],
+						[1080, 2_000_000, distinct],
+					]
+				: [
+						[1080, 2_000_000, shared],
+						[1080, 1_000_000, distinct],
+					],
+	);
+	expect(JSON.stringify(saved)).not.toContain("bitovp-withheld-layout");
 });
 
 it("prefills the wizard without creating a job and never overwrites edits on refetch", async () => {

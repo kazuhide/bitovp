@@ -51,8 +51,8 @@ export const FEATURES = Object.freeze(
 			description: "VOD and Live creation routes and request identity",
 			files: {
 				"src/lib/server/create-request.test.ts": 11,
-				"src/app/api/encoding-jobs/route.test.ts": 76,
-				"src/app/api/live-channels/route.test.ts": 92,
+				"src/app/api/encoding-jobs/route.test.ts": 78,
+				"src/app/api/live-channels/route.test.ts": 93,
 			},
 		},
 		{

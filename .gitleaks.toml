@@ -162,9 +162,17 @@ regexes = ['''^\s*const credential = "eyJhbGciOiJIUzI1NiJ9\.e30\.Zm9vYmFy";\s*$'
 
 [[rules.allowlists]]
 description = "Verification credential label; not a credential value."
+# Historical source: d86fb564d04651fb62ed8cbc8d62b03864d27b92
 condition = "AND"
 regexTarget = "line"
 paths = ['''^apps/worker/src/verify/runner\.ts$''']
+regexes = ['''^\s*s3CredentialLabel: env\.VERIFY_S3_LABEL \?\? "verify-aws",\s*$''']
+
+[[rules.allowlists]]
+description = "Verification credential label; not a credential value."
+condition = "AND"
+regexTarget = "line"
+paths = ['''^apps/worker/src/verify/s3-verification-storage\.ts$''']
 regexes = ['''^\s*s3CredentialLabel: env\.VERIFY_S3_LABEL \?\? "verify-aws",\s*$''']
 
 [[rules.allowlists]]

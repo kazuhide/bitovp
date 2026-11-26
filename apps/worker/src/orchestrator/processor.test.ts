@@ -254,6 +254,9 @@ describe("orchestrator processor", () => {
 				h.processor({ encodingJobId: JOB_ID }),
 			).resolves.toMatchObject({ status: "ERROR" });
 			expect(h.row.error).toMatch(/prior.*role output ACL/i);
+			expect(h.emitted).toEqual([
+				expect.objectContaining({ kind: "JOB_ERROR", jobId: JOB_ID }),
+			]);
 			expect(h.sdk.startEncoding).not.toHaveBeenCalled();
 			expect(h.sdk.createFmp4Muxing).not.toHaveBeenCalled();
 			return;

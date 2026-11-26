@@ -54,11 +54,18 @@ function exceptions() {
 				"Each exception must name one tracked file",
 			);
 			const path = matched[0];
+			// The scanner includes removed history. Pin a reviewed historical
+			// source when a concrete non-secret line moves out of its file.
+			const revision = block.match(/^# Historical source: ([a-f0-9]{40})$/m)?.[1];
+			const source = revision
+				? execFileSync("git", ["show", `${revision}:${path}`], {
+						cwd: root,
+						encoding: "utf8",
+					})
+				: readFileSync(join(root, path), "utf8");
 			// A formatted property may place its exact value on the next line.
 			// Retain the complete anchored match, including its property name.
-			const line = readFileSync(join(root, path), "utf8").match(
-				new RegExp(linePattern, "m"),
-			)?.[0];
+			const line = source.match(new RegExp(linePattern, "m"))?.[0];
 			assert.ok(line, `Exception must still describe a known fixture: ${path}`);
 			return { path, line };
 		});

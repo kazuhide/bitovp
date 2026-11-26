@@ -1558,6 +1558,9 @@ export function createVmafProcessor(deps: VmafProcessorDeps) {
 					...(scoringBackend === "cuda" || scoringBackend === "vulkan"
 						? { scoringBackend }
 						: {}),
+					...(deps.decodePolicy && !hdrRequest && !nativeScoring
+						? { decodeBackend: deps.decodePolicy.backend }
+						: {}),
 					measurementMethod,
 					outputFps: geometry.fps,
 				};

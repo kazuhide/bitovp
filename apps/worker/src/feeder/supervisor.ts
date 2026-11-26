@@ -230,6 +230,8 @@ export type ProcessRunner = {
 		options?: {
 			signal?: AbortSignal;
 			abortKillAfterMs?: number;
+			/** Consume large probe output incrementally instead of retaining it. */
+			onStdoutLine?: (line: string) => void;
 			/** Opt-in guardian protocol: fresh absolute deadlines on private FD 3. */
 			heartbeat?: { intervalMs: number; read(): string };
 		},
@@ -589,7 +591,7 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 						// packet totals after streamcopy. Never use the aggregate
 						// progress timestamp as proof of every stream's end.
 						const summary =
-							/^\[out#0\/(?:flv|mpegts) @ 0x[0-9a-f]+\] \[verbose\]\s+Output stream #0:(?:(0) \(video\)|1 \(audio\)): (\d+) packets muxed\b/i.exec(
+							/^\s*(?:\[out#0\/(?:flv|mpegts) @ 0x[0-9a-f]+\]\s*)?\[verbose\]\s+Output stream #0:(?:(0) \(video\)|1 \(audio\)): (\d+) packets muxed\b/i.exec(
 								line,
 							);
 						if (summary) {

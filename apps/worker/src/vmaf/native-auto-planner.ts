@@ -93,18 +93,33 @@ export function createNativeAutoResourcePlanner(deps: {
 		const base = planLocalResources(stable, pair, deps.configured ?? {}, 32);
 		if (!request.options.scoring) {
 			const charge = base.threads + 2 * (base.decoderThreads ?? 1) + 1;
+			const cpuChargePerComparison = Math.min(current.cpuCapacity, charge);
+			// FFmpeg can qualify and use NVDEC even when libvmaf scores on
+			// the CPU. There is no device reservation for that decoder.
+			if (pair.decodeBackend !== undefined && pair.decodeBackend !== "cpu")
+				return {
+					...base,
+					exclusive: true,
+					concurrency: 1,
+					cpuChargePerComparison,
+				};
+			// The existing full-frame estimate also bounds uncalibrated CPU
+			// models. Reserve that working set, not the entire host; GPU cold
+			// plans and calibration retain their separate exclusive policy.
+			if (hostBudget === undefined) return base;
 			return {
 				...base,
-				cpuChargePerComparison: Math.min(current.cpuCapacity, charge),
-				concurrency: base.exclusive
-					? 1
-					: Math.max(
-							1,
-							Math.min(
-								base.concurrency,
-								Math.floor(current.cpuCapacity / charge),
-							),
-						),
+				exclusive: false,
+				cpuChargePerComparison,
+				concurrency: Math.max(
+					1,
+					Math.min(
+						32,
+						deps.configured?.concurrency ?? 32,
+						Math.floor(current.cpuCapacity / charge),
+						Math.floor(hostBudget / base.estimatedBytes),
+					),
+				),
 			};
 		}
 		if (!hostBudget || !base.frameCount)

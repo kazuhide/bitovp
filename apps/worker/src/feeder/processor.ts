@@ -79,6 +79,7 @@ import {
 	FEEDER_LEASE_TAKEOVER_MS,
 	feederLeaseStaleWhere,
 } from "./ownership";
+import { inspectSinglePassPackets } from "./packet-coverage";
 import {
 	createFeederSupervisor,
 	FeederStopError,
@@ -1883,7 +1884,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 				const singlePass = playbackMode === "ONCE";
 				const probeRun = await deps.runner.run(
 					deps.ffprobePath,
-					probeArgs(fetched.path, singlePass),
+					probeArgs(fetched.path),
 					singlePass ? { signal: controller.signal } : undefined,
 				);
 				controller.throwIfStopped();
@@ -1959,16 +1960,12 @@ export function createFeederProcessor(deps: FeederDeps) {
 								"single-pass playback requires known selected-stream duration and start times to qualify EOF",
 							);
 						}
-						const videoPackets = Number(video.nb_read_packets);
-						const audioPackets = audio ? Number(audio.nb_read_packets) : 0;
 						if (
-							!Number.isSafeInteger(videoPackets) ||
-							videoPackets <= 0 ||
-							!Number.isSafeInteger(audioPackets) ||
-							(audio && audioPackets <= 0)
+							typeof video.index !== "number" ||
+							(audio && typeof audio.index !== "number")
 						) {
 							throw new Error(
-								"single-pass playback requires a complete packet count for each selected stream",
+								"single-pass playback requires stream indexes from ffprobe",
 							);
 						}
 						if (reference) {
@@ -1991,12 +1988,21 @@ export function createFeederProcessor(deps: FeederDeps) {
 								);
 							}
 						}
+						const sourcePackets = await inspectSinglePassPackets(
+							deps.runner,
+							deps.ffprobePath,
+							fetched.path,
+							{ video: video.index, audio: audio?.index },
+							controller.signal,
+						);
+						controller.throwIfStopped();
+						if ("error" in sourcePackets) throw new Error(sourcePackets.error);
 						return {
 							pushProbe: probe,
 							pushPath: fetched.path,
 							decision,
 							durationSec,
-							sourcePackets: { video: videoPackets, audio: audioPackets },
+							sourcePackets,
 							normalise: undefined,
 						};
 					}

@@ -24,7 +24,7 @@
 ## 再生と終了の契約
 
 - 初期対応はコピー可能な H.264/AAC 素材。再生尺が不明な素材、先頭の video stream がカバー画像の素材、入力属性が現在の run と一致しない素材は送出しない。
-- 元素材を使用し、ループ専用の CFR 正規化・末尾トリムを適用しない。MP4 edit list を尊重し、映像と音声を送る。字幕・データ stream は送らない。
+- 元素材の映像と音声をそのまま送る。MP4 edit list により送出先で除外できないパケットがある素材は、送出前に拒否する。字幕・データ stream は送出の対象外。
 - `-stream_loop 0` で送出し、正常終了・異常終了・bind timeout のいずれでも先頭から再送しない。単発再生は段階切り替えを対象とせず、`switchFromActive: true` を拒否する。
 - actual spawn 直前に、所有者と publisher claim を条件に `playbackDispatchedAt: null` を一度だけ取得する。応答喪失後も marker を戻さない。クラッシュ時は一回の再生を断念しうるが、既に送った先頭を再送しない。
 - worker takeover も同じ marker を尊重する。marker のある session は ERROR とし、既存の process の停止・回収を行う。process が消えた証拠がない限り、pid や publisher claim を解放しない。

@@ -5,11 +5,12 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { buildFeederCommand } from "./command";
+import { inspectSinglePassPackets } from "./packet-coverage";
 import { createNodeProcessRunner } from "./process-runner";
 import { createFeederSupervisor, type ProcessRunner } from "./supervisor";
 
@@ -57,6 +58,8 @@ for (const videoOnly of [false, true])
 				"-hide_banner",
 				"-v",
 				"error",
+				"-filter_threads",
+				"1",
 				"-y",
 				"-f",
 				"lavfi",
@@ -74,6 +77,8 @@ for (const videoOnly of [false, true])
 						]),
 				"-c:v",
 				"libx264",
+				"-threads:v",
+				"1",
 				"-preset",
 				"ultrafast",
 				"-bf",
@@ -84,6 +89,8 @@ for (const videoOnly of [false, true])
 				"yuv420p",
 				"-c:a",
 				"aac",
+				"-threads:a",
+				"1",
 				source,
 			]);
 			const sourceVideo = JSON.parse(
@@ -130,10 +137,43 @@ for (const videoOnly of [false, true])
 			};
 			const sourceVideoPackets = packetHashes(source, "v:0");
 			const sourceAudioPackets = videoOnly ? [] : packetHashes(source, "a:0");
-			const sourcePackets = {
+			const packetCounts = {
 				video: sourceVideoPackets.length,
 				audio: sourceAudioPackets.length,
 			};
+			const tracks = videoOnly ? { video: 0 } : { video: 0, audio: 1 };
+			const signal = new AbortController().signal;
+			const sourcePackets = await inspectSinglePassPackets(
+				realRunner,
+				"ffprobe",
+				source,
+				tracks,
+				signal,
+			);
+			if ("error" in sourcePackets) throw new Error(sourcePackets.error);
+			assert.deepEqual(sourcePackets, packetCounts);
+			if (!videoOnly) {
+				// Retain the sample table and shorten the picture edit mid-GOP.
+				// Demux still returns excluded pictures for decode preroll.
+				const edited = join(root, "discarded-pictures.mp4");
+				const bytes = readFileSync(source);
+				const edit = bytes.indexOf("elst");
+				assert.ok(edit > 0);
+				assert.equal(bytes[edit + 4], 0);
+				assert.equal(bytes.readUInt32BE(edit + 8), 1);
+				const fullEdit = bytes.readUInt32BE(edit + 12);
+				bytes.writeUInt32BE(Math.floor(fullEdit * 0.375), edit + 12);
+				writeFileSync(edited, bytes);
+				const coverage = await inspectSinglePassPackets(
+					realRunner,
+					"ffprobe",
+					edited,
+					tracks,
+					signal,
+				);
+				assert.ok("error" in coverage);
+				assert.match(coverage.error, /preserve.*edit list/);
+			}
 			const tail: string[][] = [];
 			const supervisor = createFeederSupervisor({
 				runner,

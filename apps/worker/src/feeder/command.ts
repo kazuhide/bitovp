@@ -60,7 +60,7 @@ export {
 // ---------------------------------------------------------------------------
 
 /** ffprobe argv (binary resolved separately via FFPROBE_PATH). */
-export function probeArgs(sourcePath: string, countPackets = false): string[] {
+export function probeArgs(sourcePath: string): string[] {
 	return [
 		"-v",
 		"error",
@@ -68,7 +68,6 @@ export function probeArgs(sourcePath: string, countPackets = false): string[] {
 		"json",
 		"-show_streams",
 		"-show_format",
-		...(countPackets ? ["-count_packets"] : []),
 		sourcePath,
 	];
 }

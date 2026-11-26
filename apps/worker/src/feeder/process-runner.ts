@@ -209,9 +209,16 @@ export function createNodeProcessRunner(): ProcessRunner {
 						stdout,
 						stderr,
 					});
-				child.stdout?.on("data", (chunk: Buffer) => {
-					stdout += chunk.toString("utf8");
-				});
+				if (child.stdout && options?.onStdoutLine) {
+					createInterface({ input: child.stdout }).on(
+						"line",
+						options.onStdoutLine,
+					);
+				} else {
+					child.stdout?.on("data", (chunk: Buffer) => {
+						stdout += chunk.toString("utf8");
+					});
+				}
 				child.stderr?.on("data", (chunk: Buffer) => {
 					stderr += chunk.toString("utf8");
 				});

@@ -222,9 +222,16 @@ export function buildCpuBandingCommand(
 	logPath: string,
 	threads = 1,
 	original?: BandingInput,
+	decoderThreads = 1,
 ): string[] {
 	if (!Number.isSafeInteger(threads) || threads < 1 || threads > 256)
 		throw new Error("BANDING_THREADS_INVALID");
+	if (
+		!Number.isSafeInteger(decoderThreads) ||
+		decoderThreads < 1 ||
+		decoderThreads > 256
+	)
+		throw new Error("BANDING_DECODER_THREADS_INVALID");
 	// This is FFmpeg filter escaping, not shell escaping (the runner uses argv).
 	const escaped = logPath.replace(/([\\':,;[\]])/g, "\\$1");
 	const feature = original
@@ -244,7 +251,7 @@ export function buildCpuBandingCommand(
 		"explode",
 		"-noautorotate",
 		"-threads",
-		String(threads),
+		String(decoderThreads),
 		"-i",
 		input,
 		"-filter_complex_threads",
@@ -285,8 +292,15 @@ export async function probeBandingTiming(
 	input: string,
 	signal: AbortSignal,
 	original?: BandingInput,
+	decoderThreads = 1,
 ) {
 	signal.throwIfAborted();
+	if (
+		!Number.isSafeInteger(decoderThreads) ||
+		decoderThreads < 1 ||
+		decoderThreads > 256
+	)
+		throw new Error("BANDING_DECODER_THREADS_INVALID");
 	const probe = await deps.runner.run(
 		deps.ffprobePath,
 		[
@@ -294,6 +308,8 @@ export async function probeBandingTiming(
 			"error",
 			"-err_detect",
 			"explode",
+			"-threads",
+			String(decoderThreads),
 			"-select_streams",
 			"v:0",
 			"-show_frames",
@@ -324,6 +340,7 @@ export async function runCpuBandingScore(
 	threads = 1,
 	inputProbe?: string,
 	hdrMethod?: HdrBandingMethod,
+	decoderThreads = 1,
 ) {
 	try {
 		signal.throwIfAborted();
@@ -339,11 +356,17 @@ export async function runCpuBandingScore(
 			probe = result.stdout;
 		}
 		const original = bandingInputFromProbe(probe, hdrMethod);
-		const timing = await probeBandingTiming(deps, input, signal, original);
+		const timing = await probeBandingTiming(
+			deps,
+			input,
+			signal,
+			original,
+			decoderThreads,
+		);
 		await rm(logPath, { force: true });
 		const run = await deps.runner.run(
 			deps.ffmpegPath,
-			buildCpuBandingCommand(input, logPath, threads, original),
+			buildCpuBandingCommand(input, logPath, threads, original, decoderThreads),
 			{ signal, abortKillAfterMs: 250 },
 		);
 		signal.throwIfAborted();

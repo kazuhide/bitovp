@@ -76,6 +76,7 @@ const FETCHED_SHA256 = "a".repeat(64);
 const PROBE_COPY = {
 	streams: [
 		{
+			index: 0,
 			codec_type: "video",
 			codec_name: "h264",
 			pix_fmt: "yuv420p",
@@ -87,6 +88,7 @@ const PROBE_COPY = {
 			r_frame_rate: "30/1",
 		},
 		{
+			index: 1,
 			codec_type: "audio",
 			codec_name: "aac",
 			start_time: "0.000000",
@@ -1048,13 +1050,28 @@ function setup(
 			async (
 				_bin: string,
 				argv: string[],
-				options?: { signal?: AbortSignal },
+				options?: Parameters<ProcessRunner["run"]>[2],
 			) => {
 				const sourceAnswer = opts.probe ?? {
 					code: 0,
 					stdout: JSON.stringify(PROBE_COPY),
 					stderr: "",
 				};
+				if (argv.includes("-show_packets")) {
+					const source = JSON.parse(sourceAnswer.stdout) as ProbeJson;
+					for (const track of source.streams ?? []) {
+						for (
+							let count = 0;
+							count < Number(track.nb_read_packets);
+							count++
+						) {
+							options?.onStdoutLine?.(
+								`stream_index=${track.index}|flags=${track.packet_flags ?? "K__"}`,
+							);
+						}
+					}
+					return { ...sourceAnswer, stdout: "" };
+				}
 				const isNormalize =
 					argv.some((a) => a.endsWith(".loop.mp4")) &&
 					argv.join(" ").includes("-vf fps=");
@@ -5747,6 +5764,7 @@ describe("single-pass feeder processor", () => {
 		audio.channels = 2;
 		source.streams.push({
 			...audio,
+			index: 2,
 			codec_name: "ac3",
 			sample_rate: "44100",
 			channels: 1,
@@ -5820,7 +5838,7 @@ describe("single-pass feeder processor", () => {
 		video.nb_frames = "900"; // MP4 sample-table size can include edited-out frames.
 		video.nb_read_packets = "300";
 		audio.duration = "10.000000";
-		source.streams.push({ ...audio, duration: "20.000000" });
+		source.streams.push({ ...audio, index: 2, duration: "20.000000" });
 		source.format.duration = "20.000000";
 		const s = setup({
 			session: { playbackMode: "ONCE" },
@@ -5891,6 +5909,22 @@ describe("single-pass feeder processor", () => {
 		});
 		await expect(s.processor.process(startJob)).rejects.toThrow(
 			/single.pass.*copy.compatible/i,
+		);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.playbackDispatchedAt).toBeNull();
+	});
+
+	it("refuses a video track with discard-marked edit-list packets before dispatch", async () => {
+		const source: ProbeJson = structuredClone(PROBE_COPY);
+		const video = source.streams?.[0];
+		if (!video) throw new Error("Missing source video fixture");
+		video.packet_flags = "_D_";
+		const s = setup({
+			session: { playbackMode: "ONCE" },
+			probe: { code: 0, stdout: JSON.stringify(source), stderr: "" },
+		});
+		await expect(s.processor.process(startJob)).rejects.toThrow(
+			/preserve.*edit list/,
 		);
 		expect(s.spawned).toHaveLength(0);
 		expect(s.session.playbackDispatchedAt).toBeNull();

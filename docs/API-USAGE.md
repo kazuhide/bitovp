@@ -545,9 +545,9 @@ curl -H "Authorization: Bearer $TOKEN" https://ovp.example.com/api/live-channels
 Stop also stops attached feeders. `DELETE /api/live-channels/<id>` removes a stopped channel.
 
 `POST /api/feeder-sessions` accepts optional `playbackMode: "LOOP" | "ONCE"`
-(omitted = `LOOP`). `ONCE` sends the complete copy-compatible H.264/AAC source
-once, preserves its audio tail and edit list, and never restarts after an exit,
-worker takeover, or an uncertain dispatch. It rejects `switchFromActive: true`.
+(omitted = `LOOP`). `ONCE` sends the selected copy-compatible H.264/AAC streams
+once, including their full tails. A source with an edit list the live muxer
+cannot preserve is refused before dispatch. Use ONCE for an immediate input.
 For `ONCE`, send an `Idempotency-Key` and reuse it with the same request body
 on every retry. First acceptance returns `201`. Replays return `200`, the
 original session ID and `replayed: true`. Changed content returns `409`.
@@ -556,10 +556,10 @@ Deleting the session spends the key permanently and subsequent replays return
 same key. A session still waiting to start uses its original queue job ID.
 
 The normal feeder list/detail includes `playbackMode`, `playbackDispatchedAt`
-and `playbackReceipt`; a natural EOF receipt requires exit 0, final progress,
-source duration and the known video frame count. An operator stop has no EOF
-receipt. Feeder EOF does **not** stop the paid live channel: use the normal
-channel STOP action and verify provider finalization separately.
+and `playbackReceipt`. A natural EOF receipt requires exit 0, final progress,
+and matching input and muxed packet totals for each selected video and audio
+stream. Use the normal channel STOP action to finish the paid live channel
+and verify provider finalization separately.
 See [single-pass contract and rollout](feeder-single-pass.md).
 
 The status body's `playbackLinks[]` carries one entry per manifest with `url`

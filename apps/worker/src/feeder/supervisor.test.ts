@@ -463,6 +463,23 @@ describe("createFeederSupervisor — single-pass", () => {
 		expect(await run).toMatchObject({ outcome: "ERROR" });
 	});
 
+	it("accepts per-stream mux totals from FFmpeg 5.1 without an out#0 prefix", async () => {
+		const s = setup({ playbackMode: "ONCE", sourcePackets });
+		const run = s.supervisor.run();
+		await tick();
+		const proc = s.spawned[0];
+		if (!proc) throw new Error("not spawned");
+		finalProgress(proc, "8000000");
+		proc.events.onStderrLine(
+			"[verbose]   Output stream #0:0 (video): 300 packets muxed (123 bytes); ",
+		);
+		proc.events.onStderrLine(
+			"[verbose]   Output stream #0:1 (audio): 480 packets muxed (45 bytes); ",
+		);
+		proc.exit(0);
+		await expect(run).resolves.toMatchObject({ outcome: "STOPPED" });
+	});
+
 	it("does not call a refused pre-spawn fence an ambiguous process spawn", async () => {
 		const onSpawnError = vi.fn(async () => {});
 		const s = setup({

@@ -74,6 +74,15 @@ describe("local quality resource snapshot", () => {
 		expect(readLocalResources(input).budgetBytes).toBe(0);
 	});
 
+	it("supplies an integer live memory budget for a fractional percentage reserve", () => {
+		const input = sources();
+		input.constrainedMemory = () => 8 * GiB;
+		input.availableMemory = () => 7 * GiB;
+		const resource = readLocalResources(input);
+		expect(resource.budgetBytes).toBe(Math.floor(7 * GiB - 0.1 * 8 * GiB));
+		expect(Number.isSafeInteger(resource.budgetBytes)).toBe(true);
+	});
+
 	it("falls back conservatively when platform files and CPU information fail", () => {
 		const input = sources();
 		input.parallelism = () => {

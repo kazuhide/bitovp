@@ -5,11 +5,15 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildOperationLedger, readOperationProofs, sameOperation } from "../apps/web/src/lib/api-coverage/operation-ledger.ts";
 import { readContracts } from "./api-coverage-contract-files.mjs";
+import { GROUPS } from "./postgres-integration.mjs";
 
 const ACCESS = new Set(["gui-confirmed", "json-only-confirmed", "not-implemented-confirmed", "unconfirmed"]);
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(resolve(root, "apps/web/package.json"));
 const ts = require("typescript");
+const mandatoryFixtures = new Set(GROUPS.flatMap(({ directory, files }) =>
+	Object.keys(files).map((file) => `${directory}/${file}`),
+));
 
 function uniqueOperations(rows) {
 	const operations = new Map(rows.map((row) => [row.sdkMethod, row]));
@@ -70,13 +74,28 @@ function verifyTransport(proof, readSource) {
 	let matches = 0;
 	function visit(node) {
 		if (ts.isCallExpression(node) && node.getText(source).startsWith(anchor)) {
-			const target = node.expression.getText(source);
+			const target = node.expression.getText(source).replace(/\s/g, "");
 			if (target === method || target.endsWith(`.${method}`)) matches++;
 		}
 		ts.forEachChild(node, visit);
 	}
 	visit(source);
 	if (matches !== 1) throw new Error(`Operation proof must anchor one SDK call: ${proof.sdkMethod}`);
+}
+
+function hasTestAnchor(source, node, anchor, mandatoryFixture) {
+	if (ts.isCallExpression(node)) {
+		let callee = node.expression;
+		while (ts.isCallExpression(callee)) callee = callee.expression;
+		const [name, ...modifiers] = callee.getText(source).replace(/\s/g, "").split(".");
+		if (["it", "test", "describe", "suite"].includes(name) &&
+			modifiers.some((modifier) => ["skip", "todo", "only"].includes(modifier) ||
+				(!mandatoryFixture && ["skipIf", "runIf"].includes(modifier)))) return false;
+		if ((name === "it" || name === "test") &&
+			node.arguments.some((argument) => ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) &&
+			hasCodeAnchor(source, node, anchor)) return true;
+	}
+	return Boolean(ts.forEachChild(node, (child) => hasTestAnchor(source, child, anchor, mandatoryFixture) || undefined));
 }
 
 /** All unspecified operations and properties remain unconfirmed. No GUI percentage is inferred. */
@@ -103,7 +122,7 @@ export function validateImplementationAudit({ census, contracts, audit, readSour
 		verifyTransport(proof, readSource);
 		checkEvidence([proof.contractTest], "contractTests", readSource);
 		const test = ts.createSourceFile(proof.contractTest.file, readSource(proof.contractTest.file), ts.ScriptTarget.Latest, true);
-		if (!hasCodeAnchor(test, test, proof.contractTest.anchor)) throw new Error(`Operation proof lacks an active contract-test anchor: ${proof.contractTest.file}`);
+		if (!hasTestAnchor(test, test, proof.contractTest.anchor, mandatoryFixtures.has(proof.contractTest.file))) throw new Error(`Operation proof lacks an active contract-test anchor: ${proof.contractTest.file}`);
 	}
 	const summary = { auditedTargets: 0, guiConfirmedTargets: 0, jsonOnlyTargets: 0, missingTargets: 0, unconfirmedTargets: 0, providerVerifiedTargets: 0 };
 	const keys = new Set();

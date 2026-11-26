@@ -11,7 +11,7 @@ function fixture() {
 		census: { provenance: { sdkVersion: "1.288.0" }, endpoints: [{ ...create, status: "source-confirmed", evidence: [{ file: "apps/worker/src/config.ts", line: 1 }] }, { ...list, status: "unconfirmed", evidence: [] }] },
 		contracts: { provenance: { sdkVersion: "1.288.0" }, operations: [{ ...create, parameters: [{ location: "body", type: { ref: "H264" } }] }, { ...list, parameters: [] }], schemas: { H264: { kind: "object", properties: [{ name: "autoLevelSetup", type: { kind: "string" }, apiWriteability: "unconfirmed" }] } } },
 		audit: { schemaVersion: 2, sdkVersion: "1.288.0", operations: [], entries: [{ sdkMethod, target: { location: "body", propertyPath: ["autoLevelSetup"] }, access: "gui-confirmed", evidence: { gui: [{ file: "apps/web/src/form.tsx", anchor: "autoLevelSetup" }], payload: [{ file: "apps/worker/src/config.ts", anchor: "serialize" }], contractTests: [{ file: "apps/worker/src/config.test.ts", anchor: "wire payload" }] }, provider: "unverified" }] },
-		readSource: () => `export async function POST() {}\nautoLevelSetup; serialize; \"wire payload\";\napi.${sdkMethod}();`,
+		readSource: () => `export async function POST() {}\nautoLevelSetup; serialize; it("wire payload", () => {});\napi.${sdkMethod}();`,
 	};
 }
 
@@ -72,6 +72,32 @@ test("operation proofs reject route, contract and canonical identity drift", () 
 		mutate(f, withOperationProof(f));
 		assert.throws(() => validateImplementationAudit(f), /operation|proof|transport|anchor|route|provider|contract/i);
 	}
+});
+
+test("a skipped, conditional or detached test cannot prove transport coverage", () => {
+	for (const source of [
+		'const fixture = "wire payload";',
+		'it.skip("wire payload", () => {});',
+		'it.skipIf(true)("wire payload", () => {});',
+		'describe.skip("wire checks", () => { test("wire payload", () => {}); });',
+	]) {
+		const f = fixture();
+		withOperationProof(f);
+		const readSource = f.readSource;
+		f.readSource = (file) => file.endsWith(".test.ts") ? source : readSource(file);
+		assert.throws(() => validateImplementationAudit(f), /contract-test anchor/i);
+	}
+});
+
+test("a database-dependent test may use its mandatory PostgreSQL fixture guard", () => {
+	const f = fixture();
+	const proof = withOperationProof(f);
+	proof.contractTest.file = "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts";
+	const readSource = f.readSource;
+	f.readSource = (file) => file === proof.contractTest.file
+		? 'describe.runIf(available)("wire checks", () => { test("wire payload", () => {}); });'
+		: readSource(file);
+	assert.equal(validateImplementationAudit(f).operationSummary.transportConfirmed, 1);
 });
 
 test("a commented route or detached route anchor cannot prove app reachability", () => {

@@ -104,8 +104,9 @@ tests):
 - `/api/settings/api-coverage` — GET (VIEWER): bundled current source census,
   installed/surveyed SDK and mismatch flag, current top-level SDK body-model
   properties with conservative direct property-key evidence, plus a separately
-  dated historical parameter snapshot. No provider/DB calls. Source evidence
-  is not proof of GUI reachability, API writeability, or runtime success.
+  dated historical parameter snapshot. The operation ledger gives the app route
+  and SDK transport test for audited scenarios. Provider execution and request
+  field evidence have separate statuses. No provider or database calls.
 
 - `/api/per-title-simulator/encodings/import` — POST (organization ADMIN, no view-as):
   read the original Per-Title settings of an Encoding ID. Send either

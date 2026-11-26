@@ -4583,7 +4583,12 @@ export const ja = {
 			scope: "操作範囲",
 			allScopes: "すべての操作範囲",
 			download: "表示条件で CSV をダウンロード",
-			scopes: { vod: "VOD", live: "ライブ", settings: "設定", shared: "共通" },
+			scopes: {
+				vod: "VOD ワークフロー",
+				live: "ライブ",
+				settings: "設定",
+				shared: "共通",
+			},
 		},
 		requestFields: {
 			title: "SDK のリクエスト属性",

@@ -274,14 +274,7 @@ describe("deadJobScheduleWrites (ledger #238)", () => {
 		).toEqual([]);
 	});
 
-	it("a dead stop closes the channel's FIRED STOP row as UNKNOWN — not FAILED", () => {
-		/**
-		 * The HIGH-1 defect in one arm: this branch used to write nothing, so
-		 * the row read "Fired — outcome not confirmed yet" beside a channel the
-		 * same handler had just marked ERROR, and was then resolved by an
-		 * unrelated later stop. UNKNOWN and not FAILED because a dead job is
-		 * evidence about the job, never about the encoder.
-		 */
+	it("a bare legacy failure event cannot identify a current STOP by its reused queue key", () => {
 		expect(
 			deadJobScheduleWrites(
 				{
@@ -290,13 +283,7 @@ describe("deadJobScheduleWrites (ledger #238)", () => {
 				},
 				"stalled twice",
 			),
-		).toEqual([
-			{
-				target: { scheduledStop: { id: SCHEDULE_ID, liveChannelId: CHANNEL } },
-				outcome: "UNKNOWN",
-				note: expect.stringContaining("stalled twice"),
-			},
-		]);
+		).toEqual([]);
 	});
 
 	it("closes only the failed scheduled STOP's own airing after attempts are exhausted", () => {
@@ -460,21 +447,30 @@ describe("recordDeadJobScheduleOutcomes", () => {
 			prisma,
 			{
 				id: `sched-${SCHEDULE_ID}`,
-				data: { liveChannelId: CHANNEL, action: "stop" },
+				data: {
+					...MANUAL_STOP_JOB.data,
+					effect: {
+						...MANUAL_STOP_JOB.data.effect,
+						scheduleId: SCHEDULE_ID,
+						idempotencyKey: `schedule:${SCHEDULE_ID}:stop`,
+					},
+				},
 			},
 			"connection to postgresql://u:hunter2@db/x failed",
 			at,
 		);
 		expect(updateMany).toHaveBeenCalledWith({
-			where: {
+			where: expect.objectContaining({
 				id: SCHEDULE_ID,
 				liveChannelId: CHANNEL,
+				liveChannelRunId: RUN,
 				action: "STOP",
 				status: "FIRED",
+				stopDeliveryToken: null,
 				// UNKNOWN may only replace PENDING — it never downgrades an
 				// answer the processor already recorded.
 				outcome: { in: ["PENDING"] },
-			},
+			}),
 			data: {
 				outcome: "UNKNOWN",
 				outcomeAt: at,

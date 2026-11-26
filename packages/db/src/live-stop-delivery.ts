@@ -7,17 +7,55 @@ export const CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION = 1;
 export function isLiveStopAdmissionFence(
 	legacyFence: number | null,
 	generation: number,
-	claim?: { scheduleId: string | null; attempt: number },
+	claim?: { attempt: number },
 ): legacyFence is number {
 	if (legacyFence === null) return false;
 	if (legacyFence === generation) return true;
 	if (!claim) return false;
 	if (legacyFence === generation - 1) return true;
-	// A scheduled claim starts one generation after admission. On retry both
+	// A claim starts one generation after admission. On retry both
 	// counters advance together from that claim's exact previous generation.
-	return (
-		claim.scheduleId !== null && legacyFence === generation - claim.attempt
-	);
+	return legacyFence === generation - claim.attempt;
+}
+
+/** Terminal readback resolves a superseded claim without proving its own POST. */
+export async function recordSupersededScheduledStop(
+	tx: AppTransactionClient,
+	input: {
+		scheduleId: string;
+		liveChannelId: string;
+		liveChannelRunId: string;
+		providerEncodingId: string;
+		generation: number;
+		at: Date;
+	},
+): Promise<void> {
+	await tx.liveSchedule.updateMany({
+		where: {
+			id: input.scheduleId,
+			liveChannelId: input.liveChannelId,
+			liveChannelRunId: input.liveChannelRunId,
+			action: "STOP",
+			status: "FIRED",
+			outcome: "PENDING",
+			OR: [
+				{ stopProviderEncodingId: null, stopAdmissionFenceVersion: null },
+				{
+					stopProviderEncodingId: input.providerEncodingId,
+					stopAdmissionFenceVersion: { lt: input.generation },
+				},
+			],
+		},
+		data: {
+			outcome: "UNKNOWN",
+			outcomeNote:
+				"Another STOP confirmed the broadcast ended. Delivery of this scheduled STOP could not be confirmed.",
+			outcomeAt: input.at,
+			outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+			outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
+			outcomeEvidenceAt: input.at,
+		},
+	});
 }
 
 /**
@@ -93,7 +131,9 @@ export async function recordOwnedScheduledStopDelivery(
 			action: "STOP",
 			status: "FIRED",
 			outcome: "UNKNOWN",
-			outcomeEvidenceKind: "JOB_TERMINAL_UNKNOWN",
+			outcomeEvidenceKind: {
+				in: ["JOB_TERMINAL_UNKNOWN", "PROVIDER_STATUS_UNKNOWN"],
+			},
 			outcomeEvidenceVersion: CURRENT_SCHEDULE_OUTCOME_EVIDENCE_VERSION,
 			dispatchedAt: { not: null },
 			dispatchJobId: `sched-${input.scheduleId}`,

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
 	classifyProviderStatusWord,
 	type LiveChannelJob,
@@ -89,6 +90,7 @@ export function createExhaustedScheduledStopRecovery(
 				outcome: true,
 				dispatchJobId: true,
 				stopAdmissionFenceVersion: true,
+				stopDeliveryToken: true,
 				legacyStopExhaustedFence: true,
 				stopProviderEncodingId: true,
 				liveChannel: {
@@ -153,6 +155,9 @@ export function createExhaustedScheduledStopRecovery(
 					liveChannelRunId: run.id,
 					providerEncodingId: encodingId,
 					admissionFenceVersion: originalFence,
+					...(row.stopDeliveryToken && {
+						stopDeliveryToken: row.stopDeliveryToken,
+					}),
 				};
 				const original: LiveChannelJob = {
 					liveChannelId: row.liveChannelId,
@@ -164,6 +169,11 @@ export function createExhaustedScheduledStopRecovery(
 				const retained = job ? liveChannelJobSchema.safeParse(job.data) : null;
 				const found = retained?.success ? retained.data : undefined;
 				const legacy = originalFence === channel.legacyAdmissionFenceVersion;
+				if (
+					job &&
+					(found?.effect?.stopDeliveryToken ?? null) !== row.stopDeliveryToken
+				)
+					continue;
 				// The deterministic job must belong to this exact schedule and airing.
 				// BullMQ deduplicates on this key even when the same schedule is admitted again.
 				if (
@@ -241,6 +251,7 @@ export function createExhaustedScheduledStopRecovery(
 								liveChannelId: row.liveChannelId,
 								liveChannelRunId: run.id,
 								legacyStopExhaustedFence: originalFence,
+								stopDeliveryToken: row.stopDeliveryToken,
 							},
 							data: { legacyStopExhaustedFence: null },
 						});
@@ -281,6 +292,7 @@ export function createExhaustedScheduledStopRecovery(
 								status: "FIRED",
 								stopProviderEncodingId: row.stopProviderEncodingId,
 								stopAdmissionFenceVersion: row.stopAdmissionFenceVersion,
+								stopDeliveryToken: row.stopDeliveryToken,
 								outcome: row.outcome,
 								...(row.outcome === "PENDING" && {
 									dispatchedAt: { not: null },
@@ -476,17 +488,64 @@ export function createExhaustedScheduledStopRecovery(
 					)
 						continue;
 					if (
+						reenqueue &&
 						!job &&
 						row.outcome === "PENDING" &&
 						originalFence === channel.liveEffectFenceVersion
 					) {
-						const claim = await deps.prisma.liveEffectClaim.findUnique({
-							where: { idempotencyKey: effect.idempotencyKey },
-							select: { id: true },
+						// A delayed failure callback may still contain the evicted
+						// job's payload. Replace its authority before publishing a
+						// new Redis job, under the same lock as effect acquisition.
+						const stopDeliveryToken = randomUUID();
+						const replaced = await deps.prisma.$transaction(async (tx) => {
+							const [held] = await tx.$queryRaw<{ id: string }[]>`
+								SELECT id FROM "LiveChannel"
+								WHERE id = ${row.liveChannelId}::uuid AND status = 'STOPPING'
+									AND "liveEffectFenceVersion" = ${originalFence}
+									AND "bitmovinEncodingId" = ${encodingId}
+								FOR UPDATE`;
+							if (!held) return false;
+							const [latest, claim] = await Promise.all([
+								tx.liveChannelRun.findFirst({
+									where: { liveChannelId: row.liveChannelId },
+									orderBy: { seq: "desc" },
+									select: { id: true, bitmovinEncodingId: true, stepLog: true },
+								}),
+								tx.liveEffectClaim.findUnique({
+									where: { idempotencyKey: effect.idempotencyKey },
+									select: { id: true },
+								}),
+							]);
+							if (
+								claim ||
+								!latest ||
+								latest.id !== run.id ||
+								!liveStopRunOwnsEncoding(latest, encodingId)
+							)
+								return false;
+							const marked = await tx.liveSchedule.updateMany({
+								where: {
+									id: row.id,
+									liveChannelId: row.liveChannelId,
+									liveChannelRunId: run.id,
+									action: "STOP",
+									status: "FIRED",
+									outcome: "PENDING",
+									dispatchedAt: { not: null },
+									dispatchJobId: row.dispatchJobId,
+									stopAdmissionFenceVersion: originalFence,
+									stopProviderEncodingId: encodingId,
+									stopDeliveryToken: row.stopDeliveryToken,
+								},
+								data: { stopDeliveryToken, legacyStopExhaustedFence: null },
+							});
+							return marked.count === 1;
 						});
-						if (!claim) {
-							await resetQueueObservation();
-							await reenqueue?.(original, jobId);
+						if (replaced) {
+							await reenqueue(
+								{ ...original, effect: { ...effect, stopDeliveryToken } },
+								jobId,
+							);
 							continue;
 						}
 					}
@@ -528,6 +587,9 @@ export function createExhaustedScheduledStopRecovery(
 					liveChannelRunId: run.id,
 					providerEncodingId: encodingId,
 					expectedFenceVersion: channel.liveEffectFenceVersion,
+					...(row.stopDeliveryToken && {
+						stopDeliveryToken: row.stopDeliveryToken,
+					}),
 					action: "STOP",
 					allowedChannelStatuses: ["STOPPING"],
 					legacyStopDelivery: "EXHAUSTED",

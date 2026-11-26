@@ -7,7 +7,14 @@ export const MISSED_UNOWNED_STOP_REASON =
 export type ScheduledStopAdmission = {
 	providerEncodingId: string;
 	admissionFenceVersion: number;
+	stopDeliveryToken?: string;
 };
+
+const LEGACY_UNSTAMPED_STOP = {
+	stopAdmissionFenceVersion: null,
+	stopProviderEncodingId: null,
+	stopDeliveryToken: null,
+} as const;
 
 /** The queue key is reused when a legacy schedule refires for the same airing. */
 export function scheduledStopAdmissionWhere(
@@ -16,6 +23,7 @@ export function scheduledStopAdmissionWhere(
 	if (!admission) return {};
 	const { providerEncodingId, admissionFenceVersion } = admission;
 	return {
+		stopDeliveryToken: admission.stopDeliveryToken ?? null,
 		OR: [
 			{
 				stopProviderEncodingId: providerEncodingId,
@@ -64,13 +72,15 @@ export async function recordScheduledStopHandoff(
 	prisma: AppPrismaClient,
 	row: { id: string; liveChannelId: string; liveChannelRunId: string },
 	at: Date,
-	admission?: ScheduledStopAdmission,
+	admission?: ScheduledStopAdmission | null,
 ): Promise<void> {
 	await prisma.$transaction(async (tx) => {
 		const { count } = await tx.liveSchedule.updateMany({
 			where: {
 				...row,
-				...scheduledStopAdmissionWhere(admission),
+				...(admission === null
+					? LEGACY_UNSTAMPED_STOP
+					: scheduledStopAdmissionWhere(admission)),
 				action: "STOP",
 				status: "FIRED",
 				dispatchedAt: null,

@@ -494,6 +494,7 @@ type ScheduleRow = {
 	startAdmissionFenceVersion?: number | null;
 	stopProviderEncodingId?: string | null;
 	stopAdmissionFenceVersion?: number | null;
+	stopDeliveryToken?: string | null;
 	action: "START" | "STOP" | "SLATE_IN" | "FEEDER_START" | "FEEDER_SWITCH";
 	fireAt: Date;
 	insertableContentId: string | null;
@@ -2500,6 +2501,9 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					liveChannelRunId: row.liveChannelRunId,
 					providerEncodingId: row.stopProviderEncodingId,
 					admissionFenceVersion: row.stopAdmissionFenceVersion,
+					...(row.stopDeliveryToken && {
+						stopDeliveryToken: row.stopDeliveryToken,
+					}),
 					idempotencyKey: `schedule:${row.id}:stop`,
 				};
 			} else if (row.liveChannelRunId) {
@@ -2727,6 +2731,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 						liveChannelId: missedStop.liveChannelId,
 						liveChannelRunId: missedStop.liveChannelRunId,
 						stopAdmissionFenceVersion: null,
+						stopDeliveryToken: null,
 					}),
 					status: "FIRED",
 					dispatchedAt: null,

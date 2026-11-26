@@ -18,6 +18,7 @@ export async function readLegacyScheduledStop(
 			liveChannelId,
 			action: "STOP",
 			status: "FIRED",
+			stopDeliveryToken: null,
 			outcome: { in: ["PENDING", "FAILED"] },
 			OR: [{ dispatchJobId: null }, { dispatchJobId: `sched-${scheduleId}` }],
 		},

@@ -152,7 +152,6 @@ import {
 } from "../reset/lost-encodings";
 import {
 	legacyScheduleId,
-	recordScheduleOutcome,
 	recordScheduleOutcomeBestEffort,
 	transitionScheduleToStale,
 } from "../scheduler/schedule-outcome";
@@ -1395,6 +1394,9 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			const receipts = () => ({
 				requiredEncodingIds,
 				accountId: liveChannelAccountId(row),
+				...(acceptedScheduleAdmission !== undefined && {
+					acceptedScheduleAdmission,
+				}),
 				encodings: [...terminalReadbacks].map(([id, status]) => ({
 					id,
 					status,
@@ -5142,6 +5144,9 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 			expectedFenceVersion: intent.admissionFenceVersion,
 			action: intent.action,
 			...(intent.scheduleId ? { scheduleId: intent.scheduleId } : {}),
+			...(intent.stopDeliveryToken
+				? { stopDeliveryToken: intent.stopDeliveryToken }
+				: {}),
 			...(intent.targetId ? { targetId: intent.targetId } : {}),
 			ownerId: `worker:${process.pid}:${randomUUID()}`,
 			now: new Date(deps.now()),
@@ -7745,7 +7750,7 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 					liveChannelRunId: job.plannedLiveChannelRunId,
 				},
 				new Date(deps.now()),
-				job.effect,
+				job.effect ?? null,
 			);
 		}
 		// (row 266): the terminal result a run-acting
@@ -7938,24 +7943,6 @@ export function createLiveChannelProcessor(deps: LiveChannelDeps) {
 						legacyStopDelivery = firstQueueDelivery ? "FIRST" : "UNKNOWN";
 				}
 				if (job.effect?.action !== "STOP") {
-					if (legacyId) {
-						await recordScheduleOutcome(
-							deps.prisma,
-							{
-								scheduledStop: {
-									id: legacyId,
-									liveChannelId,
-									...(job.plannedLiveChannelRunId
-										? { liveChannelRunId: job.plannedLiveChannelRunId }
-										: {}),
-								},
-							},
-							"UNKNOWN",
-							"Legacy STOP lacks a run-bound provider intent",
-							new Date(deps.now()),
-							"JOB_TERMINAL_UNKNOWN",
-						);
-					}
 					return effectResult(job, "EFFECT_REFUSED");
 				}
 				const prepared = await prepareLiveEffect(

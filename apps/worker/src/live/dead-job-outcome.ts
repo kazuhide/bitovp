@@ -5,11 +5,9 @@ import {
 } from "@bitovp/core";
 import {
 	type AppPrismaClient,
-	beginLiveEffect,
 	competingScheduledStop,
 	isLiveStopAdmissionFence,
 	liveEffectSendUncertainty,
-	markLiveEffectAmbiguous,
 	settleExhaustedStopSchedules,
 } from "@bitovp/db";
 import { feederLeaseIsFresh } from "../feeder/ownership";
@@ -23,7 +21,6 @@ import {
 	type ScheduleOutcomeTarget,
 } from "../scheduler/schedule-outcome";
 import { recordScheduledStopHandoff } from "../scheduler/stop-handoff";
-import { readLegacyScheduledStop } from "./legacy-scheduled-stop";
 
 /**
  *  — what a liveChannel job that died OUTSIDE its processor means
@@ -372,6 +369,7 @@ export async function recordFinalStopFailure(
 							action: true,
 							stopAdmissionFenceVersion: true,
 							stopProviderEncodingId: true,
+							stopDeliveryToken: true,
 						},
 					})
 				: null,
@@ -390,6 +388,7 @@ export async function recordFinalStopFailure(
 				(schedule.liveChannelId !== intent.liveChannelId ||
 					schedule.liveChannelRunId !== currentRun.id ||
 					schedule.action !== "STOP" ||
+					schedule.stopDeliveryToken !== (intent.stopDeliveryToken ?? null) ||
 					(stamped &&
 						(schedule.stopAdmissionFenceVersion !==
 							intent.admissionFenceVersion ||
@@ -425,6 +424,39 @@ export async function recordFinalStopFailure(
 			if (!oldAdmission) ownedFence = claim.generation;
 		}
 		if (channel.liveEffectFenceVersion !== ownedFence) {
+			return { projected: false as const };
+		}
+		const at = new Date();
+		const admissionFence = channel.legacyAdmissionFenceVersion;
+		const settleSiblings = async () => {
+			if (
+				isLiveStopAdmissionFence(
+					admissionFence,
+					ownedFence,
+					claim?.generation === ownedFence ? claim : undefined,
+				)
+			) {
+				await settleExhaustedStopSchedules(tx, {
+					liveChannelId: intent.liveChannelId,
+					liveChannelRunId: currentRun.id,
+					providerEncodingId: intent.providerEncodingId,
+					admissionFence,
+					at,
+				});
+			}
+		};
+		if (
+			channel.status === "ERROR" &&
+			currentRun.status === "ERROR" &&
+			claim?.generation === ownedFence
+		) {
+			const [held] = await tx.$queryRaw<{ id: string }[]>`
+				SELECT id FROM "LiveChannel"
+				WHERE id = ${intent.liveChannelId}::uuid AND status = 'ERROR'
+					AND "liveEffectFenceVersion" = ${ownedFence}
+					AND "bitmovinEncodingId" = ${intent.providerEncodingId}
+				FOR UPDATE`;
+			if (held) await settleSiblings();
 			return { projected: false as const };
 		}
 
@@ -485,7 +517,6 @@ export async function recordFinalStopFailure(
 			throw new Error(
 				"Live STOP failure lost its exact airing during projection",
 			);
-		const at = new Date();
 		if (
 			intent.scheduleId &&
 			job?.id === `sched-${intent.scheduleId}` &&
@@ -506,22 +537,7 @@ export async function recordFinalStopFailure(
 				"JOB_TERMINAL_UNKNOWN",
 			);
 		}
-		const admissionFence = channel.legacyAdmissionFenceVersion;
-		if (
-			isLiveStopAdmissionFence(
-				admissionFence,
-				ownedFence,
-				claim?.generation === ownedFence ? claim : undefined,
-			)
-		) {
-			await settleExhaustedStopSchedules(tx, {
-				liveChannelId: intent.liveChannelId,
-				liveChannelRunId: currentRun.id,
-				providerEncodingId: intent.providerEncodingId,
-				admissionFence,
-				at,
-			});
-		}
+		await settleSiblings();
 		return { projected: true as const, channelName: channel.name };
 	});
 	if (!result.projected) return false;
@@ -613,10 +629,8 @@ export function deadJobScheduleWrites(
 		case "stop": {
 			if (job?.attemptsMade !== undefined && !isTerminalDelivery(job))
 				return [];
-			// Old scheduler payloads had no effect but their BullMQ id was sched-<row uuid>.
-			const id =
-				intent?.scheduleId ??
-				(data.effect ? undefined : legacyScheduleId(job?.id));
+			// A bare legacy job's queue key cannot identify its admission.
+			const id = intent?.scheduleId;
 			if (!data.liveChannelId || !id) return [];
 			return [
 				{
@@ -628,6 +642,9 @@ export function deadJobScheduleWrites(
 								admission: {
 									providerEncodingId: intent.providerEncodingId,
 									admissionFenceVersion: intent.admissionFenceVersion,
+									...(intent.stopDeliveryToken && {
+										stopDeliveryToken: intent.stopDeliveryToken,
+									}),
 								},
 							}),
 							...((intent?.liveChannelRunId ?? data.plannedLiveChannelRunId)
@@ -697,7 +714,6 @@ async function recordExhaustedScheduledStop(
 	prisma: AppPrismaClient,
 	job: DeadLiveJob,
 	at: Date,
-	message: string,
 ) {
 	const parsed = liveChannelJobSchema.safeParse(job?.data);
 	const id = legacyScheduleId(job?.id);
@@ -705,17 +721,17 @@ async function recordExhaustedScheduledStop(
 		!id ||
 		!parsed.success ||
 		parsed.data.action !== "stop" ||
+		!parsed.data.effect ||
 		!isTerminalDelivery(job)
 	)
 		return;
 	const { liveChannelId, plannedLiveChannelRunId, effect } = parsed.data;
 	if (
-		effect &&
-		(effect.action !== "STOP" ||
-			effect.scheduleId !== id ||
-			effect.idempotencyKey !== `schedule:${id}:stop` ||
-			(plannedLiveChannelRunId &&
-				effect.liveChannelRunId !== plannedLiveChannelRunId))
+		effect.action !== "STOP" ||
+		effect.scheduleId !== id ||
+		effect.idempotencyKey !== `schedule:${id}:stop` ||
+		(plannedLiveChannelRunId &&
+			effect.liveChannelRunId !== plannedLiveChannelRunId)
 	)
 		return;
 	const receipt = await prisma.liveSchedule.findFirst({
@@ -744,31 +760,6 @@ async function recordExhaustedScheduledStop(
 		at,
 		effect,
 	);
-	if (effect) return;
-	const legacy = await readLegacyScheduledStop(
-		prisma,
-		id,
-		liveChannelId,
-		liveChannelRunId,
-	);
-	if (!legacy?.effect || legacy.alreadyAdopted) return;
-	const adopted = await beginLiveEffect(prisma, {
-		...legacy.effect,
-		liveChannelId,
-		expectedFenceVersion: legacy.effect.admissionFenceVersion,
-		allowedChannelStatuses: ["STOPPING"],
-		supersedeOpen: true,
-		legacyStopDelivery: "UNKNOWN",
-		ownerId: "exhausted-scheduled-stop",
-		now: at,
-		expiresAt: at,
-	});
-	if (adopted.kind === "EXECUTE")
-		await markLiveEffectAmbiguous(
-			prisma,
-			adopted.claim,
-			liveEffectSendUncertainty(redactSecrets(message)),
-		);
 }
 
 export async function recordDeadJobScheduleOutcomes(
@@ -777,7 +768,7 @@ export async function recordDeadJobScheduleOutcomes(
 	message: string,
 	at: Date,
 ): Promise<void> {
-	await recordExhaustedScheduledStop(prisma, job, at, message);
+	await recordExhaustedScheduledStop(prisma, job, at);
 	for (const write of deadJobScheduleWrites(job, message)) {
 		await recordScheduleOutcomeBestEffort(
 			prisma,

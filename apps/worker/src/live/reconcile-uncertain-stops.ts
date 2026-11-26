@@ -221,7 +221,10 @@ export function createUncertainStopReconciler(
 												stopProviderEncodingId: claim.providerEncodingId,
 												stopAdmissionFenceVersion: { lt: claim.generation },
 											},
-											select: { stopAdmissionFenceVersion: true },
+											select: {
+												stopAdmissionFenceVersion: true,
+												stopDeliveryToken: true,
+											},
 										})
 									: null;
 							// Re-enter the original exact intent. beginLiveEffect fences owner
@@ -238,6 +241,9 @@ export function createUncertainStopReconciler(
 										idempotencyKey: claim.idempotencyKey,
 										admissionFenceVersion:
 											schedule?.stopAdmissionFenceVersion ?? claim.generation,
+										...(schedule?.stopDeliveryToken && {
+											stopDeliveryToken: schedule.stopDeliveryToken,
+										}),
 										liveChannelRunId: run.id,
 										providerEncodingId: claim.providerEncodingId,
 										...(claim.scheduleId

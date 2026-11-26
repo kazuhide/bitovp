@@ -279,6 +279,7 @@ export const liveEffectIntentSchema = z.object({
 	admissionFenceVersion: z.number().int().nonnegative(),
 	action: liveEffectActionSchema,
 	scheduleId: z.uuid().optional(),
+	stopDeliveryToken: z.uuid().optional(),
 	targetId: z.string().min(1).optional(),
 });
 export type LiveEffectIntent = z.infer<typeof liveEffectIntentSchema>;

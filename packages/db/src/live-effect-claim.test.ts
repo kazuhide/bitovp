@@ -82,6 +82,8 @@ function fakePrisma() {
 	let loseNextChannelCas = false;
 
 	const tx = {
+		$queryRaw: vi.fn(async () => []),
+		liveSchedule: { findUnique: vi.fn(async () => null) },
 		liveChannel: {
 			findUnique: vi.fn(async () => ({ ...channel })),
 			updateMany: vi.fn(async ({ where, data }: ChannelUpdateArgs) => {

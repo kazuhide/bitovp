@@ -3,6 +3,7 @@ import { DelayedError, type Job } from "bullmq";
 import type { LiveChannelResult } from "./orchestrator/live-processor";
 import { ATTEMPT_LEASE_MS } from "./orchestrator/processor";
 import { systemSweeps } from "./system-sweeps";
+import { createVmafRunnerHandler } from "./vmaf/job-capacity";
 import { VOD_INPUT_PREVIEW_LEASE_MS } from "./vod-input-preview/processor";
 
 export type HandlerResult =
@@ -97,10 +98,7 @@ export function createHandlers(deps: HandlerDeps): Record<QueueKey, Handler> {
 			await deps.slateNormalize(job);
 			return { acknowledged: true, queue: "slateNormalize" };
 		},
-		vmafRunner: async (job: Job) => {
-			await deps.vmaf(job.data);
-			return { acknowledged: true, queue: "vmafRunner" };
-		},
+		vmafRunner: createVmafRunnerHandler((data) => deps.vmaf(data)),
 		feederManager: async (job: Job) => {
 			await deps.feeder(job.data);
 			return { acknowledged: true, queue: "feederManager" };

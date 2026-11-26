@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { compileFunction } from "node:vm";
-import { vmafJobSchema } from "@bitovp/core";
+import { loadEnv, vmafJobSchema } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { DelayedError, type Job } from "bullmq";
 import ts from "typescript";
@@ -13,10 +13,13 @@ import {
 	createLocalExecutionGate,
 } from "./execution-dispatch";
 import { queueExcessVmafJobs } from "./job-capacity";
+import { createVmafWorkerServices } from "./worker-services";
 
 // Execute the actual bootstrap declarations without importing index.ts, which
 // would connect services and start every worker. Dependencies stay explicit.
-const text = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
+const text = ["../index.ts", "./worker-services.ts"]
+	.map((file) => readFileSync(new URL(file, import.meta.url), "utf8"))
+	.join("\n");
 const source = ts.createSourceFile(
 	"index.ts",
 	text,
@@ -78,14 +81,15 @@ function barrier() {
 	return { wait, release };
 }
 
-it("awaits compatibility on native Linux and preserves an omitted GPU index", async () => {
-	for (const [platform, nativePath, rawDevice] of [
+it("awaits compatibility on native Linux and skips it when only producing QC jobs", async () => {
+	for (const [platform, nativePath, rawDevice, mode = "worker"] of [
 		["linux", "/native", undefined],
 		["linux", "/native", " "],
 		["linux", "/native", "2"],
 		["linux", "/native", "0"],
 		["darwin", "/native", undefined],
 		["linux", undefined, undefined],
+		["linux", "/native", "0", "producer"],
 	] as const) {
 		const runtime = {
 				runner: {},
@@ -99,6 +103,7 @@ it("awaits compatibility on native Linux and preserves an omitted GPU index", as
 			["automaticVmafSelectionState", "automaticVmafRuntime"],
 			{
 				process: { platform, env: { VMAF_GPU_DEVICE: rawDevice } },
+				mode,
 				env: {
 					VMAF_NATIVE_PATH: nativePath,
 					VMAF_FFMPEG_PATH: "/vmaf-ffmpeg",
@@ -116,7 +121,7 @@ it("awaits compatibility on native Linux and preserves an omitted GPU index", as
 				console: { warn: vi.fn() },
 			},
 		);
-		if (platform !== "linux" || !nativePath) {
+		if (mode === "producer" || platform !== "linux" || !nativePath) {
 			expect(create).not.toHaveBeenCalled();
 			expect(loaded.automaticVmafRuntime).toBeUndefined();
 			continue;
@@ -141,6 +146,24 @@ it("awaits compatibility on native Linux and preserves an omitted GPU index", as
 	}
 });
 
+it("refuses the dedicated process when it cannot activate shared host reservations", async () => {
+	await expect(
+		createVmafWorkerServices({
+			mode: "dedicated",
+			env: loadEnv({ VMAF_QUEUE_OWNER: "dedicated" }),
+			prisma: {} as never,
+			cipher: {} as never,
+			processorDeps: {} as never,
+			emitEvent: undefined,
+			orchestratorProducerQueue: undefined,
+			vmafRunner: {} as never,
+			wakePublisher: {} as never,
+			vmafWorkDir: "/scratch",
+			feederSpoolDir: "/spool",
+		}),
+	).rejects.toThrow("VMAF_DEDICATED_SHARED_RUNTIME_REQUIRED");
+});
+
 it("retains the legacy gate when optional compatibility preflight is unavailable", async () => {
 	const hold = barrier();
 	const create = vi.fn(async () => {
@@ -156,6 +179,7 @@ it("retains the legacy gate when optional compatibility preflight is unavailable
 		],
 		{
 			process: { platform: "linux", env: {} },
+			mode: "worker",
 			env: {
 				VMAF_NATIVE_PATH: "/native",
 				FFMPEG_PATH: "/ffmpeg",
@@ -226,6 +250,7 @@ it.each([
 				VMAF_DECODE_BACKEND: "cpu",
 				VMAF_SCORING_BACKEND: "cuda",
 				VMAF_NATIVE_PATH: "/native",
+				VMAF_REUSE_VERIFIED_NATIVE_RESULTS: "1",
 			},
 			vmafWorkDir: "/scratch",
 			feederSpoolDir: "/spool",
@@ -248,6 +273,7 @@ it.each([
 		// An unavailable optional companion never changes the requested scorer.
 		scoringBackend: "cuda",
 		nativePath: "/native",
+		reuseVerifiedNativeResults: true,
 	});
 	expect(live.mock.calls[0]?.[0]).toMatchObject({
 		runner: available ? supervised : raw,
@@ -355,13 +381,16 @@ it("authenticates before classification and keeps local, cloud, and terminal par
 		prisma: prisma as unknown as AppPrismaClient,
 		forEachOrganization: async () => {},
 	});
-	const loaded = load(["classifyVmafJob", "queuedVmafParents", "consume"], {
+	const { admitVmaf } = load(["classifyVmafJob", "admitVmaf"], {
 		prisma,
 		vmafJobSchema,
 		queueExcessVmafJobs,
 		automaticVmafRuntime: {},
 		localVmafResources: { jobCapacity: () => 1 },
 		VMAF_CLOUD_JOB_CONCURRENCY: 2,
+	});
+	const loaded = load(["queuedVmafParents", "consume"], {
+		vmafRuntime: { admitVmaf },
 		handlers: { vmafRunner: process },
 		consumeTenantJob,
 		key: "vmafRunner",
@@ -440,6 +469,7 @@ it("retains invalid native preflight separately for AUTO selection", async () =>
 		["automaticVmafSelectionState", "automaticVmafRuntime"],
 		{
 			process: { platform: "linux", env: {} },
+			mode: "worker",
 			env: {
 				VMAF_NATIVE_PATH: "/native",
 				FFMPEG_PATH: "/ffmpeg",

@@ -340,6 +340,33 @@ Resource selection keeps the model, resolution and scored frames unchanged.
 `VMAF_SUBSAMPLE` remains a separate explicit quality tradeoff. Reports record the
 selected resources for each comparison in `params.localResources`.
 
+### Dedicated QC worker
+
+The primary worker consumes the QC queue by default. To move consumption to a
+dedicated process, stop existing QC consumers after their active jobs complete.
+Set `VMAF_QUEUE_OWNER=dedicated` in the shared environment for both processes.
+Use the same BitOVP revision, PostgreSQL and Redis database, and model
+configuration. Restart the primary worker and then run this command on the QC
+host.
+
+```sh
+pnpm --filter @bitovp/worker start:vmaf
+```
+
+Run one dedicated process per queue. It requires Linux, a matching native
+scorer and supervisor, readable host resource limits and a Redis connection that
+can list existing clients. The process starts consuming after it verifies its
+queue registration and the absence of other connected consumers. Keep older
+worker processes stopped after switching. The primary worker enqueues
+measurements, delivers events, and reconciles QC and cloud resources.
+
+For Live QC, share the feeder spool when possible so the QC worker can read the
+original normalized file. Otherwise it rebuilds the reference using the
+recorded profile and verifies the source checksum. To move QC back, stop the
+dedicated worker after its active jobs complete and restart the primary with
+`VMAF_QUEUE_OWNER=worker`. Both modes use the same Redis queue, so waiting jobs
+carry over.
+
 ## Local clip planning
 
 For the feasible-plan workflow, set `BITOVP_LOCAL_STORY_CHOICE_ENABLED=1` in

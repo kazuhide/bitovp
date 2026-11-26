@@ -6,6 +6,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- Optionally run the QC queue on a dedicated worker with the same tenant checks and shared host reservations as the main worker.
+
 ### Fixed
 
 - Allow a worker with shared resource admission to run compatible local QC measurements concurrently within the host CPU and memory budget. Apply the reserved decoder limits to CAMBI scoring and frame-timing probes.

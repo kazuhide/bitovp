@@ -562,9 +562,12 @@ it("keeps each burn-in replacement with its rendition when two paths now refer t
 		path: "subtitles/old.srt?ticket=OLD_FIXTURE",
 	};
 	const third = { ...source, key: "captions-3", path: "subtitles/third.srt" };
-	const rendition = (key: string, inputFile: string) => ({
+	const rendition = (
+		key: string,
+		inputFile: string,
+	): WizardState["videos"][number] => ({
 		...video,
-		extras: { key, burnInSrt: { inputFile } },
+		extras: { key, burnInSrt: { inputFile, characterEncoding: "UTF_8" } },
 	});
 	const saved = projectWizardDraft("vod", {
 		...base,

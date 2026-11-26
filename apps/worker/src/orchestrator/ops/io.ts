@@ -46,6 +46,7 @@ import type {
 	SdkOps,
 	SrtConnectionParams,
 } from "../sdk-ops";
+import type { RoleStorageCreateReceipt } from "../stamping-fetch";
 import type { OpsContext } from "./context";
 import { isBitmovinError, optEnum, sdkEnumValue } from "./shared";
 
@@ -84,12 +85,16 @@ export function createIoOps(
 	): Promise<string> {
 		const path = `/encoding/${direction}/s3-role-based`;
 		const journal = options.stamp?.roleStorageCreateJournal?.();
-		// S3 outputs with customData can break JIT manifest startup. Keep the
-		// ownership marker in a typed, non-secret resource description instead.
-		const marker = (receiptId: string) =>
-			`BitOVP role storage create ${receiptId}`;
-		async function recover(receiptId: string, phase: "pre" | "post-failure") {
-			const description = marker(receiptId);
+		async function recover(
+			receipt: RoleStorageCreateReceipt,
+			phase: "pre" | "post-failure",
+		) {
+			// Name filtering may be non-exact. The full opaque name keeps a normal
+			// lookup selective, and the subsequent typed detail must match exactly.
+			const lookupName = receipt.lookupName ?? p.name;
+			const description = receipt.lookupName
+				? p.name
+				: `BitOVP role storage create ${receipt.id}`;
 			const roleApi =
 				direction === "inputs"
 					? api.encoding.inputs.s3RoleBased
@@ -98,14 +103,30 @@ export function createIoOps(
 			let complete = false;
 			try {
 				const limit = 100;
-				for (let offset = 0; offset < 500; offset += limit) {
-					const page = await roleApi.list({ name: p.name, offset, limit });
+				let total: number | undefined;
+				for (let offset = 0; ; offset += limit) {
+					const page = await roleApi.list({ name: lookupName, offset, limit });
 					const items = page.items;
 					if (!items) break;
+					const reported =
+						page.totalCount ??
+						(items.length < limit ? offset + items.length : undefined);
+					// Freeze the first page's finite total for older receipts created
+					// with the authored name. Later drift requires a new read.
+					total ??= reported;
+					if (
+						total === undefined ||
+						!Number.isSafeInteger(total) ||
+						total < offset ||
+						reported !== total ||
+						items.length !== Math.min(limit, total - offset) ||
+						(receipt.lookupName && total > limit)
+					)
+						break;
 					for (const item of items) {
 						if (
 							!item.id ||
-							(item.name !== undefined && item.name !== p.name) ||
+							(item.name !== undefined && item.name !== lookupName) ||
 							(item.description !== undefined &&
 								item.description !== description)
 						)
@@ -114,7 +135,7 @@ export function createIoOps(
 						if (
 							candidate.id !== item.id ||
 							candidate.description !== description ||
-							candidate.name !== p.name ||
+							candidate.name !== lookupName ||
 							candidate.bucketName !== p.bucketName ||
 							candidate.roleArn !== p.roleArn
 						)
@@ -125,15 +146,10 @@ export function createIoOps(
 							);
 						match = candidate.id;
 					}
-					if (
-						page.totalCount !== undefined
-							? page.totalCount <= offset + items.length
-							: items.length < limit
-					) {
+					if (offset + items.length === total) {
 						complete = true;
 						break;
 					}
-					if (items.length < limit) break;
 				}
 			} catch {
 				throw new Error("S3 role-based storage create could not be verified");
@@ -159,11 +175,15 @@ export function createIoOps(
 			externalIdMode: ExternalIdMode.GLOBAL,
 			cloudRegion,
 		};
-		const receiptId = await journal?.reserve();
+		const receipt = await journal?.reserve();
 		const model = {
 			...request,
 			roleArn: p.roleArn,
-			...(receiptId ? { description: marker(receiptId) } : {}),
+			// S3 output customData can break JIT manifests. The provider name
+			// carries identity, and the authored name stays in the description.
+			...(receipt?.lookupName
+				? { name: receipt.lookupName, description: p.name }
+				: {}),
 		};
 		try {
 			const resource = await audited(
@@ -196,8 +216,8 @@ export function createIoOps(
 			// AWS checks the provider-managed GLOBAL External ID at usage time.
 			return id(resource);
 		} catch (error) {
-			if (receiptId && journal?.current() === receiptId)
-				return recover(receiptId, "post-failure");
+			if (receipt && journal?.current()?.id === receipt.id)
+				return recover(receipt, "post-failure");
 			throw error;
 		}
 	}

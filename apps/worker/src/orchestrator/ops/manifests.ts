@@ -53,6 +53,7 @@ import {
 	StreamInfo,
 	SubtitleAdaptationSet,
 	SubtitlesMediaInfo,
+	type Task,
 	VariantStreamDroppingMode,
 	VideoAdaptationSet,
 	VideoMediaInfo,
@@ -75,10 +76,12 @@ import { createOwnedDefaultDashManifest } from "./default-dash-manifest";
 import { createOwnedDefaultHlsManifest } from "./default-hls-manifest";
 import {
 	adoptOrCreateManifest,
+	BitmovinCallError,
 	findManifestByOutput,
 	isBitmovinError,
 	optEnum,
 	outputs,
+	providerErrorWithoutDetails,
 	sdkEnumValue,
 	taskResult,
 } from "./shared";
@@ -128,6 +131,22 @@ export function createManifestOps(
 	| "getSmoothManifestStatus"
 > {
 	const { api, audited, id, options, record } = ctx;
+	async function manifestStatus(
+		kind: "hls" | "dash" | "smooth",
+		manifestId: string,
+		read: () => Promise<Task>,
+	) {
+		try {
+			return taskResult(await read(), options.withholdProviderDetails);
+		} catch (error) {
+			if (!options.withholdProviderDetails) throw error;
+			throw new BitmovinCallError(
+				"GET",
+				`/encoding/manifests/${kind}/${manifestId}/status`,
+				providerErrorWithoutDetails(error),
+			);
+		}
+	}
 	return {
 		/**
 		 * Default manifests adopt by ENCODING ID — S6's rule from the manifest
@@ -915,7 +934,9 @@ export function createManifestOps(
 			).then(() => undefined),
 
 		getHlsManifestStatus: (manifestId) =>
-			api.encoding.manifests.hls.status(manifestId).then(taskResult),
+			manifestStatus("hls", manifestId, () =>
+				api.encoding.manifests.hls.status(manifestId),
+			),
 
 		/**
 		 *  — compensating terminal cleanup for live-to-VOD. Audited
@@ -959,7 +980,9 @@ export function createManifestOps(
 			).then(() => undefined),
 
 		getDashManifestStatus: (manifestId) =>
-			api.encoding.manifests.dash.status(manifestId).then(taskResult),
+			manifestStatus("dash", manifestId, () =>
+				api.encoding.manifests.dash.status(manifestId),
+			),
 
 		deleteDashManifest: (manifestId) =>
 			audited(
@@ -998,7 +1021,9 @@ export function createManifestOps(
 			).then(() => undefined),
 
 		getSmoothManifestStatus: (manifestId) =>
-			api.encoding.manifests.smooth.status(manifestId).then(taskResult),
+			manifestStatus("smooth", manifestId, () =>
+				api.encoding.manifests.smooth.status(manifestId),
+			),
 	};
 }
 

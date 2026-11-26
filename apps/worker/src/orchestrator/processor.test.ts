@@ -880,6 +880,9 @@ describe("orchestrator processor", () => {
 		["outputs", "late-visible"],
 		["outputs", "exact-refusal"],
 		["outputs", "done-write-failed"],
+		["outputs", "invalid-role"],
+		["outputs", "provider-500"],
+		["inputs", "legacy-inventory"],
 	] as const)("recovers %s role storage without duplicating %s creates", async (direction, outcome) => {
 		const plan = structuredClone(basePlan);
 		plan.bitmovin.accountId = ACCOUNT_ID;
@@ -898,9 +901,18 @@ describe("orchestrator processor", () => {
 		const roleArn = "arn:aws:iam::111122223333:role/fixture-encoding";
 		const externalId = "fixture-provider-external";
 		const steps = initStepLog(compilePlan(plan));
-		const credentialId = steps.find((entry) => entry.kind === kind)?.payload
-			.credentialId;
-		const needsRecovery = outcome !== "exact-refusal";
+		const target = steps.find((entry) => entry.kind === kind);
+		const credentialId = target?.payload.credentialId;
+		const originalName = target?.payload.name;
+		if (typeof originalName !== "string")
+			throw new Error("Missing authored storage name");
+		const needsRecovery =
+			outcome !== "exact-refusal" && outcome !== "invalid-role";
+		const originalRole =
+			outcome === "invalid-role"
+				? "arn:aws:iam::111122223333:role/rejected-by-provider"
+				: roleArn;
+		let activeRole = originalRole;
 		const h = setup({ plan, stepLog: steps });
 		const savedAccount = {
 			apiKey: "fixture-key",
@@ -913,7 +925,7 @@ describe("orchestrator processor", () => {
 				id === credentialId
 					? {
 							provider: "AWS_S3_ROLE_BASED",
-							config: { roleArn, region: "us-east-1" },
+							config: { roleArn: activeRole, region: "us-east-1" },
 							secret: {},
 						}
 					: {
@@ -945,6 +957,7 @@ describe("orchestrator processor", () => {
 		let providerResource: Record<string, unknown> | undefined;
 		let crashSnapshot: Record<string, unknown> | undefined;
 		let isVisible = false;
+		const visiblePages: URLSearchParams[] = [];
 		const wire = vi.fn(async (rawUrl: string, init: RequestInit) => {
 			const url = new URL(rawUrl);
 			expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(
@@ -957,25 +970,36 @@ describe("orchestrator processor", () => {
 					(h.row.stepLog as StepLogEntry[]).find((entry) => entry.kind === kind)
 						?.roleStorageCreate,
 				);
-				if (requests.length === 1 && outcome === "exact-refusal")
+				if (requests.length === 1 && !needsRecovery)
 					return Response.json(
 						{
 							status: "ERROR",
-							data: { code: 1002, message: "Authentication failed" },
+							data: {
+								code: outcome === "invalid-role" ? 1001 : 1002,
+								message: `Role rejected ${originalRole}`,
+							},
 						},
-						{ status: 403 },
+						{ status: outcome === "invalid-role" ? 400 : 403 },
 					);
 				if (requests.length === 1) {
 					providerResource = { ...body, id: firstId, externalId };
 					crashSnapshot = structuredClone(h.row);
-					if (outcome === "late-visible")
+					if (outcome === "late-visible" || outcome === "legacy-inventory")
 						throw new TypeError("connection lost after committed role storage");
+					if (outcome === "provider-500")
+						return Response.json(
+							{
+								status: "ERROR",
+								data: { code: 1004, message: "Unexpected provider error" },
+							},
+							{ status: 500 },
+						);
 					return Response.json({ data: { result: providerResource } });
 				}
 				return Response.json({ data: { result: { id: otherId, externalId } } });
 			}
 			if (init.method === "GET" && url.pathname === prefix) {
-				const items =
+				const inventory =
 					isVisible && providerResource
 						? [
 								{
@@ -984,10 +1008,31 @@ describe("orchestrator processor", () => {
 									description: "another attempt",
 								},
 								providerResource,
+								...((direction === "outputs" && outcome === "late-visible") ||
+								outcome === "legacy-inventory"
+									? Array.from({ length: 600 }, (_, index) => ({
+											id: `another-resource-${index}`,
+											name: originalName,
+											description: "another attempt",
+										}))
+									: []),
 							]
 						: [];
+				const { searchParams } = url;
+				const query = searchParams.get("name") ?? "";
+				const matches = inventory.filter((item) =>
+					String(item.name).includes(query),
+				);
+				const offset = Number(searchParams.get("offset"));
+				const limit = Number(searchParams.get("limit"));
+				if (isVisible) visiblePages.push(searchParams);
 				return Response.json({
-					data: { result: { items, totalCount: items.length } },
+					data: {
+						result: {
+							items: matches.slice(offset, offset + limit),
+							totalCount: matches.length,
+						},
+					},
 				});
 			}
 			if (init.method === "GET" && url.pathname === `${prefix}/${firstId}`)
@@ -1014,12 +1059,20 @@ describe("orchestrator processor", () => {
 		}
 		vi.stubGlobal("fetch", wire);
 		try {
-			await expect(h.processor({ encodingJobId: JOB_ID })).rejects.toThrow();
+			const first = h.processor({ encodingJobId: JOB_ID });
+			if (outcome === "invalid-role")
+				await expect(first).rejects.toMatchObject({
+					httpStatusCode: 400,
+					errorCode: 1001,
+				});
+			else await expect(first).rejects.toThrow();
 			expect(requests).toHaveLength(1);
 			expect(journalAtSend).toEqual([
 				expect.objectContaining({ id: expect.any(String) }),
 			]);
-			expect(requests[0]?.description).toContain(journalAtSend[0]?.id);
+			expect(requests[0]?.name).toBe(journalAtSend[0]?.lookupName);
+			expect(requests[0]?.name).toContain(journalAtSend[0]?.id);
+			expect(requests[0]?.description).toBe(originalName);
 			if (direction === "outputs")
 				expect(requests[0]).not.toHaveProperty("customData");
 			expect(h.row.status).toBe("ERROR");
@@ -1032,11 +1085,21 @@ describe("orchestrator processor", () => {
 			h.row.stepLog = reseedFailedSteps(h.row.stepLog as StepLogEntry[]);
 			h.row.status = "QUEUED";
 			isVisible = true;
+			activeRole = roleArn;
 			if (direction === "inputs" && crashSnapshot) {
 				Object.assign(h.row, crashSnapshot, {
 					status: "RUNNING",
 					attemptClaimedAt: new Date(0),
 				});
+			}
+			if (outcome === "legacy-inventory" && providerResource) {
+				const receipt = (h.row.stepLog as StepLogEntry[]).find(
+					(entry) => entry.kind === kind,
+				)?.roleStorageCreate;
+				if (!receipt) throw new Error("Missing legacy recovery fixture");
+				delete receipt.lookupName;
+				providerResource.name = originalName;
+				providerResource.description = `BitOVP role storage create ${receipt.id}`;
 			}
 			if (direction === "outputs" && outcome === "late-visible") {
 				const priorCalls = wire.mock.calls.length;
@@ -1056,7 +1119,26 @@ describe("orchestrator processor", () => {
 			).resolves.toMatchObject({
 				status: "FINISHED",
 			});
+			if (outcome === "legacy-inventory") {
+				expect(visiblePages).toHaveLength(7);
+				expect(
+					visiblePages.every((page) => page.get("name") === originalName),
+				).toBe(true);
+			}
 			expect(requests).toHaveLength(needsRecovery ? 1 : 2);
+			if (direction === "outputs" && outcome === "late-visible") {
+				expect(visiblePages).toHaveLength(1);
+				expect(visiblePages[0]?.get("name")).toBe(requests[0]?.name);
+				expect(requests[0]?.name).not.toBe(originalName);
+				expect(requests[0]?.description).toContain(originalName);
+			}
+			if (outcome === "invalid-role") {
+				expect(requests.map((body) => body.roleArn)).toEqual([
+					originalRole,
+					roleArn,
+				]);
+				expect(visiblePages).toHaveLength(0);
+			}
 			if (needsRecovery) {
 				expect(audit.mock.calls.map(([entry]) => entry.data)).toContainEqual(
 					expect.objectContaining({
@@ -1081,9 +1163,11 @@ describe("orchestrator processor", () => {
 				h.emitted,
 				audit.mock.calls,
 			]);
-			expect(stored.includes(roleArn) || stored.includes(externalId)).toBe(
-				false,
-			);
+			expect(
+				stored.includes(roleArn) ||
+					stored.includes(originalRole) ||
+					stored.includes(externalId),
+			).toBe(false);
 		} finally {
 			vi.unstubAllGlobals();
 		}
@@ -1112,13 +1196,36 @@ describe("orchestrator processor", () => {
 	});
 
 	it.each([
-		["START", "input"],
-		["STATUS_READ", "output"],
-		["STATUS_TASK", "output"],
-		["START", null],
-	] as const)("projects a %s failure with %s role-backed storage", async (failure, storage) => {
-		const plan = structuredClone(basePlan);
+		["START", "input", null],
+		["STATUS_READ", "output", null],
+		["STATUS_TASK", "output", null],
+		["STATUS_TASK", "output", "HLS"],
+		["STATUS_TASK", "output", "DASH"],
+		["STATUS_TASK", "output", "SMOOTH"],
+		["STATUS_READ", "output", "SMOOTH"],
+		["START", null, null],
+		["STATUS_TASK", null, "DASH"],
+	] as const)("projects a %s failure with %s role-backed storage and manifest %s", async (failure, storage, manifest) => {
+		let plan = structuredClone(basePlan);
 		plan.bitmovin.accountId = ACCOUNT_ID;
+		if (manifest) {
+			const sample = plan.manifests[0];
+			if (!sample) throw new Error("Missing manifest fixture");
+			plan = encodingPlanSchema.parse({
+				...plan,
+				generation: { ...plan.generation, timing: "POST_ENCODING" },
+				manifests:
+					manifest === "HLS"
+						? [sample]
+						: [
+								{
+									key: sample.key,
+									kind: manifest,
+									destination: sample.destination,
+								},
+							],
+			});
+		}
 		if (storage === "input")
 			plan.inputs = plan.inputs.map((input) =>
 				input.kind === "S3" ? { ...input, kind: "S3_ROLE_BASED" } : input,
@@ -1151,6 +1258,12 @@ describe("orchestrator processor", () => {
 				...h.sdk,
 				startEncoding: real.startEncoding,
 				getEncodingStatus: real.getEncodingStatus,
+				startHlsManifest: real.startHlsManifest,
+				getHlsManifestStatus: real.getHlsManifestStatus,
+				startDashManifest: real.startDashManifest,
+				getDashManifestStatus: real.getDashManifestStatus,
+				startSmoothManifest: real.startSmoothManifest,
+				getSmoothManifestStatus: real.getSmoothManifestStatus,
 			};
 		};
 
@@ -1179,6 +1292,8 @@ describe("orchestrator processor", () => {
 					? rejected()
 					: Response.json({ data: { result: { status: "CREATED" } } });
 			if (url.endsWith("/bm-encoding/status") && init.method === "GET") {
+				if (manifest)
+					return Response.json({ data: { result: { status: "FINISHED" } } });
 				if (failure === "STATUS_READ") return rejected();
 				return Response.json({
 					data: {
@@ -1193,6 +1308,25 @@ describe("orchestrator processor", () => {
 					},
 				});
 			}
+			if (
+				manifest &&
+				url.includes(`/v1/encoding/manifests/${manifest.toLowerCase()}/`)
+			) {
+				if (init.method === "POST" && url.endsWith("/start"))
+					return Response.json({ data: { result: { status: "CREATED" } } });
+				if (init.method === "GET" && url.endsWith("/status")) {
+					if (failure === "STATUS_READ") return rejected();
+					return Response.json({
+						data: {
+							result: {
+								status: "ERROR",
+								error: { ...diagnostic, text: providerText },
+								messages: [{ type: "ERROR", text: providerText }],
+							},
+						},
+					});
+				}
+			}
 			throw new Error("Unexpected provider call in role diagnostics fixture");
 		});
 		vi.stubGlobal("fetch", wire);
@@ -1202,12 +1336,16 @@ describe("orchestrator processor", () => {
 				.catch((error: unknown) => error);
 			expect(outcome).toBeInstanceOf(Error);
 			const message = (outcome as Error).message;
-			expect(message).toContain("2104");
+			if (storage || failure === "START") expect(message).toContain("2104");
 			expect(h.row).toMatchObject({ status: "ERROR", error: message });
 			expect(h.row.stepLog).toEqual(
 				expect.arrayContaining([
 					expect.objectContaining({
-						kind: failure === "START" ? "START_ENCODING" : "AWAIT_ENCODING",
+						kind: manifest
+							? `AWAIT_MANIFEST_${manifest}`
+							: failure === "START"
+								? "START_ENCODING"
+								: "AWAIT_ENCODING",
 						status: "FAILED",
 						error: message,
 					}),
@@ -1216,7 +1354,7 @@ describe("orchestrator processor", () => {
 			expect(h.emitted).toContainEqual(
 				expect.objectContaining({ kind: "JOB_ERROR", error: message }),
 			);
-			expect(wire).toHaveBeenCalledTimes(2);
+			expect(wire).toHaveBeenCalledTimes(manifest ? 4 : 2);
 			const startAudit = audit.mock.calls[0]?.[0].data;
 			expect(startAudit).toMatchObject({
 				method: "POST",
@@ -1232,12 +1370,15 @@ describe("orchestrator processor", () => {
 					h.emitted,
 					audit.mock.calls,
 				]);
-				expect(outward).not.toContain(role);
-				expect(outward).not.toContain(external);
-				expect(outward).not.toContain(providerText);
+				expect(
+					outward.includes(role) ||
+						outward.includes(external) ||
+						outward.includes(providerText),
+				).toBe(false);
 			} else {
 				expect(message).toContain(providerText);
-				expect(startAudit?.error).toContain(providerText);
+				if (failure === "START")
+					expect(startAudit?.error).toContain(providerText);
 			}
 		} finally {
 			vi.unstubAllGlobals();

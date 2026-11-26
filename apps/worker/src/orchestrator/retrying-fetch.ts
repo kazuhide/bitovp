@@ -112,7 +112,11 @@ export function createRetryingFetch(
 			}
 			// Fetch resolves after headers. A broken body must not erase the original
 			// POST's refusal. A failed GET never reaches this journal.
-			if (!response.redirected && [401, 403, 429].includes(response.status)) {
+			// The role-storage endpoint also rejects malformed creates with 400.
+			const notAdmitted =
+				[401, 403, 429].includes(response.status) ||
+				(roleStorageCreate && response.status === 400);
+			if (!response.redirected && notAdmitted) {
 				try {
 					await markNotAdmitted?.();
 				} catch (error) {

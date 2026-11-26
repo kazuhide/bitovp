@@ -628,7 +628,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 								}
 							};
 							return {
-								current: () => entry.roleStorageCreate?.id,
+								current: () => entry.roleStorageCreate,
 								reserve: async () => {
 									if (entry.roleStorageCreate)
 										throw new Error(
@@ -637,12 +637,14 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 									if (await checkCancel())
 										throw new CancelRequested(entry.step, true);
 									const id = randomUUID();
-									await record({
+									const receipt = {
 										id,
 										accountId,
 										scopeVersion: resourceAccount?.version,
-									});
-									return id;
+										lookupName: `bitovp-role-${id}`,
+									};
+									await record(receipt);
+									return receipt;
 								},
 								release: () => record(undefined),
 							};

@@ -48,6 +48,11 @@
 
 import type { SdkFetch } from "./retrying-fetch";
 
+export type RoleStorageCreateReceipt = {
+	id: string;
+	lookupName?: string;
+};
+
 export type CreateStamp = {
 	jobId: string;
 	/** The step currently executing, read at CALL time — undefined outside a step. */
@@ -74,8 +79,8 @@ export type CreateStamp = {
 	/** The active VOD IAM storage CREATE owns this opaque dispatch receipt. */
 	roleStorageCreateJournal?: () =>
 		| {
-				current(): string | undefined;
-				reserve(): Promise<string>;
+				current(): RoleStorageCreateReceipt | undefined;
+				reserve(): Promise<RoleStorageCreateReceipt>;
 				release(): Promise<void>;
 		  }
 		| undefined;

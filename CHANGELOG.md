@@ -6,6 +6,8 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.3.5] - 2026-11-25
+
 ### Added
 
 - Export a selected VOD audio track to a mono or stereo PCM WAV file, or copy a verified AAC or PCM track into a supported MP4, MOV or WAV file from the file-output wizard.
@@ -408,6 +410,7 @@ instructions.
 Record implemented changes under **Unreleased** until their tagged release is
 published.
 
+[1.3.5]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.5
 [1.3.4]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.4
 [1.3.3]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.3
 [1.3.2]: https://github.com/kazuhide/bitovp/releases/tag/v1.3.2

@@ -6,8 +6,8 @@ import {
 } from "../scheduler/schedule-outcome";
 import {
 	identifyProvisionJob,
+	prepareScheduledStartDispatch,
 	type ReadProvisionJob,
-	readRetainedScheduledStart,
 	recordRetainedScheduledStart,
 } from "./provision-admission";
 import { PROVISION_LEASE_MS } from "./provision-lease";
@@ -68,8 +68,14 @@ export function createExhaustedProvisionRecovery(
 				(run && !["CREATED", "PROVISIONING"].includes(run.status))
 			)
 				continue;
-			let terminalScheduleId: string | undefined;
-			let scheduledStartId: string | undefined;
+			let scheduled:
+				| {
+						id: string;
+						outcome: string;
+						dispatchJobId: string | null;
+						dispatchedAt: Date | null;
+				  }
+				| undefined;
 			let id: string,
 				data: LiveChannelJob = { liveChannelId: row.id, action: "provision" };
 			if (
@@ -89,7 +95,12 @@ export function createExhaustedProvisionRecovery(
 						startAdmissionFenceVersion: generation,
 						outcome: { in: ["PENDING", "UNKNOWN", "FAILED"] },
 					},
-					select: { id: true, outcome: true },
+					select: {
+						id: true,
+						outcome: true,
+						dispatchJobId: true,
+						dispatchedAt: true,
+					},
 					take: 2,
 				});
 				if (schedules.length > 1) continue;
@@ -108,9 +119,8 @@ export function createExhaustedProvisionRecovery(
 						);
 						continue;
 					}
-					scheduledStartId = schedule.id;
+					scheduled = schedule;
 					id = scheduledStartJobId(schedule.id, generation);
-					if (schedule.outcome !== "PENDING") terminalScheduleId = schedule.id;
 					data.provisionFenceVersion = generation;
 				} else {
 					const legacy =
@@ -153,37 +163,43 @@ export function createExhaustedProvisionRecovery(
 					id = `${source}-provision-${row.id}-${run.id}-${generation}`;
 				}
 			}
-			const start =
-				scheduledStartId && run
-					? {
-							id: scheduledStartId,
-							liveChannelId: row.id,
-							liveChannelRunId: run.id,
-							startAdmissionFenceVersion: generation,
-						}
-					: null;
-			let job = await readOwnedJob(id);
-			let retained: Awaited<ReturnType<typeof readRetainedScheduledStart>> =
-				null;
-			if (!job && start) {
-				retained = await readRetainedScheduledStart(
-					prisma,
-					readOwnedJob,
-					start,
-				);
-				if (retained) {
-					id = retained.id;
-					job = retained.job;
-					if (retained.state !== "failed")
-						await recordRetainedScheduledStart(prisma, start, retained, at);
+			if (scheduled && run) {
+				const start = {
+					id: scheduled.id,
+					liveChannelId: row.id,
+					liveChannelRunId: run.id,
+					startAdmissionFenceVersion: generation,
+				};
+				if (scheduled.outcome === "PENDING") {
+					const delivery = await prepareScheduledStartDispatch(
+						prisma,
+						readOwnedJob,
+						start,
+						scheduled,
+					);
+					if (!delivery) continue;
+					if (delivery.state === null) {
+						await reenqueue(data, delivery.id);
+						await recordRetainedScheduledStart(
+							prisma,
+							start,
+							{ id: delivery.id, state: "waiting" },
+							at,
+						);
+						continue;
+					}
+					const recorded = await recordRetainedScheduledStart(
+						prisma,
+						start,
+						{ id: delivery.id, state: delivery.state },
+						at,
+					);
+					if (delivery.state !== "failed" || !recorded) continue;
+				} else {
+					const job = await readOwnedJob(scheduled.dispatchJobId ?? id);
+					const state = await job?.getState();
+					if (job && state !== "failed" && state !== "completed") continue;
 				}
-			}
-			const state = retained?.state ?? (await job?.getState());
-			if (
-				terminalScheduleId &&
-				run &&
-				(!job || state === "failed" || state === "completed")
-			)
 				await recordExpiredProvisionFailure(
 					prisma,
 					row.id,
@@ -191,28 +207,15 @@ export function createExhaustedProvisionRecovery(
 					new Date(at.getTime() - PROVISION_LEASE_MS),
 					at,
 					{ runId: run.id, generation },
-					terminalScheduleId,
+					start.id,
 				);
-			else if (job) {
-				if (state !== "failed") continue;
-				const original =
-					retained?.original ??
-					(await identifyProvisionJob(prisma, row.id, id, job));
+				continue;
+			}
+			const job = await readOwnedJob(id);
+			if (job) {
+				if ((await job.getState()) !== "failed") continue;
+				const original = await identifyProvisionJob(prisma, row.id, id, job);
 				if (!original) continue;
-				if (
-					start &&
-					(!("runId" in original.admission) ||
-						original.admission.runId !== start.liveChannelRunId ||
-						original.admission.generation !==
-							start.startAdmissionFenceVersion ||
-						!(await recordRetainedScheduledStart(
-							prisma,
-							start,
-							{ id, state },
-							at,
-						)))
-				)
-					continue;
 				await recordExpiredProvisionFailure(
 					prisma,
 					row.id,

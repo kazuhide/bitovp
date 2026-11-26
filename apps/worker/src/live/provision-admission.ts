@@ -33,6 +33,11 @@ type ScheduledStartIdentity = {
 	startAdmissionFenceVersion: number;
 };
 
+type ScheduledStartReceipt = {
+	dispatchJobId: string | null;
+	dispatchedAt: Date | null;
+};
+
 const bindingSelect = {
 	origin: true,
 	plan: true,
@@ -128,12 +133,17 @@ export async function resolveProvisionAdmission(
 			...(purpose === "dispatch" ? { outcome: "PENDING" as const } : {}),
 		},
 		select: {
+			dispatchJobId: true,
 			liveChannelRunId: true,
 			startAdmissionFenceVersion: true,
 			liveChannel: { select: bindingSelect },
 		},
 	});
-	if (!row || hasAisaLiveBinding(row.liveChannel, row.liveChannel?.runs[0]))
+	if (
+		!row ||
+		(row.dispatchJobId != null && row.dispatchJobId !== jobId) ||
+		hasAisaLiveBinding(row.liveChannel, row.liveChannel?.runs[0])
+	)
 		return null;
 	if (row.startAdmissionFenceVersion != null) {
 		if (
@@ -193,14 +203,12 @@ export async function identifyProvisionJob(
 	return admission ? { admission, data: parsed.data } : null;
 }
 
-export async function readRetainedScheduledStart(
+async function observeScheduledStart(
 	prisma: AppPrismaClient,
-	readJob: ReadProvisionJob,
 	start: ScheduledStartIdentity,
+	id: string,
+	job: ProvisionQueueJob,
 ) {
-	const id = scheduledStartJobId(start.id);
-	const job = await readJob(id);
-	if (!job) return null;
 	const original = await identifyProvisionJob(
 		prisma,
 		start.liveChannelId,
@@ -214,7 +222,73 @@ export async function readRetainedScheduledStart(
 		original.admission.generation !== start.startAdmissionFenceVersion
 	)
 		return null;
-	return { id, job, original, state: await job.getState() };
+	return { id, state: await job.getState() };
+}
+
+/** Select the exact retained START or reserve its canonical queue key before adding. */
+export async function prepareScheduledStartDispatch(
+	prisma: AppPrismaClient,
+	readJob: ReadProvisionJob,
+	start: ScheduledStartIdentity,
+	receipt: ScheduledStartReceipt,
+): Promise<{ id: string; state: string | null } | null> {
+	const legacyId = scheduledStartJobId(start.id);
+	const id = scheduledStartJobId(start.id, start.startAdmissionFenceVersion);
+	if (receipt.dispatchJobId !== id) {
+		if (receipt.dispatchJobId !== null && receipt.dispatchJobId !== legacyId)
+			return null;
+		const legacy = await readJob(legacyId);
+		const observed =
+			legacy && (await observeScheduledStart(prisma, start, legacyId, legacy));
+		if (observed) return observed;
+	}
+	// A failed lookup cannot prove absence. A job already present under the
+	// canonical key (for example, after a lost add reply) is adopted below.
+	const job = await readJob(id);
+	if (receipt.dispatchJobId !== id) {
+		const reserved = await prisma.$transaction(async (tx) => {
+			const [channel] = await tx.$queryRaw<{ id: string }[]>`
+				SELECT id FROM "LiveChannel" WHERE id = ${start.liveChannelId}::uuid
+					AND status = 'PROVISIONING' AND "provisionClaimedAt" IS NULL
+					AND "liveEffectFenceVersion" = ${start.startAdmissionFenceVersion}
+				FOR UPDATE`;
+			if (!channel) return false;
+			const run = await tx.liveChannelRun.findFirst({
+				where: { liveChannelId: start.liveChannelId },
+				orderBy: { seq: "desc" },
+				select: { id: true, cancelRequested: true, status: true },
+			});
+			if (
+				run?.id !== start.liveChannelRunId ||
+				run.cancelRequested ||
+				(run.status !== "PROVISIONING" && run.status !== "CREATED")
+			)
+				return false;
+			const changed = await tx.liveSchedule.updateMany({
+				where: {
+					...pendingStart(start),
+					dispatchJobId: receipt.dispatchJobId,
+					dispatchedAt: receipt.dispatchedAt,
+				},
+				data: { dispatchJobId: id, dispatchedAt: null },
+			});
+			return changed.count === 1;
+		});
+		if (!reserved) return null;
+	}
+	return job
+		? observeScheduledStart(prisma, start, id, job)
+		: { id, state: null };
+}
+
+function pendingStart(start: ScheduledStartIdentity) {
+	return {
+		...start,
+		action: "START",
+		status: "FIRED",
+		outcome: "PENDING",
+		liveChannel: { liveEffectFenceVersion: start.startAdmissionFenceVersion },
+	} as const;
 }
 
 export async function recordRetainedScheduledStart(
@@ -223,13 +297,7 @@ export async function recordRetainedScheduledStart(
 	retained: { id: string; state: string },
 	at: Date,
 ): Promise<boolean> {
-	const owned = {
-		...start,
-		action: "START",
-		status: "FIRED",
-		outcome: "PENDING",
-		liveChannel: { liveEffectFenceVersion: start.startAdmissionFenceVersion },
-	} as const;
+	const owned = pendingStart(start);
 	// Retention may evict the job before the next bounded recovery pass.
 	const failure =
 		retained.state === "failed"

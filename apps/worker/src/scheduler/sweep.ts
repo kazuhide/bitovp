@@ -41,8 +41,8 @@ import {
 } from "@bitovp/db";
 import { estimateStageLeadMs, STAGE_LEAD_MAX_MS } from "../feeder/stage-lead";
 import {
+	prepareScheduledStartDispatch,
 	type ReadProvisionJob,
-	readRetainedScheduledStart,
 	recordRetainedScheduledStart,
 } from "../live/provision-admission";
 import type { EmitProductEvent } from "../notify/emitter";
@@ -733,6 +733,7 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 					liveChannelId: row.liveChannelId,
 					liveChannelRunId: row.liveChannelRunId,
 					startAdmissionFenceVersion: row.startAdmissionFenceVersion ?? null,
+					OR: [{ dispatchJobId: null }, { dispatchJobId: jobId }],
 				}),
 			},
 			data: { dispatchedAt: deps.now(), dispatchJobId: jobId },
@@ -2407,17 +2408,19 @@ export function createScheduleSweep(deps: SweepDeps): ScheduleSweep {
 							liveChannelRunId: row.liveChannelRunId,
 							startAdmissionFenceVersion: row.startAdmissionFenceVersion,
 						};
-						const retained = await readRetainedScheduledStart(
+						const delivery = await prepareScheduledStartDispatch(
 							deps.prisma,
 							deps.readStartJob,
 							start,
+							row,
 						);
-						if (retained) {
+						if (!delivery) return;
+						if (delivery.state !== null) {
 							if (
 								await recordRetainedScheduledStart(
 									deps.prisma,
 									start,
-									retained,
+									{ id: delivery.id, state: delivery.state },
 									now,
 								)
 							)

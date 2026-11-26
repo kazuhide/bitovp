@@ -1550,9 +1550,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				await tenant.liveSchedule.findUniqueOrThrow({
 					where: { id: current.id },
 				}),
-			).toEqual(current);
+			).toMatchObject({
+				dispatchJobId: id,
+				dispatchedAt: now,
+				outcome: "PENDING",
+			});
 
-			// The stranded dispatcher must dedupe against that exact admission too.
+			// Recovery already acknowledged the canonical ID. Boot leaves it alone.
 			await tenant.liveChannelRun.update({
 				where: { id: f.run.id },
 				data: { legacyProvisionAdmissionAt: now },
@@ -1565,13 +1569,13 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				enqueue,
 				readStartJob: async (key) => queue.get(key),
 			}).dispatchPending();
-			expect(enqueue).toHaveBeenCalledWith(job.data, job.id);
+			expect(enqueue).not.toHaveBeenCalledWith(job.data, job.id);
 			expect(queue.get(job.id)).toBe(job);
 			await expect(
 				tenant.liveSchedule.findUniqueOrThrow({ where: { id: current.id } }),
 			).resolves.toMatchObject({
 				dispatchJobId: job.id,
-				dispatchedAt: dispatchAt,
+				dispatchedAt: now,
 				outcome: "PENDING",
 			});
 
@@ -2196,13 +2200,20 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 				where: { id: f.channel.id },
 				data: {
 					liveEffectFenceVersion: generation,
+					legacyAdmissionFenceVersion: kind === "scheduled" ? generation : null,
 					manualProvisionAdmissionFenceVersion:
 						kind === "manual" ? generation : null,
 				},
 			});
 			if (kind === "initial")
 				await tenant.liveChannelRun.delete({ where: { id: f.run.id } });
+			if (kind === "scheduled")
+				await tenant.liveChannelRun.update({
+					where: { id: f.run.id },
+					data: { legacyProvisionAdmissionAt: now },
+				});
 			const scheduleId = randomUUID();
+			const legacyId = `sched-${scheduleId}`;
 			const schedule =
 				kind === "scheduled"
 					? await tenant.liveSchedule.create({
@@ -2215,7 +2226,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 								fireAt: now,
 								firedAt: now,
 								dispatchedAt: now,
-								dispatchJobId: `sched-${scheduleId}-start-${generation}`,
+								dispatchJobId: legacyId,
 								startAdmissionFenceVersion: generation,
 							},
 						})
@@ -2227,21 +2238,65 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					: `manual-provision-${f.channel.id}-${f.run.id}-${generation}`;
 			let data: import("@bitovp/core").LiveChannelJob | undefined;
 			let state = "waiting";
+			let reservedBeforeAdd = false;
+			let lostReply = false;
 			const add = vi.fn(
 				async (value: import("@bitovp/core").LiveChannelJob, key: string) => {
-					if (key === id) data = value;
+					if (key !== id) return;
+					data = value;
+					if (!schedule || lostReply) return;
+					const before = await tenant.liveSchedule.findUniqueOrThrow({
+						where: { id: schedule.id },
+					});
+					reservedBeforeAdd =
+						before.dispatchJobId === id && before.dispatchedAt === null;
+					lostReply = true;
+					throw new Error("replacement queue reply lost");
 				},
 			);
 			const readJob = async (key: string) =>
 				key === id && data ? { data, getState: async () => state } : undefined;
 			const recover = createExhaustedProvisionRecovery(tenant, readJob, add);
-			for (let i = 0; i < 10 && !data; i++) await recover(new Date());
+			for (let i = 0; i < 10 && !data; i++)
+				await recover(new Date()).catch((error) =>
+					expect(error).toMatchObject({
+						message: "replacement queue reply lost",
+					}),
+				);
 			expect(data).toMatchObject({
 				liveChannelId: f.channel.id,
 				action: "provision",
 				...(kind === "initial" ? {} : { plannedLiveChannelRunId: f.run.id }),
 				...(kind === "scheduled" ? { provisionFenceVersion: generation } : {}),
 			});
+			const acknowledgedAt = new Date();
+			if (schedule) {
+				expect(reservedBeforeAdd).toBe(true);
+				await expect(
+					resolveProvisionAdmission(
+						tenant,
+						f.channel.id,
+						{},
+						legacyId,
+						Date.now(),
+						"dispatch",
+					),
+				).resolves.toBeNull();
+				await createScheduleSweep({
+					prisma: tenant,
+					now: () => acknowledgedAt,
+					enqueue: add,
+					readStartJob: readJob,
+				}).dispatchPending();
+				await expect(
+					tenant.liveSchedule.findUniqueOrThrow({ where: { id: schedule.id } }),
+				).resolves.toMatchObject({
+					dispatchJobId: id,
+					dispatchedAt: acknowledgedAt,
+					outcome: "PENDING",
+				});
+				expect(add.mock.calls.filter(([, key]) => key === id)).toHaveLength(1);
+			}
 			state = "failed";
 			if (schedule) {
 				const failedAt = new Date();
@@ -2257,7 +2312,7 @@ describe.runIf(Boolean(runtimeUrl && adminUrl))(
 					tenant.liveSchedule.findUniqueOrThrow({ where: { id: schedule.id } }),
 				).resolves.toMatchObject({
 					dispatchJobId: id,
-					dispatchedAt: now,
+					dispatchedAt: acknowledgedAt,
 					outcome: "UNKNOWN",
 					outcomeEvidenceAt: failedAt,
 				});

@@ -549,6 +549,7 @@ it("keeps the replacement entered on reopen when the draft omitted its prior URL
 	expect(JSON.stringify(saved.value)).not.toContain("OLD_FIXTURE");
 	const restored = restoreVodWizardDraft(base, saved, {
 		inputFiles: new Map([[input.key, input]]),
+		protectedInputKeys: new Set([input.inputKey]),
 		hdr10PlusMetadataKeys: new Set(),
 	});
 	expect(restored.name).toBe("Keep the editorial change");
@@ -607,6 +608,7 @@ it("repairs a blank subtitle only when its original storage identity remains unc
 		{ step: 2, value: saved },
 		{
 			inputFiles: new Map([[second.key, replacement]]),
+			protectedInputKeys: new Set([second.inputKey]),
 			hdr10PlusMetadataKeys: new Set(),
 		},
 	);
@@ -621,6 +623,7 @@ it("repairs a blank subtitle only when its original storage identity remains unc
 			inputFiles: new Map([
 				[second.key, { ...replacement, bucket: "different.example" }],
 			]),
+			protectedInputKeys: new Set([second.inputKey]),
 			hdr10PlusMetadataKeys: new Set(),
 		},
 	);

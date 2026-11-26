@@ -9,6 +9,7 @@ import {
 
 export type ProtectedVodCopyReplacements = {
 	inputFiles: ReadonlyMap<string, WizardInputFile>;
+	protectedInputKeys: ReadonlySet<string>;
 	hdr10PlusMetadataKeys: ReadonlySet<string>;
 };
 
@@ -88,6 +89,7 @@ export function protectedVodCopyLayout(
 	}
 	const replacements: ProtectedVodCopyReplacements = {
 		inputFiles: replacementFiles,
+		protectedInputKeys: new Set(entered.map(({ inputKey }) => inputKey)),
 		hdr10PlusMetadataKeys,
 	};
 	return { state, replacements };

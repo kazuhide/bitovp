@@ -1555,11 +1555,6 @@ export function restoreVodWizardDraft(
 			saved: DraftValue,
 		): file is WizardInputFile =>
 			!!file && inputFields.every((field) => file[field] === saved[field]);
-		const protectedHttpsInputs = new Set(
-			[...replacements.inputFiles.values()]
-				.filter((file) => file.kind === "HTTPS")
-				.map((file) => file.inputKey),
-		);
 		const baseFiles = new Map(base.inputFiles.map((file) => [file.key, file]));
 		const repairedFiles = new Set<string>();
 		const unchangedFiles = new Set<string>();
@@ -1573,7 +1568,8 @@ export function restoreVodWizardDraft(
 				if (
 					saved.name === "" &&
 					original.name &&
-					protectedHttpsInputs.has(original.inputKey)
+					original.kind === "HTTPS" &&
+					replacements.protectedInputKeys.has(original.inputKey)
 				)
 					file = { ...saved, name: original.name };
 			}

@@ -281,6 +281,8 @@ export type IngestBindObservation = {
 	probeStartedAt: string | null;
 };
 
+type FeederPacketCounts = { video: number; audio: number };
+
 export type SupervisorDeps = {
 	runner: ProcessRunner;
 	ffmpegPath: string;
@@ -292,8 +294,8 @@ export type SupervisorDeps = {
 	sourceDurationSec: number | undefined;
 	/** ONCE never reopens a source after any process exit. Defaults to LOOP. */
 	playbackMode?: "LOOP" | "ONCE";
-	/** Exact selected-video frame count when the original MP4 reports it. */
-	sourceFrames?: number;
+	/** Packet totals from the selected streams after applying source edits. */
+	sourcePackets?: FeederPacketCounts;
 	/**
 	 * Where this supervisor's loop numbering starts . Zero for a
 	 * fresh session; on a TAKEOVER it is one past the highest loop index the
@@ -371,6 +373,7 @@ export type SupervisorResult = {
 		exitCode: 0;
 		observedAt: string;
 		frames?: number;
+		muxedPackets: FeederPacketCounts;
 	};
 };
 
@@ -505,8 +508,8 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 		tracker: LoopTracker;
 		progress: {
 			last?: FeederProgressBlock;
-			previousTime?: number;
-			rewound: boolean;
+			muxedPackets: Partial<FeederPacketCounts>;
+			invalid: boolean;
 		};
 		bindStopped: boolean;
 	};
@@ -527,7 +530,10 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 			deps.now,
 			nextLoopBase,
 		);
-		const progress: ActiveAttempt["progress"] = { rewound: false };
+		const progress: ActiveAttempt["progress"] = {
+			muxedPackets: {},
+			invalid: false,
+		};
 		const parseProgress = createProgressParser(
 			(outTimeSec) => {
 				const boundary = tracker.observe(outTimeSec);
@@ -547,15 +553,6 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 			},
 			(block) => {
 				progress.last = block;
-				if (block.outTimeSec !== undefined) {
-					if (
-						progress.previousTime !== undefined &&
-						block.outTimeSec < progress.previousTime - 0.25
-					) {
-						progress.rewound = true;
-					}
-					progress.previousTime = block.outTimeSec;
-				}
 			},
 		);
 
@@ -576,6 +573,29 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 			current = deps.runner.spawn(deps.ffmpegPath, deps.argv, {
 				onStdoutLine: parseProgress,
 				onStderrLine: (line) => {
+					if (deps.playbackMode === "ONCE") {
+						// With level+verbose FFmpeg reports the final per-stream
+						// packet totals after streamcopy. Never use the aggregate
+						// progress timestamp as proof of every stream's end.
+						const summary =
+							/^\[out#0\/(?:flv|mpegts) @ 0x[0-9a-f]+\] \[verbose\]\s+Output stream #0:(?:(0) \(video\)|1 \(audio\)): (\d+) packets muxed\b/i.exec(
+								line,
+							);
+						if (summary) {
+							const stream = summary[1] === "0" ? "video" : "audio";
+							const count = Number(summary[2]);
+							if (
+								!Number.isSafeInteger(count) ||
+								progress.muxedPackets[stream] !== undefined
+							) {
+								progress.invalid = true;
+							}
+							progress.muxedPackets[stream] = count;
+						}
+						if (/^(?:\[[^\]]+\]\s*)?\[(?:error|fatal|panic)\]/.test(line)) {
+							progress.invalid = true;
+						}
+					}
 					capture(line);
 					void flush().catch(() => {});
 				},
@@ -854,28 +874,26 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 				if (deps.playbackMode === "ONCE") {
 					const final = activeAttempt.progress.last;
 					const duration = deps.sourceDurationSec;
-					// FLV packet timestamps and AAC priming can differ from the MP4
-					// duration by a small fraction of a second. Exact selected-video
-					// frame equality, when known, separately protects the final frame.
-					const toleranceSec = 0.5;
+					const expected = deps.sourcePackets;
+					const muxed = activeAttempt.progress.muxedPackets;
+					const video = muxed.video ?? 0;
+					const audio = muxed.audio ?? 0;
 					const eof =
 						code === 0 &&
 						signal === null &&
 						!activeAttempt.bindStopped &&
-						!activeAttempt.progress.rewound &&
+						!activeAttempt.progress.invalid &&
 						final?.status === "end" &&
 						typeof duration === "number" &&
 						Number.isFinite(duration) &&
 						duration > 0 &&
 						final.outTimeSec !== undefined &&
-						Number.isFinite(final.outTimeSec) &&
-						Math.abs(final.outTimeSec - duration) <= toleranceSec &&
-						(deps.sourceFrames === undefined ||
-							(Number.isSafeInteger(deps.sourceFrames) &&
-								deps.sourceFrames > 0 &&
-								final.frames === deps.sourceFrames));
+						expected !== undefined &&
+						video > 0 &&
+						video === expected.video &&
+						audio === expected.audio;
 					if (!eof || final?.outTimeSec === undefined) {
-						const error = `single-pass EOF was not proven (exit ${code}, signal ${signal}, progress ${final?.status ?? "missing"}, out_time ${final?.outTimeSec ?? "missing"}, frames ${final?.frames ?? "missing"}, expected ${duration ?? "unknown"}s/${deps.sourceFrames ?? "unknown"} frames); replay is forbidden`;
+						const error = `single-pass EOF was not proven (exit ${code}, signal ${signal}, progress ${final?.status ?? "missing"}, muxed packets ${video} video / ${audio} audio, expected ${expected?.video ?? "unknown"} video / ${expected?.audio ?? "unknown"} audio); replay is forbidden`;
 						capture(`[feeder] ${error}`);
 						await flush(true);
 						return { outcome: "ERROR", error };
@@ -893,6 +911,7 @@ export function createFeederSupervisor(deps: SupervisorDeps): FeederSupervisor {
 							exitCode: 0,
 							observedAt: evidenceNow(),
 							...(final.frames === undefined ? {} : { frames: final.frames }),
+							muxedPackets: { video, audio },
 						},
 					};
 				}

@@ -173,6 +173,10 @@ describe("buildFeederCommand", () => {
 		expect(argv.slice(0, argv.indexOf("-i") + 2)).toEqual([
 			"-hide_banner",
 			"-nostdin",
+			"-loglevel",
+			"level+verbose",
+			"-nostats",
+			"-xerror",
 			"-re",
 			"-stream_loop",
 			"0",

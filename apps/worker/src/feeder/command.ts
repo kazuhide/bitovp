@@ -60,7 +60,7 @@ export {
 // ---------------------------------------------------------------------------
 
 /** ffprobe argv (binary resolved separately via FFPROBE_PATH). */
-export function probeArgs(sourcePath: string): string[] {
+export function probeArgs(sourcePath: string, countPackets = false): string[] {
 	return [
 		"-v",
 		"error",
@@ -68,6 +68,7 @@ export function probeArgs(sourcePath: string): string[] {
 		"json",
 		"-show_streams",
 		"-show_format",
+		...(countPackets ? ["-count_packets"] : []),
 		sourcePath,
 	];
 }
@@ -344,6 +345,8 @@ export function buildFeederCommand(input: BuildCommandInput): BuiltCommand {
 	const head = [
 		"-hide_banner",
 		"-nostdin",
+		// Finite playback needs muxer packet totals and fatal read/write errors.
+		...(once ? ["-loglevel", "level+verbose", "-nostats", "-xerror"] : []),
 		// Input pacing and loop count must precede -i.
 		"-re",
 		// : the normalized loop's AAC delay frame sits at a NEGATIVE

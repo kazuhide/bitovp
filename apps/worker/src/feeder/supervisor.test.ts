@@ -273,16 +273,30 @@ function setup(overrides: Partial<SupervisorDeps> = {}) {
 }
 
 describe("createFeederSupervisor — single-pass", () => {
-	function finalProgress(proc: FakeProcess, seconds: string, frames = "300") {
-		proc.events.onStdoutLine(`frame=${frames}`);
+	const sourcePackets = { video: 300, audio: 480 };
+	function finalProgress(proc: FakeProcess, seconds: string) {
+		proc.events.onStdoutLine("frame=300");
 		proc.events.onStdoutLine(`out_time_us=${seconds}`);
 		proc.events.onStdoutLine("progress=end");
+	}
+	function reportMuxedPackets(
+		proc: FakeProcess,
+		video: number | null = 300,
+		audio = 480,
+	) {
+		if (video !== null)
+			proc.events.onStderrLine(
+				`[out#0/flv @ 0xad10] [verbose]   Output stream #0:0 (video): ${video} packets muxed (123 bytes); `,
+			);
+		proc.events.onStderrLine(
+			`[out#0/flv @ 0xad10] [verbose]   Output stream #0:1 (audio): ${audio} packets muxed (45 bytes); `,
+		);
 	}
 
 	it("returns EOF evidence only after the final progress block and process exit", async () => {
 		const s = setup({
 			playbackMode: "ONCE",
-			sourceFrames: 300,
+			sourcePackets,
 			maxRestarts: 0,
 		});
 		const run = s.supervisor.run();
@@ -291,6 +305,7 @@ describe("createFeederSupervisor — single-pass", () => {
 		if (!proc) throw new Error("not spawned");
 		proc.progress(500_000);
 		finalProgress(proc, "10000000");
+		reportMuxedPackets(proc);
 		proc.exit(0);
 		expect(await run).toEqual({
 			outcome: "STOPPED",
@@ -301,6 +316,7 @@ describe("createFeederSupervisor — single-pass", () => {
 				exitCode: 0,
 				observedAt: NOW,
 				frames: 300,
+				muxedPackets: sourcePackets,
 			},
 		});
 		expect(s.spawned).toHaveLength(1);
@@ -308,24 +324,26 @@ describe("createFeederSupervisor — single-pass", () => {
 	});
 
 	it.each([
-		["missing end marker", "10000000", "300", false],
-		["short output", "9000000", "300", true],
-		["invalid output time", "N/A", "300", true],
-		["missing video frames", "10000000", "N/A", true],
-		["missing last video frame", "10000000", "299", true],
-		["extra video frames", "10000000", "301", true],
-	] as const)("rejects clean exit with %s", async (_name, seconds, frames, end) => {
+		["missing end marker", "10000000", 300, 480, false],
+		["invalid output time", "N/A", 300, 480, true],
+		["missing video summary", "10000000", null, 480, true],
+		["missing last video packet", "10000000", 299, 480, true],
+		["extra video packet", "10000000", 301, 480, true],
+		["truncated audio tail", "10000000", 300, 479, true],
+		["extra audio packet", "10000000", 300, 481, true],
+	] as const)("rejects clean exit with %s", async (_name, seconds, video, audio, end) => {
 		const s = setup({
 			playbackMode: "ONCE",
-			sourceFrames: 300,
+			sourcePackets,
 			maxRestarts: 0,
 		});
 		const run = s.supervisor.run();
 		await tick();
 		const proc = s.spawned[0];
 		if (!proc) throw new Error("not spawned");
-		if (end) finalProgress(proc, seconds, frames);
+		if (end) finalProgress(proc, seconds);
 		else proc.progress(Number(seconds));
+		reportMuxedPackets(proc, video, audio);
 		proc.exit(0);
 		expect(await run).toMatchObject({
 			outcome: "ERROR",
@@ -337,7 +355,7 @@ describe("createFeederSupervisor — single-pass", () => {
 	it("does not reuse an earlier valid end block after a later invalid block", async () => {
 		const s = setup({
 			playbackMode: "ONCE",
-			sourceFrames: 300,
+			sourcePackets,
 			maxRestarts: 0,
 		});
 		const run = s.supervisor.run();
@@ -346,6 +364,7 @@ describe("createFeederSupervisor — single-pass", () => {
 		if (!proc) throw new Error("not spawned");
 		finalProgress(proc, "10000000");
 		finalProgress(proc, "N/A");
+		reportMuxedPackets(proc);
 		proc.exit(0);
 		expect(await run).toMatchObject({ outcome: "ERROR" });
 	});
@@ -359,6 +378,7 @@ describe("createFeederSupervisor — single-pass", () => {
 		const s = setup({
 			playbackMode: "ONCE",
 			sourceDurationSec: duration,
+			sourcePackets,
 			maxRestarts: 0,
 		});
 		const run = s.supervisor.run();
@@ -366,16 +386,17 @@ describe("createFeederSupervisor — single-pass", () => {
 		const proc = s.spawned[0];
 		if (!proc) throw new Error("not spawned");
 		finalProgress(proc, "10000000");
+		reportMuxedPackets(proc);
 		proc.exit(0);
 		expect(await run).toMatchObject({ outcome: "ERROR" });
 	});
 
 	it.each([
-		9_499_999, 10_500_001,
-	])("rejects duration outside the half-second packet tolerance: %s", async (outTimeUs) => {
+		9_000_000, 11_000_000,
+	])("accepts the full selected streams when the progress clock differs: %s", async (outTimeUs) => {
 		const s = setup({
 			playbackMode: "ONCE",
-			sourceFrames: 300,
+			sourcePackets,
 			maxRestarts: 0,
 		});
 		const run = s.supervisor.run();
@@ -383,14 +404,15 @@ describe("createFeederSupervisor — single-pass", () => {
 		const proc = s.spawned[0];
 		if (!proc) throw new Error("not spawned");
 		finalProgress(proc, String(outTimeUs));
+		reportMuxedPackets(proc);
 		proc.exit(0);
-		expect(await run).toMatchObject({ outcome: "ERROR" });
+		expect(await run).toMatchObject({ outcome: "STOPPED" });
 	});
 
 	it("does not count a duration overshoot at natural EOF as a second loop", async () => {
 		const s = setup({
 			playbackMode: "ONCE",
-			sourceFrames: 300,
+			sourcePackets,
 			maxRestarts: 0,
 		});
 		const run = s.supervisor.run();
@@ -400,6 +422,7 @@ describe("createFeederSupervisor — single-pass", () => {
 		proc.progress(1_000_000);
 		proc.progress(10_100_000);
 		finalProgress(proc, "10100000");
+		reportMuxedPackets(proc);
 		proc.exit(0);
 		expect(await run).toMatchObject({
 			outcome: "STOPPED",
@@ -408,19 +431,34 @@ describe("createFeederSupervisor — single-pass", () => {
 		expect(s.boundaries).toHaveLength(1);
 	});
 
-	it("rejects a rewind even when the final progress matches the duration", async () => {
+	it("rejects FFmpeg error output even when exit and packet totals look complete", async () => {
 		const s = setup({
 			playbackMode: "ONCE",
-			sourceFrames: 300,
+			sourcePackets,
 			maxRestarts: 0,
 		});
 		const run = s.supervisor.run();
 		await tick();
 		const proc = s.spawned[0];
 		if (!proc) throw new Error("not spawned");
-		proc.progress(8_000_000);
-		proc.progress(1_000_000);
 		finalProgress(proc, "10000000");
+		reportMuxedPackets(proc);
+		proc.events.onStderrLine(
+			"[out#0/flv @ 0xad10] [error] Error submitting a packet to the muxer",
+		);
+		proc.exit(0);
+		expect(await run).toMatchObject({ outcome: "ERROR" });
+	});
+
+	it("rejects duplicate packet summaries", async () => {
+		const s = setup({ playbackMode: "ONCE", sourcePackets });
+		const run = s.supervisor.run();
+		await tick();
+		const proc = s.spawned[0];
+		if (!proc) throw new Error("not spawned");
+		finalProgress(proc, "10000000");
+		reportMuxedPackets(proc);
+		reportMuxedPackets(proc);
 		proc.exit(0);
 		expect(await run).toMatchObject({ outcome: "ERROR" });
 	});
@@ -442,7 +480,7 @@ describe("createFeederSupervisor — single-pass", () => {
 	it("a bind deadline kills a single pass without replay or EOF success", async () => {
 		const s = setup({
 			playbackMode: "ONCE",
-			sourceFrames: 300,
+			sourcePackets,
 			bindTimeoutMs: 100,
 			bindProbeIntervalMs: 100,
 			mayKeepPushing: async () => ({
@@ -458,6 +496,7 @@ describe("createFeederSupervisor — single-pass", () => {
 		if (!proc) throw new Error("not spawned");
 		expect(proc.killed).toContain("SIGTERM");
 		finalProgress(proc, "10000000");
+		reportMuxedPackets(proc);
 		proc.exit(0);
 		expect(await run).toMatchObject({ outcome: "ERROR" });
 		expect(s.spawned).toHaveLength(1);

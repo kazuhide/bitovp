@@ -55,6 +55,8 @@ export type ProbeStream = {
 	start_time?: string;
 	duration?: string;
 	nb_frames?: string;
+	/** Packet count after applying container edits, measured with -count_packets. */
+	nb_read_packets?: string;
 	/**
 	 * ffprobe's stream disposition. Only `attached_pic` is read: cover art in
 	 * an audio file types as `codec_type: "video"`, so without this an

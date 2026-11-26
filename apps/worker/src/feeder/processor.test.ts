@@ -83,6 +83,7 @@ const PROBE_COPY = {
 			start_time: "0.000000",
 			duration: "30.000000",
 			nb_frames: "900",
+			nb_read_packets: "900",
 			r_frame_rate: "30/1",
 		},
 		{
@@ -90,6 +91,7 @@ const PROBE_COPY = {
 			codec_name: "aac",
 			start_time: "0.000000",
 			duration: "30.000000",
+			nb_read_packets: "1408",
 		},
 	],
 	format: { duration: "30.0", start_time: "0.000000" },
@@ -502,6 +504,13 @@ function setup(
 		// truthiness would report a fence holding while the real query filtered
 		// on nothing, and every takeover assertion would pass vacuously.
 		if ("ownerId" in where && row.ownerId !== where.ownerId) {
+			return false;
+		}
+		if (
+			where.ownerLeaseAt instanceof Date &&
+			(!(row.ownerLeaseAt instanceof Date) ||
+				row.ownerLeaseAt.getTime() !== where.ownerLeaseAt.getTime())
+		) {
 			return false;
 		}
 		if (
@@ -5626,6 +5635,19 @@ describe("feeder processor — the publisher claim", () => {
 });
 
 describe("single-pass feeder processor", () => {
+	function reportMuxedPackets(
+		proc: { events: FeederProcessEvents },
+		video: number,
+		audio = 1408,
+	) {
+		proc.events.onStderrLine(
+			`[out#0/flv @ 0x10] [verbose]   Output stream #0:0 (video): ${video} packets muxed (123 bytes); `,
+		);
+		proc.events.onStderrLine(
+			`[out#0/flv @ 0x10] [verbose]   Output stream #0:1 (audio): ${audio} packets muxed (45 bytes); `,
+		);
+	}
+
 	it("uses the selected raw source streams without loop normalization, seals dispatch, and persists exact EOF evidence", async () => {
 		const source = structuredClone(PROBE_COPY);
 		const audio = source.streams[1];
@@ -5648,8 +5670,10 @@ describe("single-pass feeder processor", () => {
 		expect(s.session.playbackDispatchedAt).toBeInstanceOf(Date);
 		expect(normalizeArgvByLoop.size).toBe(0);
 		proc.events.onStdoutLine("frame=900");
-		proc.events.onStdoutLine("out_time_us=30050000");
+		// Some FFmpeg builds report the earlier stream end on final progress.
+		proc.events.onStdoutLine("out_time_us=30000000");
 		proc.events.onStdoutLine("progress=end");
+		reportMuxedPackets(proc, 900);
 		proc.exit(0);
 		await expect(run).resolves.toMatchObject({ status: "STOPPED" });
 		expect(s.spawned).toHaveLength(1);
@@ -5657,17 +5681,19 @@ describe("single-pass feeder processor", () => {
 			reason: "EOF",
 			sourceSha256: FETCHED_SHA256,
 			sourceDurationSec: 30.05,
-			outTimeSec: 30.05,
+			outTimeSec: 30,
 			progressEnd: true,
 			exitCode: 0,
 			frames: 900,
+			muxedPackets: { video: 900, audio: 1408 },
+			sourcePackets: { video: 900, audio: 1408 },
 		});
 		expect(s.session.processGoneAt).toBeInstanceOf(Date);
 		expect(s.session.publisherReleasedAt).toBeInstanceOf(Date);
 		expect(s.session.pid).toBeNull();
 	});
 
-	it("compares only the selected first AAC track against the run reference", async () => {
+	it("compares only the selected AAC track even when the discarded track is AC-3", async () => {
 		const source: ProbeJson = structuredClone(PROBE_COPY);
 		const audio = source.streams?.[1];
 		if (!audio || !source.streams) throw new Error("Missing audio fixture");
@@ -5675,6 +5701,7 @@ describe("single-pass feeder processor", () => {
 		audio.channels = 2;
 		source.streams.push({
 			...audio,
+			codec_name: "ac3",
 			sample_rate: "44100",
 			channels: 1,
 		});
@@ -5701,6 +5728,7 @@ describe("single-pass feeder processor", () => {
 		proc.events.onStdoutLine("frame=900");
 		proc.events.onStdoutLine("out_time_us=30000000");
 		proc.events.onStdoutLine("progress=end");
+		reportMuxedPackets(proc, 900);
 		proc.exit(0);
 		await expect(result).resolves.toMatchObject({
 			value: { status: "STOPPED" },
@@ -5711,6 +5739,31 @@ describe("single-pass feeder processor", () => {
 		});
 	});
 
+	it.each([
+		{ audioPackets: "", stderr: "", reason: /complete packet count/ },
+		{
+			audioPackets: "1408",
+			stderr: "partial file",
+			reason: /ffprobe failed.*partial file/,
+		},
+	])("refuses incomplete input packet evidence before dispatch", async ({
+		audioPackets,
+		stderr,
+		reason,
+	}) => {
+		const source: ProbeJson = structuredClone(PROBE_COPY);
+		const audio = source.streams?.[1];
+		if (!audio) throw new Error("Missing source audio fixture");
+		audio.nb_read_packets = audioPackets;
+		const s = setup({
+			session: { playbackMode: "ONCE" },
+			probe: { code: 0, stdout: JSON.stringify(source), stderr },
+		});
+		await expect(s.processor.process(startJob)).rejects.toThrow(reason);
+		expect(s.spawned).toHaveLength(0);
+		expect(s.session.playbackDispatchedAt).toBeNull();
+	});
+
 	it("qualifies selected ten-second streams when an ignored AAC track extends the container to twenty seconds", async () => {
 		const source: ProbeJson = structuredClone(PROBE_COPY);
 		const video = source.streams?.[0];
@@ -5718,7 +5771,8 @@ describe("single-pass feeder processor", () => {
 		if (!video || !audio || !source.streams || !source.format)
 			throw new Error("Missing source timing fixture");
 		video.duration = "10.000000";
-		video.nb_frames = "300";
+		video.nb_frames = "900"; // MP4 sample-table size can include edited-out frames.
+		video.nb_read_packets = "300";
 		audio.duration = "10.000000";
 		source.streams.push({ ...audio, duration: "20.000000" });
 		source.format.duration = "20.000000";
@@ -5733,6 +5787,7 @@ describe("single-pass feeder processor", () => {
 		proc.events.onStdoutLine("frame=300");
 		proc.events.onStdoutLine("out_time_us=10000000");
 		proc.events.onStdoutLine("progress=end");
+		reportMuxedPackets(proc, 300);
 		proc.exit(0);
 		await expect(run).resolves.toMatchObject({ status: "STOPPED" });
 		expect(s.session.playbackReceipt).toMatchObject({
@@ -5753,6 +5808,7 @@ describe("single-pass feeder processor", () => {
 		video.start_time = "7.000000";
 		video.duration = "10.000000";
 		video.nb_frames = "300";
+		video.nb_read_packets = "300";
 		audio.start_time = "5.000000";
 		audio.duration = "11.000000";
 		source.format.start_time = "5.000000";
@@ -5768,6 +5824,7 @@ describe("single-pass feeder processor", () => {
 		proc.events.onStdoutLine("frame=300");
 		proc.events.onStdoutLine("out_time_us=12000000");
 		proc.events.onStdoutLine("progress=end");
+		reportMuxedPackets(proc, 300);
 		proc.exit(0);
 		await expect(run).resolves.toMatchObject({ status: "STOPPED" });
 		expect(s.session.playbackReceipt).toMatchObject({
@@ -5961,6 +6018,72 @@ describe("single-pass feeder processor", () => {
 		expect(s.session.processGoneAt).toBeNull();
 		expect(s.session.publisherReleasedAt).toBeNull();
 	});
+
+	it("leaves a dispatched single pass alone if its owner renews after the stale scan", async () => {
+		const now = new Date(Date.parse(NOW) + 600_000);
+		const s = setup({
+			session: {
+				playbackMode: "ONCE",
+				playbackDispatchedAt: new Date(NOW),
+				status: "PUSHING",
+				pid: 4242,
+				ownerHost: HOST,
+				ownerId: OWNER_A,
+				ownerGeneration: 1,
+				ownerLeaseAt: new Date(NOW),
+				publisherClaimedAt: new Date(NOW),
+			},
+		});
+		const find = s.feederSession.findMany.getMockImplementation();
+		if (!find) throw new Error("Missing scan fixture");
+		s.feederSession.findMany.mockImplementationOnce(async (arg) => {
+			const snapshots = await find(arg);
+			s.session.ownerLeaseAt = now;
+			return snapshots;
+		});
+		const killPid = vi.fn();
+		const workerB = s.makeProcessor({
+			ownerId: OWNER_B,
+			hostname: HOST,
+			now: () => now.toISOString(),
+			killPid,
+		});
+		await expect(workerB.takeOverStale()).resolves.toEqual([]);
+		expect(s.session.status).toBe("PUSHING");
+		expect(s.session.ownerGeneration).toBe(1);
+		expect(killPid).not.toHaveBeenCalled();
+	});
+
+	it("does not signal an unreadable live pid during automatic single-pass cleanup", async () => {
+		const s = setup({
+			session: {
+				playbackMode: "ONCE",
+				playbackDispatchedAt: new Date(NOW),
+				status: "PUSHING",
+				pid: 4242,
+				ownerHost: HOST,
+				ownerId: OWNER_A,
+				ownerGeneration: 1,
+				ownerLeaseAt: new Date(NOW),
+				publisherClaimedAt: new Date(NOW),
+			},
+		});
+		const killPid = vi.fn();
+		const workerB = s.makeProcessor({
+			ownerId: OWNER_B,
+			hostname: HOST,
+			now: () => new Date(Date.parse(NOW) + 600_000).toISOString(),
+			killPid,
+			readProcessCommand: async () => null,
+		});
+		await expect(workerB.takeOverStale()).resolves.toEqual([]);
+		expect(killPid.mock.calls).toEqual([[4242, 0]]);
+		expect(s.session.status).toBe("ERROR");
+		expect(s.session.pid).toBe(4242);
+		expect(s.session.processGoneAt).toBeNull();
+		expect(s.session.publisherReleasedAt).toBeNull();
+	});
+
 	it("does not spawn if a duplicate invocation observes a CREATED row with an existing dispatch marker", async () => {
 		const s = setup({
 			session: { playbackMode: "ONCE", playbackDispatchedAt: new Date(NOW) },

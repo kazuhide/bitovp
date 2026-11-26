@@ -1887,16 +1887,34 @@ export function createFeederProcessor(deps: FeederDeps) {
 					data: { sourceSha256: fetched.sha256 },
 				});
 
+				const playbackMode = feederPlaybackModeSchema.parse(
+					row.playbackMode ?? "LOOP",
+				);
+				const singlePass = playbackMode === "ONCE";
 				const probeRun = await deps.runner.run(
 					deps.ffprobePath,
-					probeArgs(fetched.path),
+					probeArgs(fetched.path, singlePass),
+					singlePass ? { signal: controller.signal } : undefined,
 				);
-				if (probeRun.code !== 0) {
+				controller.throwIfStopped();
+				if (probeRun.code !== 0 || (singlePass && probeRun.stderr.trim())) {
 					throw new Error(
 						`ffprobe failed (code ${probeRun.code}): ${probeRun.stderr.trim().split("\n").at(-1) ?? "no output"}`,
 					);
 				}
-				const probe = parseProbeJson(probeRun.stdout);
+				const sourceProbe = parseProbeJson(probeRun.stdout);
+				const video = sourceProbe.streams?.find(
+					(stream) => stream.codec_type === "video",
+				);
+				const audio = sourceProbe.streams?.find(
+					(stream) => stream.codec_type === "audio",
+				);
+				const probe = singlePass
+					? {
+							...sourceProbe,
+							streams: [...(video ? [video] : []), ...(audio ? [audio] : [])],
+						}
+					: sourceProbe;
 
 				// : refuse a source that cannot satisfy the channel's
 				// declared ingest BEFORE spawning ffmpeg. Pushing a video-only
@@ -1920,15 +1938,12 @@ export function createFeederProcessor(deps: FeederDeps) {
 				const reference = await loadIngestReference(row);
 				// Repeating sources use the normalized, co-terminous loop modeled
 				// by VMAF. A single pass preserves the original full source instead.
-				const playbackMode = feederPlaybackModeSchema.parse(
-					row.playbackMode ?? "LOOP",
-				);
 				const {
 					pushProbe,
 					pushPath,
 					decision,
 					durationSec,
-					sourceFrames,
+					sourcePackets,
 					normalise,
 				} = await (async () => {
 					if (playbackMode === "ONCE") {
@@ -1943,9 +1958,6 @@ export function createFeederProcessor(deps: FeederDeps) {
 								"single-pass playback requires a copy-compatible H.264/AAC source; the full source is never loop-normalized",
 							);
 						}
-						const video = probe.streams?.find(
-							(stream) => stream.codec_type === "video",
-						);
 						if (!video || video.disposition?.attached_pic === 1) {
 							throw new Error(
 								"single-pass playback requires the first video stream to contain the source video",
@@ -1957,11 +1969,18 @@ export function createFeederProcessor(deps: FeederDeps) {
 								"single-pass playback requires known selected-stream duration and start times to qualify EOF",
 							);
 						}
-						const parsedFrames = Number(video.nb_frames);
-						const sourceFrames =
-							Number.isSafeInteger(parsedFrames) && parsedFrames > 0
-								? parsedFrames
-								: undefined;
+						const videoPackets = Number(video.nb_read_packets);
+						const audioPackets = audio ? Number(audio.nb_read_packets) : 0;
+						if (
+							!Number.isSafeInteger(videoPackets) ||
+							videoPackets <= 0 ||
+							!Number.isSafeInteger(audioPackets) ||
+							(audio && audioPackets <= 0)
+						) {
+							throw new Error(
+								"single-pass playback requires a complete packet count for each selected stream",
+							);
+						}
 						if (reference) {
 							const compatibility = compareSourceCompatibility(
 								reference.media,
@@ -1987,7 +2006,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 							pushPath: fetched.path,
 							decision,
 							durationSec,
-							sourceFrames,
+							sourcePackets: { video: videoPackets, audio: audioPackets },
 							normalise: undefined,
 						};
 					}
@@ -2100,7 +2119,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 						pushPath: loopPath,
 						decision,
 						durationSec: loopProfile.loopSeconds,
-						sourceFrames: undefined,
+						sourcePackets: undefined,
 						normalise,
 					};
 				})();
@@ -2243,7 +2262,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 					redactLine: buildLineRedactor(secrets),
 					sourceDurationSec: durationSec,
 					playbackMode,
-					sourceFrames,
+					sourcePackets,
 					now: deps.now,
 					sleep: deps.sleep,
 					...(attemptEvidenceNotBefore
@@ -2701,7 +2720,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 										...result.completion,
 										sourceSha256: fetched.sha256,
 										sourceDurationSec: durationSec,
-										...(sourceFrames === undefined ? {} : { sourceFrames }),
+										sourcePackets,
 									} as Prisma.InputJsonValue,
 								}
 							: {}),
@@ -2878,6 +2897,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			| "ownerHost"
 			| "ownerId"
 			| "ownerGeneration"
+			| "ownerLeaseAt"
 			| "error"
 			| "liveChannelId"
 			| "processGoneAt"
@@ -2891,12 +2911,14 @@ export function createFeederProcessor(deps: FeederDeps) {
 		now: Date,
 	): Promise<{ row: FeederSessionRow; generation: number } | null> {
 		if (row.playbackMode === "ONCE" && row.playbackDispatchedAt !== null) {
-			await refuseUnprovenPublisherTakeover(
+			const refused = await refuseUnprovenPublisherTakeover(
 				row,
 				now,
 				"single-pass dispatch was already recorded; refusing to replay the source from its beginning",
 			);
-			await stop(row.id);
+			if (refused) {
+				await stop(row.id, { requireIdentity: true });
+			}
 			return null;
 		}
 		const from = row.ownerId ?? "an unnamed owner";
@@ -2921,7 +2943,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 						? `publisher claim generation ${row.publisherGeneration} was recorded`
 						: "a publisher start was recorded";
 				const note = `refusing to resume from ${from}: ${claim}, but its pid pointer is missing and no processGoneAt proof says the old publisher stopped — refusing to add a second push at the same ingest (dead air over overlap); confirm the process is gone on its former host, then retry`;
-				return await refuseUnprovenPublisherTakeover(row, now, note);
+				await refuseUnprovenPublisherTakeover(row, now, note);
+				return null;
 			}
 			// Safe to resume: it never spawned ffmpeg, or its previous owner tore
 			// down and PROVED the process gone. The revoked owner's lease-lost
@@ -2959,7 +2982,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 				// branch above. Reaching HERE with a live pid means no such proof,
 				// so mirror #240's switch barrier: refuse, do not spawn.
 				const note = `refusing to resume from ${from}: host ${row.ownerHost} recorded ffmpeg pid ${row.pid}, which ${deps.hostname} cannot prove has stopped — refusing to add a second push at the same ingest (dead air over overlap); stop the session from that host, or confirm the process is gone there`;
-				return await refuseUnprovenPublisherTakeover(row, now, note);
+				await refuseUnprovenPublisherTakeover(row, now, note);
+				return null;
 			}
 			// `gone`: the kill ladder verified the pid absent, or the number now
 			// wears an unrelated process. `not-ours` returns first for any
@@ -2985,6 +3009,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 				...(row.playbackMode === "ONCE" ? { playbackDispatchedAt: null } : {}),
 				ownerId: row.ownerId,
 				ownerGeneration: row.ownerGeneration,
+				ownerLeaseAt: row.ownerLeaseAt,
 				publisherGeneration: row.publisherGeneration,
 				status: { in: [...ACTIVE_STATUSES] },
 			},
@@ -3059,7 +3084,8 @@ export function createFeederProcessor(deps: FeederDeps) {
 	 * #88), and an operator whose push could not be safely resumed must be
 	 * told rather than left reading a green STOPPED.
 	 *
-	 * Returns null so `takeOverStale` records no takeover and spawns nothing.
+	 * The scan can lose its lease snapshot to a renewal. Only the winner may
+	 * reclaim a dispatched single pass, and its automatic stop verifies identity.
 	 */
 	async function refuseUnprovenPublisherTakeover(
 		row: { id: string; liveChannelId: string } & Pick<
@@ -3068,12 +3094,13 @@ export function createFeederProcessor(deps: FeederDeps) {
 			| "ownerHost"
 			| "ownerId"
 			| "ownerGeneration"
+			| "ownerLeaseAt"
 			| "publisherGeneration"
 			| "error"
 		>,
 		now: Date,
 		note: string,
-	): Promise<null> {
+	): Promise<boolean> {
 		const error = withReclaimNote(row.error, note);
 		const { count } = await deps.prisma.feederSession.updateMany({
 			where: {
@@ -3082,6 +3109,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 				// another worker's claim/stop, has moved it — theirs stands.
 				ownerId: row.ownerId,
 				ownerGeneration: row.ownerGeneration,
+				ownerLeaseAt: row.ownerLeaseAt,
 				publisherGeneration: row.publisherGeneration,
 				status: { in: [...ACTIVE_STATUSES] },
 			},
@@ -3096,7 +3124,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			},
 		});
 		if (count === 0) {
-			return null;
+			return false;
 		}
 		console.warn(`[feeder] session ${row.id}: ${note} — resuming refused`);
 		// : a feeder that ends in ERROR notifies, whichever writer
@@ -3108,10 +3136,13 @@ export function createFeederProcessor(deps: FeederDeps) {
 			error: redactSecrets(feederErrorEnglish(error)),
 			path: `/live/${row.liveChannelId}`,
 		});
-		return null;
+		return true;
 	}
 
-	async function stop(feederSessionId: string): Promise<string> {
+	async function stop(
+		feederSessionId: string,
+		options?: { requireIdentity?: boolean },
+	): Promise<string> {
 		const controller = registry.get(feederSessionId);
 		// review-365 S-4: a controller that has already LOST its lease is not
 		// this session's supervisor any more, it is a loser winding down. Its
@@ -3198,6 +3229,7 @@ export function createFeederProcessor(deps: FeederDeps) {
 			feederSessionId,
 			row.pid,
 			row.ownerHost,
+			options,
 		);
 		const goneAt = new Date(deps.now());
 		if (terminal) {

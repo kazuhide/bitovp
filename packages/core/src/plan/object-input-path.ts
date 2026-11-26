@@ -13,6 +13,7 @@ import {
  * can establish this distinction. SDK diagnostics are never object keys. */
 const objectKinds = new Set([
 	"S3",
+	"S3_ROLE_BASED",
 	"GENERIC_S3",
 	"GCS",
 	"GCS_SERVICE_ACCOUNT",

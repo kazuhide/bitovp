@@ -48,6 +48,7 @@ import {
 	perTitleUnverifiedChecks,
 	verifyArtefacts,
 } from "./engine";
+import type { S3RoleVerificationBinding } from "./preflight";
 
 /**
  * Where a plan input/output can be BROWSED, or why it cannot be.
@@ -855,9 +856,28 @@ export function browsable(
 		| EncodingPlan["inputs"][number]
 		| undefined,
 	role: string,
+	s3RoleBinding?: S3RoleVerificationBinding,
 ): Browsable {
 	if (!entry) {
 		return { ok: false, reason: `${role} is not declared in the plan` };
+	}
+	if (entry.kind === "S3_ROLE_BASED") {
+		if (
+			s3RoleBinding?.roleCredentialId === entry.credentialId &&
+			s3RoleBinding.observerCredentialId !== entry.credentialId &&
+			(entry.bucket === s3RoleBinding.inputBucket ||
+				entry.bucket === s3RoleBinding.outputBucket)
+		) {
+			return {
+				ok: true,
+				bucket: entry.bucket,
+				credentialId: s3RoleBinding.observerCredentialId,
+			};
+		}
+		return {
+			ok: false,
+			reason: `${role} requires a separate S3 verification observer for the configured bucket`,
+		};
 	}
 	if ("bucket" in entry && "credentialId" in entry) {
 		return { ok: true, bucket: entry.bucket, credentialId: entry.credentialId };
@@ -880,6 +900,7 @@ export type VerifyJobOptions = {
 	ffprobePath: string;
 	/** Job id, or a unique prefix of one. */
 	jobIdPrefix: string;
+	s3RoleBinding?: S3RoleVerificationBinding;
 	/**
 	 * When true, an object is FOREIGN if it was written before this job's creation time
 	 * OR sits in no directory this plan can write into — see `makeForeignKeyFilter`.
@@ -997,6 +1018,7 @@ export async function verifyJob(
 			const where = browsable(
 				plan.outputs.find((o) => o.key === outputKey),
 				`output "${outputKey}"`,
+				options.s3RoleBinding,
 			);
 			if (!where.ok) {
 				unbrowsable.push(where.reason);
@@ -1014,6 +1036,7 @@ export async function verifyJob(
 		const where = browsable(
 			plan.inputs.find((i) => i.key === ingest?.inputKey),
 			"the reference input",
+			options.s3RoleBinding,
 		);
 		if (ingest && where.ok) {
 			try {

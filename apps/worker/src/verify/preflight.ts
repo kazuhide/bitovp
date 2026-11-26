@@ -15,6 +15,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EncodingPlan, LiveChannelPlan } from "@bitovp/core";
 import {
+	CREDENTIAL_PROVIDER_SHAPES,
 	cipherFromEnv,
 	encodingPlanSchema,
 	liveChannelPlanSchema,
@@ -37,10 +38,13 @@ const PLACEHOLDER_ACCOUNT = "00000000-0000-4000-8000-00000000acc7";
 import type { AppPrismaClient, CredentialProvider } from "@bitovp/db";
 import { createCredentialStore } from "@bitovp/db";
 import { createBrowserForCredential } from "@bitovp/storage";
+import { pickByLabel } from "./harness-rails";
 
 /** A capability a scenario may depend on. */
 export type Capability =
 	| "S3"
+	/** Bitmovin assumes the role. The verification worker reads with a separate S3 credential. */
+	| "S3_ROLE_BASED"
 	| "AZURE"
 	/** GCS reached with an HMAC key pair — what the S3-compatible driver uses. */
 	| "GCS"
@@ -233,6 +237,7 @@ export type ScenarioPlan = {
 
 export type PreflightReport = {
 	capabilities: CapabilityState[];
+	s3RoleBinding?: S3RoleVerificationBinding;
 	scenarios: (ScenarioPlan & {
 		runnable: boolean;
 		blockedBy: Capability[];
@@ -309,6 +314,8 @@ export function capabilityOfIoKind(kind: string): Capability | undefined {
 			return "AKAMAI_NETSTORAGE";
 		case "S3":
 			return "S3";
+		case "S3_ROLE_BASED":
+			return "S3_ROLE_BASED";
 		default:
 			return undefined;
 	}
@@ -945,7 +952,23 @@ export type PreflightOptions = {
 	prisma: AppPrismaClient;
 	/** Label prefix the harness's own credentials carry. */
 	labelPrefix?: string;
+	s3Storage?: S3VerificationStorage;
 	log?: (line: string) => void;
+};
+
+export type S3VerificationStorage = {
+	s3CredentialLabel: string;
+	s3RoleCredentialLabel?: string;
+	inputBucket: string;
+	outputBucket: string;
+	sourceObject: string;
+};
+
+export type S3RoleVerificationBinding = {
+	roleCredentialId: string;
+	observerCredentialId: string;
+	inputBucket: string;
+	outputBucket: string;
 };
 
 /**
@@ -956,12 +979,9 @@ export type PreflightOptions = {
  *
  * : this was an if-chain over `provider: string`, and two of its
  * literals — `AWS_S3_ROLE` and `AZURE` — were values the enum has never
- * contained (`AWS_S3_ROLE_BASED`, `AZURE_BLOB`). Both branches were DEAD:
- * role-based AWS credentials fell through to `S3` only by luck of the first
- * condition, and an Azure credential could NEVER evidence the AZURE
- * capability, so the corpus's Azure SKIPs would have survived a working
- * credential. `string` is what hid it — tsc cannot reject an impossible
- * comparison it cannot see. Now the parameter is the enum and the switch is
+ * contained (`AWS_S3_ROLE_BASED`, `AZURE_BLOB`). An Azure credential could never
+ * evidence the AZURE capability. `string` hid the impossible comparison.
+ * The parameter now uses the enum and the switch is
  * exhaustive: adding a CredentialProvider member without deciding its
  * capability is a compile error, not a silent fall-through.
  */
@@ -970,8 +990,9 @@ export function capabilityOfProvider(
 ): Capability | undefined {
 	switch (provider) {
 		case "AWS_S3":
-		case "AWS_S3_ROLE_BASED":
 			return "S3";
+		case "AWS_S3_ROLE_BASED":
+			return "S3_ROLE_BASED";
 		case "AZURE_BLOB":
 			return "AZURE";
 		case "GCS_SERVICE_ACCOUNT":
@@ -1037,6 +1058,73 @@ export function bucketFromLabel(label: string): string | undefined {
 	return /\(([^)]+)\)/.exec(label)?.[1];
 }
 
+async function probeS3RoleBinding(
+	settings: S3VerificationStorage | undefined,
+	credentials: ReturnType<typeof createCredentialStore>,
+	rows: Awaited<ReturnType<ReturnType<typeof createCredentialStore>["list"]>>,
+	log: (line: string) => void,
+): Promise<S3RoleVerificationBinding | undefined> {
+	const label = settings?.s3RoleCredentialLabel;
+	if (!settings || !label) return undefined;
+	try {
+		const role = pickByLabel(
+			rows.filter(
+				(row) => row.provider === "AWS_S3_ROLE_BASED" && row.label === label,
+			),
+			label,
+			"S3 role verification credential",
+		);
+		const observer = pickByLabel(
+			rows.filter((row) => row.provider === "AWS_S3"),
+			settings.s3CredentialLabel,
+			"S3 verification observer",
+		);
+		if (
+			!role ||
+			!observer ||
+			!CREDENTIAL_PROVIDER_SHAPES.AWS_S3_ROLE_BASED.config.safeParse(
+				role.config,
+			).success
+		)
+			return undefined;
+		JSON.parse(await credentials.revealSecret(role.id));
+
+		const browser = createBrowserForCredential({
+			provider: observer.provider,
+			config: (observer.config ?? {}) as Record<string, unknown>,
+			secret: JSON.parse(await credentials.revealSecret(observer.id)) as Record<
+				string,
+				string
+			>,
+		});
+		try {
+			if (!browser.headObject || !browser.getObject) return undefined;
+			for (const bucket of new Set([
+				settings.inputBucket,
+				settings.outputBucket,
+			]))
+				await browser.listObjects({ bucket, prefix: "", limit: 1 });
+			await browser.headObject({
+				bucket: settings.inputBucket,
+				key: settings.sourceObject,
+			});
+		} finally {
+			browser.dispose?.();
+		}
+		return {
+			roleCredentialId: role.id,
+			observerCredentialId: observer.id,
+			inputBucket: settings.inputBucket,
+			outputBucket: settings.outputBucket,
+		};
+	} catch {
+		log(
+			"S3 role verification could not confirm the separate S3 observer and staged source",
+		);
+		return undefined;
+	}
+}
+
 export async function preflight(
 	options: PreflightOptions,
 ): Promise<PreflightReport> {
@@ -1048,9 +1136,21 @@ export async function preflight(
 	);
 
 	const evidence = new Map<Capability, string>();
+	const s3RoleBinding = await probeS3RoleBinding(
+		options.s3Storage,
+		credentials,
+		rows,
+		log,
+	);
+	if (s3RoleBinding) {
+		evidence.set(
+			"S3_ROLE_BASED",
+			"the role is configured and a separate S3 credential observed both test buckets and the source; the encoding run checks IAM trust",
+		);
+	}
 	for (const row of rows) {
 		const capability = capabilityOfProvider(row.provider);
-		if (!capability) {
+		if (!capability || capability === "S3_ROLE_BASED") {
 			continue;
 		}
 		if (capability === "KANTAR") {
@@ -1181,6 +1281,7 @@ export async function preflight(
 	 */
 	const ALL = Object.keys({
 		S3: true,
+		S3_ROLE_BASED: true,
 		AZURE: true,
 		GCS: true,
 		GCS_SERVICE_ACCOUNT: true,
@@ -1274,6 +1375,8 @@ export async function preflight(
 					};
 		}
 		const reason: Record<string, string> = {
+			S3_ROLE_BASED:
+				"configure VERIFY_S3_ROLE_BASED_LABEL for a verification role and a separate key-based observer for both test buckets and the staged source",
 			DOLBY_ASSETS:
 				"no Dolby masters registered — the owner supplies these (design D3, deferred)",
 			TYPED_SOURCE_ASSETS:
@@ -1308,6 +1411,7 @@ export async function preflight(
 
 	return {
 		capabilities,
+		...(s3RoleBinding ? { s3RoleBinding } : {}),
 		scenarios,
 		counts: {
 			runnable: scenarios.filter((s) => s.runnable).length,

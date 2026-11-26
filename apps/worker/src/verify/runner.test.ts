@@ -9,6 +9,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { BitmovinCallError } from "../orchestrator/ops/shared";
 import { ensureTerminal, resumeEligibility } from "./harness-rails";
+import { browsable } from "./job";
 import { capabilitiesFor, sourcesOf } from "./preflight";
 import type { RunReport } from "./runner";
 import {
@@ -172,6 +173,58 @@ const gated = plans.filter(
 const rewritable = plans.filter((p) => !gated.includes(p));
 
 describe("rewriteForRun — over the whole corpus", () => {
+	it("uses role credentials for provider operations and an independently observed bucket for verification", () => {
+		const fixture = plans.find(
+			({ name }) => name === "fixed-bitrate-hls-on-aws",
+		)?.plan;
+		if (!fixture) throw new Error("missing fixed-ladder fixture");
+		const plan = encodingPlanSchema.parse({
+			...fixture,
+			inputs: fixture.inputs.map((input) => ({
+				...input,
+				kind: "S3_ROLE_BASED",
+			})),
+			outputs: fixture.outputs.map((output) => ({
+				...output,
+				kind: "S3_ROLE_BASED",
+			})),
+		});
+		const binding = {
+			roleCredentialId: "00000000-0000-4000-8000-000000000033",
+			observerCredentialId: OPTIONS.credentialId,
+			inputBucket: OPTIONS.inputBucket,
+			outputBucket: OPTIONS.outputBucket,
+		};
+		expect(capabilitiesFor(plan, "role")).toContain("S3_ROLE_BASED");
+		expect(capabilitiesFor(plan, "role")).not.toContain("S3");
+		expect(() => rewriteForRun(plan, OPTIONS)).toThrow(/S3 role verification/);
+		const rewritten = rewriteForRun(plan, {
+			...OPTIONS,
+			s3RoleBinding: binding,
+		});
+		for (const [io, bucket] of [
+			[rewritten.inputs[0], binding.inputBucket],
+			[rewritten.outputs[0], binding.outputBucket],
+		] as const) {
+			expect(io).toMatchObject({
+				kind: "S3_ROLE_BASED",
+				credentialId: binding.roleCredentialId,
+				bucket,
+			});
+			expect(browsable(io, "fixture")).toMatchObject({ ok: false });
+			expect(
+				browsable(io, "fixture", {
+					...binding,
+					roleCredentialId: "different-role",
+				}),
+			).toMatchObject({ ok: false });
+			expect(browsable(io, "fixture", binding)).toEqual({
+				ok: true,
+				bucket,
+				credentialId: binding.observerCredentialId,
+			});
+		}
+	});
 	it("refuses to replace HDR10+ video and metadata with the staged SDR file", () => {
 		const fixture = rewritable[0]?.plan;
 		if (!fixture) throw new Error("Missing source fixture");

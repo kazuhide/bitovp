@@ -225,7 +225,7 @@ describe("deadJobScheduleWrites (ledger #238)", () => {
 		expect(
 			deadJobScheduleWrites(
 				{
-					id: `sched-${SCHEDULE}`,
+					id: `sched-${SCHEDULE}-start-9`,
 					attemptsMade: 1,
 					name: "live-channel",
 					data: {
@@ -250,6 +250,39 @@ describe("deadJobScheduleWrites (ledger #238)", () => {
 				note: expect.stringContaining("lock lost"),
 			},
 		]);
+	});
+
+	it("refuses a START failure whose queue generation or planned run is missing or mismatched", () => {
+		const data = {
+			liveChannelId: CHANNEL,
+			action: "provision",
+			plannedLiveChannelRunId: RUN,
+			provisionFenceVersion: 9,
+		};
+		const valid = {
+			id: `sched-${SCHEDULE}-start-9`,
+			attemptsMade: 2,
+			opts: { attempts: 2 },
+			data,
+		};
+		expect(
+			deadJobScheduleWrites(
+				{ ...valid, data: { ...data, provisionFenceVersion: 8 } },
+				"old delivery",
+			),
+		).toEqual([]);
+		expect(
+			deadJobScheduleWrites(
+				{ ...valid, data: { ...data, provisionFenceVersion: undefined } },
+				"missing generation",
+			),
+		).toEqual([]);
+		expect(
+			deadJobScheduleWrites(
+				{ ...valid, data: { ...data, plannedLiveChannelRunId: undefined } },
+				"missing run",
+			),
+		).toEqual([]);
 	});
 
 	it("an ABSENT action is a provision — the job schema's own default", () => {
@@ -524,7 +557,7 @@ describe("recordDeadJobScheduleOutcomes", () => {
 		await recordDeadJobScheduleOutcomes(
 			prisma,
 			{
-				id: `sched-${SCHEDULE_ID}`,
+				id: `sched-${SCHEDULE_ID}-start-2`,
 				attemptsMade: 2,
 				opts: { attempts: 2 },
 				data: {

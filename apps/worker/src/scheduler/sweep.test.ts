@@ -718,6 +718,7 @@ function makeStore(
 							deadlineNotifiedAt?: null;
 							dispatchedAt?: null;
 							liveChannelRunId?: string | null;
+							startAdmissionFenceVersion?: number | null;
 							stagedAt?: null;
 							stageDispatchedAt?: null;
 							outcome?: { in: string[] };
@@ -823,6 +824,12 @@ function makeStore(
 							) {
 								continue;
 							}
+							if (
+								"startAdmissionFenceVersion" in args.where &&
+								(row.startAdmissionFenceVersion ?? null) !==
+									args.where.startAdmissionFenceVersion
+							)
+								continue;
 							Object.assign(row, args.data);
 							count += 1;
 						}
@@ -1255,7 +1262,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
-			`sched-${ROW_ID}`,
+			`sched-${ROW_ID}-start-1`,
 		);
 		expect(emitEvent).toHaveBeenCalledWith(
 			expect.objectContaining({ kind: "SCHEDULE_FIRED" }),
@@ -1509,7 +1516,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
-			`sched-${ROW_ID}`,
+			`sched-${ROW_ID}-start-1`,
 		);
 		// The restart the vendor cannot do is NEVER enqueued — the inverted
 		// direction of the old pin.
@@ -1553,7 +1560,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
-			`sched-${ROW_ID}`,
+			`sched-${ROW_ID}-start-1`,
 		);
 	});
 
@@ -1594,7 +1601,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
-			`sched-${ROW_ID}`,
+			`sched-${ROW_ID}-start-1`,
 		);
 
 		// The CREATED × live-run cell stays a WAIT — a mid-write world.
@@ -1662,7 +1669,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 					provisionFenceVersion: 1,
 					plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 				},
-				`sched-${ROW_ID}`,
+				`sched-${ROW_ID}-start-1`,
 			);
 		}
 	});
@@ -1726,7 +1733,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
-			`sched-${ROW_ID}`,
+			`sched-${ROW_ID}-start-1`,
 		);
 	});
 
@@ -1934,7 +1941,7 @@ describe("START — dispatched by CHANNEL state (review-190 C1)", () => {
 				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
-			`sched-${ROW_ID}`,
+			`sched-${ROW_ID}-start-1`,
 		);
 	});
 
@@ -3223,10 +3230,10 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
-			`sched-${ROW_ID}`,
+			`sched-${ROW_ID}-start-1`,
 		);
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
-		expect(store.rows[0]?.dispatchJobId).toBe(`sched-${ROW_ID}`);
+		expect(store.rows[0]?.dispatchJobId).toBe(`sched-${ROW_ID}-start-1`);
 	});
 
 	it("re-air START (STOPPED channel): the fresh run row and admission generation survive a lost provision handoff", async () => {
@@ -3257,7 +3264,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
-			`sched-${ROW_ID}`,
+			`sched-${ROW_ID}-start-1`,
 		);
 		expect(store.runs).toHaveLength(2);
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
@@ -3526,20 +3533,52 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
 	});
 
-	it("a handoff that DID land is not run twice — the job id is derived, so BullMQ dedupes", async () => {
+	it("a retained legacy START does not block a bound START, whose retries still dedupe", async () => {
+		const runId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
 		const store = makeStore(
-			[makeRow({ status: "FIRED", firedAt: new Date(1_900_000) })],
-			[makeChannel({ status: "PROVISIONING" })],
+			[
+				makeRow({
+					status: "FIRED",
+					firedAt: new Date(1_900_000),
+					liveChannelRunId: runId,
+					startAdmissionFenceVersion: 2,
+				}),
+			],
+			[makeChannel({ status: "PROVISIONING", liveEffectFenceVersion: 2 })],
 		);
+		store.runs.push({
+			id: runId,
+			seq: 1,
+			liveChannelId: CH,
+			status: "PROVISIONING",
+		});
 		const queue = dedupingQueue();
+		const legacyJobId = `sched-${ROW_ID}`;
+		const currentJobId = `sched-${ROW_ID}-start-2`;
+		const legacyJob = { liveChannelId: CH, action: "provision" };
+		await queue.add(legacyJob, legacyJobId);
 		const { sweep } = makeSweep(store, { enqueue: queue.add });
 		expect(await sweep.dispatchPending()).toBe(1);
-		expect(queue.added).toHaveLength(1);
-		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
+		const deliveries = [
+			{ job: legacyJob, jobId: legacyJobId },
+			{
+				job: {
+					...legacyJob,
+					plannedLiveChannelRunId: runId,
+					provisionFenceVersion: 2,
+				},
+				jobId: currentJobId,
+			},
+		];
+		expect(queue.added).toEqual(deliveries);
+		expect(store.rows[0]).toMatchObject({
+			dispatchedAt: expect.any(Date),
+			dispatchJobId: currentJobId,
+		});
 
 		// A stamped row leaves the scan entirely.
 		expect(await sweep.dispatchPending()).toBe(0);
-		expect(queue.added).toHaveLength(1);
+		expect(queue.added).toEqual(deliveries);
 
 		// And when the STAMP itself was the write that was lost, the re-add
 		// resolves against the job already in the queue rather than running
@@ -3550,9 +3589,51 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 			row.dispatchJobId = null;
 		}
 		expect(await sweep.dispatchPending()).toBe(1);
-		expect(queue.added).toHaveLength(1);
-		expect(queue.added[0]?.jobId).toBe(`sched-${ROW_ID}`);
-		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
+		expect(queue.added).toEqual(deliveries);
+		expect(store.rows[0]).toMatchObject({
+			dispatchedAt: expect.any(Date),
+			dispatchJobId: currentJobId,
+		});
+	});
+
+	it("a late START enqueue acknowledgment cannot stamp a newer admission of the same run", async () => {
+		const runId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
+		const row = makeRow({
+			status: "FIRED",
+			firedAt: new Date(1_900_000),
+			liveChannelRunId: runId,
+			startAdmissionFenceVersion: 2,
+		});
+		const channel = makeChannel({
+			status: "PROVISIONING",
+			liveEffectFenceVersion: 2,
+		});
+		const store = makeStore([row], [channel]);
+		const { sweep, enqueue } = makeSweep(store, {
+			enqueue: async (_job, jobId) => {
+				if (jobId === `sched-${ROW_ID}-start-2`) {
+					row.startAdmissionFenceVersion = 3;
+					channel.liveEffectFenceVersion = 3;
+				}
+			},
+		});
+		await sweep.dispatchPending();
+		expect(enqueue).toHaveBeenCalledWith(
+			expect.objectContaining({ provisionFenceVersion: 2 }),
+			`sched-${ROW_ID}-start-2`,
+		);
+		expect(row).toMatchObject({
+			startAdmissionFenceVersion: 3,
+			dispatchedAt: null,
+			dispatchJobId: null,
+		});
+
+		await sweep.dispatchPending();
+		expect(enqueue).toHaveBeenCalledWith(
+			expect.objectContaining({ provisionFenceVersion: 3 }),
+			`sched-${ROW_ID}-start-3`,
+		);
+		expect(row.dispatchJobId).toBe(`sched-${ROW_ID}-start-3`);
 	});
 
 	it("the BOOT pass recovers a stale row and leaves a fresh one to the tick", async () => {
@@ -3655,7 +3736,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 		await sweep();
 		expect(store.rows[0]).toMatchObject({
 			status: "FIRED",
-			dispatchJobId: `sched-${ROW_ID}`,
+			dispatchJobId: `sched-${ROW_ID}-start-1`,
 		});
 		expect(store.rows[0]?.dispatchedAt).toBeInstanceOf(Date);
 		// Even well past the grace, a stamped row is out of scope.
@@ -3695,7 +3776,7 @@ describe("the queue-handoff outbox (ledger #236)", () => {
 				liveChannelId: CH,
 				plannedLiveChannelRunId: run?.id,
 			},
-			`sched-${ROW_ID}`,
+			`sched-${ROW_ID}-start-1`,
 		);
 	});
 });
@@ -5183,7 +5264,7 @@ describe("generation bind — a row fires only into the airing it was armed for 
 				provisionFenceVersion: 1,
 				plannedLiveChannelRunId: store.rows[0]?.liveChannelRunId,
 			},
-			`sched-${ROW_ID}`,
+			`sched-${ROW_ID}-start-1`,
 		);
 	});
 

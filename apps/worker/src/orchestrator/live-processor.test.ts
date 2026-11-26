@@ -6347,7 +6347,10 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 		});
 	}
 
-	function provisionScheduled(h: ReturnType<typeof setup>) {
+	function provisionScheduled(
+		h: ReturnType<typeof setup>,
+		queueId = `sched-${SCHEDULE_ID}-start-1`,
+	) {
 		if (!h.runRows.length)
 			h.runRows.push({
 				id: LIVE_TO_VOD_RUN_ID,
@@ -6367,9 +6370,18 @@ describe("schedule delivery outcomes (ledger #238)", () => {
 				plannedLiveChannelRunId: LIVE_TO_VOD_RUN_ID,
 				provisionFenceVersion: 1,
 			},
-			`sched-${SCHEDULE_ID}`,
+			queueId,
 		);
 	}
+
+	it("skips a scheduled START whose queue generation differs from its payload", async () => {
+		const h = setup();
+		await expect(
+			provisionScheduled(h, `sched-${SCHEDULE_ID}-start-2`),
+		).resolves.toMatchObject({ status: "SKIPPED_STALE_GENERATION" });
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+		expect(h.liveSchedule.updateMany).not.toHaveBeenCalled();
+	});
 
 	it("preserves delivered START after normal stop and old provision redelivery", async () => {
 		const h = setup();

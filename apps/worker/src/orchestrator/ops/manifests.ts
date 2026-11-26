@@ -393,6 +393,8 @@ export function createManifestOps(
 							m.outputs,
 						),
 					"HLS",
+					options.withholdProviderDetails ||
+						Boolean(p.destination.roleOutputIds?.length),
 				);
 			return adoptOrCreateManifest({
 				label: "HLS",
@@ -510,6 +512,8 @@ export function createManifestOps(
 							m.outputs,
 						),
 					"DASH",
+					options.withholdProviderDetails ||
+						Boolean(p.destination.roleOutputIds?.length),
 				);
 			return adoptOrCreateManifest({
 				label: "DASH",
@@ -870,6 +874,8 @@ export function createManifestOps(
 							m.outputs,
 						),
 					"Smooth",
+					options.withholdProviderDetails ||
+						Boolean(p.destination.roleOutputIds?.length),
 				);
 			return adoptOrCreateManifest({
 				label: "Smooth",

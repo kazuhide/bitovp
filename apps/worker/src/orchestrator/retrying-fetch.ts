@@ -67,6 +67,8 @@ export type RetryingFetchOptions = {
 	warn?: (message: string) => void;
 	/** Injected for tests; defaults to global `fetch`. */
 	fetchImpl?: SdkFetch;
+	/** Protected jobs keep request URLs and transport errors out of retry logs. */
+	withholdProviderDetails?: boolean;
 };
 
 const DEFAULT_ATTEMPTS = 3;
@@ -178,8 +180,10 @@ export function createRetryingFetch(
 						? String((init as { method?: unknown }).method ?? "GET")
 						: "GET";
 				warn(
-					`[sdk-fetch] ${method} ${url} failed at the transport layer ` +
-						`(${errorSummary(err)}); retrying ${attempt}/${attempts - 1}`,
+					options.withholdProviderDetails
+						? `[sdk-fetch] ${method} failed at the transport layer; retrying ${attempt}/${attempts - 1}`
+						: `[sdk-fetch] ${method} ${url} failed at the transport layer ` +
+								`(${errorSummary(err)}); retrying ${attempt}/${attempts - 1}`,
 				);
 				await sleep(delayMs * 2 ** (attempt - 1));
 			}

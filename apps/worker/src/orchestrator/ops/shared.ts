@@ -317,6 +317,24 @@ export function colorConfig(
  */
 export const MANIFEST_SCAN_PAGES = 5;
 
+/** Keep exact lookup diagnostics public-safe before adoption can log or wrap them. */
+export async function readManifestLookup<T>(
+	read: () => Promise<T>,
+	path: string,
+	withholdProviderDetails: boolean | undefined,
+): Promise<T> {
+	if (!withholdProviderDetails) return read();
+	try {
+		return await read();
+	} catch (error) {
+		throw new BitmovinCallError(
+			"GET",
+			path,
+			providerErrorWithoutDetails(error),
+		);
+	}
+}
+
 /**
  * The HLS scanner's shape, generalized (: a lost-response resume
  * orphaned a DASH/Smooth manifest where HLS adopted — the asymmetry the #163
@@ -330,13 +348,14 @@ export async function findManifestByOutput<M extends { id?: string }>(
 	}) => Promise<{ items?: M[] }>,
 	matches: (m: M) => boolean,
 	label: string,
+	withholdProviderDetails?: boolean,
 ): Promise<string | undefined> {
 	for (let page = 0; page < MANIFEST_SCAN_PAGES; page++) {
-		const result = await list({
-			limit: 100,
-			offset: page * 100,
-			sort: "createdAt:DESC",
-		});
+		const result = await readManifestLookup(
+			() => list({ limit: 100, offset: page * 100, sort: "createdAt:DESC" }),
+			`/encoding/manifests/${label.toLowerCase()}`,
+			withholdProviderDetails,
+		);
 		const items = result.items ?? [];
 		const hit = items.filter(matches).find((m) => Boolean(m.id));
 		if (hit?.id) {

@@ -1929,6 +1929,7 @@ export function createBitmovinSdkOps(
 		: options.monitoringSignal
 			? createMonitoringFetch(options.monitoringSignal)
 			: createRetryingFetch({
+					withholdProviderDetails: options.withholdProviderDetails,
 					// A later denial cannot settle an earlier lost POST. Journaled Live
 					// children reconcile that first attempt through their exact stamp.
 					retryMutations: () =>

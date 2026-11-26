@@ -103,37 +103,67 @@ export function createIoOps(
 			let complete = false;
 			try {
 				const limit = 100;
+				const pageCount = receipt.lookupName ? 1 : 100;
+				const seen = new Set<string>();
 				let total: number | undefined;
-				for (let offset = 0; ; offset += limit) {
+				for (let index = 0; index < pageCount; index++) {
+					const offset = index * limit;
 					const page = await roleApi.list({ name: lookupName, offset, limit });
 					const items = page.items;
-					if (!items) break;
-					const reported =
-						page.totalCount ??
-						(items.length < limit ? offset + items.length : undefined);
-					// Freeze the first page's finite total for older receipts created
-					// with the authored name. Later drift requires a new read.
-					total ??= reported;
 					if (
-						total === undefined ||
-						!Number.isSafeInteger(total) ||
-						total < offset ||
-						reported !== total ||
-						items.length !== Math.min(limit, total - offset) ||
-						(receipt.lookupName && total > limit)
+						!Array.isArray(items) ||
+						items.length > limit ||
+						(page.offset !== undefined && page.offset !== offset) ||
+						(page.limit !== undefined && page.limit !== limit)
 					)
 						break;
+					const reported = page.totalCount;
+					if (reported !== undefined) {
+						if (
+							!Number.isSafeInteger(reported) ||
+							(total !== undefined && total !== reported)
+						)
+							break;
+						total = reported;
+					}
+					if (
+						total !== undefined &&
+						(total < offset ||
+							items.length !== Math.min(limit, total - offset) ||
+							(receipt.lookupName && total > limit))
+					)
+						break;
+					// The SDK normalizes omitted/null items to []. Only a numeric
+					// total can establish a complete empty page in that projection.
+					if (items.length === 0 && total === undefined) break;
+					const terminal =
+						total === undefined
+							? items.length < limit
+							: offset + items.length === total;
+					if (terminal && page.next) break;
 					for (const item of items) {
 						if (
-							!item.id ||
+							typeof item?.id !== "string" ||
+							!item.id.trim() ||
+							seen.has(item.id)
+						) {
+							throw new Error(
+								"Role storage inventory contains an invalid or repeated resource ID",
+							);
+						}
+						seen.add(item.id);
+						if (
 							(item.name !== undefined && item.name !== lookupName) ||
 							(item.description !== undefined &&
 								item.description !== description)
 						)
 							continue;
 						const candidate = await roleApi.get(item.id);
+						if (candidate.id !== item.id)
+							throw new Error(
+								"Role storage detail returned a different resource ID",
+							);
 						if (
-							candidate.id !== item.id ||
 							candidate.description !== description ||
 							candidate.name !== lookupName ||
 							candidate.bucketName !== p.bucketName ||
@@ -146,7 +176,7 @@ export function createIoOps(
 							);
 						match = candidate.id;
 					}
-					if (offset + items.length === total) {
+					if (terminal) {
 						complete = true;
 						break;
 					}

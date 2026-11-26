@@ -25,7 +25,11 @@ BEGIN
        AND s."firedAt" IS NOT NULL AND s."stopAdmissionFenceVersion" IS NULL AND s."stopProviderEncodingId" IS NULL
        AND (s."dispatchJobId" IS NULL OR s."dispatchJobId" = 'sched-' || s.id::text)
        AND s."outcomeEvidenceKind" = 'STALE_GENERATION_REFUSAL'
-       AND s."outcomeNote" IN ('the live effect generation changed after admission', 'the live effect generation changed while the claim was acquired')
+       AND s."outcomeNote" IN (
+         'the live effect generation changed after admission',
+         'the live effect generation changed while the claim was acquired',
+         'the planned live run or provider encoding is no longer current'
+       )
        AND NOT EXISTS (
          SELECT 1 FROM "LiveSchedule" other WHERE other."liveChannelId" = c.id AND other."liveChannelRunId" = r.id
            AND other.action = 'STOP' AND other.status = 'FIRED' AND other.outcome IN ('PENDING', 'UNKNOWN')

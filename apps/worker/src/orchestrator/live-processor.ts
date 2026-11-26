@@ -936,6 +936,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 		monitoringSignal?: AbortSignal,
 		manifestStamp?: CreateStamp,
 		stopEffect?: LiveEffectFence,
+		onEncodingStopAccepted?: AisaLiveControl["onEncodingStopAccepted"],
 	): Promise<SdkOps> {
 		const accountId = liveChannelAccountId(row);
 		if (!accountId) {
@@ -967,6 +968,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 				sleep: deps.sleep,
 				...(stopEffect
 					? {
+							onEncodingStopAccepted,
 							reserveStop: async (
 								service: "analysis" | "encoding",
 								id: string,
@@ -1400,8 +1402,18 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 			});
 			let observedPriorSend = false;
 			let acceptedScheduleAdmission: number | undefined;
+			const recordPrimaryStopAcceptance = (id: string) => {
+				if (effect?.claim.providerEncodingId === id)
+					acceptedScheduleAdmission = effect.scheduledStopAdmission;
+			};
 			try {
-				const sdk = await sdkFor(row, undefined, undefined, effect);
+				const sdk = await sdkFor(
+					row,
+					undefined,
+					undefined,
+					effect,
+					recordPrimaryStopAcceptance,
+				);
 				/**
 				 * Stop EVERY encoding this channel knows about, and CONFIRM each one.
 				 *
@@ -1561,8 +1573,7 @@ export function createLiveChannelActions(deps: LiveChannelDeps) {
 							await effect.assertCurrent("AISA STOP preflight");
 						else await effect?.beforeSend(`Stop encoding ${id}`, id);
 						await sdk.stopLiveEncoding(id);
-						if (!managedStop && effect?.claim.providerEncodingId === id)
-							acceptedScheduleAdmission = effect.scheduledStopAdmission;
+						if (!managedStop) recordPrimaryStopAcceptance(id);
 					} catch (stopErr) {
 						/**
 						 * The PRIMARY id's failure still throws, as it always did.

@@ -23,7 +23,8 @@ export function isLiveStopAdmissionFence(
 /**
  * Called while committing the channel's exact terminal transition. Each matching
  * schedule was handed off and independently observed exhausted before this STOP
- * won the channel. Without its own effect claim its provider outcome is unknown.
+ * won the channel. A missing claim or an exact pre-send failure leaves the
+ * schedule's provider outcome unknown.
  */
 export async function settleExhaustedStopSchedules(
 	tx: AppTransactionClient,
@@ -55,7 +56,18 @@ export async function settleExhaustedStopSchedules(
 					AND s."stopAdmissionFenceVersion" = ${input.admissionFence}))
 			AND NOT EXISTS (
 				SELECT 1 FROM "LiveEffectClaim" c
-				WHERE c."scheduleId" = s.id OR c."idempotencyKey" = 'schedule:' || s.id::text || ':stop'
+				WHERE (c."scheduleId" = s.id OR c."idempotencyKey" = 'schedule:' || s.id::text || ':stop')
+					AND NOT (
+						c."scheduleId" IS NOT DISTINCT FROM s.id
+						AND c."idempotencyKey" = 'schedule:' || s.id::text || ':stop'
+						AND c."liveChannelId" = s."liveChannelId"
+						AND c."liveChannelRunId" = s."liveChannelRunId"
+						AND c."providerEncodingId" = ${input.providerEncodingId}
+						AND c."action" = 'STOP' AND c."state" = 'FAILED'
+						AND c."generation" = ${input.admissionFence}
+						AND cardinality(c."stopSendEncodingIds") = 0
+						AND c."stopAnalysisSendId" IS NULL AND c."stopOutcomeEvidence" IS NULL
+					)
 			)
 	`;
 }

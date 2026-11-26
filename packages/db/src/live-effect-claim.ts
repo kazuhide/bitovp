@@ -128,6 +128,8 @@ export type ResolveLiveEffectsAfterConfirmedStopInput = {
 		bitmovinAccountId: string;
 		providerStatus: string;
 		encodings?: readonly { id: string; status: string }[];
+		/** Recover an interrupted legacy failure without acknowledging a send. */
+		exhaustedFailedSchedule?: { id: string; claimToken: string };
 	};
 };
 
@@ -1812,6 +1814,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				await confirmOwnedSchedule();
 				return { kind: "ALREADY_ACKED" };
 			}
+			const exhausted = proof?.exhaustedFailedSchedule;
 			if (
 				!channel ||
 				!run ||
@@ -1819,12 +1822,76 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				channel.bitmovinEncodingId !== input.providerEncodingId ||
 				!liveStopRunOwnsEncoding(run, input.providerEncodingId) ||
 				stopClaim.generation !== channel.liveEffectFenceVersion ||
-				!["DISPATCHING", "AMBIGUOUS"].includes(stopClaim.state)
+				(!exhausted && !["DISPATCHING", "AMBIGUOUS"].includes(stopClaim.state))
 			)
 				return blocked(
 					"the exact STOP claim is not the current unresolved effect",
 				);
 			const stopGeneration = stopClaim.generation;
+			if (exhausted) {
+				if (
+					owner ||
+					channel.status !== "STOPPING" ||
+					channel.legacyAdmissionFenceVersion !== stopGeneration ||
+					stopClaim.token !== exhausted.claimToken ||
+					stopClaim.scheduleId !== exhausted.id ||
+					stopClaim.idempotencyKey !== `schedule:${exhausted.id}:stop` ||
+					!legacyStopFailedBeforeSend(stopClaim, channel, run)
+				)
+					return blocked(
+						"the exhausted legacy STOP no longer owns this broadcast",
+					);
+				const [schedule, other] = await Promise.all([
+					tx.liveSchedule.findFirst({
+						where: {
+							id: exhausted.id,
+							liveChannelId: input.liveChannelId,
+							liveChannelRunId: run.id,
+							action: "STOP",
+							status: "FIRED",
+							legacyStopExhaustedFence: stopGeneration,
+							AND: [
+								{
+									OR: [
+										{ outcome: "UNKNOWN" },
+										{ outcome: "PENDING", dispatchedAt: { not: null } },
+									],
+								},
+								{
+									OR: [
+										{ dispatchJobId: null },
+										{ dispatchJobId: `sched-${exhausted.id}` },
+									],
+								},
+								{
+									OR: [
+										{
+											stopProviderEncodingId: null,
+											stopAdmissionFenceVersion: null,
+										},
+										{
+											stopProviderEncodingId: input.providerEncodingId,
+											stopAdmissionFenceVersion: stopGeneration,
+										},
+									],
+								},
+							],
+						},
+						select: { id: true },
+					}),
+					tx.liveSchedule.findFirst({
+						where: {
+							liveChannelId: input.liveChannelId,
+							...competingScheduledStop(exhausted.id, run.id, stopGeneration),
+						},
+						select: { id: true },
+					}),
+				]);
+				if (!schedule || other)
+					return blocked(
+						"the exhausted legacy STOP no longer owns the schedule handoff",
+					);
+			}
 			const terminal = new Map(
 				(owner?.encodings ?? proof?.encodings ?? []).map(({ id, status }) => [
 					id,
@@ -1876,6 +1943,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 					LIVE_EFFECT_OPEN_STATES.some((state) => state === c.state),
 			);
 			if (
+				(exhausted && stops.length > 0) ||
 				stops.some(
 					(c) =>
 						c.providerEncodingId !== input.providerEncodingId ||
@@ -1931,7 +1999,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				if (
 					proof.generation !== stopGeneration ||
 					liveChannelAccountId(channel) !== proof.bitmovinAccountId ||
-					!canObserveLiveStop(stopClaim, channel, input.at) ||
+					(!exhausted && !canObserveLiveStop(stopClaim, channel, input.at)) ||
 					!(
 						matchingRun ||
 						terminalHeartbeat ||
@@ -2027,6 +2095,7 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 							providerEncodingId: input.providerEncodingId,
 							action: "STOP",
 							generation: stopGeneration,
+							...(exhausted && { token: exhausted.claimToken }),
 							state: {
 								in: [stopClaim.state],
 							},
@@ -2080,43 +2149,45 @@ async function resolveLiveEffectsAfterConfirmedStopOnce(
 				if (projected.count !== 1)
 					throw new Error("LIVE_STOP_RECONCILIATION_RUN_FENCE_LOST");
 			}
-			const acknowledged = await tx.liveEffectClaim.updateMany({
-				where: {
-					id: input.stopClaimId,
-					idempotencyKey: input.stopIdempotencyKey,
-					liveChannelId: input.liveChannelId,
-					liveChannelRunId: input.liveChannelRunId,
-					providerEncodingId: input.providerEncodingId,
-					action: "STOP",
-					generation: stopGeneration,
-					state: { in: [stopClaim.state] },
-					// Keep the ownership predicate on the ACK itself as a second fence. The
-					// channel row is already write-locked above against re-air admission.
-					liveChannel: {
-						is: {
-							status: confirmedStatus,
-							error: confirmedError,
-							bitmovinEncodingId: input.providerEncodingId,
-							liveEffectFenceVersion: stopGeneration + 1,
+			if (!exhausted) {
+				const acknowledged = await tx.liveEffectClaim.updateMany({
+					where: {
+						id: input.stopClaimId,
+						idempotencyKey: input.stopIdempotencyKey,
+						liveChannelId: input.liveChannelId,
+						liveChannelRunId: input.liveChannelRunId,
+						providerEncodingId: input.providerEncodingId,
+						action: "STOP",
+						generation: stopGeneration,
+						state: { in: [stopClaim.state] },
+						// Keep the ownership predicate on the ACK itself as a second fence. The
+						// channel row is already write-locked above against re-air admission.
+						liveChannel: {
+							is: {
+								status: confirmedStatus,
+								error: confirmedError,
+								bitmovinEncodingId: input.providerEncodingId,
+								liveEffectFenceVersion: stopGeneration + 1,
+							},
 						},
 					},
-				},
-				data: {
-					state: "ACKED",
-					...(legacyFailure ? { stopOutcomeEvidence: legacyFailure } : {}),
-					acknowledgedAt: input.at,
-					...(proof && !stopClaim.failure && channel.error
-						? { failure: channel.error }
-						: {}),
-					...(confirmedError && !stopClaim.failure
-						? { failure: confirmedError }
-						: {}),
-				},
-			});
-			if (acknowledged.count !== 1) {
-				// Throw so the transaction rolls back the fence increment. Redelivery
-				// re-runs authoritative readback and never sends a second provider STOP.
-				throw new Error("LIVE_STOP_RECONCILIATION_ACK_FENCE_LOST");
+					data: {
+						state: "ACKED",
+						...(legacyFailure ? { stopOutcomeEvidence: legacyFailure } : {}),
+						acknowledgedAt: input.at,
+						...(proof && !stopClaim.failure && channel.error
+							? { failure: channel.error }
+							: {}),
+						...(confirmedError && !stopClaim.failure
+							? { failure: confirmedError }
+							: {}),
+					},
+				});
+				if (acknowledged.count !== 1) {
+					// Throw so the transaction rolls back the fence increment. Redelivery
+					// re-runs authoritative readback and never sends a second provider STOP.
+					throw new Error("LIVE_STOP_RECONCILIATION_ACK_FENCE_LOST");
+				}
 			}
 			for (const sibling of stops.filter((c) => c.id !== input.stopClaimId)) {
 				const finished = await tx.liveEffectClaim.updateMany({

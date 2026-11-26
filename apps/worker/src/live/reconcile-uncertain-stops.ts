@@ -204,6 +204,26 @@ export function createUncertainStopReconciler(
 								activeTargets.add(id);
 						}
 						if (activeTargets.size && resumeUnsent) {
+							// The next owner CASes the current claim generation. Keep the
+							// outbox's original fence on the job for its delivery receipt.
+							const schedule =
+								claim.scheduleId &&
+								claim.idempotencyKey === `schedule:${claim.scheduleId}:stop`
+									? await deps.prisma.liveSchedule.findFirst({
+											where: {
+												id: claim.scheduleId,
+												liveChannelId: claim.liveChannelId,
+												liveChannelRunId: run.id,
+												action: "STOP",
+												status: "FIRED",
+												dispatchedAt: { not: null },
+												dispatchJobId: `sched-${claim.scheduleId}`,
+												stopProviderEncodingId: claim.providerEncodingId,
+												stopAdmissionFenceVersion: { lt: claim.generation },
+											},
+											select: { stopAdmissionFenceVersion: true },
+										})
+									: null;
 							// Re-enter the original exact intent. beginLiveEffect fences owner
 							// takeover; the per-ID journal suppresses every prior reservation.
 							await resumeUnsent(
@@ -216,7 +236,8 @@ export function createUncertainStopReconciler(
 									effect: {
 										action: "STOP",
 										idempotencyKey: claim.idempotencyKey,
-										admissionFenceVersion: claim.generation,
+										admissionFenceVersion:
+											schedule?.stopAdmissionFenceVersion ?? claim.generation,
 										liveChannelRunId: run.id,
 										providerEncodingId: claim.providerEncodingId,
 										...(claim.scheduleId

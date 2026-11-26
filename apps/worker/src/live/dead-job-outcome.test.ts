@@ -105,6 +105,7 @@ describe("manual STOP final-delivery projection", () => {
 			: null;
 		const updateMany = vi.fn(async () => ({ count: 1 }));
 		const tx = {
+			$queryRaw: vi.fn(async () => []),
 			liveChannel: {
 				findUnique: vi.fn(async () => channel),
 				updateMany,
@@ -114,6 +115,7 @@ describe("manual STOP final-delivery projection", () => {
 				updateMany: vi.fn(async () => ({ count: 1 })),
 			},
 			liveEffectClaim: { findUnique: vi.fn(async () => claim) },
+			liveSchedule: { findUnique: vi.fn(async () => null) },
 		};
 		const prisma = {
 			...tx,

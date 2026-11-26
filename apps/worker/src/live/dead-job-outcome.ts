@@ -322,7 +322,14 @@ export async function recordFinalStopFailure(
 	);
 
 	const result = await prisma.$transaction(async (tx) => {
-		const [channel, currentRun, claim] = await Promise.all([
+		// A refire reuses the job key. Read its receipt under the same channel
+		// lock that guards schedule admission and effect generation changes.
+		const scheduleId = intent.scheduleId;
+		if (scheduleId) {
+			await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id = ${intent.liveChannelId}::uuid FOR UPDATE`;
+			await tx.$queryRaw`SELECT id FROM "LiveSchedule" WHERE id = ${scheduleId}::uuid FOR UPDATE`;
+		}
+		const [channel, currentRun, claim, schedule] = await Promise.all([
 			tx.liveChannel.findUnique({
 				where: { id: intent.liveChannelId },
 				select: {
@@ -356,14 +363,37 @@ export async function recordFinalStopFailure(
 					action: true,
 				},
 			}),
+			scheduleId
+				? tx.liveSchedule.findUnique({
+						where: { id: scheduleId },
+						select: {
+							liveChannelId: true,
+							liveChannelRunId: true,
+							action: true,
+							stopAdmissionFenceVersion: true,
+							stopProviderEncodingId: true,
+						},
+					})
+				: null,
 		]);
+		const stamped =
+			schedule?.stopAdmissionFenceVersion != null ||
+			schedule?.stopProviderEncodingId != null;
 		if (
 			!channel ||
 			currentRun?.id !== intent.liveChannelRunId ||
 			channel.bitmovinEncodingId !== intent.providerEncodingId ||
 			!["RUNNING", "STOPPING", "ERROR"].includes(currentRun.status) ||
 			(currentRun.bitmovinEncodingId ?? channel.bitmovinEncodingId) !==
-				intent.providerEncodingId
+				intent.providerEncodingId ||
+			(schedule &&
+				(schedule.liveChannelId !== intent.liveChannelId ||
+					schedule.liveChannelRunId !== currentRun.id ||
+					schedule.action !== "STOP" ||
+					(stamped &&
+						(schedule.stopAdmissionFenceVersion !==
+							intent.admissionFenceVersion ||
+							schedule.stopProviderEncodingId !== intent.providerEncodingId))))
 		) {
 			return { projected: false as const };
 		}
@@ -382,7 +412,13 @@ export async function recordFinalStopFailure(
 				claim.liveChannelId !== intent.liveChannelId ||
 				claim.liveChannelRunId !== intent.liveChannelRunId ||
 				(!oldAdmission &&
-					claim.providerEncodingId !== intent.providerEncodingId)
+					claim.providerEncodingId !== intent.providerEncodingId) ||
+				// The legacy queue has no admission stamp. Each reattempt advances
+				// both counters from the original generation on a scheduled key.
+				(scheduleId &&
+					!unboundSchedule &&
+					!stamped &&
+					claim.generation - claim.attempt !== intent.admissionFenceVersion)
 			) {
 				return { projected: false as const };
 			}

@@ -11,7 +11,9 @@ import {
 	liveStopFeederWhere,
 	liveStopKnownTargets,
 	liveStopRunOwnsEncoding,
+	type ResolveLiveEffectsAfterConfirmedStopInput,
 	readAiringEffectHistory,
+	resolveLiveEffectsAfterConfirmedStop,
 } from "@bitovp/db";
 import { HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS } from "../heartbeat-cadence";
 import type { LiveChannelDeps } from "../orchestrator/live-processor";
@@ -195,6 +197,8 @@ export function createExhaustedScheduledStopRecovery(
 									generation: { lte: originalFence },
 								},
 								select: {
+									id: true,
+									token: true,
 									providerEncodingId: true,
 									generation: true,
 									attempt: true,
@@ -333,24 +337,14 @@ export function createExhaustedScheduledStopRecovery(
 				// cannot be replayed for the current admission, even if Redis says waiting.
 				if (staleReceipt && row.legacyStopExhaustedFence !== originalFence)
 					continue;
-				if (priorFailedClaim || currentFailedClaim) {
-					await recordFinalStopFailure(
-						deps.prisma,
-						{
-							id: jobId,
-							data: original,
-							finishedOn: new Date(deps.now()).getTime(),
-						},
-						priorFailedClaim
-							? "The scheduled STOP claim belongs to a failed earlier admission."
-							: "The current STOP claim failed before its provider send.",
-						deps.emitEvent,
-						true,
-					);
-					continue;
-				}
+				let terminalReadback: ResolveLiveEffectsAfterConfirmedStopInput["terminalReadback"];
 				let failedFencedDelivery = false;
-				if (legacy && !advancedFence && (!job || found?.effect)) {
+				if (
+					legacy &&
+					!advancedFence &&
+					!priorFailedClaim &&
+					(!job || found?.effect || currentFailedClaim)
+				) {
 					const accountId = liveChannelAccountId(channel);
 					const history = await readAiringEffectHistory(
 						deps.prisma,
@@ -363,7 +357,6 @@ export function createExhaustedScheduledStopRecovery(
 						history,
 						accountId,
 					);
-					let terminal = false;
 					if (targets?.length && accountId) {
 						try {
 							const sdk = deps.makeSdk({
@@ -373,28 +366,39 @@ export function createExhaustedScheduledStopRecovery(
 									HEARTBEAT_SWEEP_PER_CHANNEL_TIMEOUT_MS,
 								),
 							});
-							const states = await Promise.all(
-								targets.map(async (id) =>
-									classifyProviderStatusWord(
-										(await sdk.getEncodingStatus(id)).status,
-									),
-								),
+							const encodings = await Promise.all(
+								targets.map(async (id) => ({
+									id,
+									status: (await sdk.getEncodingStatus(id)).status,
+								})),
 							);
-							terminal =
-								states.every((state) => state === "TERMINAL") &&
+							const primary = encodings.find(({ id }) => id === encodingId);
+							if (
+								primary &&
+								encodings.every(
+									({ status }) =>
+										classifyProviderStatusWord(status) === "TERMINAL",
+								) &&
 								!(await deps.prisma.feederSession.findFirst({
 									where: liveStopFeederWhere(row.liveChannelId),
 									select: { id: true },
-								}));
+								}))
+							)
+								terminalReadback = {
+									generation: originalFence,
+									bitmovinAccountId: accountId,
+									providerStatus: primary.status,
+									encodings,
+								};
 						} catch {
 							// A lost status read is not proof that the original handoff was sent.
 						}
 					}
 					// A stamped lost job can be replayed while the encoder or its feeder is
 					// active. When both have finished, only terminal observation remains.
-					if (mayReplay && terminal && (await deferToAnotherHandoff()))
+					if (mayReplay && terminalReadback && (await deferToAnotherHandoff()))
 						continue;
-					if (!terminal) {
+					if (!terminalReadback && !currentFailedClaim) {
 						if (!staleReceipt && (found?.effect || savedHandoff))
 							failedFencedDelivery = true;
 						else if (
@@ -426,6 +430,43 @@ export function createExhaustedScheduledStopRecovery(
 							continue;
 						} else continue;
 					}
+				}
+				if (currentFailedClaim && failedClaim && terminalReadback) {
+					const resolved = await resolveLiveEffectsAfterConfirmedStop(
+						deps.prisma,
+						{
+							liveChannelId: row.liveChannelId,
+							liveChannelRunId: run.id,
+							providerEncodingId: encodingId,
+							stopClaimId: failedClaim.id,
+							stopIdempotencyKey: effect.idempotencyKey,
+							at: new Date(deps.now()),
+							terminalReadback: {
+								...terminalReadback,
+								exhaustedFailedSchedule: {
+									id: row.id,
+									claimToken: failedClaim.token,
+								},
+							},
+						},
+					);
+					if (resolved.kind !== "BLOCKED") continue;
+				}
+				if (priorFailedClaim || currentFailedClaim) {
+					await recordFinalStopFailure(
+						deps.prisma,
+						{
+							id: jobId,
+							data: original,
+							finishedOn: new Date(deps.now()).getTime(),
+						},
+						priorFailedClaim
+							? "The scheduled STOP claim belongs to a failed earlier admission."
+							: "The current STOP claim failed before its provider send.",
+						deps.emitEvent,
+						true,
+					);
+					continue;
 				}
 				if (!legacy || advancedFence || failedFencedDelivery) {
 					if (

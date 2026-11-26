@@ -52,6 +52,8 @@ export type AisaLiveControl = {
 		service: "analysis" | "encoding",
 		targetId: string,
 	): Promise<boolean>;
+	/** The exact primary Encoding STOP received a successful provider response. */
+	onEncodingStopAccepted?(encodingId: string): void;
 	onObservation?(observation: AisaLiveObservation): Promise<void>;
 	/** Runtime stop waits for Analysis drain before using the Encoding stop fallback. */
 	sleep?(ms: number): Promise<void>;
@@ -384,8 +386,10 @@ export function createAisaLiveOps(
 				if (
 					!options.aisaLive?.reserveStop ||
 					(await options.aisaLive.reserveStop("encoding", encodingId))
-				)
+				) {
 					await liveOps.stopLiveEncoding(encodingId);
+					options.aisaLive?.onEncodingStopAccepted?.(encodingId);
+				}
 			}
 			if (finalizationError) throw new AisaLiveFinalizationPendingError();
 		},

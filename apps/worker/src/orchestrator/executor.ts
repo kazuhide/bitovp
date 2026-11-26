@@ -103,12 +103,14 @@ export async function executeStep(
 
 	switch (op.kind) {
 		case "CREATE_INPUT_S3":
+		case "CREATE_INPUT_S3_ROLE_BASED":
 		case "CREATE_INPUT_AZURE":
 		case "CREATE_INPUT_HTTPS":
 		case "CREATE_INPUT_GENERIC_S3":
 		case "CREATE_INPUT_GCS":
 		case "CREATE_INPUT_GCS_SERVICE_ACCOUNT":
 		case "CREATE_OUTPUT_S3":
+		case "CREATE_OUTPUT_S3_ROLE_BASED":
 		case "CREATE_OUTPUT_AZURE":
 		case "CREATE_OUTPUT_SFTP":
 		case "CREATE_OUTPUT_GENERIC_S3":

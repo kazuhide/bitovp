@@ -588,6 +588,8 @@ describe("every operation kind is classified", () => {
 	 * therefore be either curl-able or listed below WITH a reason.
 	 */
 	const NO_CURL_BY_DESIGN: Record<string, string> = {
+		CREATE_INPUT_S3_ROLE_BASED: "the role ARN is resolved from the vault",
+		CREATE_OUTPUT_S3_ROLE_BASED: "the role ARN is resolved from the vault",
 		CREATE_DRM_CENC:
 			"the content key is kept in the vault, outside the saved request",
 		CREATE_DRM_FAIRPLAY:

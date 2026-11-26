@@ -31,6 +31,24 @@ function refTargets(op: CompiledOperation): string[] {
 	return Object.values(op.refs).flat();
 }
 
+it("rejects role-based VOD output in the Live plan schema", () => {
+	const plan = loadPlan("live-rtmp-simple");
+	plan.outputs = plan.outputs.map((output) =>
+		output.kind === "S3" ? { ...output, kind: "S3_ROLE_BASED" } : output,
+	);
+	expect(liveChannelPlanSchema.safeParse(plan)).toMatchObject({
+		success: false,
+		error: {
+			issues: expect.arrayContaining([
+				expect.objectContaining({
+					path: ["outputs"],
+					message: "S3 role-based output is available for VOD only",
+				}),
+			]),
+		},
+	});
+});
+
 /**
  * The golden loop below must iterate the WHOLE registry.
  *

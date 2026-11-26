@@ -525,6 +525,14 @@ export type Scte35CueParams = {
 	manifestIds?: string[];
 };
 
+export type S3RoleStorageParams = {
+	name: string;
+	bucketName: string;
+	roleArn: string;
+	region: string;
+	expectedExternalId?: string;
+};
+
 export type SdkOps = {
 	createAisaLiveAnalysis(request: AisaLiveCreateRequest): Promise<string>;
 	getAisaLiveAnalysis(
@@ -543,6 +551,7 @@ export type SdkOps = {
 		accessKey: string;
 		secretKey: string;
 	}): Promise<string>;
+	createS3RoleBasedInput(p: S3RoleStorageParams): Promise<string>;
 	createAzureInput(p: {
 		name: string;
 		container: string;
@@ -594,6 +603,7 @@ export type SdkOps = {
 		accessKey: string;
 		secretKey: string;
 	}): Promise<string>;
+	createS3RoleBasedOutput(p: S3RoleStorageParams): Promise<string>;
 	createAzureOutput(p: {
 		name: string;
 		container: string;

@@ -5093,12 +5093,12 @@ export const ja = {
 			"Bitmovin の入力・出力に適用します。ストレージを参照するときは、常に V4 署名を使います",
 		azureSummary: "{subscription} · {group} · テナント {tenant}",
 		bitmovinAssumesThisRoleNoStatic:
-			"Bitmovin がこのロールを引き受けます。固定キーは保存しません",
+			"Bitmovin が VOD エンコード時にこのロールを使います。バケットとパスは手入力します。",
 		contentKey32HexChars: "コンテンツキー(16 進 32 文字)",
 		customerSecretKey: "カスタマーシークレットキー",
 		customerSecretKeyId: "カスタマーシークレットキー ID",
 		decryptionKeyOptional: "復号キー(任意)",
-		externalIdOptional: "外部 ID(任意)",
+		externalIdOptional: "Bitmovin の GLOBAL 外部 ID（照合用・任意）",
 		firewallId: "ファイアウォール ID",
 		hmacAccessKey: "HMAC アクセスキー",
 		hmacSecret: "HMAC シークレット",
@@ -6463,7 +6463,7 @@ export const ja = {
 		curlNoEndpoint:
 			"{kind} に対応する Bitmovin の単一エンドポイントがありません",
 		curlVaultFieldsOmitted:
-			"暗号化の作成には保存済みの鍵が必要です。履歴には鍵を含めていないため、cURL は利用できません。",
+			"このコマンドの実行に必要な認証情報は、リクエスト履歴に含まれていません。",
 		curlUnresolvedPathParams:
 			"{kind} の URL パスパラメータをすべて解決できませんでした",
 		curlNoStepEntry: "ステップの記録がありません",

@@ -3633,6 +3633,8 @@ describe("no credential-backed IO op reaches the vendor with a mismatched creden
 	 */
 	const GUARDED: Record<string, RegExp> = {
 		CREATE_INPUT_S3: /needs an? AWS_S3 credential but got provider "KANTAR"/,
+		CREATE_INPUT_S3_ROLE_BASED:
+			/needs an? AWS_S3_ROLE_BASED credential but got provider "KANTAR"/,
 		CREATE_INPUT_AZURE:
 			/needs an? AZURE_BLOB credential but got provider "KANTAR"/,
 		CREATE_INPUT_GENERIC_S3:
@@ -3646,6 +3648,8 @@ describe("no credential-backed IO op reaches the vendor with a mismatched creden
 			/needs an? SRT_PASSPHRASE credential but got provider "KANTAR"/,
 		CREATE_INPUT_ZIXI: /needs an? ZIXI credential but got provider "KANTAR"/,
 		CREATE_OUTPUT_S3: /needs an? AWS_S3 credential but got provider "KANTAR"/,
+		CREATE_OUTPUT_S3_ROLE_BASED:
+			/needs an? AWS_S3_ROLE_BASED credential but got provider "KANTAR"/,
 		CREATE_OUTPUT_AZURE:
 			/needs an? AZURE_BLOB credential but got provider "KANTAR"/,
 		CREATE_OUTPUT_SFTP: /needs an? SFTP credential but got provider "KANTAR"/,

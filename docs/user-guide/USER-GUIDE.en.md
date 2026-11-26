@@ -147,7 +147,7 @@ Use an existing bucket and a small input video already stored in it. The app sel
 4. Choose an output bucket and a prefix such as `encodings/first-run/`. A prefix is part of an object name, so an empty folder does not need to be created first. Keep the output separate from the input.
 5. In the VOD or Live wizard, select the saved credential, bucket, and input object or output prefix. You can save a frequently used output location as an `OUTPUT` preset in Storage.
 
-The storage browser uses key-based AWS S3 credentials. S3 role-based inputs and outputs have different requirements and are not supported by this browser.
+Use key-based AWS S3 credentials for the storage browser. For VOD encoding with an IAM role, select the role-based credential and enter the bucket and path manually. [Set up role-based VOD input and output](VOD.md#aws-s3-with-an-iam-role)
 
 ### Preview playback
 

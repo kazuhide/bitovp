@@ -128,6 +128,13 @@ export const planInputSchema = z.discriminatedUnion("kind", [
 	}),
 	z.strictObject({
 		key: refKey,
+		kind: z.literal("S3_ROLE_BASED"),
+		credentialId: z.uuid(),
+		bucket: z.string().min(1),
+		name: z.string().min(1).default("S3 Role-Based Input"),
+	}),
+	z.strictObject({
+		key: refKey,
 		// Auth-free https host (the dolby https-input sample) — the only
 		// credential-less input kind.
 		kind: z.literal("HTTPS"),
@@ -255,6 +262,13 @@ export const planOutputSchema = z.discriminatedUnion("kind", [
 		credentialId: z.uuid(),
 		bucket: z.string().min(1),
 		name: z.string().min(1).default("S3 Output"),
+	}),
+	z.strictObject({
+		key: refKey,
+		kind: z.literal("S3_ROLE_BASED"),
+		credentialId: z.uuid(),
+		bucket: z.string().min(1),
+		name: z.string().min(1).default("S3 Role-Based Output"),
 	}),
 	z.strictObject({
 		key: refKey,

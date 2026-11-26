@@ -150,7 +150,7 @@ const HTTPS_SOURCE = "__https__";
 
 /** Whether an input kind's location can be browsed via the StoragePicker. */
 function inputKindIsBrowsable(kind: WizardInputFile["kind"]): boolean {
-	return kind !== "AZURE" && kind !== "HTTPS";
+	return kind !== "AZURE" && kind !== "HTTPS" && kind !== "S3_ROLE_BASED";
 }
 
 /** "Bucket" / "Container" / "Host" depending on the input storage kind. */

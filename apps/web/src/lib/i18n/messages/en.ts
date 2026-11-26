@@ -5160,12 +5160,12 @@ export const en = {
 			"Applies to Bitmovin I/O; browsing always signs V4",
 		azureSummary: "{subscription} · {group} · tenant {tenant}",
 		bitmovinAssumesThisRoleNoStatic:
-			"Bitmovin assumes this role — no static keys stored",
+			"Bitmovin assumes this role for VOD. Enter the bucket and path manually.",
 		contentKey32HexChars: "Content key (32 hex chars)",
 		customerSecretKey: "Customer secret key",
 		customerSecretKeyId: "Customer secret key ID",
 		decryptionKeyOptional: "Decryption key (optional)",
-		externalIdOptional: "External ID (optional)",
+		externalIdOptional: "Expected Bitmovin GLOBAL External ID (optional)",
 		firewallId: "Firewall id",
 		hmacAccessKey: "HMAC access key",
 		hmacSecret: "HMAC secret",
@@ -6518,7 +6518,7 @@ export const en = {
 		curlUnavailable: "cURL unavailable",
 		curlNoEndpoint: "No single Bitmovin endpoint maps to {kind}",
 		curlVaultFieldsOmitted:
-			"Encryption keys and key-server credentials are omitted from saved logs, so this request cannot be copied as cURL.",
+			"The saved request omits credential fields needed to run this command.",
 		curlUnresolvedPathParams:
 			"Could not resolve all URL path parameters for {kind}",
 		curlNoStepEntry: "The step entry is unavailable",

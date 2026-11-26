@@ -139,7 +139,7 @@ export function createBrowserForCredential(
 			);
 		case "AWS_S3_ROLE_BASED":
 			throw new UnsupportedBrowseError(
-				"Role-based credentials need an STS broker — browsing lands in P2; use a key-based credential to browse",
+				"Bitmovin assumes this S3 role for encoding. Use a key-based credential to browse.",
 			);
 		case "AZURE_BLOB":
 			return createAzureBrowser({

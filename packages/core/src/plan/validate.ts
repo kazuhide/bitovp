@@ -409,6 +409,22 @@ export function validatePlan(
 		...validateBroadcastFilters(plan),
 	);
 	issues.push(...checkHlsVideoUris(plan));
+	const providers = options.credentialProviders;
+	if (providers) {
+		for (const section of ["inputs", "outputs"] as const)
+			for (const [index, io] of plan[section].entries())
+				if (
+					io.kind === "S3_ROLE_BASED" &&
+					providers.get(io.credentialId) !== "AWS_S3_ROLE_BASED"
+				)
+					issues.push({
+						code: "PLAN_S3_ROLE_CREDENTIAL_PROVIDER",
+						level: "error",
+						path: `${section}.${index}.credentialId`,
+						message:
+							"Select an AWS S3 role-based credential available in this organization",
+					});
+	}
 	for (const [i, output] of plan.outputs.entries())
 		if (output.kind === "LIVE_MEDIA_INGEST" || output.kind === "MOQ")
 			issues.push({

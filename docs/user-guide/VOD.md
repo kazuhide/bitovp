@@ -201,6 +201,28 @@ The original two-output comparison exercised these controls with synthetic HLS
 in [Installed GUI](https://github.com/kazuhide/bitovp/actions/runs/43829369516/job/133170822700).
 Verify Dolby Vision display on the intended playback hardware.
 
+### AWS S3 with an IAM role
+
+In **Credentials**, save an **AWS S3 (role-based)** connection with the role
+ARN and bucket region. In the VOD wizard select it in **Sources**, **Outputs**,
+or both, then enter the bucket and object path or output folder. Plans and
+presets reference the saved credential as `S3_ROLE_BASED`. New role-based
+destinations default to private access. Delivery mirrors inherit the primary
+destination's ACL.
+
+Configure the IAM trust policy with the GLOBAL External ID from the same
+Bitmovin organization or sub-organization the job uses. If the credential
+includes that value, BitOVP checks it against Bitmovin's response before
+using the resource. Grant the role read access for sources and the required
+write permissions for destinations. See [Bitmovin's role-based setup guide](https://developer.bitmovin.com/encoding/docs/creating-an-s3-role-based-encoding-input-or-output-with-the-bitmovin-api).
+
+Bitmovin uses the role during encoding. The storage browser, local media
+inspection and QC need independently readable storage and cannot use this
+role. To preview results, configure a playable HTTPS delivery URL for the
+bucket through the credential's public base URLs. Use a fixed ladder for
+role-based output. Bitmovin requires Encoder 2.29.0 or later for segmented
+role-based output.
+
 ## Quality checks and scene analysis
 
 Optional VMAF compares the output with a reference source. Select local execution

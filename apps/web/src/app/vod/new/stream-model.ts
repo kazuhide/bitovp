@@ -49,8 +49,8 @@ export function isBrowsableProvider(provider: string | undefined): boolean {
  * Provider → wizard storage kind. Akamai/OCI/GenericS3 all collapse to the one
  * GENERIC_S3 plan kind (C10 — S3-compatible, V4 signing); GCS-HMAC → GCS;
  * GCS-service-account → GCS_SERVICE_ACCOUNT; AWS_S3 → S3; AZURE_BLOB → AZURE;
- * SFTP → SFTP. Returns null for providers with no I/O kind (role-based, DRM,
- * live-ingest) — callers must skip rather than collapse to S3.
+ * SFTP → SFTP. Role-based S3 has its own plan kind and uses manual coordinates.
+ * Providers without a storage kind return null.
  */
 export function storageKindForProvider(
 	provider: string | undefined,
@@ -58,6 +58,8 @@ export function storageKindForProvider(
 	switch (provider) {
 		case "AWS_S3":
 			return "S3";
+		case "AWS_S3_ROLE_BASED":
+			return "S3_ROLE_BASED";
 		case "AZURE_BLOB":
 			return "AZURE";
 		case "SFTP":
@@ -82,7 +84,7 @@ export function storageKindForProvider(
 	}
 }
 
-/** Input pickers accept any browsable provider (no SFTP — SFTP is output-only). */
+/** Input authoring accepts storage providers except output-only SFTP. */
 export function inputKindForProvider(
 	provider: string | undefined,
 ): WizardInputFile["kind"] | null {
@@ -100,9 +102,8 @@ export function outputKindForProvider(
 }
 
 /**
- * LIVE outputs are a superset of VOD's: Akamai MSL is live delivery, and a
- * VOD encoding has nothing to do with it (live-to-VOD refuses an MSL output
- * outright — no bucket, no path, nowhere to write).
+ * Live output selection adds delivery providers such as Akamai MSL to the
+ * shared storage providers. S3 role-based authoring is currently VOD only.
  *
  * This exists because sharing the VOD mapping quietly BROKE MSL.
  * shipped a bespoke destination selector, then a refactor deleted it on the
@@ -120,16 +121,16 @@ export function outputKindForProvider(
 export function liveOutputKindForProvider(
 	provider: string | undefined,
 ):
-	| WizardState["output"]["kind"]
+	| Exclude<WizardState["output"]["kind"], "S3_ROLE_BASED">
 	| "AKAMAI_MSL"
 	| "LIVE_MEDIA_INGEST"
 	| "MOQ"
 	| null {
 	if (provider === "MOQ") return "MOQ";
 	if (provider === "LIVE_MEDIA_INGEST") return "LIVE_MEDIA_INGEST";
-	return provider === "AKAMAI_MSL"
-		? "AKAMAI_MSL"
-		: storageKindForProvider(provider);
+	if (provider === "AKAMAI_MSL") return "AKAMAI_MSL";
+	const storageKind = storageKindForProvider(provider);
+	return storageKind === "S3_ROLE_BASED" ? null : storageKind;
 }
 
 /** The default Bitmovin output resource name for a kind. */
@@ -141,6 +142,8 @@ export function outputNameForKind(kind: WizardState["output"]["kind"]): string {
 			return "Azure Output";
 		case "GENERIC_S3":
 			return "Generic S3 Output";
+		case "S3_ROLE_BASED":
+			return "S3 Role-Based Output";
 		case "GCS":
 			return "GCS Output";
 		case "GCS_SERVICE_ACCOUNT":
@@ -170,6 +173,7 @@ export function outputKindIsBrowsable(
 	return (
 		kind !== "MOQ" &&
 		kind !== "LIVE_MEDIA_INGEST" &&
+		kind !== "S3_ROLE_BASED" &&
 		kind !== "AZURE" &&
 		kind !== "SFTP" &&
 		//  — NetStorage has no object ACLs and no S3 browse API.

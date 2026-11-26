@@ -77,6 +77,8 @@ it.each(
 		password: "fixture-secret",
 		apiKey: "fixture-secret",
 		host: "fixture-private",
+		roleArn: "arn:aws:iam::123456789012:role/fixture-private",
+		externalId: "fixture-secret",
 	};
 	let expectedPath = expected;
 	transport.mockImplementation(async (url: URL | string, init: RequestInit) => {

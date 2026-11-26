@@ -396,6 +396,7 @@ describe("watchSelfIntersectionIssues", () => {
 describe("watch template compatibility", () => {
 	const KINDS = [
 		"S3",
+		"S3_ROLE_BASED",
 		"HTTPS",
 		"AKAMAI_NETSTORAGE",
 		"AZURE",
@@ -454,7 +455,13 @@ describe("watch template compatibility", () => {
 				byReality.push(kind);
 			}
 		}
-		expect(byProbe).toEqual(["S3", "GENERIC_S3", "GCS", "GCS_SERVICE_ACCOUNT"]);
+		expect(byProbe).toEqual([
+			"S3",
+			"S3_ROLE_BASED",
+			"GENERIC_S3",
+			"GCS",
+			"GCS_SERVICE_ACCOUNT",
+		]);
 		expect(byReality).toEqual(byProbe);
 	});
 
@@ -480,6 +487,18 @@ describe("watch template compatibility", () => {
 			const issues = watchTemplateIssues(templateWithInput(kind));
 			expect(issues.map((i) => i.code)).toContain("INPUT_KIND");
 		}
+	});
+
+	it("refuses a role-only input folder because the watch worker cannot list it", () => {
+		const issues = watchTemplateIssues(templateWithInput("S3_ROLE_BASED"), {
+			credentialProvider: "AWS_S3_ROLE_BASED",
+		});
+		expect(issues).toEqual([
+			{
+				code: "INPUT_KIND",
+				message: expect.stringContaining("storage browser can list"),
+			},
+		]);
 	});
 
 	it("refuses a credential whose provider cannot back the input kind", () => {

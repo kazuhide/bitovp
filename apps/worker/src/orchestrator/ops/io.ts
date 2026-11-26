@@ -9,9 +9,11 @@ import {
 	AkamaiMslVersion,
 	AkamaiNetStorageInput,
 	AkamaiNetStorageOutput,
+	AwsCloudRegion,
 	AzureInput,
 	AzureOutput,
 	BackupSrtInputs,
+	ExternalIdMode,
 	GcsInput,
 	GcsOutput,
 	GcsServiceAccountInput,
@@ -28,6 +30,8 @@ import {
 	RtmpIngestPoint,
 	S3Input,
 	S3Output,
+	S3RoleBasedInput,
+	S3RoleBasedOutput,
 	S3SignatureVersion,
 	SftpOutput,
 	SrtInput,
@@ -37,7 +41,11 @@ import {
 	StreamKeyConfigurationType,
 	ZixiInput,
 } from "@bitmovin/api-sdk";
-import type { SdkOps, SrtConnectionParams } from "../sdk-ops";
+import type {
+	S3RoleStorageParams,
+	SdkOps,
+	SrtConnectionParams,
+} from "../sdk-ops";
 import type { OpsContext } from "./context";
 import { isBitmovinError, optEnum, sdkEnumValue } from "./shared";
 
@@ -46,12 +54,14 @@ export function createIoOps(
 ): Pick<
 	SdkOps,
 	| "createS3Input"
+	| "createS3RoleBasedInput"
 	| "createAzureInput"
 	| "createHttpsInput"
 	| "createGenericS3Input"
 	| "createGcsInput"
 	| "createGcsServiceAccountInput"
 	| "createS3Output"
+	| "createS3RoleBasedOutput"
 	| "createAzureOutput"
 	| "createSftpOutput"
 	| "createGenericS3Output"
@@ -68,7 +78,66 @@ export function createIoOps(
 	| "listRtmpInputs"
 > {
 	const { api, audited, id } = ctx;
+	async function createS3RoleResource(
+		direction: "inputs" | "outputs",
+		p: S3RoleStorageParams,
+	): Promise<string> {
+		const regionKey = p.region.toUpperCase().replaceAll("-", "_");
+		// Leave provider discovery enabled for AWS regions outside the SDK enum.
+		const cloudRegion = Object.hasOwn(AwsCloudRegion, regionKey)
+			? AwsCloudRegion[regionKey as keyof typeof AwsCloudRegion]
+			: undefined;
+		const request = {
+			name: p.name,
+			bucketName: p.bucketName,
+			externalIdMode: ExternalIdMode.GLOBAL,
+			cloudRegion,
+		};
+		const model = { ...request, roleArn: p.roleArn };
+		const resource = await audited(
+			"POST",
+			`/encoding/${direction}/s3-role-based`,
+			request,
+			async () => {
+				try {
+					return direction === "inputs"
+						? await api.encoding.inputs.s3RoleBased.create(
+								new S3RoleBasedInput(model),
+							)
+						: await api.encoding.outputs.s3RoleBased.create(
+								new S3RoleBasedOutput(model),
+							);
+				} catch (error) {
+					const message = "S3 role-based storage creation failed";
+					if (isBitmovinError(error))
+						throw Object.assign(new Error(message), {
+							httpStatusCode: error.httpStatusCode,
+							errorCode: error.errorCode,
+							requestId: error.requestId,
+							shortMessage: message,
+						});
+					throw new Error(message);
+				}
+			},
+			(result) => ({ id: result.id }),
+		);
+		if (typeof resource.externalId !== "string" || !resource.externalId.trim())
+			throw new Error(
+				"Bitmovin did not return a GLOBAL External ID for S3 role-based storage",
+			);
+		if (
+			p.expectedExternalId !== undefined &&
+			p.expectedExternalId !== resource.externalId
+		)
+			throw new Error(
+				"The GLOBAL External ID does not match the saved S3 role credential for this Bitmovin organization",
+			);
+		return id(resource);
+	}
+
 	return {
+		createS3RoleBasedInput: (p) => createS3RoleResource("inputs", p),
+		createS3RoleBasedOutput: (p) => createS3RoleResource("outputs", p),
 		createMoqOutput: (p) =>
 			audited(
 				"POST",

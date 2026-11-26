@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_VMAF_MODEL, encodingPlanSchema } from "@bitovp/core";
+import {
+	DEFAULT_VMAF_MODEL,
+	encodingPlanSchema,
+	planToEncodingTemplateYaml,
+} from "@bitovp/core";
 import { SAMPLE_PRESETS, samplePresetPlan } from "@bitovp/core/presets";
 import { describe, expect, it } from "vitest";
 import { buildPlan, type WizardState } from "./build-plan";
@@ -565,7 +569,7 @@ describe("storage (Azure / HTTPS)", () => {
 	});
 });
 
-describe("storage (GenericS3 / GCS encoding I/O, ledger #17)", () => {
+describe("storage encoding I/O", () => {
 	// A minimal H264+AAC plan parameterized by its input/output kind — the
 	// wizard form models bucket+credential for every S3-family / GCS kind, so
 	// each must read back AND rebuild byte-for-byte (no region — region-bearing
@@ -677,7 +681,12 @@ describe("storage (GenericS3 / GCS encoding I/O, ledger #17)", () => {
 		generation: { timing: "JUST_IN_TIME" },
 	});
 
-	for (const kind of ["GENERIC_S3", "GCS", "GCS_SERVICE_ACCOUNT"] as const) {
+	for (const kind of [
+		"S3_ROLE_BASED",
+		"GENERIC_S3",
+		"GCS",
+		"GCS_SERVICE_ACCOUNT",
+	] as const) {
 		it(`round-trips a ${kind} input + output`, () => {
 			const raw = planWith(kind);
 			const original = encodingPlanSchema.parse(raw);
@@ -714,6 +723,17 @@ describe("storage (GenericS3 / GCS encoding I/O, ledger #17)", () => {
 		expect(result.ok).toBe(true);
 		if (result.ok)
 			expect(result.state.inputFiles[0]?.region).toBe("EUROPE_WEST_1");
+	});
+
+	it("exports role-based I/O as native YAML with vault placeholders", () => {
+		const plan = encodingPlanSchema.parse(planWith("S3_ROLE_BASED"));
+		const yaml = planToEncodingTemplateYaml(plan);
+		expect(yaml).toContain("{{INPUT_MAIN_ROLE_ARN}}");
+		expect(yaml).toContain("{{OUTPUT_ORIGIN_ROLE_ARN}}");
+		expect(yaml).toContain("$/inputs/s3RoleBased/main");
+		expect(yaml).toContain("$/outputs/s3RoleBased/origin");
+		expect(yaml).toContain("externalIdMode: GLOBAL");
+		expect(yaml).not.toMatch(/credentialId:|accessKey:|secretKey:|externalId:/);
 	});
 });
 

@@ -14,7 +14,8 @@ type PlannedOutputFile = OutputFile & { owner: string; path: string };
 /** Output keys and names are aliases, not separate storage namespaces. */
 function storageIdentity(output: PlanOutput): string {
 	// These services have globally unique bucket names, independent of login.
-	if (output.kind === "S3") return JSON.stringify(["S3", output.bucket]);
+	if (output.kind === "S3" || output.kind === "S3_ROLE_BASED")
+		return JSON.stringify(["S3", output.bucket]);
 	if (output.kind === "GCS" || output.kind === "GCS_SERVICE_ACCOUNT")
 		return JSON.stringify(["GCS", output.bucket]);
 	// Other account or host identities resolve from their vault reference.

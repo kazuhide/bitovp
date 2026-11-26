@@ -447,6 +447,8 @@ function outputState(
 	D: LiveWizardState,
 	plan: Plan,
 ): LiveWizardState["output"] {
+	if (o?.kind === "S3_ROLE_BASED")
+		throw new Error("S3 role-based output is available for VOD only");
 	/**
 	 * The ACL is per-destination in the plan but one switch in the form, exactly
 	 * as VOD models it. Read it off the manifests: a plan whose manifests are

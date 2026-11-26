@@ -13,6 +13,7 @@ import {
 export function planOutputBucket(output: PlanOutput): string | null {
 	switch (output.kind) {
 		case "S3":
+		case "S3_ROLE_BASED":
 		case "GENERIC_S3":
 		case "GCS":
 		case "GCS_SERVICE_ACCOUNT":
@@ -61,8 +62,8 @@ export type ManifestPlaybackLink = {
  *
  * Note what decides the URL shape — the **credential's provider**, not the
  * plan output's `kind`. One `GENERIC_S3` output can be backed by Akamai, OCI
- * or a MinIO, and `S3` can be key-based or role-based; keying off the output
- * kind (as the S3-only predecessor did) cannot tell those apart.
+ * or MinIO. AWS S3 uses the same public addressing with either authentication
+ * mode.
  */
 export function manifestPlaybackLinks(
 	plan: EncodingPlan,

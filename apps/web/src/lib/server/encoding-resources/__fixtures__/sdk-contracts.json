@@ -404,6 +404,11 @@
     "parents": {}
   },
   {
+    "kind": "CREATE_INPUT_S3_ROLE_BASED",
+    "detail": "/encoding/inputs/s3-role-based/{input_id}",
+    "parents": {}
+  },
+  {
     "kind": "CREATE_INPUT_SRT",
     "detail": "/encoding/inputs/srt/{input_id}",
     "parents": {}
@@ -679,6 +684,11 @@
   {
     "kind": "CREATE_OUTPUT_S3",
     "detail": "/encoding/outputs/s3/{output_id}",
+    "parents": {}
+  },
+  {
+    "kind": "CREATE_OUTPUT_S3_ROLE_BASED",
+    "detail": "/encoding/outputs/s3-role-based/{output_id}",
     "parents": {}
   },
   {

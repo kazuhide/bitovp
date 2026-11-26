@@ -1,5 +1,6 @@
 import { providersForIoKind } from "../credentials/io-kind-providers";
 import type { CredentialProviderId } from "../credentials/schemas";
+import { CREDENTIAL_PROVIDER_BROWSABLE } from "../credentials/schemas";
 import {
 	type EncodingPlan,
 	encodingPlanSchema,
@@ -245,6 +246,7 @@ export function watchTemplateIssues(
 	const soleInput =
 		parsed.data.inputs.length === 1 ? parsed.data.inputs[0] : undefined;
 	if (soleInput) {
+		const allowed = providersForIoKind(soleInput.kind);
 		if (!isWatchSubstitutableInputKind(soleInput.kind)) {
 			// The list is DERIVED, not written out. This function's own doc
 			// argues a hand-written allowlist is a second place to forget, and
@@ -258,6 +260,14 @@ export function watchTemplateIssues(
 				code: "INPUT_KIND",
 				message: `Watch templates cannot use an input of kind ${soleInput.kind} — substitution rewrites the input's \`bucket\` and \`credentialId\` per object, and this kind has no \`bucket\` field to rewrite. Use ${usable.join(", ")}`,
 			});
+		} else if (
+			allowed &&
+			!allowed.some((provider) => CREDENTIAL_PROVIDER_BROWSABLE[provider])
+		) {
+			issues.push({
+				code: "INPUT_KIND",
+				message: `Watch templates require an input that the storage browser can list. Use a browsable input instead of ${soleInput.kind}.`,
+			});
 		} else if (binding.credentialProvider !== undefined) {
 			// Only when the caller RESOLVED a provider. An unknown capability
 			// must not manufacture a refusal — the same rule the deployment
@@ -268,7 +278,6 @@ export function watchTemplateIssues(
 			// forbids. Unreachable today (all four substitutable kinds are in
 			// the table) and it bites the moment a kind is added to the schema
 			// but not the table, which is the case the doctrine exists for.
-			const allowed = providersForIoKind(soleInput.kind);
 			if (
 				allowed !== undefined &&
 				!allowed.includes(binding.credentialProvider)

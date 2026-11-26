@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { verificationRequestSha256 } from "@bitovp/core";
+import { encodingPlanSchema, verificationRequestSha256 } from "@bitovp/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { canonicalCreateRequestJson } from "@/lib/creation-submission-contract";
 
@@ -443,6 +443,58 @@ describe("POST /api/encoding-jobs", () => {
 		const res = await POST(postRequest({ plan: { planVersion: 1 } }));
 		expect(res.status).toBe(400);
 		expect(create).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"AWS_S3_ROLE_BASED",
+		"AWS_S3",
+		null,
+	] as const)("enqueues role-based VOD only with a matching organization credential (%s)", async (provider) => {
+		const candidate = encodingPlanSchema.parse(planWithAccount());
+		candidate.inputs = candidate.inputs.map((io) =>
+			io.kind === "S3" ? { ...io, kind: "S3_ROLE_BASED" } : io,
+		);
+		candidate.outputs = candidate.outputs.map((io) =>
+			io.kind === "S3" ? { ...io, kind: "S3_ROLE_BASED" } : io,
+		);
+		credentialFindMany.mockResolvedValueOnce(
+			provider === null
+				? []
+				: [...candidate.inputs, ...candidate.outputs]
+						.filter((io) => io.kind === "S3_ROLE_BASED")
+						.map(({ credentialId }) => ({ id: credentialId, provider })),
+		);
+		const response = await POST(postRequest({ plan: candidate }));
+		if (provider === "AWS_S3_ROLE_BASED") {
+			expect(response.status).toBe(201);
+			expect(create).toHaveBeenCalledWith(
+				expect.objectContaining({
+					data: expect.objectContaining({
+						stepLog: expect.arrayContaining([
+							expect.objectContaining({ kind: "CREATE_INPUT_S3_ROLE_BASED" }),
+							expect.objectContaining({ kind: "CREATE_OUTPUT_S3_ROLE_BASED" }),
+						]),
+					}),
+				}),
+			);
+			expect(queueAdd).toHaveBeenCalledOnce();
+		} else {
+			expect(response.status).toBe(400);
+			expect((await response.json()).details.issues).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						code: "PLAN_S3_ROLE_CREDENTIAL_PROVIDER",
+						path: "inputs.0.credentialId",
+					}),
+					expect.objectContaining({
+						code: "PLAN_S3_ROLE_CREDENTIAL_PROVIDER",
+						path: "outputs.0.credentialId",
+					}),
+				]),
+			);
+			expect(create).not.toHaveBeenCalled();
+			expect(queueAdd).not.toHaveBeenCalled();
+		}
 	});
 
 	it.each([

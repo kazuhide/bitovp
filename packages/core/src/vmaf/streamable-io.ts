@@ -70,6 +70,10 @@ const STREAMABLE_IO: {
 	[K in IoKind]: ((io: IoOfKind<K>) => Located) | { refuse: string };
 } = {
 	S3: (io) => ({ credentialId: io.credentialId, bucket: io.bucket }),
+	S3_ROLE_BASED: {
+		refuse:
+			"the IAM role grants access to Bitmovin Encoding. The QC worker cannot assume it to read media",
+	},
 	AZURE: (io) => ({ credentialId: io.credentialId, bucket: io.container }),
 	GENERIC_S3: (io) => ({ credentialId: io.credentialId, bucket: io.bucket }),
 	GCS: (io) => ({ credentialId: io.credentialId, bucket: io.bucket }),

@@ -8,6 +8,7 @@ import type {
 	LiveMediaIngestOutput,
 	MoqOutput,
 	S3Output,
+	S3RoleBasedOutput,
 	SftpOutput,
 } from "@bitmovin/api-sdk";
 import { defineFamily } from "../family";
@@ -66,6 +67,12 @@ export const outputs = {
 		fields: ["cloudRegion", "createdAt", "id", "modifiedAt", "name"],
 		get: (api, { id }) => api.encoding.outputs.s3.get(id),
 		remove: (api, { id }) => api.encoding.outputs.s3.delete(id),
+	}),
+	CREATE_OUTPUT_S3_ROLE_BASED: defineFamily<S3RoleBasedOutput>({
+		parents: [],
+		fields: ["cloudRegion", "createdAt", "id", "modifiedAt", "name"],
+		get: (api, { id }) => api.encoding.outputs.s3RoleBased.get(id),
+		remove: (api, { id }) => api.encoding.outputs.s3RoleBased.delete(id),
 	}),
 	CREATE_OUTPUT_SFTP: defineFamily<SftpOutput>({
 		parents: [],

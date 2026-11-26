@@ -750,6 +750,8 @@ export function compileLiveChannel(plan: LiveChannelPlan): CompiledOperation[] {
 				},
 				refs: {},
 			});
+		} else if (output.kind === "S3_ROLE_BASED") {
+			throw new Error("S3 role-based output is available for VOD only");
 		} else if (output.kind === "AZURE") {
 			ops.push({
 				step: `output:${output.key}`,

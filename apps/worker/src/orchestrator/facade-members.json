@@ -92,6 +92,8 @@
 	"createRedundantRtmpInput",
 	"createS3Input",
 	"createS3Output",
+	"createS3RoleBasedInput",
+	"createS3RoleBasedOutput",
 	"createSftpOutput",
 	"createSmoothContentProtection",
 	"createSmoothManifest",

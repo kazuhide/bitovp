@@ -52,6 +52,7 @@ export const ja = {
 		limitDates: "期間を指定",
 		from: "開始 (UTC)",
 		to: "終了 (UTC)",
+		endBoundary: "終了境界 (UTC)",
 		date: "日付 (UTC)",
 		label: "ラベル",
 		load: "統計を取得",

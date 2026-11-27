@@ -30,7 +30,7 @@ const labels = {
 const metricLabels = {
 	date: "encodingStatistics.date",
 	from: "encodingStatistics.from",
-	to: "encodingStatistics.to",
+	to: "encodingStatistics.endBoundary",
 	label: "encodingStatistics.label",
 	bytesEncoded: "encodingStatistics.encodedBytes",
 	bytesEncodedTotal: "encodingStatistics.encodedBytes",

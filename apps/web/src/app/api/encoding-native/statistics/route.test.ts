@@ -19,6 +19,8 @@ const foreignId = "00000000-0000-4000-8000-000000000003";
 const tenantOrgId = "00000000-0000-4000-8000-000000000004";
 const from = "2026-01-01";
 const to = "2026-01-05";
+const cdnFrom = "2026-01-01T00:00:00.000Z";
+const cdnTo = "2026-01-06T00:00:00.000Z";
 const base = "http://fixture.invalid/api/encoding-native/statistics";
 const reply = (result: unknown) =>
 	Response.json({ status: "SUCCESS", data: { result } });
@@ -45,13 +47,18 @@ const encodingRow = {
 const vodRow = { ...encodingRow, timeEnqueued: 8, realtimeFactor: 1.5 };
 const labelsRow = { label: "Project A", billableMinutes: 51 };
 const liveRow = { encodingId, type: "HD", unitsUsed: 3.75 };
-const cdnRow = { from, to, storageUsage: 80, transferUsage: 90 };
+const cdnRow = {
+	from: cdnFrom,
+	to: "2026-01-02T00:00:00.000Z",
+	storageUsage: 80,
+	transferUsage: 90,
+};
 const providerRows = {
 	totals: totalsRow,
 	daily: dailyRow,
 	live: encodingRow,
 	vod: vodRow,
-	labels: labelsRow,
+	labels: { ...labelsRow, billableFeatureMinutes: [] },
 	"daily-labels": {
 		date: from,
 		labels: [
@@ -59,8 +66,8 @@ const providerRows = {
 		],
 	},
 	cdn: {
-		from,
-		to,
+		from: cdnFrom,
+		to: cdnTo,
 		storageUsageTotal: 80,
 		transferUsageTotal: 90,
 		usage: [cdnRow],
@@ -69,11 +76,15 @@ const providerRows = {
 };
 
 beforeEach(() => {
+	vi.stubEnv("TZ", "America/Los_Angeles");
 	binding.mockReset().mockResolvedValue({ apiKey: "fixture", tenantOrgId });
 	transport.mockReset();
 	vi.stubGlobal("fetch", transport);
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+	vi.unstubAllEnvs();
+	vi.unstubAllGlobals();
+});
 
 it.each(
 	auditedOperationCases(
@@ -83,6 +94,7 @@ it.each(
 		(spec) => [`GET ${spec.path}`],
 	),
 )("uses the documented SDK statistics transport $sdkMethod", async (spec) => {
+	if (spec.path.includes("{from}")) expect(new Date(from).getDate()).toBe(31);
 	const path = `/v1${spec.path
 		.replace("{from}", from)
 		.replace("{to}", to)
@@ -111,8 +123,8 @@ it.each(
 		expect(upstream.searchParams.get("limit")).toBe(page ? "25" : null);
 		if (filtered) expect(upstream.searchParams.get("labels")).toBe("Project A");
 		if (spec.view === "cdn") {
-			expect(upstream.searchParams.get("from")?.slice(0, 10)).toBe(from);
-			expect(upstream.searchParams.get("to")?.slice(0, 10)).toBe(to);
+			expect(upstream.searchParams.get("from")).toBe("2026-01-01T00:00:00Z");
+			expect(upstream.searchParams.get("to")).toBe("2026-01-06T00:00:00Z");
 		}
 		return reply(result);
 	});
@@ -134,7 +146,9 @@ it.each(
 			? { date: from, label: "Project A", billableMinutes: 7 }
 			: kind === "cdn"
 				? cdnRow
-				: providerRows[kind];
+				: kind === "labels"
+					? labelsRow
+					: providerRows[kind];
 	expect(body.rows).toEqual([expected]);
 	expect(JSON.stringify(body)).not.toContain("PRIVATE_TEST_VALUE");
 	if (spec.mode !== "single")
@@ -146,8 +160,8 @@ it.each(
 		});
 	if (kind === "cdn")
 		expect(body.totals).toEqual({
-			from,
-			to,
+			from: cdnFrom,
+			to: cdnTo,
 			storageUsageTotal: 80,
 			transferUsageTotal: 90,
 		});
@@ -213,5 +227,28 @@ it("preserves absent metrics and rejects malformed or out-of-range pages", async
 	]) {
 		transport.mockResolvedValueOnce(reply(raw));
 		expect((await GET(request({ view: "daily", from, to }))).status).toBe(502);
+	}
+});
+
+it("covers one full UTC day of CDN usage and rejects contradictory intervals", async () => {
+	const oneDay = { ...providerRows.cdn, to: cdnRow.to };
+	transport.mockImplementationOnce(async (url: string) => {
+		const params = new URL(url).searchParams;
+		expect(params.get("from")).toBe("2026-01-01T00:00:00Z");
+		expect(params.get("to")).toBe("2026-01-02T00:00:00Z");
+		return reply(oneDay);
+	});
+	expect((await GET(request({ view: "cdn", from, to: from }))).status).toBe(
+		200,
+	);
+	for (const invalid of [
+		{ ...oneDay, to: cdnTo },
+		{ ...oneDay, usage: [{ ...cdnRow, to: cdnTo }] },
+		{ ...oneDay, usage: [{ ...cdnRow, to: cdnFrom }] },
+	]) {
+		transport.mockResolvedValueOnce(reply(invalid));
+		expect((await GET(request({ view: "cdn", from, to: from }))).status).toBe(
+			502,
+		);
 	}
 });

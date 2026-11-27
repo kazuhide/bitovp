@@ -3,6 +3,7 @@ import { LiveOptionsType } from "@bitmovin/api-sdk";
 import { usageLabelSchema } from "@bitovp/core";
 import { z } from "zod";
 import {
+	DAY_MS,
 	type EncodingStatisticsResult,
 	hasStatisticsPagination,
 	inspectStatisticsPage,
@@ -14,6 +15,7 @@ import { bitmovinClientFromBinding } from "./bitmovin";
 
 const metric = z.number().finite().nonnegative().optional();
 const date = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
+const instant = date.transform((value) => new Date(value).toISOString());
 const day = date.transform((value) =>
 	value.length === 10 ? value : new Date(value).toISOString().slice(0, 10),
 );
@@ -43,7 +45,6 @@ const label = z.object({
 	label: usageLabelSchema,
 	billableMinutes: metric,
 	billableTransmuxingMinutes: metric,
-	billableFeatureMinutes: metric,
 });
 const dailyLabels = z.object({
 	date: day,
@@ -52,14 +53,14 @@ const dailyLabels = z.object({
 	),
 });
 const cdn = z.object({
-	from: date,
-	to: date,
+	from: instant,
+	to: instant,
 	storageUsageTotal: metric,
 	transferUsageTotal: metric,
 	usage: z.array(
 		z.object({
-			from: date,
-			to: date,
+			from: instant,
+			to: instant,
 			storageUsage: metric,
 			transferUsage: metric,
 		}),
@@ -118,11 +119,15 @@ export async function readProviderStatistics(
 		...pageQuery,
 		...(query.label && { labels: query.label }),
 	};
-	const range = query.range && {
-		from: new Date(query.range.from),
-		to: new Date(query.range.to),
-	};
-	const bounds = range ? ([range.from, range.to] as const) : undefined;
+	const { range } = query;
+	// The SDK takes date path parameters from local calendar parts. Use the
+	// selected calendar day as a local Date so the serialized key stays exact.
+	const bounds = range
+		? ([
+				new Date(`${range.from}T12:00:00`),
+				new Date(`${range.to}T12:00:00`),
+			] as const)
+		: undefined;
 	const { view } = query;
 	const pageable = hasStatisticsPagination(view, !!range);
 	let schema:
@@ -181,8 +186,22 @@ export async function readProviderStatistics(
 			break;
 		case "cdn": {
 			if (!range) throw new Error("Missing CDN date range");
-			await api.encoding.statistics.cdn.usage.get(range);
+			// CDN query parameters are ISO instants with an exclusive end.
+			const from = new Date(range.from);
+			const to = new Date(Date.parse(range.to) + DAY_MS);
+			await api.encoding.statistics.cdn.usage.get({ from, to });
 			const { usage, ...total } = cdn.parse(result);
+			if (
+				total.from !== from.toISOString() ||
+				total.to !== to.toISOString() ||
+				usage.some(
+					(entry) =>
+						entry.from < total.from ||
+						entry.to > total.to ||
+						entry.from >= entry.to,
+				)
+			)
+				throw new Error("Unexpected CDN statistics interval");
 			return { rows: usage.map(row), totals: row(total) };
 		}
 		case "live-options": {

@@ -74,6 +74,7 @@ export const en = {
 		limitDates: "Use a date range",
 		from: "From (UTC)",
 		to: "To (UTC)",
+		endBoundary: "End boundary (UTC)",
 		date: "Date (UTC)",
 		label: "Label",
 		load: "Load statistics",

@@ -24,6 +24,10 @@ const codecJournalErrors = {
 		409,
 		"The provider account scope changed. Refresh the account.",
 	],
+	accountTenantMissing: [
+		409,
+		"Enter the Bitmovin organization ID or clear it to use the default organization.",
+	],
 	receiptMissing: [404, "Codec configuration receipt not found."],
 	receiptScopeChanged: [
 		409,
@@ -65,7 +69,11 @@ type CodecRecord = Omit<Row, "codec"> & {
 };
 
 export function normalizeCodecTenantOrgId(value: string | null) {
-	return value?.trim() || null;
+	if (value === null) return null;
+	const tenantOrgId = value.trim();
+	// Only a stored null tracks credential rotation as a default organization.
+	if (!tenantOrgId) throw new CodecJournalError("accountTenantMissing");
+	return tenantOrgId;
 }
 
 function validatedRecord(row: Row): CodecRecord {

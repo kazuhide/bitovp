@@ -509,7 +509,30 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 		});
 
 		it("preserves default-scope recovery across tenant edits and refuses a different credential", async () => {
-			account = await localStore.update(account.id, { tenantOrgId: null });
+			account = await localStore.update(account.id, { tenantOrgId: " \t " });
+			const query = new URLSearchParams({ bitmovinAccountId: account.id });
+			expect((await GET(new Request(`${path}?${query}`))).status).toBe(409);
+			const pendingScope = account.resourceScopeVersion;
+			const store = tenant(own, ownOrg);
+			const reveal = store.revealForEncoding.bind(store);
+			vi.spyOn(store, "revealForEncoding").mockImplementationOnce(
+				async (id) => {
+					const binding = await reveal(id);
+					account = await localStore.update(id, { apiKey: "fixture-rotated" });
+					expect(account.resourceScopeVersion).toBe(pendingScope);
+					return binding;
+				},
+			);
+			expect((await POST(request("POST", body(), randomUUID()))).status).toBe(
+				409,
+			);
+			expect(provider).not.toHaveBeenCalled();
+			expect(await own.nativeCodecConfiguration.count()).toBe(0);
+
+			account = await localStore.update(account.id, {
+				tenantOrgId: null,
+				apiKey: "fixture-only",
+			});
 			const { providerId, calls, faults, drop } = fixture();
 			const id = randomUUID();
 			expect((await POST(request("POST", body(), id))).status).toBe(201);

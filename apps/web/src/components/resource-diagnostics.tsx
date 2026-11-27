@@ -7,7 +7,9 @@ import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 
 type FieldSet = Record<string, string | number | boolean>;
-type Result = { fields: FieldSet } | { items: FieldSet[]; total: number };
+type Result =
+	| { fields: FieldSet }
+	| { items: FieldSet[]; nextOffset: number | null };
 type Subject = {
 	id: string;
 	step: string;
@@ -94,8 +96,8 @@ export function ResourceDiagnostics({
 	const { locale, t } = useT();
 	const id = useId();
 	const [key, setKey] = useState("");
-	const [offset, setOffset] = useState(0);
-	const pageSize = 25;
+	const [offsets, setOffsets] = useState([0]);
+	const offset = offsets.at(-1) ?? 0;
 	const child = subject.child;
 	const query = new URLSearchParams({
 		step: subject.step,
@@ -116,6 +118,8 @@ export function ResourceDiagnostics({
 		retry: false,
 		refetchOnWindowFocus: false,
 	});
+	const nextOffset =
+		data.data && "items" in data.data ? (data.data.nextOffset ?? null) : null;
 	return (
 		<div className="space-y-2 rounded border border-zinc-800 p-2 text-xs">
 			<label htmlFor={id} className="mr-2">
@@ -127,7 +131,7 @@ export function ResourceDiagnostics({
 				className="max-w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1"
 				onChange={(event) => {
 					setKey(event.currentTarget.value);
-					setOffset(0);
+					setOffsets([0]);
 				}}
 			>
 				<option value="">
@@ -171,21 +175,24 @@ export function ResourceDiagnostics({
 						) : (
 							<p>{t("providerResources.emptyPage")}</p>
 						)}
-						{!child && (offset > 0 || offset + pageSize < data.data.total) && (
+						{!child && (offsets.length > 1 || nextOffset !== null) && (
 							<div className="flex gap-2">
 								<Button
 									variant="secondary"
 									size="sm"
-									disabled={!offset}
-									onClick={() => setOffset((n) => Math.max(0, n - pageSize))}
+									disabled={offsets.length === 1}
+									onClick={() => setOffsets(offsets.slice(0, -1))}
 								>
 									{t("providerResources.previous")}
 								</Button>
 								<Button
 									variant="secondary"
 									size="sm"
-									disabled={offset + pageSize >= data.data.total}
-									onClick={() => setOffset((n) => n + pageSize)}
+									disabled={nextOffset === null}
+									onClick={() => {
+										if (nextOffset !== null)
+											setOffsets([...offsets, nextOffset]);
+									}}
 								>
 									{t("providerResources.next")}
 								</Button>

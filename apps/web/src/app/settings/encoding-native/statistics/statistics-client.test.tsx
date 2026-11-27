@@ -20,6 +20,17 @@ beforeEach(() => {
 			];
 		const query = new URL(url, "https://fixture.invalid").searchParams;
 		const offset = Number(query.get("offset") ?? 0);
+		if (query.get("view") === "live")
+			return {
+				rows: [
+					{
+						date: "2026-01-01",
+						timeEncoded: 2,
+						billableFeatureMinutes: -3.75,
+						billableTransmuxingMinutes: -2.5,
+					},
+				],
+			};
 		if (query.has("from"))
 			return {
 				rows: [{ date: "2026-01-01", billableMinutes: 7 }],
@@ -42,19 +53,19 @@ beforeEach(() => {
 	});
 });
 
-async function selectDaily() {
+async function selectView(view: "daily" | "live") {
 	renderWithQuery(<EncodingStatisticsClient />);
 	await screen.findByRole("option", { name: "Studio" });
 	fireEvent.change(screen.getByLabelText("Bitmovin account"), {
 		target: { value: accountId },
 	});
 	fireEvent.change(screen.getByLabelText("Statistics"), {
-		target: { value: "daily" },
+		target: { value: view },
 	});
 }
 
 it("advances by the received provider count and clears results on account changes", async () => {
-	await selectDaily();
+	await selectView("daily");
 	expect(apiFetch).toHaveBeenCalledTimes(1);
 	fireEvent.click(screen.getByRole("button", { name: "Load statistics" }));
 	expect(await screen.findByText("2026-01-01")).toBeInTheDocument();
@@ -73,7 +84,7 @@ it("advances by the received provider count and clears results on account change
 });
 
 it("shows a provider date-range prefix without offering an unsupported next page", async () => {
-	await selectDaily();
+	await selectView("daily");
 	fireEvent.click(screen.getByLabelText("Use a date range"));
 	fireEvent.change(screen.getByLabelText("From (UTC)"), {
 		target: { value: "2026-01-01" },
@@ -89,4 +100,22 @@ it("shows a provider date-range prefix without offering an unsupported next page
 	).toBeInTheDocument();
 	expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
 	await waitFor(() => expect(apiFetch).toHaveBeenCalledTimes(2));
+});
+
+it("shows negative billing adjustments in minutes alongside encoding time in seconds", async () => {
+	await selectView("live");
+	fireEvent.click(screen.getByRole("button", { name: "Load statistics" }));
+	expect(
+		await screen.findByRole("columnheader", {
+			name: "Billable feature minutes",
+		}),
+	).toBeInTheDocument();
+	expect(
+		screen.getByRole("columnheader", { name: "Billable transmuxing minutes" }),
+	).toBeInTheDocument();
+	expect(
+		screen.getByRole("columnheader", { name: "Encoding time (s)" }),
+	).toBeInTheDocument();
+	for (const name of ["-3.75", "-2.5", "2"])
+		expect(screen.getByRole("cell", { name })).toBeInTheDocument();
 });

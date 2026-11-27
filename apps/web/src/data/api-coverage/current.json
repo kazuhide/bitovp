@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-27T14:31:36.366Z",
-		"sourceCommit": "336e0e77562d4d92aef0f1fb688fdbee5f52140c",
-		"sourceFingerprint": "a0aca21547ecc25af276b91423c47548fcb07ee5116f55605320452701ea7747",
+		"generatedAt": "2026-11-27T14:57:46.791Z",
+		"sourceCommit": "089f4f17e442e1bc2858054309f30d7bcde372b9",
+		"sourceFingerprint": "8423816fa9b227addb8106f9aaf84271e288e5a6101fdc3a96b606bd8f0d3911",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -500,7 +500,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 133
+					"line": 134
 				}
 			]
 		},
@@ -514,7 +514,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 46
+					"line": 47
 				}
 			]
 		},
@@ -532,7 +532,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 42
+					"line": 43
 				}
 			]
 		},
@@ -550,7 +550,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 43
+					"line": 44
 				}
 			]
 		},
@@ -568,7 +568,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 45
+					"line": 46
 				}
 			]
 		},
@@ -582,7 +582,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 142
+					"line": 143
 				}
 			]
 		},
@@ -596,7 +596,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 56
+					"line": 57
 				}
 			]
 		},
@@ -614,7 +614,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 50
+					"line": 51
 				}
 			]
 		},
@@ -632,7 +632,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 52
+					"line": 53
 				}
 			]
 		},
@@ -650,7 +650,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 54
+					"line": 55
 				}
 			]
 		},
@@ -664,7 +664,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 146
+					"line": 147
 				}
 			]
 		},
@@ -678,7 +678,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 64
+					"line": 65
 				}
 			]
 		},
@@ -696,7 +696,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 60
+					"line": 61
 				}
 			]
 		},
@@ -714,7 +714,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 61
+					"line": 62
 				}
 			]
 		},
@@ -732,7 +732,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 63
+					"line": 64
 				}
 			]
 		},
@@ -992,7 +992,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 159
+					"line": 160
 				}
 			]
 		},
@@ -1006,7 +1006,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 72
+					"line": 73
 				}
 			]
 		},
@@ -1024,7 +1024,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 68
+					"line": 69
 				}
 			]
 		},
@@ -1042,7 +1042,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 69
+					"line": 70
 				}
 			]
 		},
@@ -1060,7 +1060,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 71
+					"line": 72
 				}
 			]
 		},
@@ -1074,7 +1074,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 167
+					"line": 168
 				}
 			]
 		},
@@ -1088,7 +1088,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 80
+					"line": 81
 				}
 			]
 		},
@@ -1106,7 +1106,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 76
+					"line": 77
 				}
 			]
 		},
@@ -1124,7 +1124,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 77
+					"line": 78
 				}
 			]
 		},
@@ -1142,7 +1142,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 79
+					"line": 80
 				}
 			]
 		},
@@ -1364,7 +1364,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 175
+					"line": 176
 				}
 			]
 		},
@@ -1378,7 +1378,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 88
+					"line": 89
 				}
 			]
 		},
@@ -1396,7 +1396,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 84
+					"line": 85
 				}
 			]
 		},
@@ -1414,7 +1414,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 85
+					"line": 86
 				}
 			]
 		},
@@ -1432,7 +1432,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 87
+					"line": 88
 				}
 			]
 		},
@@ -1446,7 +1446,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 183
+					"line": 184
 				}
 			]
 		},
@@ -1460,7 +1460,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 98
+					"line": 99
 				}
 			]
 		},
@@ -1478,7 +1478,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 92
+					"line": 93
 				}
 			]
 		},
@@ -1496,7 +1496,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 94
+					"line": 95
 				}
 			]
 		},
@@ -1514,7 +1514,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 96
+					"line": 97
 				}
 			]
 		},
@@ -1768,7 +1768,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 187
+					"line": 188
 				}
 			]
 		},
@@ -1782,7 +1782,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 106
+					"line": 107
 				}
 			]
 		},
@@ -1800,7 +1800,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 102
+					"line": 103
 				}
 			]
 		},
@@ -1818,7 +1818,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 103
+					"line": 104
 				}
 			]
 		},
@@ -1836,7 +1836,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 105
+					"line": 106
 				}
 			]
 		},
@@ -2070,7 +2070,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 197
+					"line": 199
 				}
 			]
 		},
@@ -2084,7 +2084,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 114
+					"line": 115
 				}
 			]
 		},
@@ -2102,7 +2102,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 110
+					"line": 111
 				}
 			]
 		},
@@ -2120,7 +2120,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 111
+					"line": 112
 				}
 			]
 		},
@@ -2138,7 +2138,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 113
+					"line": 114
 				}
 			]
 		},
@@ -2152,7 +2152,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 207
+					"line": 209
 				}
 			]
 		},
@@ -2166,7 +2166,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 122
+					"line": 123
 				}
 			]
 		},
@@ -2184,7 +2184,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 118
+					"line": 119
 				}
 			]
 		},
@@ -2202,7 +2202,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 119
+					"line": 120
 				}
 			]
 		},
@@ -2220,7 +2220,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-codec-provider.ts",
-					"line": 121
+					"line": 122
 				}
 			]
 		},
@@ -2356,7 +2356,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 211
+					"line": 216
 				},
 				{
 					"file": "apps/worker/src/reset/provider.ts",
@@ -2382,7 +2382,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 186
+					"line": 194
 				}
 			]
 		},
@@ -3426,7 +3426,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 405
+					"line": 424
 				}
 			]
 		},
@@ -3463,7 +3463,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 205
+					"line": 215
 				}
 			]
 		},
@@ -3911,7 +3911,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 412
+					"line": 431
 				}
 			]
 		},
@@ -4875,7 +4875,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 422
+					"line": 441
 				}
 			]
 		},
@@ -5590,7 +5590,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 429
+					"line": 448
 				}
 			]
 		},
@@ -7082,7 +7082,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 400
+					"line": 419
 				}
 			]
 		},
@@ -7374,7 +7374,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 223
+					"line": 233
 				}
 			]
 		},
@@ -7978,7 +7978,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 260
+					"line": 271
 				}
 			]
 		},
@@ -8048,7 +8048,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 291
+					"line": 302
 				}
 			]
 		},
@@ -8062,7 +8062,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 312
+					"line": 323
 				}
 			]
 		},
@@ -8085,7 +8085,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 345
+					"line": 356
 				}
 			]
 		},
@@ -8304,7 +8304,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 248
+					"line": 259
 				}
 			]
 		},
@@ -12114,7 +12114,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 378
+					"line": 397
 				}
 			]
 		},
@@ -13119,7 +13119,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 157
+					"line": 164
 				}
 			]
 		},
@@ -13352,7 +13352,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 146
+					"line": 153
 				}
 			]
 		},
@@ -13528,7 +13528,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 385
+					"line": 404
 				}
 			]
 		},
@@ -13848,7 +13848,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 169
+					"line": 176
 				}
 			]
 		},
@@ -14178,7 +14178,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 392
+					"line": 411
 				}
 			]
 		},
@@ -14383,7 +14383,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
-					"line": 140
+					"line": 147
 				}
 			]
 		},
@@ -15418,7 +15418,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 140
+					"line": 145
 				}
 			]
 		},
@@ -15432,7 +15432,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 143
+					"line": 148
 				}
 			]
 		},
@@ -15446,7 +15446,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 192
+					"line": 197
 				}
 			]
 		},
@@ -15460,7 +15460,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 149
+					"line": 154
 				}
 			]
 		},
@@ -15474,7 +15474,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 148
+					"line": 153
 				}
 			]
 		},
@@ -15502,7 +15502,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 158
+					"line": 163
 				}
 			]
 		},
@@ -15516,7 +15516,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 154
+					"line": 159
 				}
 			]
 		},
@@ -15544,7 +15544,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 221
+					"line": 226
 				}
 			]
 		},
@@ -15642,7 +15642,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 167
+					"line": 172
 				}
 			]
 		},
@@ -15656,7 +15656,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 163
+					"line": 168
 				}
 			]
 		},
@@ -15684,7 +15684,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 176
+					"line": 181
 				},
 				{
 					"file": "apps/web/src/lib/server/statistics-labels.ts",
@@ -15706,7 +15706,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 172
+					"line": 177
 				}
 			]
 		},
@@ -15720,7 +15720,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 185
+					"line": 190
 				}
 			]
 		},
@@ -15734,7 +15734,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/provider-statistics.ts",
-					"line": 181
+					"line": 186
 				},
 				{
 					"file": "apps/web/src/lib/server/statistics-labels.ts",

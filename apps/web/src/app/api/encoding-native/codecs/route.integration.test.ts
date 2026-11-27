@@ -17,7 +17,10 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { createNativeCodecSchema } from "@/lib/native-codec-configurations";
 import * as auth from "@/lib/server/context";
+import { createRequestIdentity } from "@/lib/server/create-request";
+import { reserveCodecCreate } from "@/lib/server/native-codec-journal";
 import { auditedOperationCases } from "../../../../../../../scripts/api-coverage-test-cases";
 import { DELETE, GET, PATCH, POST } from "./route";
 
@@ -63,7 +66,13 @@ const auditCases = [
 		codec: "h262",
 		family: "video",
 		type: "H262",
-		fields: { bitrate: 50000000, width: 1920, height: 1080, rate: 25 },
+		fields: {
+			profile: "MPEG2_422",
+			bitrate: 50000000,
+			width: 1920,
+			height: 1080,
+			rate: 25,
+		},
 	},
 	{
 		codec: "mjpeg",
@@ -232,6 +241,7 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 
 		function fixture(testCase: Case = mp3) {
 			const providerId = randomUUID();
+			const providerTenant = account.tenantOrgId;
 			const base = `/v1${endpoint(testCase)}`;
 			const detail = `${base}/${providerId}`;
 			const calls: string[] = [];
@@ -247,7 +257,9 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 				const method = init.method?.toUpperCase();
 				const call = `${method} ${pathname}`;
 				calls.push(call);
-				expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+				expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(
+					providerTenant,
+				);
 				expect(new Headers(init.headers).get("X-Api-Key")).toBe("fixture-only");
 				if (call === `POST ${base}`) {
 					const sent = JSON.parse(String(init.body));
@@ -329,6 +341,7 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 				codec: row.codec,
 				state: "ACTIVE",
 				canAct: true,
+				canResumeCreate: false,
 				canRetryDelete: false,
 			});
 			const query = new URLSearchParams({ bitmovinAccountId: account.id });
@@ -336,6 +349,8 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 			expect(listed.rows).toHaveLength(1);
 			expect(listed.rows[0]).not.toHaveProperty("ownerToken");
 			expect(listed.rows[0]).not.toHaveProperty("requestSha256");
+			expect(listed.rows[0]).not.toHaveProperty("pendingCreateRequest");
+			expect(listed.rows[0]).not.toHaveProperty("providerScopeIdentity");
 			const removed = await DELETE(request("DELETE", command(id, providerId)));
 			expect(removed.status).toBe(200);
 			expect(await removed.json()).toMatchObject({
@@ -401,6 +416,126 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 				deleted.resolve();
 			}
 			expect((await sentDelete).status).toBe(200);
+		});
+
+		it.each([
+			"POST",
+			"PATCH",
+		] as const)("resumes an interrupted reservation with %s before any provider dispatch", async (method) => {
+			const { providerId, base, calls } = fixture();
+			const id = randomUUID();
+			const input = body();
+			const submission = request("POST", input, id);
+			const identity = createRequestIdentity(submission, input);
+			if (!identity) throw new Error("Missing fixture idempotency key");
+			await reserveCodecCreate(
+				own,
+				createNativeCodecSchema.parse(input),
+				id,
+				identity.requestSha256,
+			);
+			const read = await PATCH(request("PATCH", { ...scope(), id }));
+			expect(read.status).toBe(202);
+			expect(await read.json()).toMatchObject({
+				state: "CREATING",
+				canResumeCreate: true,
+			});
+			expect(calls).toEqual([]);
+			const created =
+				method === "POST"
+					? await POST(submission)
+					: await PATCH(request("PATCH", { ...scope(), id, resume: true }));
+			expect(created.status).toBe(201);
+			expect(await created.json()).toMatchObject({
+				state: "ACTIVE",
+				providerId,
+				canResumeCreate: false,
+			});
+			expect(calls).toEqual([`POST ${base}`]);
+			expect(
+				(await own.nativeCodecConfiguration.findFirst({ where: { id } }))
+					?.pendingCreateRequest,
+			).toBeNull();
+		});
+
+		it("does not resend a claimed creation even if a lookup is still empty", async () => {
+			const id = randomUUID();
+			provider.mockRejectedValueOnce(new Error("Connection lost"));
+			provider.mockResolvedValueOnce(
+				success({ offset: 0, totalCount: 0, items: [] }),
+			);
+			const created = await POST(request("POST", body(), id));
+			expect(created.status).toBe(202);
+			expect(await created.json()).toMatchObject({ canResumeCreate: false });
+			const reconcile = await PATCH(
+				request("PATCH", { ...scope(), id, resume: true }),
+			);
+			expect(reconcile.status).toBe(202);
+			expect((await POST(request("POST", body(), id))).status).toBe(202);
+			expect(provider.mock.calls.map(([, init]) => init.method)).toEqual([
+				"POST",
+				"GET",
+			]);
+		});
+
+		it("reconciles only after restoring the explicit provider tenant", async () => {
+			const { providerId, calls, faults } = fixture();
+			const id = randomUUID();
+			const original = account.resourceScopeVersion;
+			faults.create = () => success({ id: providerId, type: "H264" }, 201);
+			expect((await POST(request("POST", body(), id))).status).toBe(202);
+			account = await localStore.update(account.id, {
+				tenantOrgId: randomUUID(),
+			});
+			expect((await PATCH(request("PATCH", { ...scope(), id }))).status).toBe(
+				409,
+			);
+			expect(calls).toHaveLength(1);
+			account = await localStore.update(account.id, { tenantOrgId: upstream });
+			expect(account.resourceScopeVersion).not.toBe(original);
+			const query = new URLSearchParams({ bitmovinAccountId: account.id });
+			const listed = await (await GET(new Request(`${path}?${query}`))).json();
+			expect(listed.rows[0]).toMatchObject({ id, canAct: true });
+			const verified = await PATCH(request("PATCH", { ...scope(), id }));
+			expect(verified.status).toBe(200);
+			expect(await verified.json()).toMatchObject({
+				state: "ACTIVE",
+				providerId,
+			});
+			expect(calls).toHaveLength(4);
+		});
+
+		it("preserves default-scope recovery across tenant edits and refuses a different credential", async () => {
+			account = await localStore.update(account.id, { tenantOrgId: null });
+			const { providerId, calls, faults, drop } = fixture();
+			const id = randomUUID();
+			expect((await POST(request("POST", body(), id))).status).toBe(201);
+			faults.remove = () => success({ id: randomUUID() });
+			expect(
+				(await DELETE(request("DELETE", command(id, providerId)))).status,
+			).toBe(202);
+			drop();
+			account = await localStore.update(account.id, {
+				tenantOrgId: randomUUID(),
+			});
+			account = await localStore.update(account.id, { tenantOrgId: null });
+			const verified = await PATCH(request("PATCH", { ...scope(), id }));
+			expect(verified.status).toBe(200);
+			expect(await verified.json()).toMatchObject({ state: "REMOVED" });
+			expect(calls).toHaveLength(5);
+			try {
+				account = await localStore.update(account.id, {
+					apiKey: "fixture-rotated",
+				});
+				expect((await PATCH(request("PATCH", { ...scope(), id }))).status).toBe(
+					409,
+				);
+				expect(calls).toHaveLength(5);
+			} finally {
+				account = await localStore.update(account.id, {
+					apiKey: "fixture-only",
+				});
+			}
 		});
 
 		it("reconciles only an exact stamped configuration after a malformed create response", async () => {

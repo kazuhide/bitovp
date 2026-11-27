@@ -54,19 +54,21 @@ const ask = (req: Request, viaLive = false) =>
 	viaLive
 		? live(req, { params: Promise.resolve({ id: channelId, runId }) })
 		: vod(req, { params: Promise.resolve({ id: jobId }) });
-function parentContract(kind: string) {
+function parentContract(kind: string, protectedVariant?: string) {
 	if (kind === "CREATE_ENCODING")
 		return {
 			kind,
 			parents: {},
 			detail: "/encoding/encodings/{encoding_id}",
 		};
-	const parent = parentContracts.find((x) => x.kind === kind);
+	const parent = parentContracts.find(
+		(x) => x.kind === kind && x.protectedVariant === protectedVariant,
+	);
 	if (!parent) throw new Error("Missing recorded resource fixture");
 	return parent;
 }
-function seed(kind: string, parentPath?: string) {
-	const parent = parentContract(kind);
+function seed(kind: string, parentPath?: string, protectedVariant?: string) {
+	const parent = parentContract(kind, protectedVariant);
 	const f = resourceFixture(
 		{ ...parent, detail: parentPath ?? parent.detail },
 		account,
@@ -248,6 +250,28 @@ it("does not fetch recorded diagnostics after a resource-scope change", async ()
 	expect(transport).not.toHaveBeenCalled();
 });
 
+it("omits the VOD start diagnostic for a recorded Live encoding", async () => {
+	seed("CREATE_ENCODING");
+	const index = await ask(
+		new Request("http://fixture.invalid/resources"),
+		true,
+	);
+	const body = await index.json();
+	const request = new Request(
+		"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=start",
+	);
+	const response = await ask(request, true);
+	expect(index.status).toBe(200);
+	expect(body.resources[0].diagnostics).toContainEqual(
+		expect.objectContaining({ key: "kantar" }),
+	);
+	expect(body.resources[0].diagnostics).not.toContainEqual(
+		expect.objectContaining({ key: "start" }),
+	);
+	expect(response.status).toBe(400);
+	expect(transport).not.toHaveBeenCalled();
+});
+
 it("rejects duplicate diagnostic selectors before fetching anything", async () => {
 	seed("CREATE_ENCODING");
 	const response = await ask(
@@ -315,6 +339,53 @@ it.each([
 		),
 	);
 	expect(response.status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+	["CREATE_DASH_REPRESENTATION_FMP4", "fmp4-rep", "DRM_FMP4", "FMP4"],
+	["CREATE_DASH_REPRESENTATION_MP4", "mp4-rep", "DRM_MP4", "MP4"],
+])("checks the DRM subtype of a recorded %s representation", async (kind, variant, type, clearType) => {
+	const fixture = seed(kind, undefined, variant);
+	const path = `${fixture.expected.replace(/\/(fmp4|mp4)\/drm\//, "/")}/type`;
+	transport
+		.mockImplementationOnce(async (url: string) => {
+			expect(new URL(url).pathname).toBe(path);
+			return result({ id: fixture.id, type });
+		})
+		.mockResolvedValueOnce(result({ id: fixture.id, type: clearType }));
+	const request = new Request(
+		"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=type",
+	);
+	const response = await ask(request);
+	const wrong = await ask(request);
+	expect(response.status).toBe(200);
+	expect(await response.json()).toEqual({ fields: { type } });
+	expect(wrong.status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it.each(
+	(diagnosticContracts as readonly DiagnosticContract[]).filter(
+		(spec) => spec.diagnostic === "information",
+	),
+)("keeps the other output metrics when $collection has no bitrate", async (spec) => {
+	seed(spec.kind);
+	transport
+		.mockResolvedValueOnce(result({ items: [{ id: childId }], totalCount: 1 }))
+		.mockResolvedValueOnce(
+			result({
+				fileSize: 1024,
+				containerBitrate: null,
+				duration: 3,
+				audioTracks: [{ codec: "PRIVATE_TEST_VALUE" }],
+			}),
+		);
+	const response = await ask(diagnosticRequest(spec), spec.live);
+	expect(response.status).toBe(200);
+	expect(await response.json()).toEqual({
+		fields: { fileSizeBytes: 1024, durationSeconds: 3, audioTrackCount: 1 },
+	});
 	expect(transport).toHaveBeenCalledTimes(2);
 });
 
@@ -401,6 +472,25 @@ it("rejects provider PSNR pagination that contradicts the requested window", asy
 		"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=psnr&offset=25",
 	);
 	expect((await ask(request)).status).toBe(502);
+});
+
+it("shows manifest totals only for formats reported by every output", async () => {
+	seed("CREATE_ENCODING");
+	transport.mockResolvedValueOnce(
+		result([
+			{ paths: { dashManifests: [{}], hlsManifests: [] } },
+			{ paths: { hlsManifests: [] } },
+		]),
+	);
+	const response = await ask(
+		new Request(
+			"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=outputPaths",
+		),
+	);
+	expect(response.status).toBe(200);
+	expect(await response.json()).toEqual({
+		fields: { outputCount: 2, hlsManifestCount: 0 },
+	});
 });
 
 it("rejects metadata claiming a different recorded resource", async () => {

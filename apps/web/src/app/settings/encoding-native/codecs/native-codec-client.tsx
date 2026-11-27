@@ -17,6 +17,7 @@ import {
 	type CreateNativeCodec,
 	createNativeCodecSchema,
 	dtsXBitrates,
+	h262Profile,
 	type NativeCodecList,
 	type NativeCodecReceipt,
 	nativeCodecKind,
@@ -34,6 +35,8 @@ const copy = {
 		name: "Name",
 		codec: "Codec",
 		bitrate: "Bitrate (bps)",
+		targetBitrate: "Target bitrate (bps)",
+		profile: "Profile",
 		sampleRate: "Sampling rate (Hz)",
 		frameRate: "Frame rate (fps)",
 		width: "Width (px)",
@@ -41,9 +44,12 @@ const copy = {
 		qScale: "Quality scale",
 		channelLayout: "Channel layout",
 		mode: "DTS mode",
+		expressAudio: "Express Audio",
+		digitalSurround: "Digital Surround",
 		automatic: "Automatic",
 		create: "Create configuration",
 		check: "Check provider",
+		resume: "Resume creation",
 		remove: "Remove",
 		retryRemove: "Retry removal",
 		cancel: "Cancel",
@@ -71,6 +77,8 @@ const copy = {
 		name: "名前",
 		codec: "コーデック",
 		bitrate: "ビットレート（bps）",
+		targetBitrate: "目標ビットレート（bps）",
+		profile: "プロファイル",
 		sampleRate: "サンプリング周波数（Hz）",
 		frameRate: "フレームレート（fps）",
 		width: "幅（px）",
@@ -78,9 +86,12 @@ const copy = {
 		qScale: "品質スケール",
 		channelLayout: "チャンネル構成",
 		mode: "DTS モード",
+		expressAudio: "エクスプレスオーディオ",
+		digitalSurround: "デジタルサラウンド",
 		automatic: "自動",
 		create: "構成を作成",
 		check: "Bitmovin の状態を確認",
+		resume: "作成を再開",
 		remove: "削除",
 		retryRemove: "削除を再試行",
 		cancel: "キャンセル",
@@ -132,17 +143,50 @@ function clearPendingCreation(identity: string, receiptId: string) {
 	}
 }
 
+function codecAdminIdentity(session?: SessionDto) {
+	const actor = draftIdentity(session);
+	return actor &&
+		(session?.role === "ADMIN" ||
+			session?.mode === "password" ||
+			session?.mode === "none")
+		? JSON.stringify(actor)
+		: null;
+}
+
 export function NativeCodecClient() {
+	const client = useQueryClient();
+	const session = useSession();
+	const identity = codecAdminIdentity(session.data);
+	const canDispatch =
+		identity !== null &&
+		session.status === "success" &&
+		session.fetchStatus === "idle" &&
+		client.getQueryState(SESSION_QUERY_KEY)?.isInvalidated === false;
+	const admitted = useRef<string | null>(null);
+	if (canDispatch) admitted.current = identity;
+	// Keep the admitted editor mounted during verification. A change of
+	// identity remounts all account and form state.
+	const editorIdentity = admitted.current === identity ? identity : null;
+	return (
+		<CodecEditor
+			key={editorIdentity ?? "signed-out"}
+			identity={editorIdentity}
+			canDispatch={canDispatch}
+		/>
+	);
+}
+
+function CodecEditor({
+	identity,
+	canDispatch,
+}: {
+	identity: string | null;
+	canDispatch: boolean;
+}) {
 	const { locale } = useT();
 	const label = locale === "ja" ? copy.ja : copy.en;
 	const client = useQueryClient();
 	const formId = useId();
-	const session = useSession();
-	const actor =
-		session.status === "success" && !session.isFetching
-			? draftIdentity(session.data)
-			: null;
-	const identity = actor ? JSON.stringify(actor) : null;
 	const [account, setAccount] = useState("");
 	const [offset, setOffset] = useState(0);
 	const [codec, setCodec] = useState<NativeCodecReceipt["codec"]>("mp3");
@@ -153,17 +197,11 @@ export function NativeCodecClient() {
 	const [notice, setNotice] = useState<string>();
 	const [error, setError] = useState<string>();
 	const inFlight = useRef(false);
-	const admin =
-		Boolean(identity && session.data?.role === "ADMIN") ||
-		Boolean(
-			identity &&
-				(session.data?.mode === "password" || session.data?.mode === "none"),
-		);
 	const accounts = useQuery({
 		queryKey: ["native-codec-accounts", identity],
 		queryFn: ({ signal }) =>
 			apiFetch<Account[]>("/api/bitmovin-accounts", { signal }),
-		enabled: admin,
+		enabled: canDispatch,
 	});
 	const rows = useQuery({
 		queryKey: ["native-codec-configurations", identity, account, offset],
@@ -172,8 +210,9 @@ export function NativeCodecClient() {
 				`/api/encoding-native/codecs?bitmovinAccountId=${encodeURIComponent(account)}&offset=${offset}`,
 				{ signal },
 			),
-		enabled: admin && accounts.data?.some(({ id }) => id === account),
+		enabled: canDispatch && accounts.data?.some(({ id }) => id === account),
 	});
+	const actionDisabled = !canDispatch || busy || rows.isFetching;
 
 	function headersForCurrentSession() {
 		const current = client.getQueryState<SessionDto>(SESSION_QUERY_KEY);
@@ -182,7 +221,7 @@ export function NativeCodecClient() {
 			current?.status !== "success" ||
 			current.fetchStatus !== "idle" ||
 			current.isInvalidated ||
-			JSON.stringify(draftIdentity(current.data)) !== identity
+			codecAdminIdentity(current.data) !== identity
 		)
 			throw new Error("Codec configuration session changed.");
 		return { [CREATE_SESSION_HEADER]: identity };
@@ -217,14 +256,16 @@ export function NativeCodecClient() {
 
 	function create(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		if (!identity || !rows.data || !admin) return;
+		if (!identity || !rows.data || actionDisabled) return;
 		const form = new FormData(event.currentTarget);
 		const entries = [...form.entries()].filter(([, value]) => value !== "");
 		const accepted = createNativeCodecSchema.safeParse({
 			...Object.fromEntries(
 				entries.map(([key, value]) => [
 					key,
-					["mode", "channelLayout"].includes(key) ? value : Number(value),
+					["mode", "channelLayout", "profile"].includes(key)
+						? value
+						: Number(value),
 				]),
 			),
 			name,
@@ -260,11 +301,12 @@ export function NativeCodecClient() {
 	}
 
 	function check(row: NativeCodecReceipt) {
-		if (!rows.data || !admin || !row.canAct) return;
+		if (!rows.data || actionDisabled || !row.canAct) return;
 		const target = {
 			id: row.id,
 			bitmovinAccountId: account,
 			scopeVersion: rows.data.scopeVersion,
+			...(row.state === "CREATING" && row.canResumeCreate && { resume: true }),
 		};
 		void run(() =>
 			apiFetch<NativeCodecReceipt>("/api/encoding-native/codecs", {
@@ -278,7 +320,7 @@ export function NativeCodecClient() {
 	function remove(row: NativeCodecReceipt) {
 		if (
 			!rows.data ||
-			!admin ||
+			actionDisabled ||
 			!row.canAct ||
 			!row.providerId ||
 			confirmedId !== row.providerId
@@ -310,13 +352,13 @@ export function NativeCodecClient() {
 				</Link>
 				<h1 className="mt-2 text-2xl font-semibold">{label.title}</h1>
 			</header>
-			{admin && (
+			{identity && (
 				<label className="grid max-w-sm gap-1 text-sm">
 					{label.account}
 					<select
 						className={selectClass}
 						value={account}
-						disabled={busy}
+						disabled={busy || !canDispatch}
 						onChange={(event) => {
 							setAccount(event.target.value);
 							setOffset(0);
@@ -343,11 +385,11 @@ export function NativeCodecClient() {
 					{error}
 				</p>
 			)}
-			{admin && rows.data && (
+			{identity && rows.data && (
 				<>
 					<form className="space-y-3" onSubmit={create}>
 						<fieldset
-							disabled={busy || rows.isFetching}
+							disabled={actionDisabled}
 							className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
 						>
 							<label htmlFor={`${formId}-name`} className="grid gap-1 text-sm">
@@ -379,9 +421,17 @@ export function NativeCodecClient() {
 							{(audio.has(codec) || codec === "vp8" || codec === "h262") && (
 								<NumberField
 									name="bitrate"
-									label={label.bitrate}
-									required={codec !== "h262"}
+									label={codec === "h262" ? label.targetBitrate : label.bitrate}
+									required
 								/>
+							)}
+							{codec === "h262" && (
+								<label className="grid gap-1 text-sm">
+									{label.profile}
+									<select name="profile" className={selectClass} required>
+										<option value={h262Profile}>MPEG-2 4:2:2</option>
+									</select>
+								</label>
 							)}
 							{audio.has(codec) && (
 								<NumberField name="rate" label={label.sampleRate} />
@@ -391,8 +441,10 @@ export function NativeCodecClient() {
 									{label.mode}
 									<select name="mode" className={selectClass}>
 										<option value="">{label.automatic}</option>
-										<option value="EXPRESS_AUDIO">Express Audio</option>
-										<option value="DIGITAL_SURROUND">Digital Surround</option>
+										<option value="EXPRESS_AUDIO">{label.expressAudio}</option>
+										<option value="DIGITAL_SURROUND">
+											{label.digitalSurround}
+										</option>
 									</select>
 								</label>
 							)}
@@ -462,10 +514,12 @@ export function NativeCodecClient() {
 													size="sm"
 													type="button"
 													variant="secondary"
-													disabled={busy || rows.isFetching}
+													disabled={actionDisabled}
 													onClick={() => check(row)}
 												>
-													{label.check}
+													{row.state === "CREATING" && row.canResumeCreate
+														? label.resume
+														: label.check}
 												</Button>
 											)}
 											{(row.state === "ACTIVE" || row.canRetryDelete) && (
@@ -473,7 +527,7 @@ export function NativeCodecClient() {
 													size="sm"
 													type="button"
 													variant="secondary"
-													disabled={busy || rows.isFetching}
+													disabled={actionDisabled}
 													onClick={() => {
 														setConfirm(row.id);
 														setConfirmedId("");
@@ -505,9 +559,7 @@ export function NativeCodecClient() {
 											type="button"
 											variant="destructive"
 											disabled={
-												busy ||
-												rows.isFetching ||
-												confirmedId !== row.providerId
+												actionDisabled || confirmedId !== row.providerId
 											}
 											onClick={() => remove(row)}
 										>
@@ -531,7 +583,7 @@ export function NativeCodecClient() {
 							<Button
 								type="button"
 								variant="secondary"
-								disabled={busy || offset === 0}
+								disabled={!canDispatch || busy || offset === 0}
 								onClick={() => setOffset(offset - pageSize)}
 							>
 								{label.previous}
@@ -539,7 +591,7 @@ export function NativeCodecClient() {
 							<Button
 								type="button"
 								variant="secondary"
-								disabled={busy || !rows.data.hasMore}
+								disabled={!canDispatch || busy || !rows.data.hasMore}
 								onClick={() => setOffset(offset + pageSize)}
 							>
 								{label.next}

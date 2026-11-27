@@ -3,10 +3,12 @@ CREATE TABLE "NativeCodecConfiguration" (
   "id" UUID NOT NULL,
   "bitmovinAccountId" UUID NOT NULL,
   "scopeVersion" UUID NOT NULL,
+  "providerScopeIdentity" CHAR(64) NOT NULL,
   "codec" TEXT NOT NULL,
   "name" TEXT NOT NULL,
   "ownerToken" UUID NOT NULL,
   "requestSha256" CHAR(64) NOT NULL,
+  "pendingCreateRequest" JSONB,
   "providerId" UUID,
   "state" TEXT NOT NULL,
   "deleteToken" UUID,
@@ -21,6 +23,11 @@ CREATE TABLE "NativeCodecConfiguration" (
     OR ("state" = 'DELETING' AND "providerId" IS NOT NULL AND "deleteToken" IS NOT NULL)
   ),
   CONSTRAINT "NativeCodecConfiguration_request_check" CHECK ("requestSha256" ~ '^[0-9a-f]{64}$'),
+  CONSTRAINT "NativeCodecConfiguration_pending_create_check" CHECK (
+    "pendingCreateRequest" IS NULL OR (
+      "state" = 'CREATING' AND jsonb_typeof("pendingCreateRequest") = 'object'
+    )
+  ),
   CONSTRAINT "NativeCodecConfiguration_kind_check" CHECK ("codec" IN (
     'dts', 'dts-passthrough', 'dtsx', 'mp2', 'mp3', 'vorbis', 'dvb-subtitle', 'h262', 'mjpeg', 'vp8'
   ))

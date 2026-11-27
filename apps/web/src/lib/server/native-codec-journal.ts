@@ -1,9 +1,10 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import type { AppTransactionClient } from "@bitovp/db";
+import { type AppTransactionClient, DB_NULL } from "@bitovp/db";
 import {
 	type CheckNativeCodec,
 	type CreateNativeCodec,
+	createNativeCodecSchema,
 	type DeleteNativeCodec,
 	type NativeCodecReceipt,
 	type NativeCodecState,
@@ -12,6 +13,7 @@ import {
 import type { ServerContext } from "./context";
 
 type Scope = Pick<CheckNativeCodec, "bitmovinAccountId" | "scopeVersion">;
+type AccountScope = Scope & { providerScopeIdentity: string };
 type Journal = Pick<AppTransactionClient, "nativeCodecConfiguration">;
 type Row = NonNullable<Awaited<ReturnType<typeof findCodecReceipt>>>;
 const DELETE_LEASE_MS = 60_000;
@@ -37,6 +39,7 @@ const codecJournalErrors = {
 		409,
 		"Check creation status before removing the configuration.",
 	],
+	creationChanged: [409, "The creation receipt changed. Refresh it."],
 	removalChanged: [409, "The removal receipt changed. Refresh it."],
 	removalMissing: [409, "The removal receipt is missing."],
 } as const;
@@ -66,67 +69,148 @@ function validatedRecord(row: Row): CodecRecord {
 }
 
 async function lockScope(tx: AppTransactionClient, scope: Scope) {
-	const binding = await tx.$queryRaw<{ id: string }[]>`
-		SELECT id FROM "BitmovinAccount"
+	// A restored explicit tenant keeps the same provider identity. With the
+	// provider default, require the original stored credential revision.
+	const [binding] = await tx.$queryRaw<{ providerScopeIdentity: string }[]>`
+		SELECT encode(sha256(convert_to(
+			COALESCE('tenant:' || NULLIF("tenantOrgId", ''), 'credential:' || "encryptedApiKey"),
+			'UTF8'
+		)), 'hex') AS "providerScopeIdentity"
+		FROM "BitmovinAccount"
 		WHERE id = ${scope.bitmovinAccountId}::uuid
 		AND "resourceScopeVersion" = ${scope.scopeVersion}::uuid
 		FOR SHARE
 	`;
-	if (binding.length !== 1) throw new CodecJournalError("accountChanged");
+	if (!binding) throw new CodecJournalError("accountChanged");
+	return { ...scope, ...binding };
 }
 
-function requireRecord(row: Row | null, scope: Scope) {
+function requireRecord(row: Row | null, scope: AccountScope) {
 	if (!row || row.bitmovinAccountId !== scope.bitmovinAccountId)
 		throw new CodecJournalError("receiptMissing");
-	if (row.scopeVersion !== scope.scopeVersion)
+	if (row.providerScopeIdentity !== scope.providerScopeIdentity)
 		throw new CodecJournalError("receiptScopeChanged");
 	return validatedRecord(row);
 }
 
-export function codecReceipt(
-	row: Row,
-	activeScopeVersion: string,
-): NativeCodecReceipt {
+async function lockReceipt(
+	tx: AppTransactionClient,
+	command: CheckNativeCodec,
+) {
+	const scope = await lockScope(tx, command);
+	await tx.$queryRaw`
+		SELECT id FROM "NativeCodecConfiguration"
+		WHERE id = ${command.id}::uuid FOR UPDATE
+	`;
+	return requireRecord(await findCodecReceipt(tx, command.id), scope);
+}
+
+export function codecReceipt(row: Row, canAct = true): NativeCodecReceipt {
 	return {
 		id: row.id,
 		name: row.name,
 		codec: nativeCodecKind.parse(row.codec),
 		state: row.state as NativeCodecState,
 		providerId: row.providerId,
-		canAct: row.scopeVersion === activeScopeVersion,
+		canAct,
+		canResumeCreate:
+			canAct && row.state === "CREATING" && row.pendingCreateRequest !== null,
 		canRetryDelete:
-			row.scopeVersion === activeScopeVersion &&
+			canAct &&
 			row.state === "DELETING" &&
 			Date.now() - row.updatedAt.getTime() >= DELETE_LEASE_MS,
 	};
 }
 
-export function claimCodecCreate(
+export function listCodecReceipts(
+	prisma: ServerContext["prisma"],
+	command: Scope,
+	offset: number,
+	limit: number,
+) {
+	return prisma.$transaction(async (tx) => {
+		const scope = await lockScope(tx, command);
+		const rows = await tx.nativeCodecConfiguration.findMany({
+			where: { bitmovinAccountId: scope.bitmovinAccountId },
+			orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+			skip: offset,
+			take: limit + 1,
+		});
+		return {
+			rows: rows
+				.slice(0, limit)
+				.map((row) =>
+					codecReceipt(
+						row,
+						row.providerScopeIdentity === scope.providerScopeIdentity,
+					),
+				),
+			hasMore: rows.length > limit,
+			scopeVersion: scope.scopeVersion,
+		};
+	});
+}
+
+export function reserveCodecCreate(
 	prisma: ServerContext["prisma"],
 	body: CreateNativeCodec,
 	id: string,
 	requestSha256: string,
 ) {
 	return prisma.$transaction(async (tx) => {
-		await lockScope(tx, body);
-		const claim = await tx.nativeCodecConfiguration.createMany({
+		const scope = await lockScope(tx, body);
+		await tx.nativeCodecConfiguration.createMany({
 			data: {
 				id,
 				bitmovinAccountId: body.bitmovinAccountId,
 				scopeVersion: body.scopeVersion,
+				providerScopeIdentity: scope.providerScopeIdentity,
 				codec: body.codec,
 				name: body.name,
 				requestSha256,
+				pendingCreateRequest: body,
 				ownerToken: randomUUID(),
 				state: "CREATING",
 			},
 			skipDuplicates: true,
 		});
-		const record = requireRecord(await findCodecReceipt(tx, id), body);
+		const record = requireRecord(await findCodecReceipt(tx, id), scope);
 		if (record.requestSha256 !== requestSha256)
 			throw new CodecJournalError("keyAlreadyUsed");
 		if (record.state === "REMOVED") throw new CodecJournalError("keyRemoved");
-		return { send: claim.count === 1, record };
+	});
+}
+
+export function claimCodecCreate(
+	prisma: ServerContext["prisma"],
+	command: CheckNativeCodec,
+) {
+	return prisma.$transaction(async (tx) => {
+		const record = await lockReceipt(tx, command);
+		if (record.state === "REMOVED") throw new CodecJournalError("keyRemoved");
+		if (record.state !== "CREATING" || record.pendingCreateRequest === null)
+			return { send: false as const, record };
+		const body = createNativeCodecSchema.parse(record.pendingCreateRequest);
+		if (
+			body.bitmovinAccountId !== record.bitmovinAccountId ||
+			body.scopeVersion !== record.scopeVersion ||
+			body.codec !== record.codec ||
+			body.name !== record.name
+		)
+			throw new CodecJournalError("creationChanged");
+		// Clearing the stored request consumes the only permission to send.
+		// From this point a lost result is resolved by lookup, including when
+		// the connection drops before the provider can confirm receipt.
+		const consumed = await tx.nativeCodecConfiguration.updateMany({
+			where: { id: record.id, state: "CREATING" },
+			data: { pendingCreateRequest: DB_NULL },
+		});
+		if (consumed.count !== 1) throw new CodecJournalError("creationChanged");
+		return {
+			send: true as const,
+			record: { ...record, pendingCreateRequest: null },
+			body,
+		};
 	});
 }
 
@@ -135,8 +219,8 @@ export function readCodecReceipt(
 	command: CheckNativeCodec,
 ) {
 	return prisma.$transaction(async (tx) => {
-		await lockScope(tx, command);
-		return requireRecord(await findCodecReceipt(tx, command.id), command);
+		const scope = await lockScope(tx, command);
+		return requireRecord(await findCodecReceipt(tx, command.id), scope);
 	});
 }
 
@@ -145,15 +229,7 @@ export function claimCodecDelete(
 	command: DeleteNativeCodec,
 ) {
 	return prisma.$transaction(async (tx) => {
-		await lockScope(tx, command);
-		await tx.$queryRaw`
-			SELECT id FROM "NativeCodecConfiguration"
-			WHERE id = ${command.id}::uuid FOR UPDATE
-		`;
-		const record = requireRecord(
-			await findCodecReceipt(tx, command.id),
-			command,
-		);
+		const record = await lockReceipt(tx, command);
 		if (record.providerId !== command.confirmProviderId)
 			throw new CodecJournalError("confirmationMismatch");
 		if (record.state === "REMOVED") return { send: false as const, record };
@@ -202,6 +278,7 @@ export async function finishCodecCreate(
 				id: record.id,
 				ownerToken: record.ownerToken,
 				state: "CREATING",
+				pendingCreateRequest: { equals: DB_NULL },
 			},
 			data: providerId
 				? { state: "ACTIVE", providerId }

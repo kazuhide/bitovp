@@ -161,6 +161,7 @@ const EXPERIMENT_MODELS = [
 const PRESERVES = [
 	"liveStopNotification",
 	"encodingResourceRemoval",
+	"nativeCodecConfiguration",
 	...RESET_PROTECTED_EDITING_MODELS,
 	...EXPERIMENT_MODELS,
 	"createRequest",
@@ -1231,6 +1232,7 @@ describe("the reset's guards (review-265 130-A1/A3/A4)", () => {
 			.map((m) => m[1] ?? "")
 			.map((name) => name.charAt(0).toLowerCase() + name.slice(1));
 		expect(RESET_PRESERVES).toEqual(expect.arrayContaining(EXPERIMENT_MODELS));
+		expect(RESET_PRESERVES).toContain("nativeCodecConfiguration");
 		const classified = new Set([...MODELS, ...KEEPS, ...PRESERVES]);
 		expect(models.filter((m) => !classified.has(m))).toEqual([]);
 		expect([...classified].filter((m) => !models.includes(m))).toEqual([]);

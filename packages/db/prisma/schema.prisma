@@ -249,10 +249,12 @@ model NativeCodecConfiguration {
   id String @db.Uuid
   bitmovinAccountId String @db.Uuid
   scopeVersion String @db.Uuid
+  providerScopeIdentity String @db.Char(64)
   codec String
   name String
   ownerToken String @db.Uuid
   requestSha256 String @db.Char(64)
+  pendingCreateRequest Json?
   providerId String? @db.Uuid
   state String
   deleteToken String? @db.Uuid

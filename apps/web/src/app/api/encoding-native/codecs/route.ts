@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
-	checkNativeCodecSchema,
+	type CheckNativeCodec,
 	createNativeCodecSchema,
 	deleteNativeCodecSchema,
 	nativeCodecUuid,
+	patchNativeCodecSchema,
 } from "@/lib/native-codec-configurations";
 import { writeAuditLog } from "@/lib/server/audit";
 import { getServerContext, type ServerContext } from "@/lib/server/context";
@@ -25,7 +26,9 @@ import {
 	codecReceipt,
 	finishCodecCreate,
 	finishCodecDelete,
+	listCodecReceipts,
 	readCodecReceipt,
+	reserveCodecCreate,
 } from "@/lib/server/native-codec-journal";
 import {
 	createProviderCodec,
@@ -83,7 +86,6 @@ async function sendResult(
 	req: Request,
 	record: Awaited<ReturnType<typeof readCodecReceipt>>,
 	status: number,
-	scopeVersion: string,
 ) {
 	await writeAuditLog(
 		ctx,
@@ -98,7 +100,39 @@ async function sendResult(
 		},
 		req,
 	);
-	return respond(codecReceipt(record, scopeVersion), status);
+	return respond(codecReceipt(record), status);
+}
+
+async function dispatchCodecCreate(
+	ctx: ServerContext,
+	req: Request,
+	target: CheckNativeCodec,
+	binding: Awaited<ReturnType<typeof verifiedBinding>>,
+) {
+	req.signal.throwIfAborted();
+	const claim = await claimCodecCreate(ctx.prisma, target);
+	const { record } = claim;
+	if (!claim.send) {
+		const status = record.state === "CREATING" ? 202 : 200;
+		return respond(codecReceipt(record), status);
+	}
+
+	// Settle a claimed dispatch even if the browser disconnects.
+	let providerId: string;
+	try {
+		providerId = await createProviderCodec(
+			binding,
+			AbortSignal.timeout(15_000),
+			record,
+			claim.body,
+		);
+	} catch (error) {
+		if (!providerCodecRefused(error)) return sendResult(ctx, req, record, 202);
+		const settled = await finishCodecCreate(ctx.prisma, record, null);
+		return sendResult(ctx, req, settled, 200);
+	}
+	const settled = await finishCodecCreate(ctx.prisma, record, providerId);
+	return sendResult(ctx, req, settled, 201);
 }
 
 export async function GET(req: Request) {
@@ -114,19 +148,14 @@ export async function GET(req: Request) {
 		const { bitmovinAccountId, offset = 0 } = parsed.data;
 		const account = await ctx.bitmovinAccounts.get(bitmovinAccountId);
 		if (!account) return jsonError(404, "Bitmovin account not found.");
-		const rows = await ctx.prisma.nativeCodecConfiguration.findMany({
-			where: { bitmovinAccountId },
-			orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-			skip: offset,
-			take: PAGE_SIZE + 1,
-		});
-		return respond({
-			rows: rows
-				.slice(0, PAGE_SIZE)
-				.map((row) => codecReceipt(row, account.resourceScopeVersion)),
-			hasMore: rows.length > PAGE_SIZE,
-			scopeVersion: account.resourceScopeVersion,
-		});
+		return respond(
+			await listCodecReceipts(
+				ctx.prisma,
+				{ bitmovinAccountId, scopeVersion: account.resourceScopeVersion },
+				offset,
+				PAGE_SIZE,
+			),
+		);
 	} catch (error) {
 		return handleError(error);
 	}
@@ -148,34 +177,18 @@ export async function POST(req: Request) {
 		const body = parsed.data;
 		req.signal.throwIfAborted();
 		const binding = await verifiedBinding(ctx, body);
-		const { send, record } = await claimCodecCreate(
+		await reserveCodecCreate(
 			ctx.prisma,
 			body,
 			key.data,
 			identity.requestSha256,
 		);
-		if (!send) {
-			const status = record.state === "CREATING" ? 202 : 200;
-			return respond(codecReceipt(record, body.scopeVersion), status);
-		}
-
-		// Once the intent is durable, settle the send even if the browser disconnects.
-		let providerId: string;
-		try {
-			providerId = await createProviderCodec(
-				binding,
-				AbortSignal.timeout(15_000),
-				record,
-				body,
-			);
-		} catch (error) {
-			if (!providerCodecRefused(error))
-				return sendResult(ctx, req, record, 202, body.scopeVersion);
-			const settled = await finishCodecCreate(ctx.prisma, record, null);
-			return sendResult(ctx, req, settled, 200, body.scopeVersion);
-		}
-		const settled = await finishCodecCreate(ctx.prisma, record, providerId);
-		return sendResult(ctx, req, settled, 201, body.scopeVersion);
+		return await dispatchCodecCreate(
+			ctx,
+			req,
+			{ id: key.data, ...body },
+			binding,
+		);
 	} catch (error) {
 		return handleError(error);
 	}
@@ -187,24 +200,29 @@ export async function PATCH(req: Request) {
 		if (!admin(ctx)) return jsonError(403, "Administrator access required.");
 		const sessionFailure = changedCreationSession(req, ctx.tenant);
 		if (sessionFailure) return sessionFailure;
-		const parsed = checkNativeCodecSchema.safeParse(await readJson(req));
+		const parsed = patchNativeCodecSchema.safeParse(await readJson(req));
 		if (!parsed.success) return validationError(parsed.error);
 		const target = parsed.data;
 		const binding = await verifiedBinding(ctx, target);
 		const record = await readCodecReceipt(ctx.prisma, target);
 		const signal = AbortSignal.any([req.signal, AbortSignal.timeout(15_000)]);
 		if (record.state === "CREATING") {
+			if (record.pendingCreateRequest !== null) {
+				if (target.resume)
+					return await dispatchCodecCreate(ctx, req, target, binding);
+				return respond(codecReceipt(record), 202);
+			}
 			let providerId: string | null;
 			try {
 				providerId = await findProviderCodec(binding, signal, record);
 			} catch {
-				return sendResult(ctx, req, record, 202, target.scopeVersion);
+				return sendResult(ctx, req, record, 202);
 			}
 			if (providerId) {
 				const settled = await finishCodecCreate(ctx.prisma, record, providerId);
-				return sendResult(ctx, req, settled, 200, target.scopeVersion);
+				return sendResult(ctx, req, settled, 200);
 			}
-			return sendResult(ctx, req, record, 202, target.scopeVersion);
+			return sendResult(ctx, req, record, 202);
 		}
 		if (record.state === "DELETING" && record.providerId) {
 			let present: boolean;
@@ -216,15 +234,15 @@ export async function PATCH(req: Request) {
 					record.providerId,
 				);
 			} catch {
-				return sendResult(ctx, req, record, 202, target.scopeVersion);
+				return sendResult(ctx, req, record, 202);
 			}
 			if (!present) {
 				const settled = await finishCodecDelete(ctx.prisma, record, "REMOVED");
-				return sendResult(ctx, req, settled, 200, target.scopeVersion);
+				return sendResult(ctx, req, settled, 200);
 			}
-			return sendResult(ctx, req, record, 202, target.scopeVersion);
+			return sendResult(ctx, req, record, 202);
 		}
-		return respond(codecReceipt(record, target.scopeVersion));
+		return respond(codecReceipt(record));
 	} catch (error) {
 		return handleError(error);
 	}
@@ -245,7 +263,7 @@ export async function DELETE(req: Request) {
 		const record = operation.record;
 		if (!operation.send)
 			return respond(
-				codecReceipt(record, target.scopeVersion),
+				codecReceipt(record),
 				record.state === "DELETING" ? 202 : 200,
 			);
 		const signal = AbortSignal.timeout(15_000);
@@ -263,7 +281,7 @@ export async function DELETE(req: Request) {
 					operation.retry ||
 					(destructiveSend && !providerCodecRefused(error))
 				)
-					return sendResult(ctx, req, record, 202, target.scopeVersion);
+					return sendResult(ctx, req, record, 202);
 				restored = true;
 			}
 		}
@@ -272,13 +290,7 @@ export async function DELETE(req: Request) {
 			record,
 			restored ? "ACTIVE" : "REMOVED",
 		);
-		return sendResult(
-			ctx,
-			req,
-			settled,
-			restored ? 409 : 200,
-			target.scopeVersion,
-		);
+		return sendResult(ctx, req, settled, restored ? 409 : 200);
 	} catch (error) {
 		return handleError(error);
 	}

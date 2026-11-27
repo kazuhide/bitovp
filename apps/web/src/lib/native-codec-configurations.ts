@@ -15,6 +15,7 @@ export const nativeCodecKinds = [
 export const dtsXBitrates = [
 	160000, 192000, 224000, 256000, 288000, 320000, 384000, 448000,
 ] as const;
+export const h262Profile = "MPEG2_422";
 export const nativeCodecKind = z.enum(nativeCodecKinds);
 export type NativeCodecKind = z.infer<typeof nativeCodecKind>;
 
@@ -78,7 +79,8 @@ export const createNativeCodecSchema = z.discriminatedUnion("codec", [
 	z.strictObject({
 		...video,
 		codec: z.literal("h262"),
-		bitrate: bitrate.optional(),
+		profile: z.literal(h262Profile),
+		bitrate,
 	}),
 	z.strictObject({
 		...video,
@@ -92,6 +94,9 @@ export type CreateNativeCodec = z.infer<typeof createNativeCodecSchema>;
 export const checkNativeCodecSchema = z.strictObject({
 	...scope,
 	id: nativeCodecUuid,
+});
+export const patchNativeCodecSchema = checkNativeCodecSchema.extend({
+	resume: z.literal(true).optional(),
 });
 export const deleteNativeCodecSchema = checkNativeCodecSchema.extend({
 	confirmProviderId: nativeCodecUuid,
@@ -113,6 +118,7 @@ export type NativeCodecReceipt = {
 	providerId: string | null;
 	canAct: boolean;
 	canRetryDelete: boolean;
+	canResumeCreate: boolean;
 };
 export type NativeCodecList = {
 	rows: NativeCodecReceipt[];

@@ -71,7 +71,7 @@ it("reads measurements only after selecting Output information and resets to det
 	).not.toBeInTheDocument();
 });
 
-it("loads a selected provider diagnostic and pages the original stream", async () => {
+it("pages short provider diagnostics in both directions without skipping results", async () => {
 	const endpoint = "/api/encoding-jobs/job/resources";
 	apiFetch.mockReset();
 	apiFetch.mockImplementation(async (url: string) => {
@@ -95,14 +95,23 @@ it("loads a selected provider diagnostic and pages the original stream", async (
 					},
 				],
 			};
-		if (query.get("view") === "diagnostic")
-			return {
-				items:
-					query.get("offset") === "25"
-						? [{ id: "30:40", fromSeconds: 30, toSeconds: 40, psnrDb: 46 }]
-						: [{ id: "0:10", fromSeconds: 0, toSeconds: 10, psnrDb: 39 }],
-				total: 26,
+		if (query.get("view") === "diagnostic") {
+			const pages: Record<
+				string,
+				{ scores: number[]; nextOffset: number | null }
+			> = {
+				"0": { scores: [39], nextOffset: 1 },
+				"1": { scores: [41, 42], nextOffset: 3 },
+				"3": { scores: [46], nextOffset: null },
 			};
+			const page = pages[query.get("offset") ?? ""];
+			if (!page) throw new Error("Unexpected diagnostic page");
+			return {
+				items: page.scores.map((psnrDb) => ({ id: `psnr:${psnrDb}`, psnrDb })),
+				total: 4,
+				nextOffset: page.nextOffset,
+			};
+		}
 		return { fields: { id: "recorded-video" } };
 	});
 	const user = userEvent.setup();
@@ -121,9 +130,23 @@ it("loads a selected provider diagnostic and pages the original stream", async (
 	);
 	expect(await screen.findByText("39")).toBeVisible();
 	await user.click(screen.getByRole("button", { name: "Next page" }));
-	expect(await screen.findByText("46")).toBeVisible();
+	expect(await screen.findByText("41")).toBeVisible();
+	expect(await screen.findByText("42")).toBeVisible();
 	expect(apiFetch).toHaveBeenLastCalledWith(
-		`${endpoint}?step=stream%3Avideo&attempt=2&view=diagnostic&diagnostic=psnr&offset=25`,
+		`${endpoint}?step=stream%3Avideo&attempt=2&view=diagnostic&diagnostic=psnr&offset=1`,
 		expect.objectContaining({ signal: expect.anything() }),
 	);
+	await user.click(screen.getByRole("button", { name: "Next page" }));
+	expect(await screen.findByText("46")).toBeVisible();
+	expect(apiFetch).toHaveBeenLastCalledWith(
+		`${endpoint}?step=stream%3Avideo&attempt=2&view=diagnostic&diagnostic=psnr&offset=3`,
+		expect.objectContaining({ signal: expect.anything() }),
+	);
+	expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+	await user.click(screen.getByRole("button", { name: "Previous page" }));
+	expect(await screen.findByText("41")).toBeVisible();
+	expect(await screen.findByText("42")).toBeVisible();
+	await user.click(screen.getByRole("button", { name: "Previous page" }));
+	expect(await screen.findByText("39")).toBeVisible();
+	expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
 });

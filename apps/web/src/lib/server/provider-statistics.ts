@@ -1,6 +1,5 @@
 import "server-only";
 import { LiveOptionsType } from "@bitmovin/api-sdk";
-import { usageLabelSchema } from "@bitovp/core";
 import { z } from "zod";
 import {
 	DAY_MS,
@@ -14,6 +13,8 @@ import {
 import { bitmovinClientFromBinding } from "./bitmovin";
 
 const metric = z.number().finite().nonnegative().optional();
+// Provider billing adjustments can reduce billed minutes below zero.
+const billedMinutes = z.number().finite().optional();
 const date = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
 const instant = date.transform((value) => new Date(value).toISOString());
 const day = date.transform((value) =>
@@ -29,29 +30,33 @@ const daily = z.object({
 	date: day,
 	bytesEncoded: metric,
 	timeEncoded: metric,
-	billableMinutes: metric,
-	billableTransmuxingMinutes: metric,
+	billableMinutes: billedMinutes,
+	billableTransmuxingMinutes: billedMinutes,
 });
 const encoding = z.object({
 	date: day,
 	bytesEncoded: metric,
 	timeEncoded: metric,
 	bytesEgress: metric,
-	billableTransmuxingMinutes: metric,
-	billableFeatureMinutes: metric,
+	billableTransmuxingMinutes: billedMinutes,
+	billableFeatureMinutes: billedMinutes,
 });
 const vod = encoding.extend({ timeEnqueued: metric, realtimeFactor: metric });
 const label = z.object({
-	label: usageLabelSchema,
-	billableMinutes: metric,
-	billableTransmuxingMinutes: metric,
+	label: z.string(),
+	billableMinutes: billedMinutes,
+	billableTransmuxingMinutes: billedMinutes,
 });
-const dailyLabels = z.object({
-	date: day,
-	labels: z.array(
-		daily.omit({ date: true }).extend({ label: usageLabelSchema }),
-	),
-});
+const dailyLabels = z
+	.object({
+		date: day,
+		labels: z.array(daily.extend({ date: day.optional(), label: z.string() })),
+	})
+	.refine(({ date, labels }) =>
+		labels.every(
+			({ date: labelDate }) => labelDate === undefined || labelDate === date,
+		),
+	);
 const cdn = z.object({
 	from: instant,
 	to: instant,
@@ -239,7 +244,7 @@ export async function readProviderStatistics(
 		? wire.items.map((item) => row(schema.parse(item)))
 		: wire.items.flatMap((item) => {
 				const { date, labels } = dailyLabels.parse(item);
-				return labels.map((item) => row({ date, ...item }));
+				return labels.map((item) => row({ ...item, date }));
 			});
 	for (const item of rows) {
 		if (

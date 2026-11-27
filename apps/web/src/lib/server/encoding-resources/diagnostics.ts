@@ -10,17 +10,22 @@ import {
 	MuxingType,
 } from "@bitmovin/api-sdk";
 import { z } from "zod";
+import { inspectStatisticsPage } from "@/lib/encoding-statistics";
 import { bitmovinClientFromBinding } from "../bitmovin";
 import type { Page } from "./child-collection";
+import { protectedManifests } from "./families/protected-manifests";
 import {
 	InvalidResourceResponse,
 	type ResourceAddress,
+	type ResourceFamily,
 	type ResourceFields,
 	type ResourcePage,
 } from "./family";
 
 export type DiagnosticChoice = { key: string; label: string; labelJa: string };
-type DiagnosticResult = { fields: ResourceFields } | ResourcePage;
+type DiagnosticResult =
+	| { fields: ResourceFields }
+	| (ResourcePage & { nextOffset: number | null });
 type Target = {
 	address: ResourceAddress;
 	id: string;
@@ -28,6 +33,8 @@ type Target = {
 	listedType?: string;
 };
 type Diagnostic = Omit<DiagnosticChoice, "key"> & {
+	resultId?: "nested";
+	vodOnly?: true;
 	read(api: BitmovinApi, target: Target): Promise<unknown>;
 	project(result: unknown, target: Target): DiagnosticResult;
 };
@@ -72,7 +79,7 @@ const startOptions = manifestOptions.extend({
 });
 const muxingInformation = z.object({
 	fileSize: nonnegative.optional(),
-	containerBitrate: nonnegative.optional(),
+	containerBitrate: nonnegative.nullish(),
 	duration: nonnegative.optional(),
 	videoTracks: optionalCount,
 	audioTracks: optionalCount,
@@ -81,7 +88,7 @@ function muxingProjection(value: unknown) {
 	const info = parse(muxingInformation, value);
 	return fields({
 		fileSizeBytes: info.fileSize,
-		containerBitrateBps: info.containerBitrate,
+		containerBitrateBps: info.containerBitrate ?? undefined,
 		durationSeconds: info.duration,
 		videoTrackCount: info.videoTracks?.length,
 		audioTrackCount: info.audioTracks?.length,
@@ -183,6 +190,7 @@ const recorded: Record<string, Diagnostics> = {
 		start: {
 			label: "Encoding start request",
 			labelJa: "エンコード開始設定",
+			vodOnly: true,
 			read: (api, { id }) => api.encoding.encodings.getStartRequest(id),
 			project: (value) => {
 				const config = parse(startOptions, value);
@@ -202,6 +210,8 @@ const recorded: Record<string, Diagnostics> = {
 		kantar: {
 			label: "Kantar watermark",
 			labelJa: "Kantarウォーターマーク",
+			// The SDK model's ID belongs to the watermark under this encoding.
+			resultId: "nested",
 			read: (api, { id }) => api.encoding.encodings.kantarWatermark.get(id),
 			project: (value) => {
 				const info = parse(
@@ -223,22 +233,23 @@ const recorded: Record<string, Diagnostics> = {
 			read: (api, { id }) => api.encoding.encodings.outputPaths.get(id),
 			project: (value) => {
 				const entries = parse(
-					z.array(z.object({ paths: manifestPaths })),
+					z.array(z.object({ paths: manifestPaths.optional() })),
 					value,
 				);
-				let dashManifestCount = 0;
-				let hlsManifestCount = 0;
-				let smoothManifestCount = 0;
-				for (const { paths } of entries) {
-					dashManifestCount += paths.dashManifests?.length ?? 0;
-					hlsManifestCount += paths.hlsManifests?.length ?? 0;
-					smoothManifestCount += paths.smoothManifests?.length ?? 0;
-				}
+				const count = (format: keyof z.infer<typeof manifestPaths>) => {
+					let total = 0;
+					for (const { paths } of entries) {
+						const manifests = paths?.[format];
+						if (manifests === undefined) return;
+						total += manifests.length;
+					}
+					return total;
+				};
 				return fields({
 					outputCount: entries.length,
-					dashManifestCount,
-					hlsManifestCount,
-					smoothManifestCount,
+					dashManifestCount: count("dashManifests"),
+					hlsManifestCount: count("hlsManifests"),
+					smoothManifestCount: count("smoothManifests"),
 				});
 			},
 		},
@@ -349,11 +360,14 @@ const recorded: Record<string, Diagnostics> = {
 				),
 			project: (value, { page: { offset, limit } }) => {
 				const result = parse(psnrPage, value);
-				if (
-					(result.offset !== undefined && result.offset !== offset) ||
-					result.items.length !==
-						Math.min(limit, Math.max(0, result.totalCount - offset))
-				)
+				const page = inspectStatisticsPage(
+					offset,
+					result.totalCount,
+					result.items.length,
+					result.offset,
+					true,
+				);
+				if (!page || result.items.length > limit)
 					throw new InvalidResourceResponse();
 				const ids = new Set<string>();
 				const items = result.items.map(({ psnr, timeSpan: { from, to } }) => {
@@ -367,7 +381,12 @@ const recorded: Record<string, Diagnostics> = {
 						psnrDb: psnr,
 					};
 				});
-				return { offset, total: result.totalCount, items };
+				return {
+					offset,
+					total: result.totalCount,
+					items,
+					nextOffset: page.nextOffset,
+				};
 			},
 		},
 	},
@@ -434,7 +453,16 @@ const encodingChild: Record<string, Diagnostics> = {
 	},
 };
 
-function lookup(kind: string, collection?: string): Diagnostics | undefined {
+const protectedRepresentationTypes = new Map([
+	[protectedManifests.FMP4_REP, DashRepresentationTypeDiscriminator.DRM_FMP4],
+	[protectedManifests.MP4_REP, DashRepresentationTypeDiscriminator.DRM_MP4],
+]);
+
+function lookup(
+	kind: string,
+	collection?: string,
+	family?: ResourceFamily,
+): Diagnostics | undefined {
 	if (collection)
 		return kind === "CREATE_ENCODING" &&
 			Object.hasOwn(encodingChild, collection)
@@ -447,7 +475,10 @@ function lookup(kind: string, collection?: string): Diagnostics | undefined {
 	const representationPrefix = "CREATE_DASH_REPRESENTATION_";
 	if (kind.startsWith(representationPrefix))
 		return {
-			type: representationType(kind.slice(representationPrefix.length)),
+			type: representationType(
+				(family && protectedRepresentationTypes.get(family)) ??
+					kind.slice(representationPrefix.length),
+			),
 		};
 	const media =
 		/^CREATE_HLS_(AUDIO|CLOSED_CAPTIONS|SUBTITLES|VIDEO|VTT)_MEDIA$/.exec(
@@ -458,24 +489,29 @@ function lookup(kind: string, collection?: string): Diagnostics | undefined {
 
 export function diagnosticChoices(
 	kind: string,
+	live: boolean,
 	collection?: string,
 ): DiagnosticChoice[] | undefined {
 	const definitions = lookup(kind, collection);
 	return (
 		definitions &&
-		Object.entries(definitions).map(([key, { label, labelJa }]) => ({
-			key,
-			label,
-			labelJa,
-		}))
+		Object.entries(definitions)
+			.filter(([, diagnostic]) => !live || !diagnostic.vodOnly)
+			.map(([key, { label, labelJa }]) => ({ key, label, labelJa }))
 	);
 }
 
-export function diagnosticFor(kind: string, key: string, collection?: string) {
-	const definitions = lookup(kind, collection);
-	return definitions && Object.hasOwn(definitions, key)
-		? definitions[key]
-		: undefined;
+export function diagnosticFor(
+	kind: string,
+	key: string,
+	collection: string | undefined,
+	family: ResourceFamily,
+	live: boolean,
+) {
+	const definitions = lookup(kind, collection, family);
+	if (!definitions || !Object.hasOwn(definitions, key)) return;
+	const diagnostic = definitions[key];
+	return live && diagnostic?.vodOnly ? undefined : diagnostic;
 }
 
 const providerResponse = z.object({
@@ -501,7 +537,11 @@ export async function inspectDiagnostic(
 			result = parse(providerResponse, responseBody).data.result;
 			if (!Array.isArray(result)) {
 				const identity = parse(resultIdentity, result).id;
-				if (identity !== undefined && identity !== target.id)
+				if (
+					identity !== undefined &&
+					diagnostic.resultId !== "nested" &&
+					identity !== target.id
+				)
 					throw new InvalidResourceResponse();
 			}
 		},

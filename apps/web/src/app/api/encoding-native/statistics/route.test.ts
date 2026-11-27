@@ -36,16 +36,29 @@ const dailyRow = {
 	date: from,
 	bytesEncoded: 20,
 	timeEncoded: 2,
-	billableMinutes: 3,
+	billableMinutes: -3.5,
+	billableTransmuxingMinutes: -1.25,
 };
 const encodingRow = {
 	date: from,
 	bytesEncoded: 20,
 	timeEncoded: 2,
 	bytesEgress: 1,
+	billableTransmuxingMinutes: -2.5,
+	billableFeatureMinutes: -144_108.833_333_333_34,
 };
 const vodRow = { ...encodingRow, timeEnqueued: 8, realtimeFactor: 1.5 };
-const labelsRow = { label: "Project A", billableMinutes: 51 };
+const labelsRow = {
+	label: "Project A",
+	billableMinutes: -51.25,
+	billableTransmuxingMinutes: -4.75,
+};
+const dailyLabelRow = {
+	date: from,
+	label: "Project A",
+	billableMinutes: -7.5,
+	billableTransmuxingMinutes: -1.5,
+};
 const liveRow = { encodingId, type: "HD", unitsUsed: 3.75 };
 const cdnRow = {
 	from: cdnFrom,
@@ -61,9 +74,7 @@ const providerRows = {
 	labels: { ...labelsRow, billableFeatureMinutes: [] },
 	"daily-labels": {
 		date: from,
-		labels: [
-			{ label: "Project A", billableMinutes: 7, token: "PRIVATE_TEST_VALUE" },
-		],
+		labels: [{ ...dailyLabelRow, token: "PRIVATE_TEST_VALUE" }],
 	},
 	cdn: {
 		from: cdnFrom,
@@ -143,7 +154,7 @@ it.each(
 	const body = await response.json();
 	const expected =
 		kind === "daily-labels"
-			? { date: from, label: "Project A", billableMinutes: 7 }
+			? dailyLabelRow
 			: kind === "cdn"
 				? cdnRow
 				: kind === "labels"
@@ -179,6 +190,7 @@ it("rejects unsupported controls before resolving an account", async () => {
 		request({ view: "vod", from: to, to: from }),
 		request({ view: "live", encodingId }),
 		request({ view: "daily", label: "Project A" }),
+		request({ view: "labels", label: "Studio, East" }),
 		new Request(`${base}?view=daily&accountId=${accountId}&view=totals`),
 	];
 	for (const req of invalid) expect((await GET(req)).status).toBe(400);
@@ -224,9 +236,56 @@ it("preserves absent metrics and rejects malformed or out-of-range pages", async
 		{ items: [dailyRow], totalCount: 1, offset: 3 },
 		{ items: [{ ...dailyRow, date: "2026-01-31" }], totalCount: 1 },
 		{ items: [{ ...dailyRow, billableMinutes: "1" }], totalCount: 1 },
+		{ items: [{ ...dailyRow, bytesEncoded: -1 }], totalCount: 1 },
+		{ items: [{ ...dailyRow, timeEncoded: -1 }], totalCount: 1 },
 	]) {
 		transport.mockResolvedValueOnce(reply(raw));
 		expect((await GET(request({ view: "daily", from, to }))).status).toBe(502);
+	}
+});
+
+it.each([
+	"labels",
+	"daily-labels",
+])("preserves provider label text in unfiltered %s", async (view) => {
+	const labels = [{ ...labelsRow, label: "Studio, East" }];
+	const daily = view === "daily-labels";
+	transport.mockImplementationOnce(async (url: string) => {
+		const upstream = new URL(url);
+		expect(upstream.pathname).toBe(
+			daily
+				? "/v1/encoding/statistics/labels/daily"
+				: "/v1/encoding/statistics/labels",
+		);
+		expect(upstream.searchParams.has("labels")).toBe(false);
+		return reply({
+			items: daily ? [{ date: from, labels }] : labels,
+			totalCount: 1,
+		});
+	});
+
+	const response = await GET(request({ view }));
+	expect(response.status).toBe(200);
+	expect((await response.json()).rows).toEqual(
+		daily ? labels.map((item) => ({ ...item, date: from })) : labels,
+	);
+});
+
+it("requires nested daily label dates to agree with the bucket in UTC", async () => {
+	const query = { view: "daily-labels", from, to, label: labelsRow.label };
+	const withNestedDate = (date: string) =>
+		reply({
+			items: [{ date: from, labels: [{ ...labelsRow, date }] }],
+			totalCount: 1,
+		});
+	transport.mockResolvedValueOnce(withNestedDate("2026-01-02T00:30:00+09:00"));
+	const matching = await GET(request(query));
+	expect(matching.status).toBe(200);
+	expect((await matching.json()).rows).toEqual([{ ...labelsRow, date: from }]);
+
+	for (const date of ["2026-01-01T20:00:00-05:00", "not-a-date"]) {
+		transport.mockResolvedValueOnce(withNestedDate(date));
+		expect((await GET(request(query))).status).toBe(502);
 	}
 });
 

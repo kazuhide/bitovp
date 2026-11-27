@@ -14,6 +14,7 @@ import {
 	Mp2AudioConfiguration,
 	Mp3AudioConfiguration,
 	OttLoudnessMode,
+	ProfileH262,
 	VorbisAudioConfiguration,
 	Vp8VideoConfiguration,
 } from "@bitmovin/api-sdk";
@@ -187,6 +188,7 @@ function createCodec(
 			return api.encoding.configurations.video.h262.create(
 				new H262VideoConfiguration({
 					...common,
+					profile: ProfileH262[body.profile],
 					bitrate: body.bitrate,
 					width: body.width,
 					height: body.height,

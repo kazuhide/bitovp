@@ -42,6 +42,7 @@
 		"view": "diagnostic",
 		"diagnostic": "kantar",
 		"raw": {
+			"id": "$other",
 			"licenseId": 13,
 			"login": "PRIVATE_TEST_VALUE",
 			"password": "PRIVATE_TEST_VALUE",
@@ -85,7 +86,8 @@
 						{
 							"path": "PRIVATE_TEST_VALUE"
 						}
-					]
+					],
+					"smoothManifests": []
 				}
 			}
 		],
@@ -213,7 +215,7 @@
 		"diagnostic": "psnr",
 		"raw": {
 			"offset": 25,
-			"totalCount": 26,
+			"totalCount": 50,
 			"items": [
 				{
 					"timeSpan": {
@@ -227,7 +229,8 @@
 		},
 		"expected": {
 			"offset": 25,
-			"total": 26,
+			"total": 50,
+			"nextOffset": 26,
 			"items": [
 				{
 					"id": "30125:40250",

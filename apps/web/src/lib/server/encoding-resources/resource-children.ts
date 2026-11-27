@@ -155,7 +155,7 @@ export function childChoices(kind: string, live: boolean) {
 			label: collection.label,
 			hasDetail: !!collection.get,
 			hasMetadata: !!collection.metadata,
-			diagnostics: diagnosticChoices(kind, key),
+			diagnostics: diagnosticChoices(kind, live, key),
 		}));
 }
 

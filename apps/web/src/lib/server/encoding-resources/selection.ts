@@ -192,7 +192,7 @@ export function selectResource(
 			...(family.information && { hasInformation: true }),
 			...(!family.remove && { readOnly: true }),
 			childCollections: childChoices(entry.kind, live),
-			diagnostics: diagnosticChoices(entry.kind),
+			diagnostics: diagnosticChoices(entry.kind, live),
 		},
 	};
 }

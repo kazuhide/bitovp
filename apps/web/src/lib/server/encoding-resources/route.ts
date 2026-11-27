@@ -397,7 +397,7 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 			return jsonError(400, "This resource does not have this child view.");
 		const diagnosticKey = parsed.data.diagnostic;
 		const diagnostic = diagnosticKey
-			? diagnosticFor(entry.kind, diagnosticKey, key)
+			? diagnosticFor(entry.kind, diagnosticKey, key, family, live)
 			: undefined;
 		if (diagnosticKey && !diagnostic)
 			return jsonError(400, "This resource does not have this diagnostic.");

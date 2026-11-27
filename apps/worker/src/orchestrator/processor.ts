@@ -254,25 +254,14 @@ function isTemporaryAccountReadError(error: unknown): boolean {
 	} | null;
 	const prismaCode = failure?.code ?? failure?.errorCode;
 	if (prismaCode === "P2010") {
-		// The RLS setup statements run as raw SQL. Prisma keeps PostgreSQL's
-		// SQLSTATE in meta.code, including when a statement times out.
+		// The RLS setup itself uses raw SQL. Keep pending cleanup during
+		// connection, rollback, resource, and operator-level failures.
 		const sqlState = failure?.meta?.code;
 		return (
 			typeof sqlState === "string" &&
-			((/^(08|40)[A-Z0-9]{3}$/.test(sqlState) &&
-				sqlState !== "08P01" &&
-				sqlState !== "40002") ||
-				[
-					"25P03",
-					"25P04",
-					"53300",
-					"55P03",
-					"57014",
-					"57P01",
-					"57P02",
-					"57P03",
-					"57P05",
-				].includes(sqlState))
+			!["08P01", "40002", "57P04"].includes(sqlState) &&
+			(/^(08|40|53|57)[A-Z0-9]{3}$/.test(sqlState) ||
+				["25P03", "25P04", "55P03", "58030"].includes(sqlState))
 		);
 	}
 	return [

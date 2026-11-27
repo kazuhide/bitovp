@@ -601,7 +601,12 @@ describe("orchestrator processor", () => {
 							"40P01",
 							"55P03",
 							"57P03",
+							"53000",
+							"53100",
+							"53200",
 							"53300",
+							"53400",
+							"58030",
 						].map((sqlState) => ({ code: "P2010", meta: { code: sqlState } })),
 					]) {
 						revealAccount.mockRejectedValueOnce(

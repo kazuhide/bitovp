@@ -15,6 +15,8 @@ import {
 	hasCommittedStart,
 	suppressInactiveProvision,
 } from "../live/reconcile-stranded-runs";
+import { roleManifestStopPendingWhere } from "../orchestrator/manifest-stop-recovery";
+import { claimableWhere } from "../orchestrator/processor";
 import { scheduledStartScheduleId } from "../scheduler/schedule-outcome";
 export const INACTIVE_ORGANIZATION_ERROR =
 	"Organization is inactive; new work was suppressed";
@@ -89,17 +91,37 @@ export async function admitInactiveOrganization(
 				bitmovinEncodingId: true,
 				stepLog: true,
 				status: true,
+				updatedAt: true,
 			},
 		});
+		if (!row) return false;
 		if (
-			row?.cancelRequested ||
-			(row?.bitmovinEncodingId &&
+			row.cancelRequested ||
+			(row.bitmovinEncodingId &&
 				hasCommittedStart(row.stepLog, "START_ENCODING")) ||
-			row?.status === "AWAITING_QC"
+			row.status === "AWAITING_QC"
+		)
+			return true;
+		const claimable = claimableWhere(id, ["QUEUED", "RUNNING"], new Date());
+		if (
+			await prisma.encodingJob.findFirst({
+				where: {
+					id,
+					status: claimable.status,
+					...roleManifestStopPendingWhere,
+				},
+				select: { id: true },
+			})
 		)
 			return true;
 		await prisma.encodingJob.updateMany({
-			where: { id, status: { in: ["QUEUED", "RUNNING"] } },
+			// A recovery marker, cancel, or renewed lease can commit during admission.
+			where: {
+				...claimable,
+				cancelRequested: false,
+				updatedAt: row.updatedAt,
+				NOT: roleManifestStopPendingWhere,
+			},
 			data: {
 				status: "ERROR",
 				error: INACTIVE_ORGANIZATION_ERROR,

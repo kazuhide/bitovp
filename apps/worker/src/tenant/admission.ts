@@ -84,37 +84,42 @@ export async function admitInactiveOrganization(
 	}
 	if (key === "orchestrator") {
 		const { encodingJobId: id } = orchestratorJobSchema.parse(payload);
-		const row = await prisma.encodingJob.findUnique({
-			where: { id },
-			select: {
-				cancelRequested: true,
-				bitmovinEncodingId: true,
-				stepLog: true,
-				status: true,
-				updatedAt: true,
-			},
-		});
-		if (!row) return false;
-		if (
-			row.cancelRequested ||
-			(row.bitmovinEncodingId &&
-				hasCommittedStart(row.stepLog, "START_ENCODING")) ||
-			row.status === "AWAITING_QC"
-		)
-			return true;
-		const claimable = claimableWhere(id, ["QUEUED", "RUNNING"], new Date());
-		if (
-			await prisma.encodingJob.findFirst({
-				where: {
-					id,
-					status: claimable.status,
-					...roleManifestStopPendingWhere,
+		const read = () =>
+			prisma.encodingJob.findUnique({
+				where: { id },
+				select: {
+					cancelRequested: true,
+					bitmovinEncodingId: true,
+					stepLog: true,
+					status: true,
+					updatedAt: true,
 				},
-				select: { id: true },
-			})
-		)
-			return true;
-		await prisma.encodingJob.updateMany({
+			});
+		const claimable = claimableWhere(id, ["QUEUED", "RUNNING"], new Date());
+		const canContinue = async (row: Awaited<ReturnType<typeof read>>) => {
+			if (!row) return false;
+			if (
+				row.cancelRequested ||
+				(row.bitmovinEncodingId &&
+					hasCommittedStart(row.stepLog, "START_ENCODING")) ||
+				row.status === "AWAITING_QC"
+			)
+				return true;
+			return Boolean(
+				await prisma.encodingJob.findFirst({
+					where: {
+						id,
+						status: claimable.status,
+						...roleManifestStopPendingWhere,
+					},
+					select: { id: true },
+				}),
+			);
+		};
+		const row = await read();
+		if (!row) return false;
+		if (await canContinue(row)) return true;
+		const { count } = await prisma.encodingJob.updateMany({
 			// A recovery marker, cancel, or renewed lease can commit during admission.
 			where: {
 				...claimable,
@@ -128,7 +133,8 @@ export async function admitInactiveOrganization(
 				attemptClaimedAt: null,
 			},
 		});
-		return false;
+		// Cancel persists the request without publishing another delivery.
+		return count === 0 && (await canContinue(await read()));
 	}
 	if (key === "feederManager") {
 		const data = feederJobSchema.parse(payload);

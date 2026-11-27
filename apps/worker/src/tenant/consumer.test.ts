@@ -332,6 +332,47 @@ it.each([
 	}
 	expect(updateMany).not.toHaveBeenCalled();
 });
+
+it("an ordinary Cancel winning the inactive VOD terminal CAS keeps its only delivery", async () => {
+	let row = {
+		status: "RUNNING",
+		cancelRequested: false,
+		bitmovinEncodingId: null,
+		stepLog: [],
+		updatedAt: new Date("2026-11-27T04:00:00Z"),
+	};
+	const findFirst = vi.fn(async () => null as { id: string } | null);
+	findFirst.mockResolvedValueOnce({ id: ID });
+	const findUnique = vi.fn(async () => row);
+	const updateMany = vi.fn(async () => {
+		row = {
+			...row,
+			cancelRequested: true,
+			updatedAt: new Date("2026-11-27T04:01:00Z"),
+		};
+		return { count: 0 };
+	});
+	const handler = vi.fn(async () => currentOrganizationId());
+	const consume = createTenantConsumer({
+		prisma: {
+			encodingJob: { findFirst, findUnique, updateMany },
+		} as unknown as AppPrismaClient,
+		forEachOrganization: async () => {},
+		isOrganizationActive: async () => false,
+	});
+	await expect(
+		consume(
+			"orchestrator",
+			handler,
+		)({
+			data: { organizationId: A, payload: { encodingJobId: ID } },
+		} as Job),
+	).resolves.toBe(A);
+	expect(findUnique).toHaveBeenCalledTimes(2);
+	expect(updateMany).toHaveBeenCalledOnce();
+	expect(handler).toHaveBeenCalledOnce();
+});
+
 it("inactive organization still accepts STOP and in-flight provider continuation", async () => {
 	const handler = vi.fn(async () => "continued");
 	const findFirst = async () => ({ id: ID });

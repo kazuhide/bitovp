@@ -57,7 +57,7 @@ function respond(body: unknown, status = 200) {
 
 function handleError(error: unknown) {
 	if (error instanceof CodecJournalError)
-		return jsonError(error.status, error.message);
+		return jsonError(error.status, error.publicMessage);
 	return routeError(error);
 }
 
@@ -72,12 +72,9 @@ async function verifiedBinding(
 	const binding = await ctx.bitmovinAccounts.revealForEncoding(
 		target.bitmovinAccountId,
 	);
-	if (!binding) throw new CodecJournalError(404, "Bitmovin account not found.");
+	if (!binding) throw new CodecJournalError("accountMissing");
 	if (binding.resourceScopeVersion !== target.scopeVersion)
-		throw new CodecJournalError(
-			409,
-			"The provider account scope changed. Refresh the account.",
-		);
+		throw new CodecJournalError("accountChanged");
 	return binding;
 }
 

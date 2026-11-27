@@ -16,12 +16,40 @@ type Journal = Pick<AppTransactionClient, "nativeCodecConfiguration">;
 type Row = NonNullable<Awaited<ReturnType<typeof findCodecReceipt>>>;
 const DELETE_LEASE_MS = 60_000;
 
+const codecJournalErrors = {
+	accountMissing: [404, "Bitmovin account not found."],
+	accountChanged: [
+		409,
+		"The provider account scope changed. Refresh the account.",
+	],
+	receiptMissing: [404, "Codec configuration receipt not found."],
+	receiptScopeChanged: [
+		409,
+		"This receipt belongs to an earlier provider account scope.",
+	],
+	keyAlreadyUsed: [
+		409,
+		"This idempotency key already belongs to another request.",
+	],
+	keyRemoved: [410, "The configuration created by this key was removed."],
+	confirmationMismatch: [409, "Confirm the exact provider configuration ID."],
+	creationPending: [
+		409,
+		"Check creation status before removing the configuration.",
+	],
+	removalChanged: [409, "The removal receipt changed. Refresh it."],
+	removalMissing: [409, "The removal receipt is missing."],
+} as const;
+
 export class CodecJournalError extends Error {
-	constructor(
-		readonly status: 404 | 409 | 410,
-		message: string,
-	) {
-		super(message);
+	readonly status: 404 | 409 | 410;
+	readonly publicMessage: string;
+
+	constructor(reason: keyof typeof codecJournalErrors) {
+		const [status, publicMessage] = codecJournalErrors[reason];
+		super(publicMessage);
+		this.status = status;
+		this.publicMessage = publicMessage;
 	}
 }
 
@@ -44,21 +72,14 @@ async function lockScope(tx: AppTransactionClient, scope: Scope) {
 		AND "resourceScopeVersion" = ${scope.scopeVersion}::uuid
 		FOR SHARE
 	`;
-	if (binding.length !== 1)
-		throw new CodecJournalError(
-			409,
-			"The provider account scope changed. Refresh the account.",
-		);
+	if (binding.length !== 1) throw new CodecJournalError("accountChanged");
 }
 
 function requireRecord(row: Row | null, scope: Scope) {
 	if (!row || row.bitmovinAccountId !== scope.bitmovinAccountId)
-		throw new CodecJournalError(404, "Codec configuration receipt not found.");
+		throw new CodecJournalError("receiptMissing");
 	if (row.scopeVersion !== scope.scopeVersion)
-		throw new CodecJournalError(
-			409,
-			"This receipt belongs to an earlier provider account scope.",
-		);
+		throw new CodecJournalError("receiptScopeChanged");
 	return validatedRecord(row);
 }
 
@@ -103,15 +124,8 @@ export function claimCodecCreate(
 		});
 		const record = requireRecord(await findCodecReceipt(tx, id), body);
 		if (record.requestSha256 !== requestSha256)
-			throw new CodecJournalError(
-				409,
-				"This idempotency key already belongs to another request.",
-			);
-		if (record.state === "REMOVED")
-			throw new CodecJournalError(
-				410,
-				"The configuration created by this key was removed.",
-			);
+			throw new CodecJournalError("keyAlreadyUsed");
+		if (record.state === "REMOVED") throw new CodecJournalError("keyRemoved");
 		return { send: claim.count === 1, record };
 	});
 }
@@ -141,19 +155,13 @@ export function claimCodecDelete(
 			command,
 		);
 		if (record.providerId !== command.confirmProviderId)
-			throw new CodecJournalError(
-				409,
-				"Confirm the exact provider configuration ID.",
-			);
+			throw new CodecJournalError("confirmationMismatch");
 		if (record.state === "REMOVED") return { send: false as const, record };
 		const retry = record.state === "DELETING";
 		if (retry && Date.now() - record.updatedAt.getTime() < DELETE_LEASE_MS)
 			return { send: false as const, record };
 		if (!retry && record.state !== "ACTIVE")
-			throw new CodecJournalError(
-				409,
-				"Check creation status before removing the configuration.",
-			);
+			throw new CodecJournalError("creationPending");
 		const deleteToken = randomUUID();
 		const where = {
 			id: record.id,
@@ -167,11 +175,7 @@ export function claimCodecDelete(
 			where,
 			data: { state: "DELETING", deleteToken },
 		});
-		if (claim.count !== 1)
-			throw new CodecJournalError(
-				409,
-				"The removal receipt changed. Refresh it.",
-			);
+		if (claim.count !== 1) throw new CodecJournalError("removalChanged");
 		return {
 			send: true as const,
 			retry,
@@ -212,8 +216,7 @@ export async function finishCodecDelete(
 	record: CodecRecord,
 	state: "ACTIVE" | "REMOVED",
 ) {
-	if (!record.deleteToken)
-		throw new CodecJournalError(409, "The removal receipt is missing.");
+	if (!record.deleteToken) throw new CodecJournalError("removalMissing");
 	return prisma.$transaction(async (tx) => {
 		await tx.nativeCodecConfiguration.updateMany({
 			where: {

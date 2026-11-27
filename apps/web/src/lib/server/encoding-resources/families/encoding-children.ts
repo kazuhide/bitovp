@@ -1,11 +1,13 @@
 import {
 	type BroadcastTsMuxing,
 	type ConvertSccCaption,
+	type DnsMappingResponse,
 	InputStreamType,
 	type Mp3Muxing,
 	MuxingType,
 	type MxfMuxing,
 	type PackedAudioMuxing,
+	type Scte35Trigger,
 	type SegmentedRawMuxing,
 	SidecarErrorMode,
 	SidecarFileType,
@@ -45,6 +47,11 @@ export const encodingChildren: ResourceChildren = {
 				api.encoding.encodings.muxings.broadcastTs.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.muxings.broadcastTs.get(address.id, childId),
+			metadata: (api, address, childId) =>
+				api.encoding.encodings.muxings.broadcastTs.customdata.get(
+					address.id,
+					childId,
+				),
 		}),
 		"muxings.mp3": defineChildCollection<Mp3Muxing>({
 			label: "MP3",
@@ -54,6 +61,8 @@ export const encodingChildren: ResourceChildren = {
 				api.encoding.encodings.muxings.mp3.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.muxings.mp3.get(address.id, childId),
+			metadata: (api, address, childId) =>
+				api.encoding.encodings.muxings.mp3.customdata.get(address.id, childId),
 		}),
 		"muxings.mxf": defineChildCollection<MxfMuxing>({
 			label: "MXF",
@@ -63,6 +72,8 @@ export const encodingChildren: ResourceChildren = {
 				api.encoding.encodings.muxings.mxf.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.muxings.mxf.get(address.id, childId),
+			metadata: (api, address, childId) =>
+				api.encoding.encodings.muxings.mxf.customdata.get(address.id, childId),
 		}),
 		"muxings.packedAudio": defineChildCollection<PackedAudioMuxing>({
 			label: "Packed Audio",
@@ -77,6 +88,11 @@ export const encodingChildren: ResourceChildren = {
 				api.encoding.encodings.muxings.packedAudio.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.muxings.packedAudio.get(address.id, childId),
+			metadata: (api, address, childId) =>
+				api.encoding.encodings.muxings.packedAudio.customdata.get(
+					address.id,
+					childId,
+				),
 		}),
 		"muxings.segmentedRaw": defineChildCollection<SegmentedRawMuxing>({
 			label: "Segmented RAW",
@@ -90,6 +106,11 @@ export const encodingChildren: ResourceChildren = {
 				api.encoding.encodings.muxings.segmentedRaw.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.muxings.segmentedRaw.get(address.id, childId),
+			metadata: (api, address, childId) =>
+				api.encoding.encodings.muxings.segmentedRaw.customdata.get(
+					address.id,
+					childId,
+				),
 		}),
 		inputStreams: defineChildCollection({
 			label: "Input Streams",
@@ -106,6 +127,8 @@ export const encodingChildren: ResourceChildren = {
 				api.encoding.encodings.sidecars.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.sidecars.get(address.id, childId),
+			metadata: (api, address, childId) =>
+				api.encoding.encodings.sidecars.customdata.get(address.id, childId),
 		}),
 		"sidecars.webvtt": defineChildCollection<WebVttSidecarFile>({
 			label: "WebVTT Sidecars",
@@ -123,6 +146,26 @@ export const encodingChildren: ResourceChildren = {
 				api.encoding.encodings.captions.scc.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.captions.scc.get(address.id, childId),
+			metadata: (api, address, childId) =>
+				api.encoding.encodings.captions.scc.customdata.get(address.id, childId),
+		}),
+		scte35: defineChildCollection<Scte35Trigger>({
+			label: "SCTE-35 triggers",
+			fields: {},
+			list: (api, address, page) =>
+				api.encoding.encodings.scte35Triggers.list(address.id, page),
+			get: (api, address, childId) =>
+				api.encoding.encodings.scte35Triggers.get(address.id, childId),
+		}),
+		dnsMappings: defineChildCollection<DnsMappingResponse>({
+			label: "DNS mappings",
+			liveOnly: true,
+			encodingScope: true,
+			fields: {},
+			list: (api, address, page) =>
+				api.encoding.live.encodings.dnsMappings.list(address.id, page),
+			get: (api, address, childId) =>
+				api.encoding.live.encodings.dnsMappings.get(address.id, childId),
 		}),
 	},
 };

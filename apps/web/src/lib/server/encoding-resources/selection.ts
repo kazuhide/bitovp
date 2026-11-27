@@ -1,4 +1,5 @@
 import { type StepLogEntry, stepLogSchema } from "@bitovp/core";
+import { diagnosticChoices } from "./diagnostics";
 import { isResourceId, type ParentRef, type ResourceAddress } from "./family";
 import { resourceFamilyForStep } from "./registry";
 import { childChoices } from "./resource-children";
@@ -95,6 +96,7 @@ export function parseResourceLog(value: unknown) {
 export function selectResource(
 	log: NonNullable<ReturnType<typeof parseResourceLog>>,
 	step: string,
+	live = false,
 ) {
 	const entry = log.steps.get(step);
 	if (entry?.status !== "DONE" || !isResourceId(entry.resourceId)) return;
@@ -189,7 +191,8 @@ export function selectResource(
 			hasCustomData: !!family.customData,
 			...(family.information && { hasInformation: true }),
 			...(!family.remove && { readOnly: true }),
-			childCollections: childChoices(entry.kind),
+			childCollections: childChoices(entry.kind, live),
+			diagnostics: diagnosticChoices(entry.kind, live),
 		},
 	};
 }

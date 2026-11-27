@@ -42,6 +42,10 @@ const MUTATION_CONTROL_ENTRIES = Object.entries(MUTATION_CONTROLS) as [
 ][];
 
 const FULL_PAGE_WRITE_SOURCES = {
+	"app/settings/encoding-native/codecs/native-codec-client.tsx": {
+		writeCalls: 3,
+		page: "/settings/encoding-native/codecs",
+	},
 	"app/change-password/rotate-form.tsx": {
 		writeCalls: 1,
 		page: "/change-password",

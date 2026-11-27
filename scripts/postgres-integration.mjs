@@ -51,6 +51,7 @@ export const GROUPS = [
 		directory: "apps/web",
 		files: {
 			"src/lib/server/encoding-resources/removal.integration.test.ts": 144,
+			"src/app/api/encoding-native/codecs/route.integration.test.ts": 21,
 			"src/lib/server/create-request.integration.test.ts": 3,
 			"src/app/api/feeder-sessions/route.integration.test.ts": 2,
 			"src/lib/server/vod-input-previews.integration.test.ts": 11,

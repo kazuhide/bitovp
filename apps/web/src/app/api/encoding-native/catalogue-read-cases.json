@@ -1,0 +1,796 @@
+{
+	"metadata": [
+		{
+			"sdkMethod": "encoding.configurations.audio.aac.customdata.get",
+			"path": "/encoding/configurations/audio/aac/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.aac.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "aac",
+			"discriminator": "AAC",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.ac3.customdata.get",
+			"path": "/encoding/configurations/audio/ac3/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.ac3.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "ac3",
+			"discriminator": "AC3",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.customdata.get",
+			"path": "/encoding/configurations/audio/dolby-atmos/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.dolbyAtmos.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "dolby-atmos",
+			"discriminator": "DOLBY_ATMOS",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigital.customdata.get",
+			"path": "/encoding/configurations/audio/dolby-digital/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.dolbyDigital.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "dolby-digital",
+			"discriminator": "DD",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.customdata.get",
+			"path": "/encoding/configurations/audio/dolby-digital-plus/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.dolbyDigitalPlus.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "dolby-digital-plus",
+			"discriminator": "DDPLUS",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.customdata.get",
+			"path": "/encoding/configurations/audio/dts/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.dts.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "dts",
+			"discriminator": "DTS",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.customdata.get",
+			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.dtsPassthrough.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "dts-passthrough",
+			"discriminator": "DTS_PASSTHROUGH",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.customdata.get",
+			"path": "/encoding/configurations/audio/dtsx/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.dtsx.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "dtsx",
+			"discriminator": "DTSX",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.eac3.customdata.get",
+			"path": "/encoding/configurations/audio/eac3/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.eac3.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "eac3",
+			"discriminator": "EAC3",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV1.customdata.get",
+			"path": "/encoding/configurations/audio/he-aac-v1/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.heAacV1.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "he-aac-v1",
+			"discriminator": "HE_AAC_V1",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV2.customdata.get",
+			"path": "/encoding/configurations/audio/he-aac-v2/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.heAacV2.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "he-aac-v2",
+			"discriminator": "HE_AAC_V2",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.customdata.get",
+			"path": "/encoding/configurations/audio/mp2/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.mp2.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "mp2",
+			"discriminator": "MP2",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp3.customdata.get",
+			"path": "/encoding/configurations/audio/mp3/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.mp3.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "mp3",
+			"discriminator": "MP3",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.opus.customdata.get",
+			"path": "/encoding/configurations/audio/opus/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.opus.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "opus",
+			"discriminator": "OPUS",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.pcm.customdata.get",
+			"path": "/encoding/configurations/audio/pcm/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.pcm.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "pcm",
+			"discriminator": "PCM",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.customdata.get",
+			"path": "/encoding/configurations/audio/vorbis/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.audio.vorbis.customdata.get(",
+			"kind": "audio-codecs",
+			"protocol": "vorbis",
+			"discriminator": "VORBIS",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.customdata.get",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.subtitles.dvbSubtitle.customdata.get(",
+			"kind": "subtitle-codecs",
+			"protocol": "dvb-subtitle",
+			"discriminator": "DVB_SUBTITLE",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.imsc.customdata.get",
+			"path": "/encoding/configurations/subtitles/imsc/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.subtitles.imsc.customdata.get(",
+			"kind": "subtitle-codecs",
+			"protocol": "imsc",
+			"discriminator": "IMSC",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.webvtt.customdata.get",
+			"path": "/encoding/configurations/subtitles/webvtt/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.subtitles.webvtt.customdata.get(",
+			"kind": "subtitle-codecs",
+			"protocol": "webvtt",
+			"discriminator": "WEBVTT",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.customdata.get",
+			"path": "/encoding/configurations/video/av1/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.video.av1.customdata.get(",
+			"kind": "video-codecs",
+			"protocol": "av1",
+			"discriminator": "AV1",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.customdata.get",
+			"path": "/encoding/configurations/video/h262/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.video.h262.customdata.get(",
+			"kind": "video-codecs",
+			"protocol": "h262",
+			"discriminator": "H262",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h264.customdata.get",
+			"path": "/encoding/configurations/video/h264/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.video.h264.customdata.get(",
+			"kind": "video-codecs",
+			"protocol": "h264",
+			"discriminator": "H264",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265.customdata.get",
+			"path": "/encoding/configurations/video/h265/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.video.h265.customdata.get(",
+			"kind": "video-codecs",
+			"protocol": "h265",
+			"discriminator": "H265",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.customdata.get",
+			"path": "/encoding/configurations/video/mjpeg/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.video.mjpeg.customdata.get(",
+			"kind": "video-codecs",
+			"protocol": "mjpeg",
+			"discriminator": "MJPEG",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp8.customdata.get",
+			"path": "/encoding/configurations/video/vp8/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.video.vp8.customdata.get(",
+			"kind": "video-codecs",
+			"protocol": "vp8",
+			"discriminator": "VP8",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp9.customdata.get",
+			"path": "/encoding/configurations/video/vp9/{configuration_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.video.vp9.customdata.get(",
+			"kind": "video-codecs",
+			"protocol": "vp9",
+			"discriminator": "VP9",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.audioMix.customdata.get",
+			"path": "/encoding/filters/audio-mix/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.audioMix.customdata.get(",
+			"kind": "filters",
+			"protocol": "audio-mix",
+			"discriminator": "AUDIO_MIX",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.audioVolume.customdata.get",
+			"path": "/encoding/filters/audio-volume/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.audioVolume.customdata.get(",
+			"kind": "filters",
+			"protocol": "audio-volume",
+			"discriminator": "AUDIO_VOLUME",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.customdata.get",
+			"path": "/encoding/filters/azure-speech-to-captions/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.azureSpeechToCaptions.customdata.get(",
+			"kind": "filters",
+			"protocol": "azure-speech-to-captions",
+			"discriminator": "AZURE_SPEECH_TO_CAPTIONS",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.conform.customdata.get",
+			"path": "/encoding/filters/conform/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.conform.customdata.get(",
+			"kind": "filters",
+			"protocol": "conform",
+			"discriminator": "CONFORM",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.crop.customdata.get",
+			"path": "/encoding/filters/crop/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.crop.customdata.get(",
+			"kind": "filters",
+			"protocol": "crop",
+			"discriminator": "CROP",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.deinterlace.customdata.get",
+			"path": "/encoding/filters/deinterlace/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.deinterlace.customdata.get(",
+			"kind": "filters",
+			"protocol": "deinterlace",
+			"discriminator": "DEINTERLACE",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.denoiseHqdn3d.customdata.get",
+			"path": "/encoding/filters/denoise-hqdn3d/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.denoiseHqdn3d.customdata.get(",
+			"kind": "filters",
+			"protocol": "denoise-hqdn3d",
+			"discriminator": "DENOISE_HQDN3D",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.dolbyLoudness.customdata.get",
+			"path": "/encoding/filters/dolby-loudness/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.dolbyLoudness.customdata.get(",
+			"kind": "filters",
+			"protocol": "dolby-loudness",
+			"discriminator": "DOLBY_LOUDNESS",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.ebuR128SinglePass.customdata.get",
+			"path": "/encoding/filters/ebu-r128-single-pass/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.ebuR128SinglePass.customdata.get(",
+			"kind": "filters",
+			"protocol": "ebu-r128-single-pass",
+			"discriminator": "EBU_R128_SINGLE_PASS",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedDeinterlace.customdata.get",
+			"path": "/encoding/filters/enhanced-deinterlace/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.enhancedDeinterlace.customdata.get(",
+			"kind": "filters",
+			"protocol": "enhanced-deinterlace",
+			"discriminator": "ENHANCED_DEINTERLACE",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedWatermark.customdata.get",
+			"path": "/encoding/filters/enhanced-watermark/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.enhancedWatermark.customdata.get(",
+			"kind": "filters",
+			"protocol": "enhanced-watermark",
+			"discriminator": "ENHANCED_WATERMARK",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.interlace.customdata.get",
+			"path": "/encoding/filters/interlace/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.interlace.customdata.get(",
+			"kind": "filters",
+			"protocol": "interlace",
+			"discriminator": "INTERLACE",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.rotate.customdata.get",
+			"path": "/encoding/filters/rotate/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.rotate.customdata.get(",
+			"kind": "filters",
+			"protocol": "rotate",
+			"discriminator": "ROTATE",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.scale.customdata.get",
+			"path": "/encoding/filters/scale/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.scale.customdata.get(",
+			"kind": "filters",
+			"protocol": "scale",
+			"discriminator": "SCALE",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.text.customdata.get",
+			"path": "/encoding/filters/text/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.text.customdata.get(",
+			"kind": "filters",
+			"protocol": "text",
+			"discriminator": "TEXT",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.unsharp.customdata.get",
+			"path": "/encoding/filters/unsharp/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.unsharp.customdata.get(",
+			"kind": "filters",
+			"protocol": "unsharp",
+			"discriminator": "UNSHARP",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.filters.watermark.customdata.get",
+			"path": "/encoding/filters/watermark/{filter_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.watermark.customdata.get(",
+			"kind": "filters",
+			"protocol": "watermark",
+			"discriminator": "WATERMARK",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.akamaiNetstorage.customdata.get",
+			"path": "/encoding/inputs/akamai-netstorage/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.akamaiNetstorage.customdata.get(",
+			"kind": "inputs",
+			"protocol": "akamai-netstorage",
+			"discriminator": "AKAMAI_NETSTORAGE",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.aspera.customdata.get",
+			"path": "/encoding/inputs/aspera/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.aspera.customdata.get(",
+			"kind": "inputs",
+			"protocol": "aspera",
+			"discriminator": "ASPERA",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.azure.customdata.get",
+			"path": "/encoding/inputs/azure/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.azure.customdata.get(",
+			"kind": "inputs",
+			"protocol": "azure",
+			"discriminator": "AZURE",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.directFileUpload.customdata.get",
+			"path": "/encoding/inputs/direct-file-upload/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.directFileUpload.customdata.get(",
+			"kind": "inputs",
+			"protocol": "direct-file-upload",
+			"discriminator": "DIRECT_FILE_UPLOAD",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.ftp.customdata.get",
+			"path": "/encoding/inputs/ftp/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.ftp.customdata.get(",
+			"kind": "inputs",
+			"protocol": "ftp",
+			"discriminator": "FTP",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcs.customdata.get",
+			"path": "/encoding/inputs/gcs/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.gcs.customdata.get(",
+			"kind": "inputs",
+			"protocol": "gcs",
+			"discriminator": "GCS",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcsServiceAccount.customdata.get",
+			"path": "/encoding/inputs/gcs-service-account/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.gcsServiceAccount.customdata.get(",
+			"kind": "inputs",
+			"protocol": "gcs-service-account",
+			"discriminator": "GCS_SERVICE_ACCOUNT",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.genericS3.customdata.get",
+			"path": "/encoding/inputs/generic-s3/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.genericS3.customdata.get(",
+			"kind": "inputs",
+			"protocol": "generic-s3",
+			"discriminator": "GENERIC_S3",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.http.customdata.get",
+			"path": "/encoding/inputs/http/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.http.customdata.get(",
+			"kind": "inputs",
+			"protocol": "http",
+			"discriminator": "HTTP",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.https.customdata.get",
+			"path": "/encoding/inputs/https/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.https.customdata.get(",
+			"kind": "inputs",
+			"protocol": "https",
+			"discriminator": "HTTPS",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.local.customdata.get",
+			"path": "/encoding/inputs/local/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.local.customdata.get(",
+			"kind": "inputs",
+			"protocol": "local",
+			"discriminator": "LOCAL",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3.customdata.get",
+			"path": "/encoding/inputs/s3/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.s3.customdata.get(",
+			"kind": "inputs",
+			"protocol": "s3",
+			"discriminator": "S3",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3RoleBased.customdata.get",
+			"path": "/encoding/inputs/s3-role-based/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.s3RoleBased.customdata.get(",
+			"kind": "inputs",
+			"protocol": "s3-role-based",
+			"discriminator": "S3_ROLE_BASED",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.sftp.customdata.get",
+			"path": "/encoding/inputs/sftp/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.sftp.customdata.get(",
+			"kind": "inputs",
+			"protocol": "sftp",
+			"discriminator": "SFTP",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.srt.customdata.get",
+			"path": "/encoding/inputs/srt/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.srt.customdata.get(",
+			"kind": "inputs",
+			"protocol": "srt",
+			"discriminator": "SRT",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.zixi.customdata.get",
+			"path": "/encoding/inputs/zixi/{input_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.zixi.customdata.get(",
+			"kind": "inputs",
+			"protocol": "zixi",
+			"discriminator": "ZIXI",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiMsl.customdata.get",
+			"path": "/encoding/outputs/akamai-msl/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.akamaiMsl.customdata.get(",
+			"kind": "outputs",
+			"protocol": "akamai-msl",
+			"discriminator": "AKAMAI_MSL",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiNetstorage.customdata.get",
+			"path": "/encoding/outputs/akamai-netstorage/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.akamaiNetstorage.customdata.get(",
+			"kind": "outputs",
+			"protocol": "akamai-netstorage",
+			"discriminator": "AKAMAI_NETSTORAGE",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.azure.customdata.get",
+			"path": "/encoding/outputs/azure/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.azure.customdata.get(",
+			"kind": "outputs",
+			"protocol": "azure",
+			"discriminator": "AZURE",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.ftp.customdata.get",
+			"path": "/encoding/outputs/ftp/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.ftp.customdata.get(",
+			"kind": "outputs",
+			"protocol": "ftp",
+			"discriminator": "FTP",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcs.customdata.get",
+			"path": "/encoding/outputs/gcs/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.gcs.customdata.get(",
+			"kind": "outputs",
+			"protocol": "gcs",
+			"discriminator": "GCS",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcsServiceAccount.customdata.get",
+			"path": "/encoding/outputs/gcs-service-account/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.gcsServiceAccount.customdata.get(",
+			"kind": "outputs",
+			"protocol": "gcs-service-account",
+			"discriminator": "GCS_SERVICE_ACCOUNT",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.genericS3.customdata.get",
+			"path": "/encoding/outputs/generic-s3/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.genericS3.customdata.get(",
+			"kind": "outputs",
+			"protocol": "generic-s3",
+			"discriminator": "GENERIC_S3",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.liveMediaIngest.customdata.get",
+			"path": "/encoding/outputs/live-media-ingest/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.liveMediaIngest.customdata.get(",
+			"kind": "outputs",
+			"protocol": "live-media-ingest",
+			"discriminator": "LIVE_MEDIA_INGEST",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.local.customdata.get",
+			"path": "/encoding/outputs/local/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.local.customdata.get(",
+			"kind": "outputs",
+			"protocol": "local",
+			"discriminator": "LOCAL",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.customdata.get",
+			"path": "/encoding/outputs/moq/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.moq.customdata.get(",
+			"kind": "outputs",
+			"protocol": "moq",
+			"discriminator": "MOQ",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3.customdata.get",
+			"path": "/encoding/outputs/s3/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.s3.customdata.get(",
+			"kind": "outputs",
+			"protocol": "s3",
+			"discriminator": "S3",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3RoleBased.customdata.get",
+			"path": "/encoding/outputs/s3-role-based/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.s3RoleBased.customdata.get(",
+			"kind": "outputs",
+			"protocol": "s3-role-based",
+			"discriminator": "S3_ROLE_BASED",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.sftp.customdata.get",
+			"path": "/encoding/outputs/sftp/{output_id}/customData",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.sftp.customdata.get(",
+			"kind": "outputs",
+			"protocol": "sftp",
+			"discriminator": "SFTP",
+			"entrypointAnchor": "await reader.metadata(api, id)"
+		}
+	],
+	"generic": [
+		{
+			"sdkMethod": "encoding.configurations.get",
+			"path": "/encoding/configurations/{configuration_id}",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.get(",
+			"kind": "codecs",
+			"view": "detail",
+			"discriminator": "AV1",
+			"entrypointAnchor": "await reader.get(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.configurations.list",
+			"path": "/encoding/configurations",
+			"transportFile": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+			"transportAnchor": "api.encoding.configurations.list(",
+			"kind": "codecs",
+			"view": "list",
+			"discriminator": "H264",
+			"entrypointAnchor": "await reader.list(api, { offset, limit })"
+		},
+		{
+			"sdkMethod": "encoding.filters.type.get",
+			"path": "/encoding/filters/{filter_id}/type",
+			"transportFile": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+			"transportAnchor": "api.encoding.filters.type.get(",
+			"kind": "filters",
+			"view": "type",
+			"discriminator": "CROP",
+			"entrypointAnchor": "await reader.readType(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.inputs.get",
+			"path": "/encoding/inputs/{input_id}",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.inputs.get(",
+			"kind": "inputs",
+			"view": "detail",
+			"discriminator": "S3",
+			"entrypointAnchor": "await reader.get(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.get",
+			"path": "/encoding/outputs/{output_id}",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.get(",
+			"kind": "outputs",
+			"view": "detail",
+			"discriminator": "S3_ROLE_BASED",
+			"entrypointAnchor": "await reader.get(api, id)"
+		},
+		{
+			"sdkMethod": "encoding.outputs.list",
+			"path": "/encoding/outputs",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.list(",
+			"kind": "outputs",
+			"view": "list",
+			"discriminator": "MOQ",
+			"entrypointAnchor": "await reader.list(api, { offset, limit })"
+		},
+		{
+			"sdkMethod": "encoding.outputs.type.get",
+			"path": "/encoding/outputs/{output_id}/type",
+			"transportFile": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+			"transportAnchor": "api.encoding.outputs.type.get(",
+			"kind": "outputs",
+			"view": "type",
+			"discriminator": "S3",
+			"entrypointAnchor": "await reader.readType(api, id)"
+		}
+	]
+}

@@ -21,6 +21,8 @@ beforeEach(() => {
 			];
 		}
 		const params = new URL(url, "https://test").searchParams;
+		if (params.get("view") === "metadata") return { keyCount: 0 };
+		if (params.get("view") === "type") return { resourceType: "S3" };
 		if (params.get("kind") === "video-codecs") {
 			const item = {
 				id: resourceId,
@@ -141,6 +143,45 @@ describe("NativeEncodingClient", () => {
 		expect(apiFetch).toHaveBeenCalledWith(
 			`/api/encoding-native?kind=outputs&bitmovinAccountId=${primaryId}&protocol=cdn&id=${resourceId}`,
 			expect.anything(),
+		);
+	});
+
+	it("opens metadata counts and generic output types on demand in the selected account", async () => {
+		renderWithQuery(<NativeEncodingClient />);
+		await screen.findByText("Studio template");
+		fireEvent.change(screen.getByRole("combobox", { name: "Resource" }), {
+			target: { value: "outputs" },
+		});
+		fireEvent.click(await screen.findByRole("button", { name: /S3 output/ }));
+		const metadata = await screen.findByRole("button", {
+			name: "Check metadata",
+		});
+		expect(apiFetch.mock.calls.some(([url]) => url.includes("view="))).toBe(
+			false,
+		);
+		fireEvent.click(metadata);
+		expect(
+			await screen.findByText("Custom metadata fields"),
+		).toBeInTheDocument();
+		expect(screen.getByText("0")).toBeInTheDocument();
+		expect(apiFetch).toHaveBeenCalledWith(
+			`/api/encoding-native?kind=outputs&bitmovinAccountId=${primaryId}&protocol=s3&id=${resourceId}&view=metadata`,
+			expect.objectContaining({ signal: expect.any(AbortSignal) }),
+		);
+
+		fireEvent.change(
+			screen.getByRole("combobox", { name: "Storage or protocol" }),
+			{ target: { value: "" } },
+		);
+		expect(screen.queryByText("Custom metadata fields")).toBeNull();
+		fireEvent.click(await screen.findByRole("button", { name: /S3 output/ }));
+		fireEvent.click(await screen.findByRole("button", { name: "Check type" }));
+		expect(
+			await screen.findByText("S3", { selector: "dd" }),
+		).toBeInTheDocument();
+		expect(apiFetch).toHaveBeenCalledWith(
+			`/api/encoding-native?kind=outputs&bitmovinAccountId=${primaryId}&id=${resourceId}&view=type`,
+			expect.objectContaining({ signal: expect.any(AbortSignal) }),
 		);
 	});
 

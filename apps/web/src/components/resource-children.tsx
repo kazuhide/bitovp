@@ -5,12 +5,17 @@ import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
+import {
+	type ProviderDiagnostic,
+	ResourceDiagnostics,
+} from "./resource-diagnostics";
 
 export type ChildChoice = {
 	key: string;
 	label: string;
 	hasDetail: boolean;
 	hasMetadata: boolean;
+	diagnostics?: ProviderDiagnostic[];
 };
 type Fields = Record<string, string | number | boolean>;
 type Row = { step: string; id: string; attempt: number };
@@ -181,6 +186,19 @@ function ChildPage({
 										))}
 									</dl>
 								))}
+							{selection?.id === id &&
+								selection.view === "childDetail" &&
+								detail.isSuccess &&
+								!!choice.diagnostics?.length && (
+									<ResourceDiagnostics
+										endpoint={endpoint}
+										subject={{
+											...parent,
+											child: { collection: choice.key, id, offset },
+										}}
+										choices={choice.diagnostics}
+									/>
+								)}
 						</li>
 					);
 				})}

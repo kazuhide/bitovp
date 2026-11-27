@@ -197,6 +197,10 @@ the top-level direct-property ratio as though they had been audited.
 ## Scope of resource and delivery management
 
 **Error Definitions** searches the selected account's generic catalogue.
+**Settings → Bitmovin Encoding resources** shows codec, filter, storage,
+template, and watch-folder entries for a selected account. It also links to
+account usage statistics and management of supported provider codec configurations.
+The metadata view reports field counts for the selected resource.
 Resource inspection is scoped to a [VOD job](user-guide/VOD.md#inspect-or-remove-a-provider-resource)
 or a [Live run](user-guide/LIVE.md#inspect-a-runs-provider-resources).
 VOD removal is individually confirmed. Live resource inspection is read-only.

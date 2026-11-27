@@ -1271,6 +1271,12 @@ Open **Resources** on a VOD job or select a run in the Live channel history. Sel
 
 Live runs provide read-only access to recorded resources. For a terminal VOD job, an operator can confirm an individual deletion by entering the displayed resource ID. BitOVP checks ownership, references from other runs and whether the job has finished. If the response is interrupted, reopen the resource to check its deletion status. Start a new VOD job to encode again after deleting one of its resources.
 
+### Inspect account resources and usage
+
+Open **Settings → Bitmovin Encoding resources** and select an account to inspect its provider settings. Use **Check metadata** to see the number of metadata fields on a supported resource. Open **Bitmovin Encoding statistics** to see usage by day, workload, or label for the selected account. Date inputs use UTC. The daily date-range endpoint asks Bitmovin for a single response. When Bitmovin reports additional entries, use a shorter date range to retrieve them.
+
+Administrators can open **Manage codec configurations** to create supported configurations in the selected provider account. Select a managed configuration and confirm its ID to remove it. After an interruption, reopen the list. **Resume creation** submits a saved request that was interrupted before dispatch. **Check provider** looks up the result of a request after dispatch was claimed.
+
 ## 14. Templates and automation
 
 ### Templates, delivery presets, and samples

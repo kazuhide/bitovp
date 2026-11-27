@@ -9,6 +9,7 @@ import { SelectNative } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
 import {
 	type EncodingCatalogueKind,
+	encodingCatalogueDiagnostic,
 	encodingCatalogueKinds,
 	encodingCatalogueProtocols,
 } from "@/lib/encoding-catalogue";
@@ -26,6 +27,7 @@ type Item = {
 	id: string;
 	name?: string;
 	type?: "VOD" | "LIVE";
+	resourceType?: string;
 	status?: "STOPPED" | "STARTED" | "ERROR";
 	createdAt?: string;
 	modifiedAt?: string;
@@ -44,6 +46,7 @@ const kindLabels = {
 	"watch-folders": "encodingNative.watchFolders",
 	inputs: "encodingNative.inputs",
 	outputs: "encodingNative.outputs",
+	codecs: "encodingNative.codecs",
 	"video-codecs": "encodingNative.videoCodecs",
 	"audio-codecs": "encodingNative.audioCodecs",
 	"subtitle-codecs": "encodingNative.subtitleCodecs",
@@ -111,6 +114,20 @@ export function NativeEncodingClient() {
 			<h1 className="font-semibold text-xl text-zinc-50">
 				{t("encodingNative.title")}
 			</h1>
+			<nav className="flex flex-wrap gap-x-4 gap-y-2 text-emerald-400 text-sm">
+				<Link
+					href="/settings/encoding-native/statistics"
+					className="underline underline-offset-4"
+				>
+					{t("encodingStatistics.title")}
+				</Link>
+				<Link
+					href="/settings/encoding-native/codecs"
+					className="underline underline-offset-4"
+				>
+					{t("encodingNative.manageCodecs")}
+				</Link>
+			</nav>
 			{accounts.isError ? (
 				<LoadFailure
 					message={t("errorDefinitions.accountsFailed")}
@@ -215,7 +232,7 @@ export function NativeEncodingClient() {
 										moveTo([0]);
 									}}
 								>
-									{kind === "filters" && (
+									{(storage || kind === "filters") && (
 										<option value="">{t("encodingNative.allTypes")}</option>
 									)}
 									{Object.entries(options).map(([value, label]) => (
@@ -318,6 +335,7 @@ export function NativeEncodingClient() {
 function ResourceClassification({ item }: { item: Item }) {
 	const { t } = useT();
 	if (item.type) return item.type === "VOD" ? "VOD" : "Live";
+	if (item.resourceType) return item.resourceType;
 	return item.status ? t(`encodingNative.status.${item.status}`) : null;
 }
 
@@ -334,10 +352,11 @@ function ResourceDetail({ target, id }: { target: Target; id: string }) {
 		refetchOnWindowFocus: false,
 	});
 	const item = detail.data?.item;
+	const view = encodingCatalogueDiagnostic(target.kind, target.protocol);
 	return (
 		<div
 			id={`encoding-resource-${id}`}
-			className="border-t border-zinc-800 px-3 py-3"
+			className="space-y-3 border-t border-zinc-800 px-3 py-3"
 		>
 			{detail.isError ? (
 				<LoadFailure
@@ -350,13 +369,15 @@ function ResourceDetail({ target, id }: { target: Target; id: string }) {
 					<dd>
 						<CopyableId value={item.id} />
 					</dd>
-					{(item.type || item.status) && (
+					{(item.type || item.status || item.resourceType) && (
 						<>
 							<dt>
 								{t(
 									item.type
 										? "encodingNative.templateType"
-										: "encodingNative.statusLabel",
+										: item.status
+											? "encodingNative.statusLabel"
+											: "encodingNative.configType",
 								)}
 							</dt>
 							<dd>
@@ -426,7 +447,71 @@ function ResourceDetail({ target, id }: { target: Target; id: string }) {
 			) : (
 				<Loading />
 			)}
+			{item && !detail.isError && view && (
+				<ResourceDiagnostic target={target} id={id} view={view} />
+			)}
 		</div>
+	);
+}
+
+function ResourceDiagnostic({
+	target,
+	id,
+	view,
+}: {
+	target: Target;
+	id: string;
+	view: "metadata" | "type";
+}) {
+	const { t } = useT();
+	const [opened, setOpened] = useState(false);
+	const result = useQuery({
+		queryKey: ["encoding-native-diagnostic", target, id, view],
+		queryFn: ({ signal }) =>
+			apiFetch<{ keyCount?: number; resourceType?: string }>(
+				`/api/encoding-native?${new URLSearchParams({ ...target, id, view })}`,
+				{ signal },
+			),
+		enabled: opened,
+		retry: false,
+		refetchOnWindowFocus: false,
+	});
+	if (!opened) {
+		return (
+			<Button variant="secondary" size="sm" onClick={() => setOpened(true)}>
+				{t(
+					view === "metadata"
+						? "encodingNative.metadata"
+						: "encodingNative.typeCheck",
+				)}
+			</Button>
+		);
+	}
+	if (result.isPending) return <Loading />;
+	if (result.isError) {
+		return (
+			<LoadFailure
+				message={t("encodingNative.detailFailed")}
+				reload={() => result.refetch()}
+			/>
+		);
+	}
+	return (
+		<dl
+			aria-live="polite"
+			className="flex flex-wrap gap-x-4 text-sm text-zinc-300"
+		>
+			<dt>
+				{t(
+					view === "metadata"
+						? "encodingNative.metadataFields"
+						: "encodingNative.configType",
+				)}
+			</dt>
+			<dd>
+				{view === "metadata" ? result.data.keyCount : result.data.resourceType}
+			</dd>
+		</dl>
 	);
 }
 

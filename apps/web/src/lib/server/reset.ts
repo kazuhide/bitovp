@@ -84,6 +84,8 @@ export const RESET_PRESERVES = [
 	"createRequest",
 	// Pending receipts protect the original job or run. Resolved receipts are immutable history.
 	"encodingResourceRemoval",
+	// Provider codec configurations outlive the application data reset.
+	"nativeCodecConfiguration",
 	...RESET_RETAINED_EXPERIMENT_MODELS,
 	"librarySource",
 	"sceneAnalysisRevision",

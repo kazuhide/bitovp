@@ -7,6 +7,7 @@ import {
 } from "@/app/api/encoding-jobs/[id]/resources/route";
 import { GET as live } from "@/app/api/live-channels/[id]/runs/[runId]/resources/route";
 import { auditedOperationCases } from "../../../../../../scripts/api-coverage-test-cases";
+import diagnosticContracts from "./__fixtures__/diagnostic-contracts.json";
 import encodingChildren from "./__fixtures__/encoding-children.json";
 import { resourceFixture } from "./__fixtures__/journal";
 import manifestChildren from "./__fixtures__/manifest-children.json";
@@ -53,19 +54,21 @@ const ask = (req: Request, viaLive = false) =>
 	viaLive
 		? live(req, { params: Promise.resolve({ id: channelId, runId }) })
 		: vod(req, { params: Promise.resolve({ id: jobId }) });
-function parentContract(kind: string) {
+function parentContract(kind: string, protectedVariant?: string) {
 	if (kind === "CREATE_ENCODING")
 		return {
 			kind,
 			parents: {},
 			detail: "/encoding/encodings/{encoding_id}",
 		};
-	const parent = parentContracts.find((x) => x.kind === kind);
+	const parent = parentContracts.find(
+		(x) => x.kind === kind && x.protectedVariant === protectedVariant,
+	);
 	if (!parent) throw new Error("Missing recorded resource fixture");
 	return parent;
 }
-function seed(kind: string, parentPath?: string) {
-	const parent = parentContract(kind);
+function seed(kind: string, parentPath?: string, protectedVariant?: string) {
+	const parent = parentContract(kind, protectedVariant);
 	const f = resourceFixture(
 		{ ...parent, detail: parentPath ?? parent.detail },
 		account,
@@ -111,6 +114,398 @@ const model = {
 	input: { inputPath: "PRIVATE_TEST_VALUE" },
 	type: "WIDEVINE",
 };
+
+type DiagnosticContract = {
+	sdkMethod: string;
+	path: string;
+	kind: string;
+	view: string;
+	diagnostic?: string;
+	collection?: string;
+	listPath?: string;
+	member?: object;
+	offset?: number;
+	paged?: boolean;
+	live?: boolean;
+	raw: unknown;
+	expected: unknown;
+};
+
+function diagnosticRequest(spec: DiagnosticContract) {
+	const params = new URLSearchParams({
+		step: "selected",
+		attempt: "0",
+		view: spec.view,
+		offset: String(spec.offset ?? 0),
+	});
+	if (spec.collection) params.set("collection", spec.collection);
+	if (spec.listPath) params.set("childId", childId);
+	if (spec.diagnostic) params.set("diagnostic", spec.diagnostic);
+	return new Request(`http://fixture.invalid/resources?${params}`);
+}
+
+function contractPath(
+	path: string,
+	kind: string,
+	fixture: ReturnType<typeof seed>,
+) {
+	const contract = parentContract(kind);
+	const ownerParam = contract.detail.match(/\{([^}]+)\}$/)?.[1];
+	const ownerParameters: Record<string, string | undefined> = contract.parents;
+	return (
+		"/v1" +
+		path.replace(/\{([^}]+)\}/g, (_match, key: string) => {
+			if (key === ownerParam) return fixture.id;
+			const ref = ownerParameters[key];
+			if (!ref) return childId;
+			const parent = fixture.steps.find((s) => s.step === `source:${ref}`);
+			if (!parent?.resourceId) throw new Error("Missing fixture scope");
+			return parent.resourceId;
+		})
+	);
+}
+
+function resolveFixture(
+	value: unknown,
+	fixture: ReturnType<typeof seed>,
+): unknown {
+	if (value === "$child") return childId;
+	if (value === "$job") return jobId;
+	if (value === "$selected") return fixture.id;
+	if (value === "$other" || value === "$input") return randomUUID();
+	if (Array.isArray(value))
+		return value.map((item) => resolveFixture(item, fixture));
+	if (value && typeof value === "object")
+		return Object.fromEntries(
+			Object.entries(value).map(([key, item]) => [
+				key,
+				resolveFixture(item, fixture),
+			]),
+		);
+	return value;
+}
+
+it.each(
+	auditedOperationCases(
+		import.meta.url,
+		"recorded-job-diagnostics",
+		diagnosticContracts as readonly DiagnosticContract[],
+		(spec) => [`GET ${spec.path}`],
+	),
+)("reads the documented recorded diagnostic $sdkMethod", async (spec) => {
+	const fixture = seed(spec.kind);
+	const list = spec.listPath && contractPath(spec.listPath, spec.kind, fixture);
+	const detail = contractPath(spec.path, spec.kind, fixture);
+	const requests: string[] = [];
+	const offset = spec.offset ?? 0;
+	transport.mockReset();
+	transport.mockImplementation(async (url: URL | string, init: RequestInit) => {
+		const address = new URL(url);
+		requests.push(address.pathname);
+		const headers = new Headers(init.headers);
+		expect(headers.get("X-Tenant-Org-Id")).toBe(upstream);
+		expect(headers.get("X-Api-Key")).toBe("fixture");
+		expect(init.method?.toUpperCase()).toBe("GET");
+		if (address.pathname === list) {
+			expect(address.searchParams.get("offset")).toBe(String(offset));
+			expect(address.searchParams.get("limit")).toBe("25");
+			return result({
+				items: [
+					{ id: childId, ...(resolveFixture(spec.member, fixture) as object) },
+				],
+				offset,
+				totalCount: offset + 1,
+			});
+		}
+		expect(address.pathname).toBe(detail);
+		if (spec.paged) {
+			expect(address.searchParams.get("offset")).toBe(String(offset));
+			expect(address.searchParams.get("limit")).toBe("25");
+		} else {
+			expect(address.search).toBe("");
+		}
+		return result(resolveFixture(spec.raw, fixture));
+	});
+	const response = await ask(diagnosticRequest(spec), spec.live);
+	const body: unknown = await response.json();
+	expect(response.status).toBe(200);
+	expect(body).toEqual(resolveFixture(spec.expected, fixture));
+	expect(JSON.stringify(body)).not.toContain("PRIVATE_TEST_VALUE");
+	expect(requests).toEqual(list ? [list, detail] : [detail]);
+});
+
+it("does not fetch recorded diagnostics after a resource-scope change", async () => {
+	seed("CREATE_STREAM");
+	access.mockResolvedValueOnce({
+		apiKey: "fixture",
+		resourceScopeVersion: randomUUID(),
+		resourceScopeSince: new Date(0),
+	});
+	const response = await ask(
+		new Request(
+			"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=input",
+		),
+	);
+	expect(response.status).toBe(409);
+	expect(transport).not.toHaveBeenCalled();
+});
+
+it("omits the VOD start diagnostic for a recorded Live encoding", async () => {
+	seed("CREATE_ENCODING");
+	const index = await ask(
+		new Request("http://fixture.invalid/resources"),
+		true,
+	);
+	const body = await index.json();
+	const request = new Request(
+		"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=start",
+	);
+	const response = await ask(request, true);
+	expect(index.status).toBe(200);
+	expect(body.resources[0].diagnostics).toContainEqual(
+		expect.objectContaining({ key: "kantar" }),
+	);
+	expect(body.resources[0].diagnostics).not.toContainEqual(
+		expect.objectContaining({ key: "start" }),
+	);
+	expect(response.status).toBe(400);
+	expect(transport).not.toHaveBeenCalled();
+});
+
+it("rejects duplicate diagnostic selectors before fetching anything", async () => {
+	seed("CREATE_ENCODING");
+	const response = await ask(
+		new Request(
+			"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=start&diagnostic=template",
+		),
+	);
+	expect(response.status).toBe(400);
+	expect(transport).not.toHaveBeenCalled();
+});
+
+it("only reads child diagnostics after an exact page membership check", async () => {
+	seed("CREATE_ENCODING");
+	transport.mockResolvedValueOnce(
+		result({
+			items: [{ id: randomUUID(), type: "FMP4" }],
+			offset: 0,
+			totalCount: 1,
+		}),
+	);
+	const response = await ask(
+		new Request(
+			`http://fixture.invalid/resources?step=selected&attempt=0&view=childDiagnostic&diagnostic=type&collection=muxings&childId=${childId}`,
+		),
+	);
+	expect(response.status).toBe(409);
+	expect(transport).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+	["CREATE_MANIFEST_DASH", "HLS"],
+	["CREATE_MANIFEST_SMOOTH", "DASH"],
+	["CREATE_DASH_ADAPTATION_SET_VIDEO", "AUDIO"],
+	["CREATE_DASH_REPRESENTATION_CMAF", "FMP4"],
+	["CREATE_HLS_AUDIO_MEDIA", "VIDEO"],
+])("rejects a provider type that conflicts with the recorded %s kind", async (kind, type) => {
+	const fixture = seed(kind);
+	transport.mockResolvedValueOnce(result({ id: fixture.id, type }));
+	const response = await ask(
+		new Request(
+			"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=type",
+		),
+	);
+	expect(response.status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+	["muxings", "FMP4", "WEBM"],
+	["inputStreams", "INGEST", "CONCATENATION"],
+])("rejects a provider %s type that conflicts with its visible page row", async (collection, listedType, type) => {
+	seed("CREATE_ENCODING");
+	transport
+		.mockResolvedValueOnce(
+			result({
+				items: [{ id: childId, type: listedType }],
+				offset: 0,
+				totalCount: 1,
+			}),
+		)
+		.mockResolvedValueOnce(result({ id: childId, type }));
+	const response = await ask(
+		new Request(
+			`http://fixture.invalid/resources?step=selected&attempt=0&view=childDiagnostic&diagnostic=type&collection=${collection}&childId=${childId}`,
+		),
+	);
+	expect(response.status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+	["CREATE_DASH_REPRESENTATION_FMP4", "fmp4-rep", "DRM_FMP4", "FMP4"],
+	["CREATE_DASH_REPRESENTATION_MP4", "mp4-rep", "DRM_MP4", "MP4"],
+])("checks the DRM subtype of a recorded %s representation", async (kind, variant, type, clearType) => {
+	const fixture = seed(kind, undefined, variant);
+	const path = `${fixture.expected.replace(/\/(fmp4|mp4)\/drm\//, "/")}/type`;
+	transport
+		.mockImplementationOnce(async (url: string) => {
+			expect(new URL(url).pathname).toBe(path);
+			return result({ id: fixture.id, type });
+		})
+		.mockResolvedValueOnce(result({ id: fixture.id, type: clearType }));
+	const request = new Request(
+		"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=type",
+	);
+	const response = await ask(request);
+	const wrong = await ask(request);
+	expect(response.status).toBe(200);
+	expect(await response.json()).toEqual({ fields: { type } });
+	expect(wrong.status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it.each(
+	(diagnosticContracts as readonly DiagnosticContract[]).filter(
+		(spec) => spec.diagnostic === "information",
+	),
+)("keeps the other output metrics when $collection has no bitrate", async (spec) => {
+	seed(spec.kind);
+	transport
+		.mockResolvedValueOnce(result({ items: [{ id: childId }], totalCount: 1 }))
+		.mockResolvedValueOnce(
+			result({
+				fileSize: 1024,
+				containerBitrate: null,
+				duration: 3,
+				audioTracks: [{ codec: "PRIVATE_TEST_VALUE" }],
+			}),
+		);
+	const response = await ask(diagnosticRequest(spec), spec.live);
+	expect(response.status).toBe(200);
+	expect(await response.json()).toEqual({
+		fields: { fileSizeBytes: 1024, durationSeconds: 3, audioTrackCount: 1 },
+	});
+	expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+	"ERROR",
+	undefined,
+])("rejects a child list envelope with status %s before later reads", async (status) => {
+	seed("CREATE_ENCODING");
+	transport.mockResolvedValueOnce(
+		Response.json({
+			status,
+			data: {
+				result: { items: [{ id: childId, type: "FMP4" }], totalCount: 1 },
+			},
+		}),
+	);
+	const response = await ask(
+		new Request(
+			`http://fixture.invalid/resources?step=selected&attempt=0&view=childDiagnostic&diagnostic=type&collection=muxings&childId=${childId}`,
+		),
+	);
+	expect(response.status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(1);
+});
+
+it("limits DNS mapping diagnostics to live runs and rejects a conflicting encoding association", async () => {
+	const fixture = seed("CREATE_ENCODING");
+	const diagnostic = req("childDetail", "dnsMappings", childId);
+	const reply = await ask(diagnostic);
+	expect(reply.status).toBe(400);
+	expect(transport).not.toHaveBeenCalled();
+	transport.mockResolvedValueOnce(
+		result({
+			items: [{ id: childId, encodingId: fixture.id }],
+			offset: 0,
+			totalCount: 1,
+		}),
+	);
+	transport.mockResolvedValueOnce(
+		result({
+			id: childId,
+			encodingId: randomUUID(),
+			hostname: "PRIVATE_TEST_VALUE",
+		}),
+	);
+	const denied = await ask(diagnostic, true);
+	expect(denied.status).toBe(502);
+	expect(await denied.text()).not.toContain("PRIVATE_TEST_VALUE");
+	expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it("rejects noncanonical diagnostic response envelopes and conflicting singleton IDs", async () => {
+	seed("CREATE_ENCODING");
+	const diagnostic = new Request(
+		"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=start",
+	);
+	transport.mockResolvedValueOnce(
+		Response.json({
+			status: "ERROR",
+			data: {
+				result: { encodingMode: "STANDARD", private: "PRIVATE_TEST_VALUE" },
+			},
+		}),
+	);
+	const envelope = await ask(diagnostic);
+	expect(envelope.status).toBe(502);
+	expect(await envelope.text()).not.toContain("PRIVATE_TEST_VALUE");
+	transport.mockResolvedValueOnce(
+		result({ id: randomUUID(), encodingMode: "STANDARD" }),
+	);
+	expect((await ask(diagnostic)).status).toBe(502);
+});
+
+it("rejects provider PSNR pagination that contradicts the requested window", async () => {
+	seed("CREATE_STREAM");
+	transport.mockResolvedValueOnce(
+		result({
+			offset: 0,
+			totalCount: 26,
+			items: [{ timeSpan: { from: 30, to: 40 }, psnr: 34 }],
+		}),
+	);
+	const request = new Request(
+		"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=psnr&offset=25",
+	);
+	expect((await ask(request)).status).toBe(502);
+});
+
+it("shows manifest totals only for formats reported by every output", async () => {
+	seed("CREATE_ENCODING");
+	transport.mockResolvedValueOnce(
+		result([
+			{ paths: { dashManifests: [{}], hlsManifests: [] } },
+			{ paths: { hlsManifests: [] } },
+		]),
+	);
+	const response = await ask(
+		new Request(
+			"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=outputPaths",
+		),
+	);
+	expect(response.status).toBe(200);
+	expect(await response.json()).toEqual({
+		fields: { outputCount: 2, hlsManifestCount: 0 },
+	});
+});
+
+it("rejects metadata claiming a different recorded resource", async () => {
+	seed("CREATE_THUMBNAIL");
+	transport.mockResolvedValueOnce(
+		result({ id: randomUUID(), customData: { token: "PRIVATE_TEST_VALUE" } }),
+	);
+	const response = await ask(
+		new Request(
+			"http://fixture.invalid/resources?step=selected&attempt=0&view=customData",
+		),
+	);
+	expect(response.status).toBe(502);
+	expect(await response.text()).not.toContain("PRIVATE_TEST_VALUE");
+});
 
 type RelatedCase = {
 	kind: string;

@@ -240,6 +240,32 @@ model CreateRequest {
   @@index([organizationId])
 }
 
+/// Local ownership and dispatch journal for standalone provider configurations.
+/// Retained across provider or account removal so old create keys cannot resend.
+model NativeCodecConfiguration {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id String @db.Uuid
+  bitmovinAccountId String @db.Uuid
+  scopeVersion String @db.Uuid
+  providerScopeIdentity String @db.Char(64)
+  codec String
+  name String
+  ownerToken String @db.Uuid
+  requestSha256 String @db.Char(64)
+  pendingCreateRequest Json?
+  providerId String? @db.Uuid
+  state String
+  deleteToken String? @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([organizationId, id])
+  @@unique([organizationId, bitmovinAccountId, scopeVersion, providerId], map: "NativeCodecConfiguration_provider_key")
+  @@index([organizationId, bitmovinAccountId, createdAt], map: "NativeCodecConfiguration_recent")
+}
+
 model EncodingJob {
   pendingResourceRemovals EncodingResourceRemoval[]
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
@@ -3073,6 +3099,7 @@ model Organization {
   bitmovinAccountRows BitmovinAccount[]
   storageLocationPresetRows StorageLocationPreset[]
   createRequestRows CreateRequest[]
+  nativeCodecConfigurationRows NativeCodecConfiguration[]
   encodingJobRows EncodingJob[]
   librarySourceRows LibrarySource[]
   sceneAnalysisRevisionRows SceneAnalysisRevision[]

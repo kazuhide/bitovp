@@ -42,6 +42,9 @@ export const TENANT_MODEL_RELATIONS: Readonly<
 	createRequest: {
 		organization: "organization",
 	},
+	nativeCodecConfiguration: {
+		organization: "organization",
+	},
 	encodingJob: {
 		pendingResourceRemovals: "encodingResourceRemoval",
 		evidenceReceipts: "libraryEvidenceReceipt",

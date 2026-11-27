@@ -5,12 +5,18 @@ on:
     paths:
       - .github/workflows/encoding-resource-proofs.yml
       - apps/web/src/lib/server/encoding-resources/**
+      - apps/web/src/lib/encoding-metadata.ts
+      - apps/web/src/lib/encoding-statistics.ts
+      - apps/web/src/app/api/encoding-native/**
       - verification/lean/encoding-resources/**
   push:
     branches: [main]
     paths:
       - .github/workflows/encoding-resource-proofs.yml
       - apps/web/src/lib/server/encoding-resources/**
+      - apps/web/src/lib/encoding-metadata.ts
+      - apps/web/src/lib/encoding-statistics.ts
+      - apps/web/src/app/api/encoding-native/**
       - verification/lean/encoding-resources/**
 
 permissions:
@@ -36,4 +42,4 @@ jobs:
           lint: "false"
           use-github-cache: "false"
           use-mathlib-cache: "false"
-      - run: node --test verification/lean/encoding-resources/child-window.test.mjs
+      - run: node --test verification/lean/encoding-resources/*.test.mjs

@@ -24,7 +24,7 @@ import { diagnosticFor, inspectDiagnostic } from "./diagnostics";
 import { InvalidResourceResponse } from "./family";
 import {
 	childCollectionsFor,
-	childIsOnPage,
+	findChildOnPage,
 	readChildDetail,
 	readChildPage,
 } from "./resource-children";
@@ -274,8 +274,10 @@ export function resourceSdk(
 			} catch {
 				throw new InvalidResourceResponse();
 			}
-			const result = object(object(object(body)?.data)?.result);
-			if (!result) throw new InvalidResourceResponse();
+			const envelope = object(body);
+			const result = object(object(envelope?.data)?.result);
+			if (envelope?.status !== "SUCCESS" || !result)
+				throw new InvalidResourceResponse();
 			const path = new URL(String(url)).pathname.replace(/\/$/, "");
 			if (path.toLowerCase().endsWith("/customdata")) {
 				if (
@@ -420,7 +422,9 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 				if (view === "children")
 					return respond(await readChildPage(api, child, address, page));
 				const id = childId;
-				if (!id || !(await childIsOnPage(api, child, address, page, id)))
+				const member =
+					id && (await findChildOnPage(api, child, address, page, id));
+				if (!id || !member)
 					return jsonError(
 						409,
 						"The child is no longer on the selected resource page.",
@@ -433,7 +437,7 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 					return respond(
 						await inspectDiagnostic(
 							diagnostic,
-							{ address, id, page },
+							{ address, id, page, listedType: member.type },
 							access,
 							signal,
 						),

@@ -217,8 +217,8 @@
 			"items": [
 				{
 					"timeSpan": {
-						"from": 30,
-						"to": 40
+						"from": 30125,
+						"to": 40250
 					},
 					"psnr": 39.5,
 					"file": "PRIVATE_TEST_VALUE"
@@ -230,9 +230,9 @@
 			"total": 26,
 			"items": [
 				{
-					"id": "30:40",
-					"fromSeconds": 30,
-					"toSeconds": 40,
+					"id": "30125:40250",
+					"fromSeconds": 30.125,
+					"toSeconds": 40.25,
 					"psnrDb": 39.5
 				}
 			]

@@ -195,15 +195,17 @@ export async function readChildPage(
 	return { items, total, available, offset: page.offset };
 }
 
-export async function childIsOnPage(
+export async function findChildOnPage(
 	api: BitmovinApi,
 	collection: ResourceChildCollection,
 	address: ResourceAddress,
 	page: Page,
 	id: string,
 ) {
-	return (await verifiedWindow(api, collection, address, page, id))
-		.containsTarget;
+	const window = await verifiedWindow(api, collection, address, page, id);
+	return window.containsTarget
+		? window.rows.find((row) => row.id === id)
+		: undefined;
 }
 
 export async function readChildDetail(

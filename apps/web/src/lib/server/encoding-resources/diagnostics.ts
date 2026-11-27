@@ -21,10 +21,15 @@ import {
 
 export type DiagnosticChoice = { key: string; label: string; labelJa: string };
 type DiagnosticResult = { fields: ResourceFields } | ResourcePage;
-type Target = { address: ResourceAddress; id: string; page: Page };
+type Target = {
+	address: ResourceAddress;
+	id: string;
+	page: Page;
+	listedType?: string;
+};
 type Diagnostic = Omit<DiagnosticChoice, "key"> & {
 	read(api: BitmovinApi, target: Target): Promise<unknown>;
-	project(result: unknown, page: Page): DiagnosticResult;
+	project(result: unknown, target: Target): DiagnosticResult;
 };
 type Diagnostics = Record<string, Diagnostic>;
 
@@ -114,39 +119,59 @@ const muxingInfo: Pick<Diagnostic, "label" | "labelJa" | "project"> = {
 function typeView(
 	schema: z.ZodType<string>,
 	read: Diagnostic["read"],
+	recordedType?: string,
 ): Diagnostic {
+	const responseType = z.object({ type: schema });
 	return {
 		label: "Resource type",
 		labelJa: "リソース種別",
 		read,
-		project: (value) => ({ fields: parse(z.object({ type: schema }), value) }),
+		project: (value, { listedType }) => {
+			const data = parse(responseType, value);
+			const expectedType = recordedType ?? listedType;
+			if (expectedType !== undefined && data.type !== expectedType)
+				throw new InvalidResourceResponse();
+			return { fields: data };
+		},
 	};
 }
-const manifestType = typeView(z.enum(ManifestType), (api, { id }) =>
-	api.encoding.manifests.type.get(id),
-);
-const adaptationType = typeView(
-	z.enum(AdaptationSetType),
-	(api, { id, address }) =>
-		api.encoding.manifests.dash.periods.adaptationsets.type.get(
-			address.parent("manifestId"),
-			address.parent("periodId"),
-			id,
-		),
-);
-const representationType = typeView(
-	z.enum(DashRepresentationTypeDiscriminator),
-	(api, { id, address }) =>
-		api.encoding.manifests.dash.periods.adaptationsets.representations.type.get(
-			address.parent("manifestId"),
-			address.parent("periodId"),
-			address.parent("adaptationSetId"),
-			id,
-		),
-);
-const mediaType = typeView(z.enum(MediaInfoType), (api, { id, address }) =>
-	api.encoding.manifests.hls.media.type.get(address.parent("manifestId"), id),
-);
+const manifestType = (type: ManifestType) =>
+	typeView(z.literal(type), (api, { id }) =>
+		api.encoding.manifests.type.get(id),
+	);
+const adaptationType = (type: string) =>
+	typeView(
+		z.enum(AdaptationSetType),
+		(api, { id, address }) =>
+			api.encoding.manifests.dash.periods.adaptationsets.type.get(
+				address.parent("manifestId"),
+				address.parent("periodId"),
+				id,
+			),
+		type,
+	);
+const representationType = (type: string) =>
+	typeView(
+		z.enum(DashRepresentationTypeDiscriminator),
+		(api, { id, address }) =>
+			api.encoding.manifests.dash.periods.adaptationsets.representations.type.get(
+				address.parent("manifestId"),
+				address.parent("periodId"),
+				address.parent("adaptationSetId"),
+				id,
+			),
+		type,
+	);
+const mediaType = (type: string) =>
+	typeView(
+		z.enum(MediaInfoType),
+		(api, { id, address }) =>
+			api.encoding.manifests.hls.media.type.get(
+				address.parent("manifestId"),
+				id,
+			),
+		type,
+	);
 const manifestStart = {
 	label: "Manifest start request",
 	labelJa: "マニフェストの開始設定",
@@ -322,7 +347,7 @@ const recorded: Record<string, Diagnostics> = {
 					id,
 					page,
 				),
-			project: (value, { offset, limit }) => {
+			project: (value, { page: { offset, limit } }) => {
 				const result = parse(psnrPage, value);
 				if (
 					(result.offset !== undefined && result.offset !== offset) ||
@@ -335,28 +360,33 @@ const recorded: Record<string, Diagnostics> = {
 					const id = `${from}:${to}`;
 					if (to < from || ids.has(id)) throw new InvalidResourceResponse();
 					ids.add(id);
-					return { id, fromSeconds: from, toSeconds: to, psnrDb: psnr };
+					return {
+						id,
+						fromSeconds: from / 1000,
+						toSeconds: to / 1000,
+						psnrDb: psnr,
+					};
 				});
 				return { offset, total: result.totalCount, items };
 			},
 		},
 	},
 	CREATE_MANIFEST_DASH: {
-		type: manifestType,
+		type: manifestType(ManifestType.DASH),
 		start: {
 			...manifestStart,
 			read: (api, { id }) => api.encoding.manifests.dash.getStartRequest(id),
 		},
 	},
 	CREATE_MANIFEST_HLS: {
-		type: manifestType,
+		type: manifestType(ManifestType.HLS),
 		start: {
 			...manifestStart,
 			read: (api, { id }) => api.encoding.manifests.hls.getStartRequest(id),
 		},
 	},
 	CREATE_MANIFEST_SMOOTH: {
-		type: manifestType,
+		type: manifestType(ManifestType.SMOOTH_STREAMING),
 		start: {
 			...manifestStart,
 			read: (api, { id }) => api.encoding.manifests.smooth.getStartRequest(id),
@@ -411,14 +441,19 @@ function lookup(kind: string, collection?: string): Diagnostics | undefined {
 			? encodingChild[collection]
 			: undefined;
 	if (Object.hasOwn(recorded, kind)) return recorded[kind];
-	if (kind.startsWith("CREATE_DASH_ADAPTATION_SET_"))
-		return { type: adaptationType };
-	if (kind.startsWith("CREATE_DASH_REPRESENTATION_"))
-		return { type: representationType };
-	if (
-		/^CREATE_HLS_(AUDIO|CLOSED_CAPTIONS|SUBTITLES|VIDEO|VTT)_MEDIA$/.test(kind)
-	)
-		return { type: mediaType };
+	const adaptationPrefix = "CREATE_DASH_ADAPTATION_SET_";
+	if (kind.startsWith(adaptationPrefix))
+		return { type: adaptationType(kind.slice(adaptationPrefix.length)) };
+	const representationPrefix = "CREATE_DASH_REPRESENTATION_";
+	if (kind.startsWith(representationPrefix))
+		return {
+			type: representationType(kind.slice(representationPrefix.length)),
+		};
+	const media =
+		/^CREATE_HLS_(AUDIO|CLOSED_CAPTIONS|SUBTITLES|VIDEO|VTT)_MEDIA$/.exec(
+			kind,
+		)?.[1];
+	if (media) return { type: mediaType(media) };
 }
 
 export function diagnosticChoices(
@@ -473,5 +508,5 @@ export async function inspectDiagnostic(
 	);
 	await diagnostic.read(api, target);
 	if (result === undefined) throw new InvalidResourceResponse();
-	return diagnostic.project(result, target.page);
+	return diagnostic.project(result, target);
 }

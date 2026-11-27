@@ -277,6 +277,69 @@ it("only reads child diagnostics after an exact page membership check", async ()
 	expect(transport).toHaveBeenCalledTimes(1);
 });
 
+it.each([
+	["CREATE_MANIFEST_DASH", "HLS"],
+	["CREATE_MANIFEST_SMOOTH", "DASH"],
+	["CREATE_DASH_ADAPTATION_SET_VIDEO", "AUDIO"],
+	["CREATE_DASH_REPRESENTATION_CMAF", "FMP4"],
+	["CREATE_HLS_AUDIO_MEDIA", "VIDEO"],
+])("rejects a provider type that conflicts with the recorded %s kind", async (kind, type) => {
+	const fixture = seed(kind);
+	transport.mockResolvedValueOnce(result({ id: fixture.id, type }));
+	const response = await ask(
+		new Request(
+			"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=type",
+		),
+	);
+	expect(response.status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+	["muxings", "FMP4", "WEBM"],
+	["inputStreams", "INGEST", "CONCATENATION"],
+])("rejects a provider %s type that conflicts with its visible page row", async (collection, listedType, type) => {
+	seed("CREATE_ENCODING");
+	transport
+		.mockResolvedValueOnce(
+			result({
+				items: [{ id: childId, type: listedType }],
+				offset: 0,
+				totalCount: 1,
+			}),
+		)
+		.mockResolvedValueOnce(result({ id: childId, type }));
+	const response = await ask(
+		new Request(
+			`http://fixture.invalid/resources?step=selected&attempt=0&view=childDiagnostic&diagnostic=type&collection=${collection}&childId=${childId}`,
+		),
+	);
+	expect(response.status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+	"ERROR",
+	undefined,
+])("rejects a child list envelope with status %s before later reads", async (status) => {
+	seed("CREATE_ENCODING");
+	transport.mockResolvedValueOnce(
+		Response.json({
+			status,
+			data: {
+				result: { items: [{ id: childId, type: "FMP4" }], totalCount: 1 },
+			},
+		}),
+	);
+	const response = await ask(
+		new Request(
+			`http://fixture.invalid/resources?step=selected&attempt=0&view=childDiagnostic&diagnostic=type&collection=muxings&childId=${childId}`,
+		),
+	);
+	expect(response.status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(1);
+});
+
 it("limits DNS mapping diagnostics to live runs and rejects a conflicting encoding association", async () => {
 	const fixture = seed("CREATE_ENCODING");
 	const diagnostic = req("childDetail", "dnsMappings", childId);

@@ -244,6 +244,22 @@ export class AttemptLeaseLostError extends Error {
 	}
 }
 
+function isTemporaryAccountReadError(error: unknown): boolean {
+	// Initialization errors use errorCode. Tenant-scoped reads can also fail
+	// while opening or running the Prisma transaction that supplies RLS.
+	const failure = error as { code?: string; errorCode?: string } | null;
+	return [
+		"P1001",
+		"P1002",
+		"P1008",
+		"P1017",
+		"P2024",
+		"P2028",
+		"P2034",
+		"P2037",
+	].includes(failure?.code ?? failure?.errorCode ?? "");
+}
+
 export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 	const process = async function process(
 		jobData: unknown,
@@ -433,6 +449,21 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 			}
 		};
 
+		const deferManifestStop = async (error: string) => {
+			// Recovery is already authorized by the saved block or accepted Cancel.
+			// Release this delivery without rewriting its durable attempt journal.
+			const { count } = await deps.prisma.encodingJob.updateMany({
+				where: { id: encodingJobId, attemptClaimedAt: heldAt },
+				data: { status: "RUNNING", error, attemptClaimedAt: null },
+			});
+			if (count > 0) heldAt = null;
+			return {
+				acknowledged: true as const,
+				encodingJobId,
+				status: count > 0 ? "MANIFEST_STOP_PENDING" : "LEASE_LOST",
+			};
+		};
+
 		if (row.status === "AWAITING_QC") {
 			// Continuation entry . The claim SERIALIZES
 			// deliveries that arrive while the row is parked: whichever loses
@@ -497,8 +528,22 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 						? { ...stored, hdr10PlusStreams: [] }
 						: stored,
 				);
+				entries = stepLogSchema.parse(row.stepLog);
+				resetOwner.entries = entries;
+				const deliveryBlocked = entries.some(
+					(entry) => entry.roleDeliveryBlocked,
+				);
+				const manifestStopPending =
+					deliveryBlocked ||
+					(cancelAtSetup &&
+						recordedRoleManifests(entries, vodOutputKinds(plan.outputs)).some(
+							({ entry, attempted }) => attempted && entry.resourceId,
+						));
+				const cleanupOnly = cancelAtSetup || deliveryBlocked;
+				// Cleanup uses saved provider resources. Source receipts and scoring
+				// capability can change without invalidating their recorded owner.
 				if (
-					!cancelAtSetup &&
+					!cleanupOnly &&
 					(plan.inputTimelinePreparation ||
 						(!row.bitmovinEncodingId &&
 							plan.renditions.some((r) => r.codec === "AUDIO_PASSTHROUGH")))
@@ -507,8 +552,6 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 						throw new Error("INPUT_PREPARATION_VALIDATOR_REQUIRED");
 					await deps.validateInputPreparation(plan);
 				}
-				entries = stepLogSchema.parse(row.stepLog);
-				resetOwner.entries = entries;
 				const verification = verificationCreateIdentity(
 					row.verificationKey,
 					row.verificationRequestSha256,
@@ -521,7 +564,16 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				if (!resolvedAccountId) {
 					throw new Error("Plan carries no Bitmovin account id");
 				}
-				if (!cancelAtSetup) {
+				if (
+					manifestStopPending &&
+					row.bitmovinAccountId &&
+					row.bitmovinAccountId !== resolvedAccountId
+				) {
+					throw new Error(
+						"The recorded Bitmovin account is required for manifest stop",
+					);
+				}
+				if (!cleanupOnly) {
 					const invalidHdr = checkHdr10PlusPlan(plan).find(
 						(i) => i.level === "error",
 					);
@@ -569,7 +621,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				 * validator: an unknown must not manufacture one).
 				 */
 				if (
-					!cancelAtSetup &&
+					!cleanupOnly &&
 					(plan.qc?.vmaf || plan.qc?.psnr) &&
 					deps.vmafModelAvailable !== null
 				) {
@@ -578,12 +630,25 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 						throw new Error(unresolvableModelMessage(model, undefined));
 					}
 				}
-				const account = await deps.revealBitmovinAccount(accountId);
+				let account: Awaited<
+					ReturnType<OrchestratorDeps["revealBitmovinAccount"]>
+				>;
+				try {
+					account = await deps.revealBitmovinAccount(accountId);
+				} catch (error) {
+					if (!manifestStopPending || !isTemporaryAccountReadError(error))
+						throw error;
+					// A failed release must leave the saved cleanup recoverable under
+					// its old lease. Return the promise outside setup's terminal catch.
+					return deferManifestStop(
+						"Waiting to access the recorded Bitmovin account for manifest stop.",
+					);
+				}
 				resourceAccount = account.resourceScopeVersion
 					? { id: accountId, version: account.resourceScopeVersion }
 					: undefined;
 				sdk = deps.makeSdk({
-					...(!cancelAtSetup && plan.internal?.hevcV2
+					...(!cleanupOnly && plan.internal?.hevcV2
 						? { internalHevcV2: plan.internal.hevcV2 }
 						: {}),
 					// GLOBAL External IDs are provider-managed and never enter our
@@ -850,24 +915,6 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				path: `/vod/jobs/${encodingJobId}`,
 			});
 			return { acknowledged: true as const, encodingJobId, status: "ERROR" };
-		};
-		const deferManifestStop = async (error: string) => {
-			const { count } = await deps.prisma.encodingJob.updateMany({
-				where: { id: encodingJobId, attemptClaimedAt: heldAt },
-				data: {
-					status: "RUNNING",
-					error,
-					attemptClaimedAt: null,
-					stepLog: entries as unknown as Prisma.InputJsonValue,
-				},
-			});
-			if (count === 0) throw new AttemptLeaseLostError(encodingJobId);
-			heldAt = null;
-			return {
-				acknowledged: true as const,
-				encodingJobId,
-				status: "MANIFEST_STOP_PENDING",
-			};
 		};
 		// Cancel finalize: stop the job's encoding(s) best-effort (a stop failure
 		// is logged, never fatal — we still cancel locally), then persist CANCELED

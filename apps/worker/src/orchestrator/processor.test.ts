@@ -224,13 +224,30 @@ describe("orchestrator processor", () => {
 		["SMOOTH", "owner-503"],
 		["SMOOTH", "owner-forbidden"],
 		["SMOOTH", "stop-forbidden"],
+		["SMOOTH", "cancel-account-unavailable"],
+		["SMOOTH", "cancel-account-lease-lost"],
+		["SMOOTH", "blocked-account-deleted"],
+		["SMOOTH", "blocked-account-crossed"],
+		["SMOOTH", "blocked-preparation-changed"],
 	] as const)("guards the recorded %s manifest on resume (%s)", async (format, scenario) => {
 		const sample = basePlan.manifests[0];
 		const primary = basePlan.outputs[0];
 		if (!sample || !primary || !("credentialId" in primary))
 			throw new Error("Missing role manifest fixture");
+		const preparationChanged =
+			scenario === "blocked-preparation-changed" ||
+			scenario === "cancel-account-unavailable";
 		const plan = encodingPlanSchema.parse({
 			...basePlan,
+			...(preparationChanged
+				? {
+						inputTimelinePreparation: {
+							taskId: "00000000-0000-4000-8000-000000000001",
+							requestHash: "a".repeat(64),
+						},
+						qc: { vmaf: true, model: "vmaf_v1.0.16_3d0h" },
+					}
+				: {}),
 			bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
 			outputs: [
 				...basePlan.outputs,
@@ -289,13 +306,22 @@ describe("orchestrator processor", () => {
 			scenario === "cancel-at-error-write";
 		const retryableCancel =
 			scenario === "status-503" || scenario === "owner-503";
+		const accountReadForCancel =
+			scenario === "cancel-account-unavailable" ||
+			scenario === "cancel-account-lease-lost";
+		const permanentAccountFailure =
+			scenario === "blocked-account-deleted" ||
+			scenario === "blocked-account-crossed";
 		const userCancel =
+			accountReadForCancel ||
 			scenario === "user-cancel" ||
 			scenario === "owner-forbidden" ||
 			scenario === "stop-forbidden" ||
 			retryableCancel;
 		const attempted =
 			userCancel ||
+			permanentAccountFailure ||
+			preparationChanged ||
 			[
 				"stopped",
 				"still-active",
@@ -310,15 +336,26 @@ describe("orchestrator processor", () => {
 			start.status = "RUNNING";
 			start.startedAt = "2026-06-11T00:00:00.000Z";
 		}
+		if (permanentAccountFailure || scenario === "blocked-preparation-changed")
+			manifest.roleDeliveryBlocked = true;
 		// Persisted ACL is correct even though the provider-side old adoption is public.
 		expect(manifest.request).toMatchObject({ mirrorOutputAcls: ["PRIVATE"] });
 		const h = setup({
 			plan,
 			stepLog: journal,
-			bitmovinAccountId: ACCOUNT_ID,
+			bitmovinAccountId:
+				scenario === "blocked-account-crossed"
+					? "00000000-0000-4000-8000-0000000000bb"
+					: ACCOUNT_ID,
 			status: "RUNNING",
 			cancelRequested: userCancel,
 		});
+		if (preparationChanged) {
+			h.deps.validateInputPreparation = vi.fn(async () => {
+				throw new Error("INPUT_PREPARATION_INVALID");
+			});
+			h.deps.vmafModelAvailable = vi.fn(() => false);
+		}
 		if (scenario === "cancel-at-error-write") {
 			const persist = h.updateMany.getMockImplementation();
 			if (!persist) throw new Error("Missing fixture persistence");
@@ -327,7 +364,8 @@ describe("orchestrator processor", () => {
 				return persist(args);
 			});
 		}
-		vi.mocked(h.deps.revealBitmovinAccount).mockResolvedValue({
+		const revealAccount = vi.mocked(h.deps.revealBitmovinAccount);
+		revealAccount.mockResolvedValue({
 			apiKey: "synthetic-only",
 			tenantOrgId: "fixture-org",
 			resourceScopeVersion:
@@ -335,6 +373,22 @@ describe("orchestrator processor", () => {
 					? "00000000-0000-4000-8000-0000000000ff"
 					: account.version,
 		});
+		const unavailableAccount = Object.assign(
+			new Error("Synthetic temporary database connection failure"),
+			{ errorCode: "P1002" },
+		);
+		if (scenario === "blocked-account-deleted") {
+			revealAccount.mockRejectedValueOnce(
+				new Error("Bitmovin account no longer exists"),
+			);
+		} else if (scenario === "cancel-account-lease-lost") {
+			revealAccount.mockImplementationOnce(async () => {
+				h.row.attemptClaimedAt = new Date("2030-01-01Z");
+				throw unavailableAccount;
+			});
+		} else if (accountReadForCancel || permanentAccountFailure) {
+			revealAccount.mockRejectedValueOnce(unavailableAccount);
+		}
 		const makeSdk = makeWorkerSdk({
 			...h.prisma,
 			auditLog: { create: vi.fn() },
@@ -417,7 +471,9 @@ describe("orchestrator processor", () => {
 								? "FINISHED"
 								: stopped &&
 										(scenario === "stopped" ||
+											scenario === "blocked-preparation-changed" ||
 											scenario === "user-cancel" ||
+											accountReadForCancel ||
 											lostStart)
 									? "CANCELED"
 									: "RUNNING",
@@ -441,13 +497,53 @@ describe("orchestrator processor", () => {
 			}),
 		);
 		try {
+			if (permanentAccountFailure) {
+				const crossed = scenario === "blocked-account-crossed";
+				await expect(h.processor({ encodingJobId: JOB_ID })).rejects.toThrow(
+					crossed
+						? "The recorded Bitmovin account is required for manifest stop"
+						: "Bitmovin account no longer exists",
+				);
+				expect(revealAccount).toHaveBeenCalledTimes(crossed ? 0 : 1);
+				expect(h.row).toMatchObject({
+					status: "ERROR",
+					attemptClaimedAt: null,
+					stepLog: journal,
+				});
+				expect(reads).toHaveLength(0);
+				return;
+			}
+			if (accountReadForCancel) {
+				const displaced = scenario === "cancel-account-lease-lost";
+				await expect(
+					h.processor({ encodingJobId: JOB_ID }),
+				).resolves.toMatchObject({
+					status: displaced ? "LEASE_LOST" : "MANIFEST_STOP_PENDING",
+				});
+				expect(h.row).toMatchObject({
+					status: "RUNNING",
+					cancelRequested: true,
+					attemptClaimedAt: displaced ? new Date("2030-01-01Z") : null,
+					stepLog: journal,
+				});
+				expect(h.emitted).toHaveLength(0);
+				expect(reads).toHaveLength(0);
+				if (displaced) return;
+			}
 			const outcome = await h.processor({ encodingJobId: JOB_ID });
 			if (scenario === "scope-changed") expect(reads).toHaveLength(0);
-			else if (!userCancel) expect(reads).toContain(`GET ${path}`);
+			else if (!userCancel && !preparationChanged)
+				expect(reads).toContain(`GET ${path}`);
+			if (preparationChanged) {
+				expect(h.deps.validateInputPreparation).not.toHaveBeenCalled();
+				expect(h.deps.vmafModelAvailable).not.toHaveBeenCalled();
+			}
 			expect(stopped).toBe(
 				scenario === "stopped" ||
+					scenario === "blocked-preparation-changed" ||
 					scenario === "still-active" ||
 					scenario === "user-cancel" ||
+					accountReadForCancel ||
 					lostStart,
 			);
 			expect(h.sdk.startEncoding).not.toHaveBeenCalled();
@@ -474,6 +570,25 @@ describe("orchestrator processor", () => {
 						status: "RUNNING",
 						attemptClaimedAt: new Date(0),
 					});
+					const saved = structuredClone(h.row.stepLog);
+					const beforeRead = reads.length;
+					revealAccount.mockRejectedValueOnce(
+						Object.assign(new Error("Synthetic exhausted pool"), {
+							code: "P2024",
+						}),
+					);
+					await expect(
+						createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
+					).resolves.toMatchObject({
+						status: "MANIFEST_STOP_PENDING",
+					});
+					expect(h.row).toMatchObject({
+						status: "RUNNING",
+						attemptClaimedAt: null,
+						stepLog: saved,
+					});
+					expect(h.emitted).toHaveLength(0);
+					expect(reads).toHaveLength(beforeRead);
 				}
 				const post = reads.filter(
 					(call) => call === `POST ${path}/stop`,
@@ -527,7 +642,11 @@ describe("orchestrator processor", () => {
 			} else if (scenario === "lost-lease") {
 				expect(outcome.status).toBe("LEASE_LOST");
 				expect(h.emitted).toHaveLength(0);
-			} else if (scenario === "user-cancel" || lostStart) {
+			} else if (
+				scenario === "user-cancel" ||
+				accountReadForCancel ||
+				lostStart
+			) {
 				expect(outcome.status).toBe("CANCELED");
 				if (lostStart)
 					expect(
@@ -561,13 +680,28 @@ describe("orchestrator processor", () => {
 					}),
 				);
 			}
-			if (scenario === "stopped" || scenario === "user-cancel")
+			if (
+				scenario === "stopped" ||
+				scenario === "user-cancel" ||
+				preparationChanged
+			)
 				expect(
 					reads.filter((read) => read === `GET ${path}/status`),
 				).toHaveLength(2);
 		} finally {
 			vi.unstubAllGlobals();
 		}
+	});
+
+	it("records an ordinary account setup failure without a manifest stop to reconcile", async () => {
+		const h = setup();
+		const outage = Object.assign(new Error("Synthetic exhausted pool"), {
+			code: "P2024",
+		});
+		vi.mocked(h.deps.revealBitmovinAccount).mockRejectedValueOnce(outage);
+		await expect(h.processor({ encodingJobId: JOB_ID })).rejects.toBe(outage);
+		expect(h.row).toMatchObject({ status: "ERROR", attemptClaimedAt: null });
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
 	});
 
 	it.each([

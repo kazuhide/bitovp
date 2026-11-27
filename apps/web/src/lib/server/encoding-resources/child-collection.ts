@@ -4,6 +4,7 @@ import type { ResourceAddress } from "./family";
 export type Child = {
 	id?: string;
 	type?: string;
+	typeDiscriminator?: string;
 	name?: string;
 	createdAt?: Date;
 	modifiedAt?: Date;
@@ -20,11 +21,15 @@ export type ChildPage<T = Child> = {
 	offset?: number;
 };
 export type Metadata = { customData?: Record<string, unknown> };
+export type ChildDiscriminator = {
+	field: "type" | "typeDiscriminator";
+	value: string;
+};
 type FieldRule = "number" | "boolean" | readonly string[];
 type Collection<T> = {
 	label: string;
 	wholeCollection?: boolean;
-	expectedType?: string;
+	expectedDiscriminator?: ChildDiscriminator;
 	list(
 		api: BitmovinApi,
 		address: ResourceAddress,

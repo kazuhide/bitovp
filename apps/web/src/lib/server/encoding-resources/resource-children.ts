@@ -73,8 +73,9 @@ function fields(
 			safe[key] = value.toISOString();
 	}
 	if (collection.fields) {
-		if (collection.expectedType && model.type === collection.expectedType)
-			safe.type = model.type;
+		const discriminator = collection.expectedDiscriminator;
+		if (discriminator && model[discriminator.field] === discriminator.value)
+			safe[discriminator.field] = discriminator.value;
 		for (const [key, rule] of Object.entries(collection.fields)) {
 			const value: unknown = Reflect.get(model, key);
 			if (

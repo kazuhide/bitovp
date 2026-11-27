@@ -39,7 +39,7 @@ export const encodingChildren: ResourceChildren = {
 		}),
 		"muxings.broadcastTs": defineChildCollection<BroadcastTsMuxing>({
 			label: "Broadcast TS",
-			expectedType: MuxingType.BROADCAST_TS,
+			expectedDiscriminator: { field: "type", value: MuxingType.BROADCAST_TS },
 			fields: { ...muxingFields, segmentLength: "number" },
 			list: (api, address, page) =>
 				api.encoding.encodings.muxings.broadcastTs.list(address.id, page),
@@ -48,7 +48,7 @@ export const encodingChildren: ResourceChildren = {
 		}),
 		"muxings.mp3": defineChildCollection<Mp3Muxing>({
 			label: "MP3",
-			expectedType: MuxingType.MP3,
+			expectedDiscriminator: { field: "type", value: MuxingType.MP3 },
 			fields: muxingFields,
 			list: (api, address, page) =>
 				api.encoding.encodings.muxings.mp3.list(address.id, page),
@@ -57,7 +57,7 @@ export const encodingChildren: ResourceChildren = {
 		}),
 		"muxings.mxf": defineChildCollection<MxfMuxing>({
 			label: "MXF",
-			expectedType: MuxingType.MXF,
+			expectedDiscriminator: { field: "type", value: MuxingType.MXF },
 			fields: muxingFields,
 			list: (api, address, page) =>
 				api.encoding.encodings.muxings.mxf.list(address.id, page),
@@ -66,7 +66,7 @@ export const encodingChildren: ResourceChildren = {
 		}),
 		"muxings.packedAudio": defineChildCollection<PackedAudioMuxing>({
 			label: "Packed Audio",
-			expectedType: MuxingType.PACKED_AUDIO,
+			expectedDiscriminator: { field: "type", value: MuxingType.PACKED_AUDIO },
 			fields: {
 				...muxingFields,
 				segmentLength: "number",
@@ -80,7 +80,7 @@ export const encodingChildren: ResourceChildren = {
 		}),
 		"muxings.segmentedRaw": defineChildCollection<SegmentedRawMuxing>({
 			label: "Segmented RAW",
-			expectedType: MuxingType.SEGMENTED_RAW,
+			expectedDiscriminator: { field: "type", value: MuxingType.SEGMENTED_RAW },
 			fields: {
 				...muxingFields,
 				segmentLength: "number",
@@ -109,7 +109,7 @@ export const encodingChildren: ResourceChildren = {
 		}),
 		"sidecars.webvtt": defineChildCollection<WebVttSidecarFile>({
 			label: "WebVTT Sidecars",
-			expectedType: SidecarFileType.WEB_VTT,
+			expectedDiscriminator: { field: "type", value: SidecarFileType.WEB_VTT },
 			fields: sidecarFields,
 			list: (api, address, page) =>
 				api.encoding.encodings.sidecars.webvtt.list(address.id, page),

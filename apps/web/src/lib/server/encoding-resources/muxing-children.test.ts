@@ -353,18 +353,43 @@ it("omits free-form provider fields from generic HDR10+ stream inspection", asyn
 	const fields = { id: childId, type: "HDR10_PLUS" };
 	expect(list.status).toBe(200);
 	expect(detail.status).toBe(200);
-	expect(await list.json()).toMatchObject({ items: [fields] });
+	expect((await list.json()).items).toEqual([fields]);
 	expect((await detail.json()).fields).toEqual(fields);
 });
 
 it.each([
-	["muxings.mp3", "MP3", "FMP4"],
-	["sidecars.webvtt", "WEB_VTT", "UNSUPPORTED_TYPE"],
-])("checks the %s discriminator before SDK mapping", async (collection, type, wrong) => {
-	seed("CREATE_ENCODING");
+	{
+		kind: "CREATE_ENCODING",
+		collection: "muxings.mp3",
+		key: "type",
+		value: "MP3",
+		wrong: "FMP4",
+	},
+	{
+		kind: "CREATE_ENCODING",
+		collection: "sidecars.webvtt",
+		key: "type",
+		value: "WEB_VTT",
+		wrong: "UNSUPPORTED_TYPE",
+	},
+	{
+		kind: "CREATE_DASH_REPRESENTATION_CMAF",
+		collection: "contentProtection",
+		key: "typeDiscriminator",
+		value: "CONTENT_PROTECTION",
+		wrong: "FMP4",
+	},
+])("checks the $collection discriminator before SDK mapping", async ({
+	kind,
+	collection,
+	key,
+	value,
+	wrong,
+}) => {
+	seed(kind);
 	const item = { id: childId };
 	const valid = { items: [item], totalCount: 1 };
-	const invalid = { id: childId, type: wrong };
+	const invalid = { id: childId, [key]: wrong };
 	transport.mockResolvedValueOnce(result({ items: [invalid], totalCount: 1 }));
 	expect((await ask(req("childDetail", collection, childId))).status).toBe(502);
 	expect(transport).toHaveBeenCalledTimes(1);
@@ -378,7 +403,9 @@ it.each([
 		.mockResolvedValueOnce(result(item));
 	const compatible = await ask(req("childDetail", collection, childId));
 	expect(compatible.status).toBe(200);
-	expect(await compatible.json()).toEqual({ fields: { id: childId, type } });
+	expect(await compatible.json()).toEqual({
+		fields: { id: childId, [key]: value },
+	});
 });
 
 it.each(

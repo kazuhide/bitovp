@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-27T01:24:47.622Z",
-		"sourceCommit": "4d11453fd8382e74f4223db91b621692a18c3436",
-		"sourceFingerprint": "df4da7e7dd669857d7d922939f7df80c1ed18bbb2627b874fcd744a2b70dc351",
+		"generatedAt": "2026-11-27T01:33:08.509Z",
+		"sourceCommit": "18a1e15cd7632c05d9492133eba1adf889aa4ae3",
+		"sourceFingerprint": "fff2590c189249977cabf4f75280da355f74a698849300a3f73f65b0c4845cb7",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -11907,7 +11907,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
-					"line": 70
+					"line": 74
 				}
 			]
 		},
@@ -11921,7 +11921,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
-					"line": 62
+					"line": 66
 				}
 			]
 		},
@@ -13054,7 +13054,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
-					"line": 95
+					"line": 99
 				}
 			]
 		},
@@ -13068,7 +13068,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
-					"line": 89
+					"line": 93
 				}
 			]
 		},
@@ -13333,7 +13333,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
-					"line": 112
+					"line": 116
 				}
 			]
 		},
@@ -13347,7 +13347,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
-					"line": 106
+					"line": 110
 				}
 			]
 		},

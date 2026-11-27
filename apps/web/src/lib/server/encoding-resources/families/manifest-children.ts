@@ -1,9 +1,9 @@
-import type {
-	AdaptationSet,
-	AdaptationSetType,
-	ContentProtection,
-	CustomTag,
-	DashRepresentation,
+import {
+	type AdaptationSet,
+	type AdaptationSetType,
+	type ContentProtection,
+	type CustomTag,
+	type DashRepresentation,
 	DashRepresentationTypeDiscriminator,
 } from "@bitmovin/api-sdk";
 import {
@@ -57,7 +57,11 @@ const representations = defineChildCollection<
 
 const contentProtection = defineChildCollection<ContentProtection>({
 	label: "Content protection",
-	fields: { typeDiscriminator: ["CONTENT_PROTECTION"] },
+	expectedDiscriminator: {
+		field: "typeDiscriminator",
+		value: DashRepresentationTypeDiscriminator.CONTENT_PROTECTION,
+	},
+	fields: {},
 	list: (api, { id, parent }, page) =>
 		api.encoding.manifests.dash.periods.adaptationsets.representations.cmaf.contentprotection.list(
 			parent("manifestId"),

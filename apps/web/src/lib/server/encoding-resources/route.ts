@@ -19,6 +19,7 @@ import {
 	validationError,
 } from "../http";
 import { isAisaLiveChannelView } from "../live-channel-aisa-view";
+import type { ChildDiscriminator } from "./child-collection";
 import { InvalidResourceResponse } from "./family";
 import {
 	childCollectionsFor,
@@ -234,13 +235,16 @@ export function resourceSdk(
 	access: NonNullable<Awaited<ReturnType<typeof originalAccess>>>,
 	signal: AbortSignal,
 	id: string,
-	expectedType?: string,
+	expectedDiscriminator?: ChildDiscriminator,
 ) {
 	// Typed endpoints can omit their discriminator. Check a supplied value before
 	// the SDK maps it to a model and potentially substitutes the default type.
-	const matchesType = (value: unknown) => {
+	const matchesDiscriminator = (value: unknown) => {
+		if (!expectedDiscriminator) return true;
 		const model = object(value);
-		return model && (model.type === undefined || model.type === expectedType);
+		if (!model) return false;
+		const actual = model[expectedDiscriminator.field];
+		return actual === undefined || actual === expectedDiscriminator.value;
 	};
 	return new BitmovinApi({
 		apiKey: access.apiKey,
@@ -264,12 +268,12 @@ export function resourceSdk(
 				if (result.id !== undefined && result.id !== id)
 					throw new InvalidResourceResponse();
 			} else if (path.endsWith(`/${encodeURIComponent(id)}`)) {
-				if (result.id !== id || (expectedType && !matchesType(result)))
+				if (result.id !== id || !matchesDiscriminator(result))
 					throw new InvalidResourceResponse();
 			} else if (
 				!Array.isArray(result.items) ||
 				typeof result.totalCount !== "number" ||
-				(expectedType && !result.items.every(matchesType))
+				(expectedDiscriminator && !result.items.every(matchesDiscriminator))
 			)
 				throw new InvalidResourceResponse();
 			return response;
@@ -370,7 +374,7 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 			access,
 			AbortSignal.any([req.signal, AbortSignal.timeout(15000)]),
 			parsed.data.childId ?? address.id,
-			child?.expectedType,
+			child?.expectedDiscriminator,
 		);
 		try {
 			if (child) {

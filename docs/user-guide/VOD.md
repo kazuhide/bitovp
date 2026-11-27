@@ -263,6 +263,8 @@ See [supported features and limits](../BITMOVIN-API-COVERAGE.md) for more restri
 
 Open a job’s **Resources** tab, expand **Inspect provider resources** and select a recorded step. Details are read from the provider using the job’s original account. Where available, the collection view lists resources under the selected parent. If the account binding or resource history cannot be verified, the saved job history is still available.
 
+Use **Related resources** on the recorded encoding to inspect muxings, input streams, sidecar files, and SCC captions. On a recorded stream, the same menu shows BIF thumbnails, captions, burn-in subtitles, and watermarking settings. Manually authored DASH and HLS steps also show their related representations, protection records, or tags where supported.
+
 For a recorded HDR10+ input, the detail and collection views show the track
 selection when available. They omit the video and JSON paths and the metadata
 contents. HEVC and HEVC v2, PCM and audio passthrough configurations, and

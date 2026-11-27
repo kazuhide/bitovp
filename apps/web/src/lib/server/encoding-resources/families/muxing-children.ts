@@ -1,4 +1,4 @@
-import type { MuxingChildren } from "../muxing-children";
+import type { MuxingChildren } from "../resource-children";
 
 export const muxingChildren: MuxingChildren = {
 	CREATE_MUXING_FMP4: {

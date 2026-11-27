@@ -33,7 +33,7 @@ function useChildData<T>(
 	});
 	if (childId) params.set("childId", childId);
 	return useQuery({
-		queryKey: ["muxing-children", endpoint, parent.id, params.toString()],
+		queryKey: ["resource-children", endpoint, parent.id, params.toString()],
 		queryFn: ({ signal }) => apiFetch<T>(`${endpoint}?${params}`, { signal }),
 		enabled: !!collection && (view === "children" || !!childId),
 		retry: false,
@@ -115,26 +115,45 @@ function ChildPage({
 									{id}
 								</span>
 							)}
-							<div className="flex flex-wrap gap-2">
-								{choice.hasDetail && (
-									<Button
-										size="sm"
-										variant="secondary"
-										onClick={() => setSelection({ id, view: "childDetail" })}
-									>
-										{t("providerResources.detail")}
-									</Button>
-								)}
-								{choice.hasMetadata && (
-									<Button
-										size="sm"
-										variant="ghost"
-										onClick={() => setSelection({ id, view: "childMetadata" })}
-									>
-										{t("providerResources.metadata")}
-									</Button>
-								)}
-							</div>
+							{(choice.hasDetail || choice.hasMetadata) && (
+								<div className="flex flex-wrap gap-2">
+									{choice.hasDetail && (
+										<Button
+											size="sm"
+											variant="secondary"
+											onClick={() => setSelection({ id, view: "childDetail" })}
+										>
+											{t("providerResources.detail")}
+										</Button>
+									)}
+									{choice.hasMetadata && (
+										<Button
+											size="sm"
+											variant="ghost"
+											onClick={() =>
+												setSelection({ id, view: "childMetadata" })
+											}
+										>
+											{t("providerResources.metadata")}
+										</Button>
+									)}
+								</div>
+							)}
+							{!choice.hasDetail && (
+								<dl className="flex flex-wrap gap-x-3 gap-y-1">
+									{Object.entries(item)
+										.filter(
+											([key]) =>
+												key !== "id" && key !== "name" && key !== "type",
+										)
+										.map(([key, value]) => (
+											<div className="flex gap-1" key={key}>
+												<dt className="text-zinc-400">{key}</dt>
+												<dd className="break-all">{String(value)}</dd>
+											</div>
+										))}
+								</dl>
+							)}
 							{selection?.id === id &&
 								(detail.isPending ? (
 									<p role="status">{t("providerResources.loading")}</p>
@@ -189,7 +208,7 @@ function ChildPage({
 		</div>
 	);
 }
-export function MuxingChildren({
+export function ResourceChildren({
 	endpoint,
 	parent,
 	choices,
@@ -205,7 +224,7 @@ export function MuxingChildren({
 	return (
 		<section className="space-y-2 border-t border-zinc-800 pt-2">
 			<label className="mr-2 text-xs" htmlFor={id}>
-				{t("providerResources.muxingChildren")}
+				{t("providerResources.relatedResources")}
 			</label>
 			<select
 				className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm"

@@ -1,7 +1,7 @@
 import { type StepLogEntry, stepLogSchema } from "@bitovp/core";
-import type { ParentRef, ResourceAddress } from "./family";
-import { childChoices } from "./muxing-children";
+import { isResourceId, type ParentRef, type ResourceAddress } from "./family";
 import { resourceFamilyForStep } from "./registry";
+import { childChoices } from "./resource-children";
 
 const producers: Record<ParentRef, readonly string[]> = {
 	encodingId: ["CREATE_ENCODING", "RESOLVE_AISA_LIVE_ENCODING"],
@@ -97,7 +97,7 @@ export function selectResource(
 	step: string,
 ) {
 	const entry = log.steps.get(step);
-	if (entry?.status !== "DONE" || !entry.resourceId) return;
+	if (entry?.status !== "DONE" || !isResourceId(entry.resourceId)) return;
 	const family = resourceFamilyForStep(entry);
 	if (!family) return;
 	const parents = new Map<ParentRef, string>();
@@ -114,7 +114,7 @@ export function selectResource(
 		const parent = candidates[0];
 		if (
 			parent?.status !== "DONE" ||
-			!parent.resourceId ||
+			!isResourceId(parent.resourceId) ||
 			!producers[ref].includes(parent.kind)
 		)
 			return;
@@ -188,6 +188,7 @@ export function selectResource(
 			listScope: family.listScope,
 			hasCustomData: !!family.customData,
 			...(family.information && { hasInformation: true }),
+			...(!family.remove && { readOnly: true }),
 			childCollections: childChoices(entry.kind),
 		},
 	};

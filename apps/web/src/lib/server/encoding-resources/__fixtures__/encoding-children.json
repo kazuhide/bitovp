@@ -1,0 +1,162 @@
+[
+  {
+    "kind": "CREATE_ENCODING",
+    "collection": "muxings",
+    "list": "muxings",
+    "get": "muxings/{muxing_id}",
+    "model": {
+      "type": "FMP4",
+      "avgBitrate": 841000,
+      "minBitrate": 571000,
+      "maxBitrate": 982000,
+      "outputs": [
+        {
+          "outputPath": "PRIVATE_TEST_VALUE"
+        }
+      ]
+    },
+    "fields": {
+      "type": "FMP4",
+      "avgBitrate": 841000,
+      "minBitrate": 571000,
+      "maxBitrate": 982000
+    }
+  },
+  {
+    "kind": "CREATE_ENCODING",
+    "collection": "muxings.broadcastTs",
+    "list": "muxings/broadcast-ts",
+    "get": "muxings/broadcast-ts/{muxing_id}",
+    "model": {
+      "type": "BROADCAST_TS",
+      "segmentLength": 2,
+      "filename": "PRIVATE_TEST_VALUE"
+    },
+    "fields": {
+      "type": "BROADCAST_TS",
+      "segmentLength": 2
+    }
+  },
+  {
+    "kind": "CREATE_ENCODING",
+    "collection": "muxings.mp3",
+    "list": "muxings/mp3",
+    "get": "muxings/mp3/{muxing_id}",
+    "model": {
+      "type": "MP3",
+      "avgBitrate": 128000,
+      "filename": "PRIVATE_TEST_VALUE"
+    },
+    "fields": {
+      "type": "MP3",
+      "avgBitrate": 128000
+    }
+  },
+  {
+    "kind": "CREATE_ENCODING",
+    "collection": "muxings.mxf",
+    "list": "muxings/mxf",
+    "get": "muxings/mxf/{muxing_id}",
+    "model": {
+      "type": "MXF",
+      "avgBitrate": 738000,
+      "filename": "PRIVATE_TEST_VALUE"
+    },
+    "fields": {
+      "type": "MXF",
+      "avgBitrate": 738000
+    }
+  },
+  {
+    "kind": "CREATE_ENCODING",
+    "collection": "muxings.packedAudio",
+    "list": "muxings/packed-audio",
+    "get": "muxings/packed-audio/{muxing_id}",
+    "model": {
+      "type": "PACKED_AUDIO",
+      "segmentLength": 2,
+      "startOffset": 1,
+      "segmentsMuxed": 72,
+      "segmentNaming": "PRIVATE_TEST_VALUE"
+    },
+    "fields": {
+      "type": "PACKED_AUDIO",
+      "segmentLength": 2,
+      "startOffset": 1,
+      "segmentsMuxed": 72
+    }
+  },
+  {
+    "kind": "CREATE_ENCODING",
+    "collection": "muxings.segmentedRaw",
+    "list": "muxings/segmented-raw",
+    "get": "muxings/segmented-raw/{muxing_id}",
+    "model": {
+      "type": "SEGMENTED_RAW",
+      "segmentLength": 3,
+      "segmentsMuxed": 48,
+      "segmentNaming": "PRIVATE_TEST_VALUE"
+    },
+    "fields": {
+      "type": "SEGMENTED_RAW",
+      "segmentLength": 3,
+      "segmentsMuxed": 48
+    }
+  },
+  {
+    "kind": "CREATE_ENCODING",
+    "collection": "inputStreams",
+    "list": "input-streams",
+    "get": "input-streams/{input_stream_id}",
+    "model": {
+      "type": "INGEST",
+      "inputPath": "PRIVATE_TEST_VALUE"
+    },
+    "fields": {
+      "type": "INGEST"
+    }
+  },
+  {
+    "kind": "CREATE_ENCODING",
+    "collection": "sidecars",
+    "list": "sidecars",
+    "get": "sidecars/{sidecar_id}",
+    "model": {
+      "type": "WEB_VTT",
+      "errorMode": "FAIL_ON_ERROR",
+      "inputPath": "PRIVATE_TEST_VALUE"
+    },
+    "fields": {
+      "type": "WEB_VTT",
+      "errorMode": "FAIL_ON_ERROR"
+    }
+  },
+  {
+    "kind": "CREATE_ENCODING",
+    "collection": "sidecars.webvtt",
+    "list": "sidecars/webvtt",
+    "get": "sidecars/webvtt/{sidecar_id}",
+    "model": {
+      "type": "WEB_VTT",
+      "errorMode": "CONTINUE_ON_ERROR",
+      "inputPath": "PRIVATE_TEST_VALUE"
+    },
+    "fields": {
+      "type": "WEB_VTT",
+      "errorMode": "CONTINUE_ON_ERROR"
+    }
+  },
+  {
+    "kind": "CREATE_ENCODING",
+    "collection": "captions.scc",
+    "list": "captions/scc",
+    "get": "captions/scc/{captions_id}",
+    "model": {
+      "outputFormat": "WEBVTT",
+      "fileName": "PRIVATE_TEST_VALUE"
+    },
+    "fields": {
+      "outputFormat": "WEBVTT"
+    }
+  }
+]

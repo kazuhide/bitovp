@@ -1323,6 +1323,93 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.captions.scc.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/captions/scc/{captions_id}",
+			"scope": "vod",
+			"scenario": "Inspect captions.scc resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.captions.scc.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.captions.scc.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/captions/scc",
+			"scope": "vod",
+			"scenario": "List captions.scc resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.captions.scc.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}",
+			"scope": "vod",
+			"scenario": "Inspect the recorded VOD encoding in its original provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the recorded encoding root without making it removable\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.inputStreams.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/input-streams/{input_stream_id}",
+			"scope": "vod",
+			"scenario": "Inspect inputStreams resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.inputStreams.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.inputStreams.hdr10Plus.create",
 			"httpVerb": "POST",
 			"path": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus",
@@ -1411,6 +1498,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.inputStreams.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/input-streams",
+			"scope": "vod",
+			"scenario": "List inputStreams resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.inputStreams.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.live.hd.start",
 			"httpVerb": "POST",
 			"path": "/encoding/encodings/{encoding_id}/live/hd/start",
@@ -1477,6 +1586,50 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.muxings.broadcastTs.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts/{muxing_id}",
+			"scope": "vod",
+			"scenario": "Inspect muxings.broadcastTs resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.broadcastTs.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.broadcastTs.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts",
+			"scope": "vod",
+			"scenario": "List muxings.broadcastTs resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.broadcastTs.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.muxings.fmp4.information.get",
 			"httpVerb": "GET",
 			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/information",
@@ -1499,6 +1652,94 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.muxings.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/{muxing_id}",
+			"scope": "vod",
+			"scenario": "Inspect muxings resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings",
+			"scope": "vod",
+			"scenario": "List muxings resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp3.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp3/{muxing_id}",
+			"scope": "vod",
+			"scenario": "Inspect muxings.mp3 resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.mp3.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp3.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp3",
+			"scope": "vod",
+			"scenario": "List muxings.mp3 resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.mp3.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.muxings.mp4.information.get",
 			"httpVerb": "GET",
 			"path": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/information",
@@ -1517,6 +1758,94 @@
 				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
 				"anchor": "\"reads output information using the recorded encoding and muxing for $kind",
 				"caseGroup": "recorded-muxing-information"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mxf.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mxf/{muxing_id}",
+			"scope": "vod",
+			"scenario": "Inspect muxings.mxf resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.mxf.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mxf.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mxf",
+			"scope": "vod",
+			"scenario": "List muxings.mxf resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.mxf.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.packedAudio.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}",
+			"scope": "vod",
+			"scenario": "Inspect muxings.packedAudio resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.packedAudio.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.packedAudio.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio",
+			"scope": "vod",
+			"scenario": "List muxings.packedAudio resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.packedAudio.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
 			},
 			"provider": "unverified"
 		},
@@ -1653,6 +1982,138 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.muxings.segmentedRaw.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/segmented-raw/{muxing_id}",
+			"scope": "vod",
+			"scenario": "Inspect muxings.segmentedRaw resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.segmentedRaw.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.segmentedRaw.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/segmented-raw",
+			"scope": "vod",
+			"scenario": "List muxings.segmentedRaw resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.segmentedRaw.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.sidecars.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/sidecars/{sidecar_id}",
+			"scope": "vod",
+			"scenario": "Inspect sidecars resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.sidecars.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.sidecars.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/sidecars",
+			"scope": "vod",
+			"scenario": "List sidecars resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.sidecars.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.sidecars.webvtt.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/sidecars/webvtt/{sidecar_id}",
+			"scope": "vod",
+			"scenario": "Inspect sidecars.webvtt resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.sidecars.webvtt.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.sidecars.webvtt.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/sidecars/webvtt",
+			"scope": "vod",
+			"scenario": "List sidecars.webvtt resources under the recorded encoding in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.sidecars.webvtt.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.start",
 			"httpVerb": "POST",
 			"path": "/encoding/encodings/{encoding_id}/start",
@@ -1671,6 +2132,270 @@
 				"file": "apps/worker/src/orchestrator/start-sdk-contract.test.ts",
 				"anchor": "\"preserves VOD START options with %s manifests",
 				"caseGroup": "worker-vod-start"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.bifs.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/bifs/{bif_id}",
+			"scope": "vod",
+			"scenario": "Inspect bif resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.bifs.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.bifs.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/bifs",
+			"scope": "vod",
+			"scenario": "List bif resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.bifs.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.burnInSubtitles.assa.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/burn-in-subtitles/assa/{subtitle_id}",
+			"scope": "vod",
+			"scenario": "Inspect burnInSubtitles.assa resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.burnInSubtitles.assa.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.burnInSubtitles.assa.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/burn-in-subtitles/assa",
+			"scope": "vod",
+			"scenario": "List burnInSubtitles.assa resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.burnInSubtitles.assa.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.burnInSubtitles.dvbsub.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/burn-in-subtitles/dvbsub/{subtitle_id}",
+			"scope": "vod",
+			"scenario": "Inspect burnInSubtitles.dvbsub resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.burnInSubtitles.dvbsub.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.burnInSubtitles.dvbsub.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/burn-in-subtitles/dvbsub",
+			"scope": "vod",
+			"scenario": "List burnInSubtitles.dvbsub resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.burnInSubtitles.dvbsub.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.captions.cea.scc.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/scc/{captions_id}",
+			"scope": "vod",
+			"scenario": "Inspect captions.cea.scc resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.captions.cea.scc.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.captions.cea.scc.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/scc",
+			"scope": "vod",
+			"scenario": "List captions.cea.scc resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.captions.cea.scc.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.captions.cea.srt.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/srt/{captions_id}",
+			"scope": "vod",
+			"scenario": "Inspect captions.cea.srt resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.captions.cea.srt.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.captions.cea.srt.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/srt",
+			"scope": "vod",
+			"scenario": "List captions.cea.srt resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.captions.cea.srt.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.watermarking.nexguardFileMarker.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/watermarking/nexguard-file-marker/{nexguard_id}",
+			"scope": "vod",
+			"scenario": "Inspect watermarking.nexguardFileMarker resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.watermarking.nexguardFileMarker.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.watermarking.nexguardFileMarker.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/watermarking/nexguard-file-marker",
+			"scope": "vod",
+			"scenario": "List watermarking.nexguardFileMarker resources under the recorded stream in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.watermarking.nexguardFileMarker.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
 			},
 			"provider": "unverified"
 		},
@@ -3389,6 +4114,94 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.list",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets",
+			"scope": "vod",
+			"scenario": "List adaptationSets resources under the recorded manifest in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
+				"anchor": "api.encoding.manifests.dash.periods.adaptationsets.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.cmaf.contentprotection.get",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/cmaf/{representation_id}/contentprotection/{contentprotection_id}",
+			"scope": "vod",
+			"scenario": "Inspect contentProtection resources under the recorded manifest in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
+				"anchor": "api.encoding.manifests.dash.periods.adaptationsets.representations.cmaf.contentprotection.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.cmaf.contentprotection.list",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/cmaf/{representation_id}/contentprotection",
+			"scope": "vod",
+			"scenario": "List contentProtection resources under the recorded manifest in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
+				"anchor": "api.encoding.manifests.dash.periods.adaptationsets.representations.cmaf.contentprotection.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.list",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations",
+			"scope": "vod",
+			"scenario": "List representations resources under the recorded manifest in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
+				"anchor": "api.encoding.manifests.dash.periods.adaptationsets.representations.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.manifests.dash.periods.create",
 			"httpVerb": "POST",
 			"path": "/encoding/manifests/dash/{manifest_id}/periods",
@@ -3432,6 +4245,50 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.manifests.hls.media.customTags.get",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/hls/{manifest_id}/media/{media_id}/custom-tags/{custom_tag_id}",
+			"scope": "vod",
+			"scenario": "Inspect customTags resources under the recorded manifest in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
+				"anchor": "api.encoding.manifests.hls.media.customTags.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.hls.media.customTags.list",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/hls/{manifest_id}/media/{media_id}/custom-tags",
+			"scope": "vod",
+			"scenario": "List customTags resources under the recorded manifest in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
+				"anchor": "api.encoding.manifests.hls.media.customTags.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.manifests.hls.stop",
 			"httpVerb": "POST",
 			"path": "/encoding/manifests/hls/{manifest_id}/stop",
@@ -3450,6 +4307,50 @@
 				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
 				"anchor": "\"sends the official %s manifest stop once via the worker SDK\"",
 				"caseGroup": "worker-standalone-manifest-stop"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.hls.streams.customTags.get",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/hls/{manifest_id}/streams/{stream_id}/custom-tags/{custom_tag_id}",
+			"scope": "vod",
+			"scenario": "Inspect customTags resources under the recorded manifest in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
+				"anchor": "api.encoding.manifests.hls.streams.customTags.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.hls.streams.customTags.list",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/hls/{manifest_id}/streams/{stream_id}/custom-tags",
+			"scope": "vod",
+			"scenario": "List customTags resources under the recorded manifest in the original Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/manifest-children.ts",
+				"anchor": "api.encoding.manifests.hls.streams.customTags.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects the documented child transport for $kind $collection\"",
+				"caseGroup": "recorded-child-reads"
 			},
 			"provider": "unverified"
 		},

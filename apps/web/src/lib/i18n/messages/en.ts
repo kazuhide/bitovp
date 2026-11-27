@@ -112,7 +112,7 @@ export const en = {
 			"Use an SRT, Zixi or HLS transport-stream input for DVB subtitles.",
 	},
 	providerResources: {
-		muxingChildren: "DRM and ID3 on this muxing",
+		relatedResources: "Related resources",
 		chooseType: "Select a resource type",
 		allDrm: "All DRM systems",
 		allId3: "All ID3 tags",

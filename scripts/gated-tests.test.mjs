@@ -5468,6 +5468,7 @@ test("the three jobs that need the image's FFmpeg reuse a build only under the k
 	assert.deepEqual(others, [
 		"bombadil.yml",
 		"encoding-experiments.yml",
+		"encoding-resource-proofs.yml",
 		"hierarchical-flow.yml",
 		"native-vmaf.yml",
 		"pages.yml",

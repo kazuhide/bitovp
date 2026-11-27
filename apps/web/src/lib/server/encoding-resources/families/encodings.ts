@@ -33,7 +33,32 @@ import type {
 	TsMuxing,
 	WebmMuxing,
 } from "@bitmovin/api-sdk";
-import { defineFamily, type ResourceFields } from "../family";
+import {
+	defineFamily,
+	InvalidResourceResponse,
+	projectResourceFields,
+	type ResourceFamily,
+	type ResourceFields,
+} from "../family";
+
+const encoding: ResourceFamily = {
+	parents: [],
+	async detail(api, address) {
+		const model = await api.encoding.encodings.get(address.id);
+		if (model?.id !== address.id) throw new InvalidResourceResponse();
+		return projectResourceFields(model, [
+			"name",
+			"createdAt",
+			"modifiedAt",
+			"type",
+			"status",
+			"cloudRegion",
+			"selectedCloudRegion",
+			"selectedEncodingMode",
+			"selectedEncoderVersion",
+		]);
+	},
+};
 
 function hdr10PlusTrack(stream: Hdr10PlusInputStream) {
 	const { id, createdAt, modifiedAt, selectionMode, position } = stream;
@@ -82,6 +107,7 @@ function outputInformation(
 }
 
 export const encodings = {
+	CREATE_ENCODING: encoding,
 	CREATE_DVB_SUBTITLE_INPUT_STREAM: defineFamily<DvbSubtitleInputStream>({
 		parents: ["encodingId"],
 		fields: ["createdAt", "id", "modifiedAt", "name"],

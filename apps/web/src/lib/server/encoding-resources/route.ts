@@ -1,8 +1,3 @@
-import {
-	childCollectionsFor,
-	childFields,
-	readChildPage,
-} from "./muxing-children";
 import "server-only";
 import BitmovinApi from "@bitmovin/api-sdk";
 import {
@@ -24,7 +19,14 @@ import {
 	validationError,
 } from "../http";
 import { isAisaLiveChannelView } from "../live-channel-aisa-view";
+import type { ChildDiscriminator } from "./child-collection";
 import { InvalidResourceResponse } from "./family";
+import {
+	childCollectionsFor,
+	childIsOnPage,
+	readChildDetail,
+	readChildPage,
+} from "./resource-children";
 import { removalAllowed } from "./retirement";
 import { object, parseResourceLog, selectResource } from "./selection";
 
@@ -60,7 +62,7 @@ const query = z
 			!!input.childId ===
 				(input.view === "childDetail" || input.view === "childMetadata")
 		);
-	}, "Invalid muxing child selection.");
+	}, "Invalid child resource selection.");
 const pageSize = 25;
 const headers = { "Cache-Control": "private, no-store" };
 const respond = (body: unknown) => NextResponse.json(body, { headers });
@@ -233,7 +235,17 @@ export function resourceSdk(
 	access: NonNullable<Awaited<ReturnType<typeof originalAccess>>>,
 	signal: AbortSignal,
 	id: string,
+	expectedDiscriminator?: ChildDiscriminator,
 ) {
+	// Typed endpoints can omit their discriminator. Check a supplied value before
+	// the SDK maps it to a model and potentially substitutes the default type.
+	const matchesDiscriminator = (value: unknown) => {
+		if (!expectedDiscriminator) return true;
+		const model = object(value);
+		if (!model) return false;
+		const actual = model[expectedDiscriminator.field];
+		return actual === undefined || actual === expectedDiscriminator.value;
+	};
 	return new BitmovinApi({
 		apiKey: access.apiKey,
 		...(access.tenantOrgId ? { tenantOrgId: access.tenantOrgId } : {}),
@@ -256,10 +268,12 @@ export function resourceSdk(
 				if (result.id !== undefined && result.id !== id)
 					throw new InvalidResourceResponse();
 			} else if (path.endsWith(`/${encodeURIComponent(id)}`)) {
-				if (result.id !== id) throw new InvalidResourceResponse();
+				if (result.id !== id || !matchesDiscriminator(result))
+					throw new InvalidResourceResponse();
 			} else if (
 				!Array.isArray(result.items) ||
-				typeof result.totalCount !== "number"
+				typeof result.totalCount !== "number" ||
+				(expectedDiscriminator && !result.items.every(matchesDiscriminator))
 			)
 				throw new InvalidResourceResponse();
 			return response;
@@ -355,39 +369,31 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 				(view === "childDetail" && !child.get) ||
 				(view === "childMetadata" && !child.metadata))
 		)
-			return jsonError(400, "This muxing does not have this child view.");
+			return jsonError(400, "This resource does not have this child view.");
 		const api = resourceSdk(
 			access,
 			AbortSignal.any([req.signal, AbortSignal.timeout(15000)]),
 			parsed.data.childId ?? address.id,
+			child?.expectedDiscriminator,
 		);
 		try {
 			if (child) {
-				const encodingId = address.parent("encodingId");
-				const page = await readChildPage(api, child, encodingId, address.id, {
-					offset,
-					limit: pageSize,
-				});
-				if (view === "children") return respond(page);
+				const page = { offset, limit: pageSize };
+				if (view === "children")
+					return respond(await readChildPage(api, child, address, page));
 				const id = parsed.data.childId;
-				if (!id || !page.items.some((row) => row.id === id))
+				if (!id || !(await childIsOnPage(api, child, address, page, id)))
 					return jsonError(
 						409,
-						"The child is no longer on the selected muxing page.",
+						"The child is no longer on the selected resource page.",
 					);
-				if (view === "childDetail" && child.get)
+				if (view === "childDetail")
 					return respond({
-						fields: await childFields(
-							child.get,
-							api,
-							encodingId,
-							address.id,
-							id,
-						),
+						fields: await readChildDetail(api, child, address, id),
 					});
 				if (view === "childMetadata" && child.metadata) {
 					const value = object(
-						(await child.metadata(api, encodingId, address.id, id)).customData,
+						(await child.metadata(api, address, id)).customData,
 					);
 					if (!value) throw new InvalidResourceResponse();
 					const executionId = "jobId" in owner ? owner.jobId : owner.channelId;

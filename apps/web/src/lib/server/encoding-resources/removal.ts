@@ -54,6 +54,8 @@ async function lookup(
 	const history = parseResourceLog(source.stepLog);
 	const selected = history && selectResource(history, cmd.step);
 	if (!selected) throw new Refusal(404, "Recorded resource not found.");
+	const remove = selected.family.remove;
+	if (!remove) throw new Refusal(409, "This resource is read-only.");
 	if (
 		selected.address.id !== cmd.confirmResourceId ||
 		selected.summary.attempt !== cmd.attempt
@@ -64,7 +66,7 @@ async function lookup(
 		);
 	if (history?.ids.get(selected.address.id)?.length !== 1)
 		throw new Refusal(409, "The resource has multiple recorded owners.");
-	return { source, selected };
+	return { source, selected, remove };
 }
 async function reserve(
 	ctx: ServerContext,
@@ -88,7 +90,7 @@ async function reserve(
 			await tx.$queryRaw`SELECT id FROM "LiveChannel" WHERE id=${owner.channelId}::uuid FOR UPDATE`;
 			await tx.$queryRaw`SELECT id FROM "LiveChannelRun" WHERE id=${sourceId}::uuid AND "liveChannelId"=${owner.channelId}::uuid FOR UPDATE`;
 		}
-		const { source, selected } = await lookup(ctx, owner, cmd, tx);
+		const { source, selected, remove } = await lookup(ctx, owner, cmd, tx);
 		if (!recordedScopeMatches(source, selected, access))
 			throw new Refusal(409, "The recorded provider account changed.");
 		const providerId = selected.address.id;
@@ -168,6 +170,7 @@ async function reserve(
 			id: claim.id,
 			token,
 			selected,
+			remove,
 			uncertain: prior?.state === "UNKNOWN" || prior?.state === "SENDING",
 		};
 	});
@@ -210,7 +213,7 @@ export async function removeResource(
 				disposition = "present";
 			} else {
 				sent = true;
-				await family.remove(api, address);
+				await claim.remove(api, address);
 				state = "REMOVED";
 				disposition = "removed";
 			}

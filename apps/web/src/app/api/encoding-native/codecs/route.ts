@@ -27,6 +27,7 @@ import {
 	finishCodecCreate,
 	finishCodecDelete,
 	listCodecReceipts,
+	normalizeCodecTenantOrgId,
 	readCodecReceipt,
 	reserveCodecCreate,
 } from "@/lib/server/native-codec-journal";
@@ -78,7 +79,10 @@ async function verifiedBinding(
 	if (!binding) throw new CodecJournalError("accountMissing");
 	if (binding.resourceScopeVersion !== target.scopeVersion)
 		throw new CodecJournalError("accountChanged");
-	return binding;
+	return {
+		...binding,
+		tenantOrgId: normalizeCodecTenantOrgId(binding.tenantOrgId),
+	};
 }
 
 async function sendResult(

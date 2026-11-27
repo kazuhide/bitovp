@@ -241,7 +241,7 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 
 		function fixture(testCase: Case = mp3) {
 			const providerId = randomUUID();
-			const providerTenant = account.tenantOrgId;
+			const providerTenant = account.tenantOrgId?.trim() || null;
 			const base = `/v1${endpoint(testCase)}`;
 			const detail = `${base}/${providerId}`;
 			const calls: string[] = [];
@@ -478,7 +478,10 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 			]);
 		});
 
-		it("reconciles only after restoring the explicit provider tenant", async () => {
+		it("reconciles a legacy padded tenant after restoring its canonical value", async () => {
+			account = await localStore.update(account.id, {
+				tenantOrgId: ` \t${upstream}\t `,
+			});
 			const { providerId, calls, faults } = fixture();
 			const id = randomUUID();
 			const original = account.resourceScopeVersion;

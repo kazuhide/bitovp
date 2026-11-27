@@ -239,9 +239,9 @@ test("four complete shards preserve the required skips and the full source inven
 	assert.equal(SHARD_COUNT, 4);
 	const merged = aggregate(receipts());
 	assert.equal(merged.testResults.length, files.length);
-	assert.equal(merged.numPendingTests, 307);
+	assert.equal(merged.numPendingTests, 328);
 	assert.equal(merged.numPassedTests, 8);
-	assert.equal(merged.numTotalTests, 315);
+	assert.equal(merged.numTotalTests, 336);
 });
 
 test("receipt projection excludes diagnostics, test names, snapshots, metadata and environment", () => {

@@ -1,5 +1,5 @@
 import "server-only";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { type AppTransactionClient, DB_NULL } from "@bitovp/db";
 import {
 	type CheckNativeCodec,
@@ -64,6 +64,10 @@ type CodecRecord = Omit<Row, "codec"> & {
 	codec: NativeCodecReceipt["codec"];
 };
 
+export function normalizeCodecTenantOrgId(value: string | null) {
+	return value?.trim() || null;
+}
+
 function validatedRecord(row: Row): CodecRecord {
 	return { ...row, codec: nativeCodecKind.parse(row.codec) };
 }
@@ -71,18 +75,23 @@ function validatedRecord(row: Row): CodecRecord {
 async function lockScope(tx: AppTransactionClient, scope: Scope) {
 	// A restored explicit tenant keeps the same provider identity. With the
 	// provider default, require the original stored credential revision.
-	const [binding] = await tx.$queryRaw<{ providerScopeIdentity: string }[]>`
-		SELECT encode(sha256(convert_to(
-			COALESCE('tenant:' || NULLIF("tenantOrgId", ''), 'credential:' || "encryptedApiKey"),
-			'UTF8'
-		)), 'hex') AS "providerScopeIdentity"
+	const [binding] = await tx.$queryRaw<
+		{ tenantOrgId: string | null; credentialIdentity: string }[]
+	>`
+		SELECT "tenantOrgId",
+			encode(sha256(convert_to('credential:' || "encryptedApiKey", 'UTF8')), 'hex')
+			AS "credentialIdentity"
 		FROM "BitmovinAccount"
 		WHERE id = ${scope.bitmovinAccountId}::uuid
 		AND "resourceScopeVersion" = ${scope.scopeVersion}::uuid
 		FOR SHARE
 	`;
 	if (!binding) throw new CodecJournalError("accountChanged");
-	return { ...scope, ...binding };
+	const tenantOrgId = normalizeCodecTenantOrgId(binding.tenantOrgId);
+	const providerScopeIdentity = tenantOrgId
+		? createHash("sha256").update(`tenant:${tenantOrgId}`, "utf8").digest("hex")
+		: binding.credentialIdentity;
+	return { ...scope, providerScopeIdentity };
 }
 
 function requireRecord(row: Row | null, scope: AccountScope) {

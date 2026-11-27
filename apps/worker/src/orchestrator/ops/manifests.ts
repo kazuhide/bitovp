@@ -175,15 +175,29 @@ export function createManifestOps(
 					: kind === "dash"
 						? await api.encoding.manifests.dash.customdata.get(manifestId)
 						: await api.encoding.manifests.smooth.customdata.get(manifestId);
-			const marker: unknown = data.customData?.["bitovp"];
-			return (
-				!!marker &&
-				typeof marker === "object" &&
-				"job" in marker &&
-				marker.job === jobId &&
-				"step" in marker &&
-				marker.step === step
-			);
+			const customData: unknown = data?.customData;
+			if (
+				!customData ||
+				typeof customData !== "object" ||
+				Array.isArray(customData)
+			)
+				throw new Error("Bitmovin did not return manifest ownership data");
+			if (!("bitovp" in customData)) return false;
+			const marker = customData.bitovp;
+			if (
+				!marker ||
+				typeof marker !== "object" ||
+				!("job" in marker) ||
+				typeof marker.job !== "string" ||
+				!marker.job.trim() ||
+				!("step" in marker) ||
+				typeof marker.step !== "string" ||
+				!marker.step.trim()
+			)
+				throw new Error(
+					"Bitmovin returned an incomplete manifest owner marker",
+				);
+			return marker.job === jobId && marker.step === step;
 		},
 		stopManifest: (kind, manifestId) =>
 			audited(

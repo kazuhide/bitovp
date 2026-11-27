@@ -36,15 +36,18 @@ export function recordedRoleManifests(
 	});
 }
 
-const isActiveManifest = (status: string) =>
+const isActiveManifest = (status: unknown) =>
 	status === "RUNNING" || status === "QUEUED";
 
-function isRetryableManifestError(error: unknown): boolean {
+function definitivelyRefusedManifestProbe(error: unknown): boolean {
+	const status = isBitmovinError(error) ? error.httpStatusCode : undefined;
 	return (
-		isBitmovinError(error) &&
-		typeof error.httpStatusCode === "number" &&
-		// The SDK uses 0 when the transport did not return an HTTP response.
-		[0, 408, 429, 500, 502, 503, 504].includes(error.httpStatusCode)
+		typeof status === "number" &&
+		Number.isInteger(status) &&
+		status >= 400 &&
+		status < 500 &&
+		status !== 408 &&
+		status !== 429
 	);
 }
 
@@ -63,15 +66,17 @@ export async function stopRecordedRoleManifest(
 				? sdk.getDashManifestStatus
 				: sdk.getSmoothManifestStatus;
 	try {
-		const before = await status(id);
-		if (classifyProviderStatusWord(before.status) === "TERMINAL")
-			return "TERMINAL";
-		if (!isActiveManifest(before.status)) return "UNVERIFIED";
+		const before = (await status(id))?.status;
+		const lifecycle = classifyProviderStatusWord(before);
+		if (lifecycle === "TERMINAL") return "TERMINAL";
+		// ACTIVE keeps the durable cleanup pending when a read is inconclusive.
+		if (lifecycle === "UNKNOWN") return "ACTIVE";
+		if (!isActiveManifest(before)) return "UNVERIFIED";
 		if (!(await sdk.ownsManifest(kind, id, jobId, step))) return "UNVERIFIED";
 	} catch (error) {
-		// A temporary lookup failure cannot prove that the task stopped or that
-		// it belongs to this job. Delay without sending a mutation.
-		return isRetryableManifestError(error) ? "ACTIVE" : "UNVERIFIED";
+		// SDK parsing failures can lack an HTTP status. They leave both the
+		// task lifecycle and authority to send STOP unresolved.
+		return definitivelyRefusedManifestProbe(error) ? "UNVERIFIED" : "ACTIVE";
 	}
 	await beforeStop();
 	// A lost STOP reply can still mean Bitmovin accepted it. Only the readback
@@ -84,14 +89,15 @@ export async function stopRecordedRoleManifest(
 			![400, 401, 403, 404, 405].includes(error.httpStatusCode ?? 0),
 	);
 	try {
-		const after = await status(id);
-		if (classifyProviderStatusWord(after.status) === "TERMINAL")
-			return "TERMINAL";
-		return stopMayHaveLanded && isActiveManifest(after.status)
+		const after = (await status(id))?.status;
+		const lifecycle = classifyProviderStatusWord(after);
+		if (lifecycle === "TERMINAL") return "TERMINAL";
+		return stopMayHaveLanded &&
+			(lifecycle === "UNKNOWN" || isActiveManifest(after))
 			? "ACTIVE"
 			: "UNVERIFIED";
 	} catch (error) {
-		return stopMayHaveLanded && isRetryableManifestError(error)
+		return stopMayHaveLanded && !definitivelyRefusedManifestProbe(error)
 			? "ACTIVE"
 			: "UNVERIFIED";
 	}

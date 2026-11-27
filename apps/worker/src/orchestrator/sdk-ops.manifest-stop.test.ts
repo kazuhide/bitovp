@@ -11,7 +11,9 @@ const formats = ["hls", "dash", "smooth"] as const;
 const manifestId = "00000000-0000-4000-8000-0000000000ab";
 const probes = ["status", "customData"] as const;
 const protectedProbeCases = formats.flatMap((format) =>
-	probes.map((probe) => [format, probe] as const),
+	probes.flatMap((probe) =>
+		[200, 300, 503].map((status) => [format, probe, status] as const),
+	),
 );
 
 function roleManifestSdk() {
@@ -112,7 +114,7 @@ it.each(
 
 it.each(
 	protectedProbeCases,
-)("defers %s STOP on HTTP 503 from %s with null data", async (format, probe) => {
+)("defers %s STOP on %s HTTP %i with null data", async (format, probe, status) => {
 	const path = `/v1/encoding/manifests/${format}/${manifestId}`;
 	const wire = vi.fn(async (raw: string, init: RequestInit) => {
 		expect(init.method).toBe("GET");
@@ -121,7 +123,7 @@ it.each(
 		);
 		const requested = new URL(raw).pathname;
 		if (requested === `${path}/${probe}`)
-			return Response.json({ data: null }, { status: 503 });
+			return Response.json({ data: null }, { status });
 		expect(requested).toBe(`${path}/status`);
 		return Response.json({ data: { result: { status: "RUNNING" } } });
 	});
@@ -143,6 +145,96 @@ it.each(
 			? [`${path}/status`]
 			: [`${path}/status`, `${path}/customData`],
 	);
+});
+
+const scopedOwner = { job: "fixture-job", step: "manifest:fixture" };
+const taskResultResponse = (result: object) =>
+	Response.json({ data: { result } });
+
+it.each([
+	["status", {}, "ACTIVE"],
+	["status", { status: null }, "ACTIVE"],
+	["status", { status: "UNRECOGNIZED_STATUS" }, "ACTIVE"],
+	["status", { status: ["RUNNING"] }, "ACTIVE"],
+	["customData", {}, "ACTIVE"],
+	["customData", { customData: [] }, "ACTIVE"],
+	[
+		"customData",
+		{ customData: { bitovp: { job: scopedOwner.job } } },
+		"ACTIVE",
+	],
+	["customData", { customData: {} }, "UNVERIFIED"],
+	[
+		"customData",
+		{ customData: { bitovp: { ...scopedOwner, step: "different-step" } } },
+		"UNVERIFIED",
+	],
+] as const)("qualifies protected %s results %j without sending STOP", async (probe, result, outcome) => {
+	const path = `/v1/encoding/manifests/hls/${manifestId}`;
+	const wire = vi.fn(async (raw: string, init: RequestInit) => {
+		expect(init.method).toBe("GET");
+		const requested = new URL(raw).pathname;
+		if (requested === `${path}/${probe}`) return taskResultResponse(result);
+		expect(requested).toBe(`${path}/status`);
+		return taskResultResponse({ status: "RUNNING" });
+	});
+	vi.stubGlobal("fetch", wire);
+	const beforeStop = vi.fn(async () => {});
+	await expect(
+		stopRecordedRoleManifest(
+			roleManifestSdk(),
+			"hls",
+			manifestId,
+			scopedOwner.job,
+			scopedOwner.step,
+			beforeStop,
+		),
+	).resolves.toBe(outcome);
+	expect(beforeStop).not.toHaveBeenCalled();
+	expect(wire.mock.calls.map(([raw]) => new URL(raw).pathname)).toEqual(
+		probe === "status"
+			? [`${path}/status`]
+			: [`${path}/status`, `${path}/customData`],
+	);
+});
+
+it.each([
+	200, 300,
+])("keeps one acknowledged STOP pending after malformed HTTP %i status readback", async (status) => {
+	const path = `/v1/encoding/manifests/smooth/${manifestId}`;
+	let statusReads = 0;
+	const wire = vi.fn(async (raw: string, init: RequestInit) => {
+		const requested = new URL(raw).pathname;
+		if (init.method === "POST") {
+			expect(requested).toBe(`${path}/stop`);
+			return new Response(null, { status: 202 });
+		}
+		expect(init.method).toBe("GET");
+		if (requested === `${path}/customData`)
+			return taskResultResponse({ customData: { bitovp: scopedOwner } });
+		expect(requested).toBe(`${path}/status`);
+		if (statusReads++ === 0) return taskResultResponse({ status: "RUNNING" });
+		return Response.json({ data: null }, { status });
+	});
+	vi.stubGlobal("fetch", wire);
+	const beforeStop = vi.fn(async () => {});
+	await expect(
+		stopRecordedRoleManifest(
+			roleManifestSdk(),
+			"smooth",
+			manifestId,
+			scopedOwner.job,
+			scopedOwner.step,
+			beforeStop,
+		),
+	).resolves.toBe("ACTIVE");
+	expect(beforeStop).toHaveBeenCalledOnce();
+	expect(wire.mock.calls.map(([raw]) => new URL(raw).pathname)).toEqual([
+		`${path}/status`,
+		`${path}/customData`,
+		`${path}/stop`,
+		`${path}/status`,
+	]);
 });
 
 it.each([

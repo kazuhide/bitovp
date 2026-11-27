@@ -1,5 +1,4 @@
 import type BitmovinApi from "@bitmovin/api-sdk";
-import { z } from "zod";
 import type {
 	Child,
 	ChildPage,
@@ -15,6 +14,7 @@ import { muxingChildren } from "./families/muxing-children";
 import { streamChildren } from "./families/stream-children";
 import {
 	InvalidResourceResponse,
+	isResourceId,
 	type ResourceAddress,
 	type ResourceFields,
 } from "./family";
@@ -46,7 +46,6 @@ export type MuxingChildren = Record<
 	string,
 	Record<string, MuxingChildCollection>
 >;
-const idSchema = z.uuid();
 const visibleTypes = new Set([
 	"WIDEVINE",
 	"PLAYREADY",
@@ -64,17 +63,36 @@ const visibleTypes = new Set([
 
 function fields(
 	model: Child,
-	rules: ResourceChildCollection["fields"],
+	collection: ResourceChildCollection,
 ): ResourceFields {
 	if (!model.id) throw new InvalidResourceResponse();
 	const safe: ResourceFields = { id: model.id };
-	if (typeof model.name === "string") safe.name = model.name;
-	if (model.type && visibleTypes.has(model.type)) safe.type = model.type;
 	for (const key of ["createdAt", "modifiedAt"] as const) {
 		const value = model[key];
 		if (value instanceof Date && Number.isFinite(value.getTime()))
 			safe[key] = value.toISOString();
 	}
+	if (collection.fields) {
+		if (collection.expectedType && model.type === collection.expectedType)
+			safe.type = model.type;
+		for (const [key, rule] of Object.entries(collection.fields)) {
+			const value: unknown = Reflect.get(model, key);
+			if (
+				(rule === "number" &&
+					typeof value === "number" &&
+					Number.isFinite(value)) ||
+				(rule === "boolean" && typeof value === "boolean") ||
+				(rule &&
+					typeof rule !== "string" &&
+					typeof value === "string" &&
+					rule.includes(value))
+			)
+				safe[key] = value;
+		}
+		return safe;
+	}
+	if (typeof model.name === "string") safe.name = model.name;
+	if (model.type && visibleTypes.has(model.type)) safe.type = model.type;
 	if (model.positionMode === "TIME" || model.positionMode === "FRAME")
 		safe.positionMode = model.positionMode;
 	if (model.method === "SAMPLE_AES" || model.method === "AES_128")
@@ -84,20 +102,6 @@ function fields(
 	for (const key of ["time", "frame"] as const) {
 		const value = model[key];
 		if (typeof value === "number" && Number.isFinite(value)) safe[key] = value;
-	}
-	for (const [key, rule] of Object.entries(rules ?? {})) {
-		const value: unknown = Reflect.get(model, key);
-		if (
-			(rule === "number" &&
-				typeof value === "number" &&
-				Number.isFinite(value)) ||
-			(rule === "boolean" && typeof value === "boolean") ||
-			(rule &&
-				typeof rule !== "string" &&
-				typeof value === "string" &&
-				rule.includes(value))
-		)
-			safe[key] = value;
 	}
 	return safe;
 }
@@ -160,7 +164,7 @@ async function verifiedWindow(
 		await collection.list(api, address, page),
 		page,
 		!!collection.wholeCollection,
-		(id) => idSchema.safeParse(id).success,
+		isResourceId,
 		targetId,
 	);
 	if (!window) throw new InvalidResourceResponse();
@@ -181,7 +185,7 @@ export async function readChildPage(
 	);
 	const items = (
 		collection.wholeCollection ? rows.slice(start, end) : rows
-	).map((row) => fields(row, collection.fields));
+	).map((row) => fields(row, collection));
 	return { items, total, available, offset: page.offset };
 }
 
@@ -196,14 +200,13 @@ export async function childIsOnPage(
 		.containsTarget;
 }
 
-export async function childFields(
-	get: NonNullable<ResourceChildCollection["get"]>,
+export async function readChildDetail(
 	api: BitmovinApi,
+	collection: ResourceChildCollection,
 	address: ResourceAddress,
 	id: string,
-	rules: ResourceChildCollection["fields"],
 ) {
-	const row = await get(api, address, id);
+	const row = await collection.get?.(api, address, id);
 	if (row?.id !== id) throw new InvalidResourceResponse();
-	return fields(row, rules);
+	return fields(row, collection);
 }

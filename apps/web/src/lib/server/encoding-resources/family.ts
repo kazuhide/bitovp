@@ -1,4 +1,5 @@
 import type BitmovinApi from "@bitmovin/api-sdk";
+import { z } from "zod";
 
 export type ParentRef =
 	| "encodingId"
@@ -40,6 +41,11 @@ export type ResourceFamily = {
 	remove?(api: BitmovinApi, address: ResourceAddress): Promise<void>;
 };
 export class InvalidResourceResponse extends Error {}
+
+const resourceIdSchema = z.uuid();
+export function isResourceId(value: unknown): value is string {
+	return resourceIdSchema.safeParse(value).success;
+}
 
 type ProviderResource = { id?: string };
 type Page = { offset: number; limit: number };

@@ -24,6 +24,7 @@ type FieldRule = "number" | "boolean" | readonly string[];
 type Collection<T> = {
 	label: string;
 	wholeCollection?: boolean;
+	expectedType?: string;
 	list(
 		api: BitmovinApi,
 		address: ResourceAddress,

@@ -1,10 +1,16 @@
 import {
+	type BroadcastTsMuxing,
 	type ConvertSccCaption,
 	InputStreamType,
+	type Mp3Muxing,
 	MuxingType,
+	type MxfMuxing,
+	type PackedAudioMuxing,
+	type SegmentedRawMuxing,
 	SidecarErrorMode,
 	SidecarFileType,
 	StreamCaptionOutputFormat,
+	type WebVttSidecarFile,
 } from "@bitmovin/api-sdk";
 import {
 	defineChildCollection,
@@ -12,14 +18,12 @@ import {
 } from "../child-collection";
 
 const muxingFields = {
-	type: Object.values(MuxingType),
 	avgBitrate: "number",
 	minBitrate: "number",
 	maxBitrate: "number",
 } as const;
 
 const sidecarFields = {
-	type: Object.values(SidecarFileType),
 	errorMode: Object.values(SidecarErrorMode),
 };
 
@@ -27,38 +31,42 @@ export const encodingChildren: ResourceChildren = {
 	CREATE_ENCODING: {
 		muxings: defineChildCollection({
 			label: "Muxings",
-			fields: muxingFields,
+			fields: { ...muxingFields, type: Object.values(MuxingType) },
 			list: (api, address, page) =>
 				api.encoding.encodings.muxings.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.muxings.get(address.id, childId),
 		}),
-		"muxings.broadcastTs": defineChildCollection({
+		"muxings.broadcastTs": defineChildCollection<BroadcastTsMuxing>({
 			label: "Broadcast TS",
+			expectedType: MuxingType.BROADCAST_TS,
 			fields: { ...muxingFields, segmentLength: "number" },
 			list: (api, address, page) =>
 				api.encoding.encodings.muxings.broadcastTs.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.muxings.broadcastTs.get(address.id, childId),
 		}),
-		"muxings.mp3": defineChildCollection({
+		"muxings.mp3": defineChildCollection<Mp3Muxing>({
 			label: "MP3",
+			expectedType: MuxingType.MP3,
 			fields: muxingFields,
 			list: (api, address, page) =>
 				api.encoding.encodings.muxings.mp3.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.muxings.mp3.get(address.id, childId),
 		}),
-		"muxings.mxf": defineChildCollection({
+		"muxings.mxf": defineChildCollection<MxfMuxing>({
 			label: "MXF",
+			expectedType: MuxingType.MXF,
 			fields: muxingFields,
 			list: (api, address, page) =>
 				api.encoding.encodings.muxings.mxf.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.muxings.mxf.get(address.id, childId),
 		}),
-		"muxings.packedAudio": defineChildCollection({
+		"muxings.packedAudio": defineChildCollection<PackedAudioMuxing>({
 			label: "Packed Audio",
+			expectedType: MuxingType.PACKED_AUDIO,
 			fields: {
 				...muxingFields,
 				segmentLength: "number",
@@ -70,8 +78,9 @@ export const encodingChildren: ResourceChildren = {
 			get: (api, address, childId) =>
 				api.encoding.encodings.muxings.packedAudio.get(address.id, childId),
 		}),
-		"muxings.segmentedRaw": defineChildCollection({
+		"muxings.segmentedRaw": defineChildCollection<SegmentedRawMuxing>({
 			label: "Segmented RAW",
+			expectedType: MuxingType.SEGMENTED_RAW,
 			fields: {
 				...muxingFields,
 				segmentLength: "number",
@@ -92,14 +101,15 @@ export const encodingChildren: ResourceChildren = {
 		}),
 		sidecars: defineChildCollection({
 			label: "Sidecar Files",
-			fields: sidecarFields,
+			fields: { ...sidecarFields, type: Object.values(SidecarFileType) },
 			list: (api, address, page) =>
 				api.encoding.encodings.sidecars.list(address.id, page),
 			get: (api, address, childId) =>
 				api.encoding.encodings.sidecars.get(address.id, childId),
 		}),
-		"sidecars.webvtt": defineChildCollection({
+		"sidecars.webvtt": defineChildCollection<WebVttSidecarFile>({
 			label: "WebVTT Sidecars",
+			expectedType: SidecarFileType.WEB_VTT,
 			fields: sidecarFields,
 			list: (api, address, page) =>
 				api.encoding.encodings.sidecars.webvtt.list(address.id, page),

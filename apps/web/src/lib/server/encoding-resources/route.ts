@@ -22,8 +22,8 @@ import { isAisaLiveChannelView } from "../live-channel-aisa-view";
 import { InvalidResourceResponse } from "./family";
 import {
 	childCollectionsFor,
-	childFields,
 	childIsOnPage,
+	readChildDetail,
 	readChildPage,
 } from "./resource-children";
 import { removalAllowed } from "./retirement";
@@ -234,7 +234,14 @@ export function resourceSdk(
 	access: NonNullable<Awaited<ReturnType<typeof originalAccess>>>,
 	signal: AbortSignal,
 	id: string,
+	expectedType?: string,
 ) {
+	// Typed endpoints can omit their discriminator. Check a supplied value before
+	// the SDK maps it to a model and potentially substitutes the default type.
+	const matchesType = (value: unknown) => {
+		const model = object(value);
+		return model && (model.type === undefined || model.type === expectedType);
+	};
 	return new BitmovinApi({
 		apiKey: access.apiKey,
 		...(access.tenantOrgId ? { tenantOrgId: access.tenantOrgId } : {}),
@@ -257,10 +264,12 @@ export function resourceSdk(
 				if (result.id !== undefined && result.id !== id)
 					throw new InvalidResourceResponse();
 			} else if (path.endsWith(`/${encodeURIComponent(id)}`)) {
-				if (result.id !== id) throw new InvalidResourceResponse();
+				if (result.id !== id || (expectedType && !matchesType(result)))
+					throw new InvalidResourceResponse();
 			} else if (
 				!Array.isArray(result.items) ||
-				typeof result.totalCount !== "number"
+				typeof result.totalCount !== "number" ||
+				(expectedType && !result.items.every(matchesType))
 			)
 				throw new InvalidResourceResponse();
 			return response;
@@ -361,6 +370,7 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 			access,
 			AbortSignal.any([req.signal, AbortSignal.timeout(15000)]),
 			parsed.data.childId ?? address.id,
+			child?.expectedType,
 		);
 		try {
 			if (child) {
@@ -373,10 +383,9 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 						409,
 						"The child is no longer on the selected resource page.",
 					);
-				const get = child.get;
-				if (view === "childDetail" && get)
+				if (view === "childDetail")
 					return respond({
-						fields: await childFields(get, api, address, id, child.fields),
+						fields: await readChildDetail(api, child, address, id),
 					});
 				if (view === "childMetadata" && child.metadata) {
 					const value = object(

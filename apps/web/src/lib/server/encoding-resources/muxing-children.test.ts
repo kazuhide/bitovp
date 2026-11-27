@@ -280,6 +280,107 @@ it("omits numeric and enum fields with invalid provider values", async () => {
 	expect(JSON.stringify(data)).not.toContain("PRIVATE_TEST_VALUE");
 });
 
+it.each([
+	["CREATE_ENCODING", "muxings"],
+	["CREATE_STREAM", "bif"],
+	["CREATE_DASH_ADAPTATION_SET_VIDEO", "representations"],
+])("refuses invalid recorded IDs before reading %s children", async (kind, collection) => {
+	const f = seed(kind);
+	const first = f.steps[0];
+	if (!first?.resourceId) throw new Error("Fixture is missing a resource ID");
+	const previous = first.resourceId;
+	const invalid = "invalid/resource-id";
+	first.resourceId = invalid;
+	for (const step of f.steps) {
+		const request = step.request;
+		if (!request || typeof request !== "object" || !("refs" in request))
+			continue;
+		const refs = request.refs;
+		if (!refs || typeof refs !== "object" || Array.isArray(refs)) continue;
+		for (const [key, value] of Object.entries(refs)) {
+			if (value === previous) Object.assign(refs, { [key]: invalid });
+		}
+	}
+	const response = await ask(req("children", collection));
+	expect(response.status).toBe(404);
+	expect(access).not.toHaveBeenCalled();
+	expect(transport).not.toHaveBeenCalled();
+});
+
+it("uses HLS custom-tag fields on list and detail", async () => {
+	seed("CREATE_HLS_STREAM_INFO");
+	const tag = {
+		id: childId,
+		positionMode: "FRAME",
+		data: "PRIVATE_TEST_VALUE",
+	};
+	const page = { items: [tag], totalCount: 1, offset: 0 };
+	transport
+		.mockResolvedValueOnce(result(page))
+		.mockResolvedValueOnce(result(page))
+		.mockResolvedValueOnce(result(tag));
+	const list = await ask(req("children", "customTags"));
+	const detail = await ask(req("childDetail", "customTags", childId));
+	expect(list.status).toBe(200);
+	expect(detail.status).toBe(200);
+	expect(await list.json()).toEqual({
+		items: [{ id: childId }],
+		total: 1,
+		available: 1,
+		offset: 0,
+	});
+	expect(await detail.json()).toEqual({ fields: { id: childId } });
+});
+
+it("omits free-form provider fields from generic HDR10+ stream inspection", async () => {
+	seed("CREATE_ENCODING");
+	const stream = {
+		id: childId,
+		type: "HDR10_PLUS",
+		name: "PRIVATE_TEST_VALUE",
+		description: "PRIVATE_TEST_VALUE",
+		videoInputPath: "PRIVATE_TEST_VALUE",
+		metadataInputPath: "PRIVATE_TEST_VALUE",
+		customData: { secret: "PRIVATE_TEST_VALUE" },
+	};
+	const page = { items: [stream], totalCount: 1, offset: 0 };
+	transport
+		.mockResolvedValueOnce(result(page))
+		.mockResolvedValueOnce(result(page))
+		.mockResolvedValueOnce(result(stream));
+	const list = await ask(req("children", "inputStreams"));
+	const detail = await ask(req("childDetail", "inputStreams", childId));
+	const fields = { id: childId, type: "HDR10_PLUS" };
+	expect(list.status).toBe(200);
+	expect(detail.status).toBe(200);
+	expect(await list.json()).toMatchObject({ items: [fields] });
+	expect((await detail.json()).fields).toEqual(fields);
+});
+
+it.each([
+	["muxings.mp3", "MP3", "FMP4"],
+	["sidecars.webvtt", "WEB_VTT", "UNSUPPORTED_TYPE"],
+])("checks the %s discriminator before SDK mapping", async (collection, type, wrong) => {
+	seed("CREATE_ENCODING");
+	const item = { id: childId };
+	const valid = { items: [item], totalCount: 1 };
+	const invalid = { id: childId, type: wrong };
+	transport.mockResolvedValueOnce(result({ items: [invalid], totalCount: 1 }));
+	expect((await ask(req("childDetail", collection, childId))).status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(1);
+	transport
+		.mockResolvedValueOnce(result(valid))
+		.mockResolvedValueOnce(result(invalid));
+	expect((await ask(req("childDetail", collection, childId))).status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(3);
+	transport
+		.mockResolvedValueOnce(result(valid))
+		.mockResolvedValueOnce(result(item));
+	const compatible = await ask(req("childDetail", collection, childId));
+	expect(compatible.status).toBe(200);
+	expect(await compatible.json()).toEqual({ fields: { id: childId, type } });
+});
+
 it.each(
 	children,
 )("inspects $kind $collection through its documented nested transport", async (spec) => {

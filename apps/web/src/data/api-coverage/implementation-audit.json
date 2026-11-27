@@ -341,7 +341,7 @@
 			"entrypoint": {
 				"httpVerb": "POST",
 				"path": "/api/encoding-native/codecs",
-				"anchor": "createProviderCodec"
+				"anchor": "dispatchCodecCreate"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/native-codec-provider.ts",
@@ -451,7 +451,7 @@
 			"entrypoint": {
 				"httpVerb": "POST",
 				"path": "/api/encoding-native/codecs",
-				"anchor": "createProviderCodec"
+				"anchor": "dispatchCodecCreate"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/native-codec-provider.ts",
@@ -561,7 +561,7 @@
 			"entrypoint": {
 				"httpVerb": "POST",
 				"path": "/api/encoding-native/codecs",
-				"anchor": "createProviderCodec"
+				"anchor": "dispatchCodecCreate"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/native-codec-provider.ts",
@@ -869,7 +869,7 @@
 			"entrypoint": {
 				"httpVerb": "POST",
 				"path": "/api/encoding-native/codecs",
-				"anchor": "createProviderCodec"
+				"anchor": "dispatchCodecCreate"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/native-codec-provider.ts",
@@ -979,7 +979,7 @@
 			"entrypoint": {
 				"httpVerb": "POST",
 				"path": "/api/encoding-native/codecs",
-				"anchor": "createProviderCodec"
+				"anchor": "dispatchCodecCreate"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/native-codec-provider.ts",
@@ -1309,7 +1309,7 @@
 			"entrypoint": {
 				"httpVerb": "POST",
 				"path": "/api/encoding-native/codecs",
-				"anchor": "createProviderCodec"
+				"anchor": "dispatchCodecCreate"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/native-codec-provider.ts",
@@ -1463,7 +1463,7 @@
 			"entrypoint": {
 				"httpVerb": "POST",
 				"path": "/api/encoding-native/codecs",
-				"anchor": "createProviderCodec"
+				"anchor": "dispatchCodecCreate"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/native-codec-provider.ts",
@@ -1771,7 +1771,7 @@
 			"entrypoint": {
 				"httpVerb": "POST",
 				"path": "/api/encoding-native/codecs",
-				"anchor": "createProviderCodec"
+				"anchor": "dispatchCodecCreate"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/native-codec-provider.ts",
@@ -2101,7 +2101,7 @@
 			"entrypoint": {
 				"httpVerb": "POST",
 				"path": "/api/encoding-native/codecs",
-				"anchor": "createProviderCodec"
+				"anchor": "dispatchCodecCreate"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/native-codec-provider.ts",
@@ -2211,7 +2211,7 @@
 			"entrypoint": {
 				"httpVerb": "POST",
 				"path": "/api/encoding-native/codecs",
-				"anchor": "createProviderCodec"
+				"anchor": "dispatchCodecCreate"
 			},
 			"transport": {
 				"file": "apps/web/src/lib/server/native-codec-provider.ts",

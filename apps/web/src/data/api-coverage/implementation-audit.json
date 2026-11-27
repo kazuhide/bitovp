@@ -333,6 +333,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.dts.create",
+			"httpVerb": "POST",
+			"path": "/encoding/configurations/audio/dts",
+			"scope": "settings",
+			"scenario": "Create an authenticated account's typed provider codec configuration with a durable request receipt.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "createProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.dts.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.dts.customdata.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/dts/{configuration_id}/customData",
@@ -351,6 +373,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
 				"caseGroup": "native-metadata-reads",
 				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/audio/dts/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Remove a provider codec configuration after checking its managed receipt and original account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "removeProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.dts.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
 			},
 			"provider": "unverified"
 		},
@@ -399,6 +443,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.create",
+			"httpVerb": "POST",
+			"path": "/encoding/configurations/audio/dts-passthrough",
+			"scope": "settings",
+			"scenario": "Create an authenticated account's typed provider codec configuration with a durable request receipt.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "createProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.dtsPassthrough.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.customdata.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}/customData",
@@ -417,6 +483,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
 				"caseGroup": "native-metadata-reads",
 				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Remove a provider codec configuration after checking its managed receipt and original account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "removeProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.dtsPassthrough.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
 			},
 			"provider": "unverified"
 		},
@@ -465,6 +553,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.create",
+			"httpVerb": "POST",
+			"path": "/encoding/configurations/audio/dtsx",
+			"scope": "settings",
+			"scenario": "Create an authenticated account's typed provider codec configuration with a durable request receipt.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "createProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.dtsx.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.dtsx.customdata.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/dtsx/{configuration_id}/customData",
@@ -483,6 +593,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
 				"caseGroup": "native-metadata-reads",
 				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/audio/dtsx/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Remove a provider codec configuration after checking its managed receipt and original account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "removeProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.dtsx.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
 			},
 			"provider": "unverified"
 		},
@@ -729,6 +861,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.mp2.create",
+			"httpVerb": "POST",
+			"path": "/encoding/configurations/audio/mp2",
+			"scope": "settings",
+			"scenario": "Create an authenticated account's typed provider codec configuration with a durable request receipt.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "createProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.mp2.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.mp2.customdata.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/mp2/{configuration_id}/customData",
@@ -747,6 +901,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
 				"caseGroup": "native-metadata-reads",
 				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/audio/mp2/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Remove a provider codec configuration after checking its managed receipt and original account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "removeProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.mp2.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
 			},
 			"provider": "unverified"
 		},
@@ -795,6 +971,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.mp3.create",
+			"httpVerb": "POST",
+			"path": "/encoding/configurations/audio/mp3",
+			"scope": "settings",
+			"scenario": "Create an authenticated account's typed provider codec configuration with a durable request receipt.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "createProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.mp3.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.mp3.customdata.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/mp3/{configuration_id}/customData",
@@ -813,6 +1011,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
 				"caseGroup": "native-metadata-reads",
 				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp3.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/audio/mp3/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Remove a provider codec configuration after checking its managed receipt and original account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "removeProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.mp3.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
 			},
 			"provider": "unverified"
 		},
@@ -1081,6 +1301,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.create",
+			"httpVerb": "POST",
+			"path": "/encoding/configurations/audio/vorbis",
+			"scope": "settings",
+			"scenario": "Create an authenticated account's typed provider codec configuration with a durable request receipt.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "createProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.vorbis.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.vorbis.customdata.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/vorbis/{configuration_id}/customData",
@@ -1099,6 +1341,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
 				"caseGroup": "native-metadata-reads",
 				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/audio/vorbis/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Remove a provider codec configuration after checking its managed receipt and original account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "removeProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.audio.vorbis.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
 			},
 			"provider": "unverified"
 		},
@@ -1191,6 +1455,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.create",
+			"httpVerb": "POST",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle",
+			"scope": "settings",
+			"scenario": "Create an authenticated account's typed provider codec configuration with a durable request receipt.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "createProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.subtitles.dvbSubtitle.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.customdata.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/subtitles/dvb-subtitle/{configuration_id}/customData",
@@ -1209,6 +1495,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
 				"caseGroup": "native-metadata-reads",
 				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Remove a provider codec configuration after checking its managed receipt and original account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "removeProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.subtitles.dvbSubtitle.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
 			},
 			"provider": "unverified"
 		},
@@ -1455,6 +1763,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.video.h262.create",
+			"httpVerb": "POST",
+			"path": "/encoding/configurations/video/h262",
+			"scope": "settings",
+			"scenario": "Create an authenticated account's typed provider codec configuration with a durable request receipt.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "createProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.video.h262.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.video.h262.customdata.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/video/h262/{configuration_id}/customData",
@@ -1473,6 +1803,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
 				"caseGroup": "native-metadata-reads",
 				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/video/h262/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Remove a provider codec configuration after checking its managed receipt and original account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "removeProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.video.h262.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
 			},
 			"provider": "unverified"
 		},
@@ -1741,6 +2093,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.create",
+			"httpVerb": "POST",
+			"path": "/encoding/configurations/video/mjpeg",
+			"scope": "settings",
+			"scenario": "Create an authenticated account's typed provider codec configuration with a durable request receipt.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "createProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.video.mjpeg.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.video.mjpeg.customdata.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/video/mjpeg/{configuration_id}/customData",
@@ -1759,6 +2133,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
 				"caseGroup": "native-metadata-reads",
 				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/video/mjpeg/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Remove a provider codec configuration after checking its managed receipt and original account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "removeProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.video.mjpeg.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
 			},
 			"provider": "unverified"
 		},
@@ -1807,6 +2203,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.video.vp8.create",
+			"httpVerb": "POST",
+			"path": "/encoding/configurations/video/vp8",
+			"scope": "settings",
+			"scenario": "Create an authenticated account's typed provider codec configuration with a durable request receipt.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "createProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.video.vp8.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.video.vp8.customdata.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/video/vp8/{configuration_id}/customData",
@@ -1825,6 +2243,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
 				"caseGroup": "native-metadata-reads",
 				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp8.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/video/vp8/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Remove a provider codec configuration after checking its managed receipt and original account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-native/codecs",
+				"anchor": "removeProviderCodec"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-codec-provider.ts",
+				"anchor": "api.encoding.configurations.video.vp8.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/codecs/route.integration.test.ts",
+				"caseGroup": "managed-native-codec-lifecycle",
+				"anchor": "\"creates and removes a managed $codec configuration using the typed provider routes\""
 			},
 			"provider": "unverified"
 		},
@@ -1939,6 +2379,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.captions.scc.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/captions/scc/{captions_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.captions.scc.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.captions.scc.get",
 			"httpVerb": "GET",
 			"path": "/encoding/encodings/{encoding_id}/captions/scc/{captions_id}",
@@ -2000,6 +2462,28 @@
 			"contractTest": {
 				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
 				"anchor": "\"reads the recorded encoding root without making it removable\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.getStartRequest",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/start",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.getStartRequest("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
 			},
 			"provider": "unverified"
 		},
@@ -2136,6 +2620,50 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.inputStreams.type.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/input-streams/{input_stream_id}/type",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.inputStreams.type.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.kantarWatermark.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/kantar-watermark",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.kantarWatermark.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.live.hd.start",
 			"httpVerb": "POST",
 			"path": "/encoding/encodings/{encoding_id}/live/hd/start",
@@ -2202,6 +2730,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.muxings.broadcastTs.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts/{muxing_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.broadcastTs.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.muxings.broadcastTs.get",
 			"httpVerb": "GET",
 			"path": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts/{muxing_id}",
@@ -2220,6 +2770,28 @@
 				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
 				"anchor": "\"inspects the documented child transport for $kind $collection\"",
 				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.broadcastTs.information.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts/{muxing_id}/information",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.muxings.broadcastTs.information.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
 			},
 			"provider": "unverified"
 		},
@@ -2312,6 +2884,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.muxings.mp3.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp3/{muxing_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.mp3.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.muxings.mp3.get",
 			"httpVerb": "GET",
 			"path": "/encoding/encodings/{encoding_id}/muxings/mp3/{muxing_id}",
@@ -2330,6 +2924,28 @@
 				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
 				"anchor": "\"inspects the documented child transport for $kind $collection\"",
 				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp3.information.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp3/{muxing_id}/information",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.muxings.mp3.information.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
 			},
 			"provider": "unverified"
 		},
@@ -2378,6 +2994,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.muxings.mxf.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mxf/{muxing_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.mxf.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.muxings.mxf.get",
 			"httpVerb": "GET",
 			"path": "/encoding/encodings/{encoding_id}/muxings/mxf/{muxing_id}",
@@ -2422,6 +3060,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.muxings.packedAudio.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.packedAudio.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.muxings.packedAudio.get",
 			"httpVerb": "GET",
 			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}",
@@ -2440,6 +3100,28 @@
 				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
 				"anchor": "\"inspects the documented child transport for $kind $collection\"",
 				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.packedAudio.information.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}/information",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.muxings.packedAudio.information.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
 			},
 			"provider": "unverified"
 		},
@@ -2598,6 +3280,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.muxings.segmentedRaw.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/segmented-raw/{muxing_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.muxings.segmentedRaw.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.muxings.segmentedRaw.get",
 			"httpVerb": "GET",
 			"path": "/encoding/encodings/{encoding_id}/muxings/segmented-raw/{muxing_id}",
@@ -2638,6 +3342,116 @@
 				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
 				"anchor": "\"inspects the documented child transport for $kind $collection\"",
 				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.type.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/{muxing_id}/type",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.muxings.type.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.outputPaths.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/output-paths",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.outputPaths.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.scte35Triggers.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/scte-35-triggers/{scte35trigger_id}",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.scte35Triggers.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.scte35Triggers.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/scte-35-triggers",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.scte35Triggers.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.sidecars.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/sidecars/{sidecar_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.encodings.sidecars.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
 			},
 			"provider": "unverified"
 		},
@@ -2748,6 +3562,28 @@
 				"file": "apps/worker/src/orchestrator/start-sdk-contract.test.ts",
 				"anchor": "\"preserves VOD START options with %s manifests",
 				"caseGroup": "worker-vod-start"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.bifs.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/bifs/{bif_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.bifs.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
 			},
 			"provider": "unverified"
 		},
@@ -2884,6 +3720,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.streams.captions.cea.scc.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/scc/{captions_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.captions.cea.scc.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.streams.captions.cea.scc.get",
 			"httpVerb": "GET",
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/scc/{captions_id}",
@@ -2924,6 +3782,28 @@
 				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
 				"anchor": "\"inspects the documented child transport for $kind $collection\"",
 				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.captions.cea.srt.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/srt/{captions_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.captions.cea.srt.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
 			},
 			"provider": "unverified"
 		},
@@ -2972,6 +3852,160 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.encodings.streams.filters.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/filters",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.streams.filters.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.input.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/input",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.streams.input.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.inputs.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/inputs",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.streams.inputs.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.qc.psnr.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/qc/psnr",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.streams.qc.psnr.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.sprites.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/sprites/{sprite_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.streams.sprites.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.thumbnails.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/thumbnails/{thumbnail_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.streams.thumbnails.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.watermarking.nexguardFileMarker.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/watermarking/nexguard-file-marker/{nexguard_id}/customData",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+				"anchor": "api.encoding.encodings.streams.watermarking.nexguardFileMarker.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.encodings.streams.watermarking.nexguardFileMarker.get",
 			"httpVerb": "GET",
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/watermarking/nexguard-file-marker/{nexguard_id}",
@@ -3012,6 +4046,28 @@
 				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
 				"anchor": "\"inspects the documented child transport for $kind $collection\"",
 				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.template.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/template",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.encodings.template.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
 			},
 			"provider": "unverified"
 		},
@@ -5500,6 +6556,50 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.live.encodings.dnsMappings.get",
+			"httpVerb": "GET",
+			"path": "/encoding/live/encodings/{encoding_id}/dns-mappings/{id}",
+			"scope": "live",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/live-channels/[id]/runs/[runId]/resources",
+				"anchor": "readResources(req, { channelId: id, runId })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+				"anchor": "api.encoding.live.encodings.dnsMappings.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.getStartRequest",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/dash/{manifest_id}/start",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.manifests.dash.getStartRequest("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.list",
 			"httpVerb": "GET",
 			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets",
@@ -5588,6 +6688,50 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.type.get",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/{representation_id}/type",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.manifests.dash.periods.adaptationsets.representations.type.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.type.get",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/type",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.manifests.dash.periods.adaptationsets.type.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.manifests.dash.periods.create",
 			"httpVerb": "POST",
 			"path": "/encoding/manifests/dash/{manifest_id}/periods",
@@ -5627,6 +6771,28 @@
 				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
 				"anchor": "\"sends the official %s manifest stop once via the worker SDK\"",
 				"caseGroup": "worker-standalone-manifest-stop"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.hls.getStartRequest",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/hls/{manifest_id}/start",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.manifests.hls.getStartRequest("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
 			},
 			"provider": "unverified"
 		},
@@ -5671,6 +6837,28 @@
 				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
 				"anchor": "\"inspects the documented child transport for $kind $collection\"",
 				"caseGroup": "recorded-child-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.hls.media.type.get",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/hls/{manifest_id}/media/{media_id}/type",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.manifests.hls.media.type.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
 			},
 			"provider": "unverified"
 		},
@@ -5763,6 +6951,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.manifests.smooth.getStartRequest",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/smooth/{manifest_id}/start",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.manifests.smooth.getStartRequest("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.manifests.smooth.stop",
 			"httpVerb": "POST",
 			"path": "/encoding/manifests/smooth/{manifest_id}/stop",
@@ -5781,6 +6991,28 @@
 				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
 				"anchor": "\"sends the official %s manifest stop once via the worker SDK\"",
 				"caseGroup": "worker-standalone-manifest-stop"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.type.get",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/{manifest_id}/type",
+			"scope": "vod",
+			"scenario": "Inspect recorded provider diagnostics through the original Bitmovin account and scoped resource selection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+				"anchor": "api.encoding.manifests.type.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"reads the documented recorded diagnostic $sdkMethod\"",
+				"caseGroup": "recorded-job-diagnostics"
 			},
 			"provider": "unverified"
 		},

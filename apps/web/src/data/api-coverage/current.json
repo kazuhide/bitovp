@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-27T01:33:08.509Z",
-		"sourceCommit": "18a1e15cd7632c05d9492133eba1adf889aa4ae3",
-		"sourceFingerprint": "fff2590c189249977cabf4f75280da355f74a698849300a3f73f65b0c4845cb7",
+		"generatedAt": "2026-11-27T14:20:57.950Z",
+		"sourceCommit": "ee7836e530588f57506c42aa925f9e47e7b8901b",
+		"sourceFingerprint": "37f66bb2824f8b7dfacfc5fc4f4abb700f44ffd7a14869e1e8a12af5ccf14cc6",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -12,23 +12,23 @@
 	},
 	"summary": {
 		"totalOperations": 1098,
-		"sourceConfirmed": 846,
-		"unconfirmed": 252,
+		"sourceConfirmed": 991,
+		"unconfirmed": 107,
 		"createTotal": 219,
-		"createSourceConfirmed": 159
+		"createSourceConfirmed": 169
 	},
 	"families": [
 		{
 			"family": "configurations",
 			"total": 141,
-			"sourceConfirmed": 95,
-			"unconfirmed": 46
+			"sourceConfirmed": 141,
+			"unconfirmed": 0
 		},
 		{
 			"family": "encodings",
 			"total": 425,
-			"sourceConfirmed": 329,
-			"unconfirmed": 96
+			"sourceConfirmed": 357,
+			"unconfirmed": 68
 		},
 		{
 			"family": "errorDefinitions",
@@ -39,8 +39,8 @@
 		{
 			"family": "filters",
 			"total": 88,
-			"sourceConfirmed": 68,
-			"unconfirmed": 20
+			"sourceConfirmed": 86,
+			"unconfirmed": 2
 		},
 		{
 			"family": "infrastructure",
@@ -51,32 +51,32 @@
 		{
 			"family": "inputs",
 			"total": 93,
-			"sourceConfirmed": 64,
-			"unconfirmed": 29
+			"sourceConfirmed": 81,
+			"unconfirmed": 12
 		},
 		{
 			"family": "live",
 			"total": 22,
-			"sourceConfirmed": 20,
-			"unconfirmed": 2
+			"sourceConfirmed": 21,
+			"unconfirmed": 1
 		},
 		{
 			"family": "manifests",
 			"total": 169,
-			"sourceConfirmed": 150,
-			"unconfirmed": 19
+			"sourceConfirmed": 157,
+			"unconfirmed": 12
 		},
 		{
 			"family": "outputs",
 			"total": 71,
-			"sourceConfirmed": 50,
-			"unconfirmed": 21
+			"sourceConfirmed": 66,
+			"unconfirmed": 5
 		},
 		{
 			"family": "statistics",
 			"total": 23,
-			"sourceConfirmed": 11,
-			"unconfirmed": 12
+			"sourceConfirmed": 23,
+			"unconfirmed": 0
 		},
 		{
 			"family": "templates",
@@ -98,8 +98,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 11
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations",
@@ -107,8 +112,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.configurations.list",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 10
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/aac",
@@ -148,7 +158,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 55
+					"line": 74
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -166,7 +176,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 54
+					"line": 73
 				}
 			]
 		},
@@ -176,8 +186,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.aac.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 77
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/ac3",
@@ -217,7 +232,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 59
+					"line": 81
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -235,7 +250,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 58
+					"line": 80
 				}
 			]
 		},
@@ -245,8 +260,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.ac3.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 84
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dolby-atmos",
@@ -286,7 +306,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 64
+					"line": 89
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -304,7 +324,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 63
+					"line": 88
 				}
 			]
 		},
@@ -314,8 +334,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 92
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dolby-digital",
@@ -355,7 +380,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 69
+					"line": 97
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -373,7 +398,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 68
+					"line": 96
 				}
 			]
 		},
@@ -383,8 +408,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.dolbyDigital.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 100
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dolby-digital-plus",
@@ -424,7 +454,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 75
+					"line": 106
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -442,7 +472,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 73
+					"line": 104
 				}
 			]
 		},
@@ -452,8 +482,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 109
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dts",
@@ -461,8 +496,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.audio.dts.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 133
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dts/{configuration_id}",
@@ -470,8 +510,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.configurations.audio.dts.delete",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 46
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dts/{configuration_id}",
@@ -483,7 +528,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 79
+					"line": 113
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 42
 				}
 			]
 		},
@@ -497,7 +546,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 78
+					"line": 112
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 43
 				}
 			]
 		},
@@ -507,8 +560,17 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.dts.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 116
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 45
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dts-passthrough",
@@ -516,8 +578,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 142
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}",
@@ -525,8 +592,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.delete",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 56
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}",
@@ -538,7 +610,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 85
+					"line": 122
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 50
 				}
 			]
 		},
@@ -552,7 +628,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 83
+					"line": 120
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 52
 				}
 			]
 		},
@@ -562,8 +642,17 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 125
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 54
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dtsx",
@@ -571,8 +660,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.audio.dtsx.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 146
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dtsx/{configuration_id}",
@@ -580,8 +674,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.configurations.audio.dtsx.delete",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 64
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/dtsx/{configuration_id}",
@@ -593,7 +692,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 89
+					"line": 129
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 60
 				}
 			]
 		},
@@ -607,7 +710,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 88
+					"line": 128
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 61
 				}
 			]
 		},
@@ -617,8 +724,17 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.dtsx.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 132
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 63
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/eac3",
@@ -658,7 +774,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 93
+					"line": 136
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -676,7 +792,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 92
+					"line": 135
 				}
 			]
 		},
@@ -686,8 +802,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.eac3.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 139
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/he-aac-v1",
@@ -727,7 +848,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 97
+					"line": 143
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/he-aac.ts",
@@ -749,7 +870,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 96
+					"line": 142
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/he-aac.ts",
@@ -765,6 +886,10 @@
 			"family": "configurations",
 			"status": "source-confirmed",
 			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 146
+				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/he-aac.ts",
 					"line": 75
@@ -809,7 +934,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 101
+					"line": 150
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/he-aac.ts",
@@ -831,7 +956,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 100
+					"line": 149
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/he-aac.ts",
@@ -848,6 +973,10 @@
 			"status": "source-confirmed",
 			"evidence": [
 				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 153
+				},
+				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/he-aac.ts",
 					"line": 92
 				}
@@ -859,8 +988,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.audio.mp2.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 159
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/mp2/{configuration_id}",
@@ -868,8 +1002,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.configurations.audio.mp2.delete",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 72
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/mp2/{configuration_id}",
@@ -881,7 +1020,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 105
+					"line": 157
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 68
 				}
 			]
 		},
@@ -895,7 +1038,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 104
+					"line": 156
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 69
 				}
 			]
 		},
@@ -905,8 +1052,17 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.mp2.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 160
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 71
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/mp3",
@@ -914,8 +1070,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.audio.mp3.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 167
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/mp3/{configuration_id}",
@@ -923,8 +1084,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.configurations.audio.mp3.delete",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 80
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/mp3/{configuration_id}",
@@ -936,7 +1102,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 109
+					"line": 164
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 76
 				}
 			]
 		},
@@ -950,7 +1120,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 108
+					"line": 163
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 77
 				}
 			]
 		},
@@ -960,8 +1134,17 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.mp3.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 167
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 79
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/opus",
@@ -1001,7 +1184,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 113
+					"line": 171
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -1019,7 +1202,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 112
+					"line": 170
 				}
 			]
 		},
@@ -1029,8 +1212,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.opus.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 174
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/passthrough",
@@ -1070,7 +1258,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 118
+					"line": 179
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -1088,7 +1276,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 117
+					"line": 178
 				}
 			]
 		},
@@ -1130,7 +1318,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 122
+					"line": 183
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -1148,7 +1336,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 121
+					"line": 182
 				}
 			]
 		},
@@ -1158,8 +1346,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.pcm.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 186
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/vorbis",
@@ -1167,8 +1360,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.audio.vorbis.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 175
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/vorbis/{configuration_id}",
@@ -1176,8 +1374,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.configurations.audio.vorbis.delete",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 88
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/audio/vorbis/{configuration_id}",
@@ -1189,7 +1392,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 126
+					"line": 190
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 84
 				}
 			]
 		},
@@ -1203,7 +1410,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 125
+					"line": 189
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 85
 				}
 			]
 		},
@@ -1213,8 +1424,17 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.audio.vorbis.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 193
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 87
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/subtitles/dvb-subtitle",
@@ -1222,8 +1442,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 183
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/subtitles/dvb-subtitle/{configuration_id}",
@@ -1231,8 +1456,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.delete",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 98
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/subtitles/dvb-subtitle/{configuration_id}",
@@ -1244,7 +1474,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 134
+					"line": 201
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 92
 				}
 			]
 		},
@@ -1258,7 +1492,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 132
+					"line": 199
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 94
 				}
 			]
 		},
@@ -1268,8 +1506,17 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 204
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 96
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/subtitles/imsc",
@@ -1309,7 +1556,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 139
+					"line": 209
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -1327,7 +1574,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 138
+					"line": 208
 				}
 			]
 		},
@@ -1337,8 +1584,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.subtitles.imsc.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 212
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/subtitles/webvtt",
@@ -1378,7 +1630,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 144
+					"line": 217
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -1396,7 +1648,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 143
+					"line": 216
 				}
 			]
 		},
@@ -1406,8 +1658,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.subtitles.webvtt.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 220
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/{configuration_id}/type",
@@ -1461,7 +1718,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 21
+					"line": 19
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -1483,7 +1740,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 20
+					"line": 18
 				}
 			]
 		},
@@ -1493,8 +1750,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.video.av1.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 22
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/h262",
@@ -1502,8 +1764,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.video.h262.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 187
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/h262/{configuration_id}",
@@ -1511,8 +1778,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.configurations.video.h262.delete",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 106
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/h262/{configuration_id}",
@@ -1524,7 +1796,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 25
+					"line": 26
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 102
 				}
 			]
 		},
@@ -1538,7 +1814,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 24
+					"line": 25
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 103
 				}
 			]
 		},
@@ -1548,8 +1828,17 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.video.h262.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 29
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 105
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/h264",
@@ -1589,7 +1878,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 29
+					"line": 33
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -1611,7 +1900,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 28
+					"line": 32
 				}
 			]
 		},
@@ -1621,8 +1910,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.video.h264.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 36
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/h265",
@@ -1662,7 +1956,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 33
+					"line": 40
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -1684,7 +1978,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 32
+					"line": 39
 				}
 			]
 		},
@@ -1694,8 +1988,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.video.h265.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 43
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/h265v2",
@@ -1735,7 +2034,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 37
+					"line": 47
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -1757,7 +2056,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 36
+					"line": 46
 				}
 			]
 		},
@@ -1767,8 +2066,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.video.mjpeg.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 197
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/mjpeg/{configuration_id}",
@@ -1776,8 +2080,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.configurations.video.mjpeg.delete",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 114
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/mjpeg/{configuration_id}",
@@ -1789,7 +2098,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 41
+					"line": 51
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 110
 				}
 			]
 		},
@@ -1803,7 +2116,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 40
+					"line": 50
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 111
 				}
 			]
 		},
@@ -1813,8 +2130,17 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.video.mjpeg.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 54
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 113
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/vp8",
@@ -1822,8 +2148,13 @@
 			"operation": "create",
 			"sdkMethod": "encoding.configurations.video.vp8.create",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 207
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/vp8/{configuration_id}",
@@ -1831,8 +2162,13 @@
 			"operation": "delete",
 			"sdkMethod": "encoding.configurations.video.vp8.delete",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 122
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/vp8/{configuration_id}",
@@ -1844,7 +2180,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 45
+					"line": 58
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 118
 				}
 			]
 		},
@@ -1858,7 +2198,11 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 44
+					"line": 57
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 119
 				}
 			]
 		},
@@ -1868,8 +2212,17 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.video.vp8.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 61
+				},
+				{
+					"file": "apps/web/src/lib/server/native-codec-provider.ts",
+					"line": 121
+				}
+			]
 		},
 		{
 			"path": "/encoding/configurations/video/vp9",
@@ -1909,7 +2262,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 49
+					"line": 65
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
@@ -1931,7 +2284,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
-					"line": 48
+					"line": 64
 				}
 			]
 		},
@@ -1941,8 +2294,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.configurations.video.vp9.customdata.get",
 			"family": "configurations",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+					"line": 68
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings",
@@ -1997,6 +2355,10 @@
 					"line": 71
 				},
 				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 192
+				},
+				{
 					"file": "apps/worker/src/reset/provider.ts",
 					"line": 65
 				},
@@ -2016,8 +2378,13 @@
 			"operation": "getStartRequest",
 			"sdkMethod": "encoding.encodings.getStartRequest",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 161
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings",
@@ -2183,7 +2550,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 125
+					"line": 148
 				}
 			]
 		},
@@ -2197,7 +2564,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 123
+					"line": 146
 				}
 			]
 		},
@@ -2207,8 +2574,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.captions.scc.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+					"line": 150
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/customData",
@@ -2238,7 +2610,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 100
+					"line": 121
 				}
 			]
 		},
@@ -2252,7 +2624,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 98
+					"line": 119
 				}
 			]
 		},
@@ -3050,8 +3422,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.inputStreams.type.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 375
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/kantar-watermark",
@@ -3082,8 +3459,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.kantarWatermark.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 180
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/keyframes",
@@ -3441,7 +3823,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 38
+					"line": 40
 				}
 			]
 		},
@@ -3455,7 +3837,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 36
+					"line": 38
 				}
 			]
 		},
@@ -3487,7 +3869,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 47
+					"line": 49
 				}
 			]
 		},
@@ -3501,7 +3883,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 45
+					"line": 47
 				}
 			]
 		},
@@ -3511,8 +3893,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.muxings.broadcastTs.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+					"line": 51
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts/{muxing_id}/information",
@@ -3520,8 +3907,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.muxings.broadcastTs.information.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 382
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/chunked-text",
@@ -4441,7 +4833,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 56
+					"line": 63
 				}
 			]
 		},
@@ -4455,7 +4847,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 54
+					"line": 61
 				}
 			]
 		},
@@ -4465,8 +4857,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.muxings.mp3.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+					"line": 65
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/mp3/{muxing_id}/information",
@@ -4474,8 +4871,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.muxings.mp3.information.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 392
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/mp4",
@@ -5041,7 +5443,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 65
+					"line": 74
 				}
 			]
 		},
@@ -5055,7 +5457,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 63
+					"line": 72
 				}
 			]
 		},
@@ -5065,8 +5467,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.muxings.mxf.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+					"line": 76
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio",
@@ -5096,7 +5503,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 79
+					"line": 90
 				}
 			]
 		},
@@ -5110,7 +5517,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 77
+					"line": 88
 				}
 			]
 		},
@@ -5120,8 +5527,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.muxings.packedAudio.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+					"line": 92
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}/drm/aes",
@@ -5174,8 +5586,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.muxings.packedAudio.information.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 399
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-mov",
@@ -6211,7 +6628,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 92
+					"line": 108
 				}
 			]
 		},
@@ -6225,7 +6642,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 90
+					"line": 106
 				}
 			]
 		},
@@ -6235,8 +6652,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.muxings.segmentedRaw.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+					"line": 110
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/text",
@@ -6656,8 +7078,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.muxings.type.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 370
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/muxings/webm",
@@ -6943,8 +7370,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.outputPaths.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 198
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/scte-35-triggers",
@@ -6970,8 +7402,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.scte35Triggers.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+					"line": 158
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/scte-35-triggers",
@@ -6979,8 +7416,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.encodings.scte35Triggers.list",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+					"line": 156
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/sidecars",
@@ -7010,7 +7452,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 108
+					"line": 129
 				}
 			]
 		},
@@ -7024,7 +7466,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 106
+					"line": 127
 				}
 			]
 		},
@@ -7034,8 +7476,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.sidecars.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+					"line": 131
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/sidecars/webvtt",
@@ -7065,7 +7512,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 117
+					"line": 140
 				}
 			]
 		},
@@ -7079,7 +7526,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
-					"line": 115
+					"line": 138
 				}
 			]
 		},
@@ -7199,8 +7646,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.streams.bifs.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+					"line": 43
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/burn-in-subtitles/assa",
@@ -7230,7 +7682,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
-					"line": 53
+					"line": 59
 				}
 			]
 		},
@@ -7244,7 +7696,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
-					"line": 47
+					"line": 53
 				}
 			]
 		},
@@ -7276,7 +7728,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
-					"line": 69
+					"line": 75
 				}
 			]
 		},
@@ -7290,7 +7742,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
-					"line": 63
+					"line": 69
 				}
 			]
 		},
@@ -7378,7 +7830,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
-					"line": 85
+					"line": 91
 				}
 			]
 		},
@@ -7392,7 +7844,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
-					"line": 79
+					"line": 85
 				}
 			]
 		},
@@ -7402,8 +7854,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.streams.captions.cea.scc.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+					"line": 97
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/srt",
@@ -7433,7 +7890,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
-					"line": 104
+					"line": 116
 				}
 			]
 		},
@@ -7447,7 +7904,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
-					"line": 98
+					"line": 110
 				}
 			]
 		},
@@ -7457,8 +7914,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.streams.captions.cea.srt.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+					"line": 122
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/customData",
@@ -7512,8 +7974,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.encodings.streams.filters.list",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 235
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/hdr/dolby-vision",
@@ -7577,8 +8044,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.streams.input.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 266
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/inputs",
@@ -7586,8 +8058,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.encodings.streams.inputs.list",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 287
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/qc/psnr",
@@ -7604,8 +8081,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.encodings.streams.qc.psnr.list",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 320
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/sprites",
@@ -7631,7 +8113,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 648
+					"line": 654
 				}
 			]
 		},
@@ -7645,7 +8127,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 636
+					"line": 642
 				}
 			]
 		},
@@ -7659,7 +8141,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 642
+					"line": 648
 				}
 			]
 		},
@@ -7669,8 +8151,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.streams.sprites.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+					"line": 634
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/thumbnails",
@@ -7696,7 +8183,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 670
+					"line": 682
 				}
 			]
 		},
@@ -7710,7 +8197,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 658
+					"line": 670
 				}
 			]
 		},
@@ -7724,7 +8211,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
-					"line": 664
+					"line": 676
 				}
 			]
 		},
@@ -7734,8 +8221,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.streams.thumbnails.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+					"line": 662
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/watermarking/nexguard-file-marker",
@@ -7770,7 +8262,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
-					"line": 124
+					"line": 142
 				}
 			]
 		},
@@ -7784,7 +8276,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
-					"line": 118
+					"line": 136
 				}
 			]
 		},
@@ -7794,8 +8286,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.streams.watermarking.nexguardFileMarker.customdata.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/stream-children.ts",
+					"line": 148
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/template",
@@ -7803,8 +8300,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.encodings.template.get",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 223
+				}
+			]
 		},
 		{
 			"path": "/encoding/error-definitions",
@@ -7830,7 +8332,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 15
+					"line": 8
 				}
 			]
 		},
@@ -7844,7 +8346,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 14
+					"line": 7
 				}
 			]
 		},
@@ -7886,7 +8388,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 21
+					"line": 15
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -7904,7 +8406,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 20
+					"line": 14
 				}
 			]
 		},
@@ -7914,8 +8416,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.audioMix.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 17
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/audio-volume",
@@ -7955,7 +8462,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 25
+					"line": 21
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -7973,7 +8480,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 24
+					"line": 20
 				}
 			]
 		},
@@ -7983,8 +8490,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.audioVolume.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 23
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/azure-speech-to-captions",
@@ -8014,7 +8526,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 29
+					"line": 27
 				}
 			]
 		},
@@ -8028,7 +8540,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 28
+					"line": 26
 				}
 			]
 		},
@@ -8038,8 +8550,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.azureSpeechToCaptions.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 30
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/conform",
@@ -8079,7 +8596,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 33
+					"line": 34
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8097,7 +8614,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 32
+					"line": 33
 				}
 			]
 		},
@@ -8107,8 +8624,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.conform.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 36
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/crop",
@@ -8148,7 +8670,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 37
+					"line": 40
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8166,7 +8688,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 36
+					"line": 39
 				}
 			]
 		},
@@ -8176,8 +8698,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.crop.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 42
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/deinterlace",
@@ -8217,7 +8744,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 41
+					"line": 46
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8235,7 +8762,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 40
+					"line": 45
 				}
 			]
 		},
@@ -8245,8 +8772,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.deinterlace.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 48
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/denoise-hqdn3d",
@@ -8286,7 +8818,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 45
+					"line": 52
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8304,7 +8836,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 44
+					"line": 51
 				}
 			]
 		},
@@ -8314,8 +8846,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.denoiseHqdn3d.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 55
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/dolby-loudness",
@@ -8355,7 +8892,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 49
+					"line": 59
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8373,7 +8910,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 48
+					"line": 58
 				}
 			]
 		},
@@ -8383,8 +8920,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.dolbyLoudness.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 62
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/ebu-r128-single-pass",
@@ -8424,7 +8966,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 53
+					"line": 66
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8442,7 +8984,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 52
+					"line": 65
 				}
 			]
 		},
@@ -8452,8 +8994,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.ebuR128SinglePass.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 69
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/enhanced-deinterlace",
@@ -8493,7 +9040,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 57
+					"line": 73
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8511,7 +9058,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 56
+					"line": 72
 				}
 			]
 		},
@@ -8521,8 +9068,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.enhancedDeinterlace.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 76
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/enhanced-watermark",
@@ -8562,7 +9114,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 61
+					"line": 80
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8580,7 +9132,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 60
+					"line": 79
 				}
 			]
 		},
@@ -8590,8 +9142,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.enhancedWatermark.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 83
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/interlace",
@@ -8631,7 +9188,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 65
+					"line": 87
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8649,7 +9206,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 64
+					"line": 86
 				}
 			]
 		},
@@ -8659,8 +9216,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.interlace.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 89
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/rotate",
@@ -8700,7 +9262,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 69
+					"line": 93
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8718,7 +9280,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 68
+					"line": 92
 				}
 			]
 		},
@@ -8728,8 +9290,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.rotate.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 95
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/scale",
@@ -8769,7 +9336,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 73
+					"line": 99
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8787,7 +9354,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 72
+					"line": 98
 				}
 			]
 		},
@@ -8797,8 +9364,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.scale.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 101
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/text",
@@ -8838,7 +9410,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 77
+					"line": 105
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8856,7 +9428,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 76
+					"line": 104
 				}
 			]
 		},
@@ -8866,8 +9438,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.text.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 107
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/{filter_id}/type",
@@ -8875,8 +9452,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.type.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 9
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/unsharp",
@@ -8916,7 +9498,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 81
+					"line": 111
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -8934,7 +9516,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 80
+					"line": 110
 				}
 			]
 		},
@@ -8944,8 +9526,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.unsharp.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 113
+				}
+			]
 		},
 		{
 			"path": "/encoding/filters/watermark",
@@ -8985,7 +9572,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 85
+					"line": 117
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/filters.ts",
@@ -9003,7 +9590,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
-					"line": 84
+					"line": 116
 				}
 			]
 		},
@@ -9013,8 +9600,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.filters.watermark.customdata.get",
 			"family": "filters",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+					"line": 119
+				}
+			]
 		},
 		{
 			"path": "/encoding/infrastructure/akamai",
@@ -9798,8 +10390,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 11
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs",
@@ -9812,6 +10409,10 @@
 				{
 					"file": "apps/web/src/app/api/live/inputs/route.ts",
 					"line": 73
+				},
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 10
 				}
 			]
 		},
@@ -9853,7 +10454,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 20
+					"line": 24
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -9871,7 +10472,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 19
+					"line": 23
 				}
 			]
 		},
@@ -9881,8 +10482,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.akamaiNetstorage.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 27
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/aspera",
@@ -9912,7 +10518,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 24
+					"line": 31
 				}
 			]
 		},
@@ -9926,7 +10532,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 23
+					"line": 30
 				}
 			]
 		},
@@ -9936,8 +10542,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.aspera.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 33
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/azure",
@@ -9981,7 +10592,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 28
+					"line": 37
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -10003,7 +10614,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 27
+					"line": 36
 				}
 			]
 		},
@@ -10013,8 +10624,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.azure.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 39
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/direct-file-upload",
@@ -10044,7 +10660,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 32
+					"line": 43
 				}
 			]
 		},
@@ -10058,7 +10674,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 31
+					"line": 42
 				}
 			]
 		},
@@ -10068,8 +10684,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.directFileUpload.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 46
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/ftp",
@@ -10099,7 +10720,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 36
+					"line": 50
 				}
 			]
 		},
@@ -10113,7 +10734,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 35
+					"line": 49
 				}
 			]
 		},
@@ -10123,8 +10744,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.ftp.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 52
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/gcs",
@@ -10168,7 +10794,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 40
+					"line": 56
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -10190,7 +10816,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 39
+					"line": 55
 				}
 			]
 		},
@@ -10200,8 +10826,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.gcs.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 58
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/gcs-service-account",
@@ -10241,7 +10872,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 44
+					"line": 62
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -10259,7 +10890,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 43
+					"line": 61
 				}
 			]
 		},
@@ -10269,8 +10900,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.gcsServiceAccount.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 65
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/generic-s3",
@@ -10314,7 +10950,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 48
+					"line": 69
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -10336,7 +10972,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 47
+					"line": 68
 				}
 			]
 		},
@@ -10346,8 +10982,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.genericS3.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 71
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/hls",
@@ -10387,7 +11028,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 52
+					"line": 75
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -10405,7 +11046,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 51
+					"line": 74
 				}
 			]
 		},
@@ -10437,7 +11078,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 56
+					"line": 79
 				}
 			]
 		},
@@ -10451,7 +11092,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 55
+					"line": 78
 				}
 			]
 		},
@@ -10461,8 +11102,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.http.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 81
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/https",
@@ -10502,7 +11148,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 60
+					"line": 85
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -10520,7 +11166,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 59
+					"line": 84
 				}
 			]
 		},
@@ -10530,8 +11176,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.https.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 87
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/local",
@@ -10561,7 +11212,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 64
+					"line": 91
 				}
 			]
 		},
@@ -10575,7 +11226,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 63
+					"line": 90
 				}
 			]
 		},
@@ -10585,8 +11236,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.local.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 93
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/redundant-rtmp",
@@ -10626,7 +11282,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 68
+					"line": 97
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -10644,7 +11300,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 67
+					"line": 96
 				}
 			]
 		},
@@ -10658,7 +11314,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 72
+					"line": 101
 				}
 			]
 		},
@@ -10676,7 +11332,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 71
+					"line": 100
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/io.ts",
@@ -10726,7 +11382,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 76
+					"line": 105
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -10748,7 +11404,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 75
+					"line": 104
 				}
 			]
 		},
@@ -10758,8 +11414,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.s3.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 107
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/s3-role-based",
@@ -10799,7 +11460,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 80
+					"line": 111
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -10817,7 +11478,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 79
+					"line": 110
 				}
 			]
 		},
@@ -10827,8 +11488,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.s3RoleBased.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 113
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/sftp",
@@ -10858,7 +11524,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 84
+					"line": 117
 				}
 			]
 		},
@@ -10872,7 +11538,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 83
+					"line": 116
 				}
 			]
 		},
@@ -10882,8 +11548,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.sftp.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 119
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/srt",
@@ -10923,7 +11594,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 88
+					"line": 123
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -10941,7 +11612,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 87
+					"line": 122
 				}
 			]
 		},
@@ -10951,8 +11622,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.srt.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 125
+				}
+			]
 		},
 		{
 			"path": "/encoding/inputs/{input_id}/type",
@@ -11006,7 +11682,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 92
+					"line": 129
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
@@ -11024,7 +11700,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 91
+					"line": 128
 				}
 			]
 		},
@@ -11034,8 +11710,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.inputs.zixi.customdata.get",
 			"family": "inputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 131
+				}
+			]
 		},
 		{
 			"path": "/encoding/live/dns-mappings",
@@ -11108,8 +11789,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.live.encodings.dnsMappings.get",
 			"family": "live",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+					"line": 168
+				}
+			]
 		},
 		{
 			"path": "/encoding/live/encodings/{encoding_id}/dns-mappings",
@@ -11126,6 +11812,10 @@
 				{
 					"file": "apps/web/src/app/api/live/dns-mappings/route.ts",
 					"line": 66
+				},
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",
+					"line": 166
 				}
 			]
 		},
@@ -11420,8 +12110,13 @@
 			"operation": "getStartRequest",
 			"sdkMethod": "encoding.manifests.dash.getStartRequest",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 348
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/dash",
@@ -12420,8 +13115,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.type.get",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 140
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/vtt",
@@ -12648,8 +13348,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.type.get",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 131
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/video",
@@ -12819,8 +13524,13 @@
 			"operation": "getStartRequest",
 			"sdkMethod": "encoding.manifests.hls.getStartRequest",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 355
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/hls",
@@ -13134,8 +13844,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.manifests.hls.media.type.get",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 148
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/hls/{manifest_id}/media/video",
@@ -13459,8 +14174,13 @@
 			"operation": "getStartRequest",
 			"sdkMethod": "encoding.manifests.smooth.getStartRequest",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 362
+				}
+			]
 		},
 		{
 			"path": "/encoding/manifests/smooth",
@@ -13659,8 +14379,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.manifests.type.get",
 			"family": "manifests",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/diagnostics.ts",
+					"line": 126
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/{output_id}/check-permissions",
@@ -13677,8 +14402,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 16
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs",
@@ -13686,8 +14416,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.outputs.list",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 15
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/akamai-msl",
@@ -13727,7 +14462,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 99
+					"line": 138
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
@@ -13745,7 +14480,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 98
+					"line": 137
 				}
 			]
 		},
@@ -13755,8 +14490,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.akamaiMsl.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 140
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/akamai-netstorage",
@@ -13796,7 +14536,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 103
+					"line": 144
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
@@ -13814,7 +14554,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 102
+					"line": 143
 				}
 			]
 		},
@@ -13824,8 +14564,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.akamaiNetstorage.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 147
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/azure",
@@ -13865,7 +14610,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 107
+					"line": 151
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
@@ -13883,7 +14628,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 106
+					"line": 150
 				}
 			]
 		},
@@ -13893,8 +14638,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.azure.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 153
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/cdn/{output_id}",
@@ -13906,7 +14656,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 111
+					"line": 157
 				}
 			]
 		},
@@ -13920,7 +14670,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 110
+					"line": 156
 				}
 			]
 		},
@@ -13952,7 +14702,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 115
+					"line": 161
 				}
 			]
 		},
@@ -13966,7 +14716,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 114
+					"line": 160
 				}
 			]
 		},
@@ -13976,8 +14726,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.ftp.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 163
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/gcs",
@@ -14017,7 +14772,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 119
+					"line": 167
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
@@ -14035,7 +14790,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 118
+					"line": 166
 				}
 			]
 		},
@@ -14045,8 +14800,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.gcs.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 169
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/gcs-service-account",
@@ -14086,7 +14846,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 123
+					"line": 173
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
@@ -14104,7 +14864,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 122
+					"line": 172
 				}
 			]
 		},
@@ -14114,8 +14874,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.gcsServiceAccount.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 176
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/generic-s3",
@@ -14155,7 +14920,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 127
+					"line": 180
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
@@ -14177,7 +14942,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 126
+					"line": 179
 				}
 			]
 		},
@@ -14187,8 +14952,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.genericS3.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 182
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/live-media-ingest",
@@ -14228,7 +14998,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 131
+					"line": 186
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
@@ -14246,7 +15016,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 130
+					"line": 185
 				}
 			]
 		},
@@ -14256,8 +15026,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.liveMediaIngest.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 189
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/local",
@@ -14287,7 +15062,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 135
+					"line": 193
 				}
 			]
 		},
@@ -14301,7 +15076,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 134
+					"line": 192
 				}
 			]
 		},
@@ -14311,8 +15086,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.local.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 195
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/moq",
@@ -14352,7 +15132,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 139
+					"line": 199
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
@@ -14370,7 +15150,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 138
+					"line": 198
 				}
 			]
 		},
@@ -14380,8 +15160,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.moq.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 201
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/s3",
@@ -14421,7 +15206,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 143
+					"line": 205
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
@@ -14443,7 +15228,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 142
+					"line": 204
 				}
 			]
 		},
@@ -14453,8 +15238,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.s3.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 207
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/s3-role-based",
@@ -14494,7 +15284,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 147
+					"line": 211
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
@@ -14512,7 +15302,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 146
+					"line": 210
 				}
 			]
 		},
@@ -14522,8 +15312,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.s3RoleBased.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 213
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/sftp",
@@ -14563,7 +15358,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 151
+					"line": 217
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
@@ -14581,7 +15376,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
-					"line": 150
+					"line": 216
 				}
 			]
 		},
@@ -14591,8 +15386,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.sftp.customdata.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 219
+				}
+			]
 		},
 		{
 			"path": "/encoding/outputs/{output_id}/type",
@@ -14600,8 +15400,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.outputs.type.get",
 			"family": "outputs",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+					"line": 17
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics",
@@ -14609,8 +15414,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.statistics.get",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 135
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/{from}/{to}",
@@ -14618,8 +15428,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.statistics.list",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 138
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/cdn/usage",
@@ -14627,8 +15442,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.statistics.cdn.usage.get",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 184
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/daily",
@@ -14636,8 +15456,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.statistics.daily.list",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 144
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/daily/{from}/{to}",
@@ -14645,8 +15470,13 @@
 			"operation": "listByDateRange",
 			"sdkMethod": "encoding.statistics.daily.listByDateRange",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 143
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/encodings/{encoding_id}",
@@ -14668,8 +15498,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.statistics.encodings.live.list",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 153
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/encodings/live/{from}/{to}",
@@ -14677,8 +15512,13 @@
 			"operation": "listByDateRange",
 			"sdkMethod": "encoding.statistics.encodings.live.listByDateRange",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 149
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/encodings/live/daily/{from}/{to}",
@@ -14700,8 +15540,13 @@
 			"operation": "get",
 			"sdkMethod": "encoding.statistics.encodings.live.options.get",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 202
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/encodings/live/options",
@@ -14793,8 +15638,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.statistics.encodings.vod.list",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 162
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/encodings/vod/{from}/{to}",
@@ -14802,8 +15652,13 @@
 			"operation": "listByDateRange",
 			"sdkMethod": "encoding.statistics.encodings.vod.listByDateRange",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 158
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/encodings/vod/daily/{from}/{to}",
@@ -14828,6 +15683,10 @@
 			"status": "source-confirmed",
 			"evidence": [
 				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 171
+				},
+				{
 					"file": "apps/web/src/lib/server/statistics-labels.ts",
 					"line": 97
 				},
@@ -14843,8 +15702,13 @@
 			"operation": "listByDateRange",
 			"sdkMethod": "encoding.statistics.labels.listByDateRange",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 167
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/labels/daily",
@@ -14852,8 +15716,13 @@
 			"operation": "list",
 			"sdkMethod": "encoding.statistics.labels.daily.list",
 			"family": "statistics",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 180
+				}
+			]
 		},
 		{
 			"path": "/encoding/statistics/labels/daily/{from}/{to}",
@@ -14863,6 +15732,10 @@
 			"family": "statistics",
 			"status": "source-confirmed",
 			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/provider-statistics.ts",
+					"line": 176
+				},
 				{
 					"file": "apps/web/src/lib/server/statistics-labels.ts",
 					"line": 316
@@ -14897,7 +15770,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/encoding-native/route.ts",
-					"line": 175
+					"line": 249
 				}
 			]
 		},
@@ -14911,7 +15784,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/encoding-native/route.ts",
-					"line": 177
+					"line": 251
 				}
 			]
 		},
@@ -14952,7 +15825,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/encoding-native/route.ts",
-					"line": 183
+					"line": 257
 				}
 			]
 		},
@@ -14966,7 +15839,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/encoding-native/route.ts",
-					"line": 185
+					"line": 259
 				}
 			]
 		},

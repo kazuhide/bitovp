@@ -1,0 +1,58 @@
+[
+  {
+    "kind": "CREATE_STREAM",
+    "collection": "bif",
+    "list": "bifs",
+    "get": "bifs/{bif_id}",
+    "fields": {
+      "width": 160,
+      "height": 90,
+      "distance": 10,
+      "aspectMode": "PAD"
+    }
+  },
+  {
+    "kind": "CREATE_STREAM",
+    "collection": "burnInSubtitles.assa",
+    "list": "burn-in-subtitles/assa",
+    "get": "burn-in-subtitles/assa/{subtitle_id}",
+    "fields": {
+      "characterEncoding": "UTF-8"
+    }
+  },
+  {
+    "kind": "CREATE_STREAM",
+    "collection": "burnInSubtitles.dvbsub",
+    "list": "burn-in-subtitles/dvbsub",
+    "get": "burn-in-subtitles/dvbsub/{subtitle_id}"
+  },
+  {
+    "kind": "CREATE_STREAM",
+    "collection": "captions.cea.scc",
+    "list": "captions/608-708/scc",
+    "get": "captions/608-708/scc/{captions_id}",
+    "fields": {
+      "smpteTimecodeFlavor": "DROP_FRAME"
+    }
+  },
+  {
+    "kind": "CREATE_STREAM",
+    "collection": "captions.cea.srt",
+    "list": "captions/608-708/srt",
+    "get": "captions/608-708/srt/{captions_id}",
+    "fields": {
+      "ccChannel": "CC1",
+      "characterEncoding": "UTF-8"
+    }
+  },
+  {
+    "kind": "CREATE_STREAM",
+    "collection": "watermarking.nexguardFileMarker",
+    "list": "watermarking/nexguard-file-marker",
+    "get": "watermarking/nexguard-file-marker/{nexguard_id}",
+    "fields": {
+      "watermarkType": "OTT",
+      "strength": "DEFAULT"
+    }
+  }
+]

@@ -7,7 +7,7 @@ const controls = [
 		workspace: "@bitovp/worker",
 		directory: "apps/worker",
 		files: {
-			"src/tenant/consumer.test.ts": 17,
+			"src/tenant/consumer.test.ts": 21,
 		},
 		source: "apps/worker/src/tenant/consumer.ts",
 		anchor: "await assertTenantJobOwned(deps.prisma, key, envelope.payload);",
@@ -29,6 +29,10 @@ const controls = [
 			"trusted repeatables visit each organization without sharing mutable scope",
 			"reserves one feeder STOP slot globally, delays excess starts and releases capacity",
 			"fresh inactive metadata suppresses pending VOD before SDK execution and persists ERROR",
+			"inactive multi-encoding VOD that 'owns a durable STOP' follows scoped cleanup admission",
+			"inactive multi-encoding VOD that 'has an accepted cancel' follows scoped cleanup admission",
+			"inactive multi-encoding VOD that 'belongs to another organization' follows scoped cleanup admission",
+			"an ordinary Cancel winning the inactive VOD terminal CAS keeps its only delivery",
 			"inactive organization still accepts STOP and in-flight provider continuation",
 		],
 		failures: {
@@ -54,6 +58,12 @@ const controls = [
 				'Error: promise resolved "undefined" instead of rejecting',
 			"startup batch cannot use another tenant's saved configuration":
 				'Error: promise resolved "undefined" instead of rejecting',
+			"fresh inactive metadata suppresses pending VOD before SDK execution and persists ERROR":
+				'Error: promise resolved "undefined" instead of rejecting',
+			"inactive multi-encoding VOD that 'belongs to another organization' follows scoped cleanup admission":
+				"Error: expected [Function] to throw error including 'Tenant resource unavailable' but got 'Organization is inactive; new work wa…'",
+			"an ordinary Cancel winning the inactive VOD terminal CAS keeps its only delivery":
+				'AssertionError: expected "vi.fn()" to be called 2 times, but got 1 times',
 		},
 		timeoutMs: 60000,
 	},

@@ -1,0 +1,108 @@
+[
+  {
+    "kind": "CREATE_DASH_PERIOD",
+    "collection": "adaptationSets",
+    "list": "adaptationsets",
+    "model": {
+      "type": "VIDEO",
+      "customAttributes": [{ "key": "private", "value": "fixture-secret" }]
+    },
+    "fields": { "type": "VIDEO" }
+  },
+  {
+    "kind": "CREATE_DASH_ADAPTATION_SET_AUDIO",
+    "collection": "representations",
+    "parentPath": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}",
+    "list": "representations",
+    "model": {
+      "typeDiscriminator": "DRM_FMP4",
+      "segmentPath": "fixture-secret"
+    },
+    "fields": { "typeDiscriminator": "DRM_FMP4" }
+  },
+  {
+    "kind": "CREATE_DASH_ADAPTATION_SET_IMAGE",
+    "collection": "representations",
+    "parentPath": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}",
+    "list": "representations",
+    "model": {
+      "typeDiscriminator": "SPRITE",
+      "segmentPath": "fixture-secret"
+    },
+    "fields": { "typeDiscriminator": "SPRITE" }
+  },
+  {
+    "kind": "CREATE_DASH_ADAPTATION_SET_SUBTITLE",
+    "collection": "representations",
+    "parentPath": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}",
+    "list": "representations",
+    "model": {
+      "typeDiscriminator": "VTT",
+      "segmentPath": "fixture-secret"
+    },
+    "fields": { "typeDiscriminator": "VTT" }
+  },
+  {
+    "kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+    "collection": "representations",
+    "parentPath": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}",
+    "list": "representations",
+    "model": {
+      "typeDiscriminator": "CMAF",
+      "segmentPath": "fixture-secret"
+    },
+    "fields": { "typeDiscriminator": "CMAF" }
+  },
+  {
+    "kind": "CREATE_DASH_REPRESENTATION_CMAF",
+    "collection": "contentProtection",
+    "list": "contentprotection",
+    "get": "contentprotection/{contentprotection_id}",
+    "model": {
+      "drmId": "fixture-secret",
+      "dependencyId": "fixture-secret",
+      "muxingId": "fixture-secret"
+    },
+    "fields": { "typeDiscriminator": "CONTENT_PROTECTION" }
+  },
+  {
+    "kind": "CREATE_HLS_AUDIO_MEDIA",
+    "collection": "customTags",
+    "parentPath": "/encoding/manifests/hls/{manifest_id}/media/{media_id}",
+    "list": "custom-tags",
+    "get": "custom-tags/{custom_tag_id}",
+    "model": {
+      "positionMode": "TIME",
+      "time": 14.5,
+      "data": "fixture-secret",
+      "keyframeId": "fixture-secret"
+    },
+    "fields": { "positionMode": "TIME", "time": 14.5 }
+  },
+  {
+    "kind": "CREATE_HLS_SUBTITLES_MEDIA",
+    "collection": "customTags",
+    "parentPath": "/encoding/manifests/hls/{manifest_id}/media/{media_id}",
+    "list": "custom-tags",
+    "get": "custom-tags/{custom_tag_id}",
+    "model": {
+      "positionMode": "SEGMENT",
+      "segment": 3,
+      "data": "fixture-secret",
+      "keyframeId": "fixture-secret"
+    },
+    "fields": { "positionMode": "SEGMENT", "segment": 3 }
+  },
+  {
+    "kind": "CREATE_HLS_STREAM_INFO",
+    "collection": "customTags",
+    "list": "custom-tags",
+    "get": "custom-tags/{custom_tag_id}",
+    "model": {
+      "positionMode": "KEYFRAME",
+      "data": "fixture-secret",
+      "keyframeId": "fixture-secret"
+    },
+    "fields": { "positionMode": "KEYFRAME" }
+  }
+]

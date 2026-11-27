@@ -9,7 +9,7 @@ import type {
 import {
 	defineChildCollection,
 	type ResourceChildren,
-} from "../resource-children";
+} from "../child-collection";
 
 const adaptationSets = defineChildCollection<
 	AdaptationSet & { type?: AdaptationSetType }

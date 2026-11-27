@@ -37,7 +37,7 @@ export type ResourceFamily = {
 		address: ResourceAddress,
 		page: { offset: number; limit: number },
 	) => Promise<ResourcePage>;
-	remove(api: BitmovinApi, address: ResourceAddress): Promise<void>;
+	remove?(api: BitmovinApi, address: ResourceAddress): Promise<void>;
 };
 export class InvalidResourceResponse extends Error {}
 
@@ -45,7 +45,7 @@ type ProviderResource = { id?: string };
 type Page = { offset: number; limit: number };
 
 /** Use the model fields listed by each SDK family. Inputs, outputs and their delete responses can contain credentials. */
-function project<T extends ProviderResource>(
+export function projectResourceFields<T extends ProviderResource>(
 	model: T,
 	fields: readonly (keyof T & string)[],
 ): ResourceFields {
@@ -82,7 +82,7 @@ export function defineFamily<T extends ProviderResource>(definition: {
 		api: BitmovinApi,
 		address: ResourceAddress,
 	) => Promise<ProviderResource>;
-}): ResourceFamily {
+}): ResourceFamily & Required<Pick<ResourceFamily, "remove">> {
 	const list = definition.list;
 	return {
 		parents: definition.parents,
@@ -92,7 +92,7 @@ export function defineFamily<T extends ProviderResource>(definition: {
 		async detail(api, address) {
 			const model = await definition.get(api, address);
 			if (model?.id !== address.id) throw new InvalidResourceResponse();
-			return project(model, definition.fields);
+			return projectResourceFields(model, definition.fields);
 		},
 		...(list
 			? {
@@ -111,7 +111,7 @@ export function defineFamily<T extends ProviderResource>(definition: {
 						)
 							throw new InvalidResourceResponse();
 						const items = result.items.map((row) =>
-							project(row, definition.fields),
+							projectResourceFields(row, definition.fields),
 						);
 						if (
 							definition.listScope === "linked" &&

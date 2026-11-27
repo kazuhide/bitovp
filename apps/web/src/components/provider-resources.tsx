@@ -5,7 +5,7 @@ import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
-import { type ChildChoice, MuxingChildren } from "./muxing-children";
+import { type ChildChoice, ResourceChildren } from "./resource-children";
 
 type Selection = {
 	step: string;
@@ -19,6 +19,7 @@ type Selection = {
 	childCollections?: ChildChoice[];
 	removalState?: string | null;
 	retainedForPublication?: boolean;
+	readOnly?: boolean;
 };
 type Fields = Record<string, string | number | boolean>;
 const pageSize = 25;
@@ -350,7 +351,7 @@ function ResourceInspector({
 			) : null}
 			{selected.removalState !== "REMOVED" &&
 				!!selected.childCollections?.length && (
-					<MuxingChildren
+					<ResourceChildren
 						endpoint={endpoint}
 						parent={selected}
 						choices={selected.childCollections}
@@ -419,7 +420,11 @@ function ResourceChoices({ endpoint }: { endpoint: string }) {
 					endpoint={endpoint}
 					selected={selected}
 					canManage={index.data.canManage}
-					canRemove={index.data.canRemove && !selected.retainedForPublication}
+					canRemove={
+						index.data.canRemove &&
+						!selected.retainedForPublication &&
+						!selected.readOnly
+					}
 				/>
 			)}
 		</div>

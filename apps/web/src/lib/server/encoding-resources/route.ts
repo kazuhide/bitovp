@@ -1,8 +1,3 @@
-import {
-	childCollectionsFor,
-	childFields,
-	readChildPage,
-} from "./muxing-children";
 import "server-only";
 import BitmovinApi from "@bitmovin/api-sdk";
 import {
@@ -25,6 +20,12 @@ import {
 } from "../http";
 import { isAisaLiveChannelView } from "../live-channel-aisa-view";
 import { InvalidResourceResponse } from "./family";
+import {
+	childCollectionsFor,
+	childFields,
+	childIsOnPage,
+	readChildPage,
+} from "./resource-children";
 import { removalAllowed } from "./retirement";
 import { object, parseResourceLog, selectResource } from "./selection";
 
@@ -60,7 +61,7 @@ const query = z
 			!!input.childId ===
 				(input.view === "childDetail" || input.view === "childMetadata")
 		);
-	}, "Invalid muxing child selection.");
+	}, "Invalid child resource selection.");
 const pageSize = 25;
 const headers = { "Cache-Control": "private, no-store" };
 const respond = (body: unknown) => NextResponse.json(body, { headers });
@@ -355,7 +356,7 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 				(view === "childDetail" && !child.get) ||
 				(view === "childMetadata" && !child.metadata))
 		)
-			return jsonError(400, "This muxing does not have this child view.");
+			return jsonError(400, "This resource does not have this child view.");
 		const api = resourceSdk(
 			access,
 			AbortSignal.any([req.signal, AbortSignal.timeout(15000)]),
@@ -363,31 +364,23 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 		);
 		try {
 			if (child) {
-				const encodingId = address.parent("encodingId");
-				const page = await readChildPage(api, child, encodingId, address.id, {
-					offset,
-					limit: pageSize,
-				});
-				if (view === "children") return respond(page);
+				const page = { offset, limit: pageSize };
+				if (view === "children")
+					return respond(await readChildPage(api, child, address, page));
 				const id = parsed.data.childId;
-				if (!id || !page.items.some((row) => row.id === id))
+				if (!id || !(await childIsOnPage(api, child, address, page, id)))
 					return jsonError(
 						409,
-						"The child is no longer on the selected muxing page.",
+						"The child is no longer on the selected resource page.",
 					);
-				if (view === "childDetail" && child.get)
+				const get = child.get;
+				if (view === "childDetail" && get)
 					return respond({
-						fields: await childFields(
-							child.get,
-							api,
-							encodingId,
-							address.id,
-							id,
-						),
+						fields: await childFields(get, api, address, id, child.fields),
 					});
 				if (view === "childMetadata" && child.metadata) {
 					const value = object(
-						(await child.metadata(api, encodingId, address.id, id)).customData,
+						(await child.metadata(api, address, id)).customData,
 					);
 					if (!value) throw new InvalidResourceResponse();
 					const executionId = "jobId" in owner ? owner.jobId : owner.channelId;

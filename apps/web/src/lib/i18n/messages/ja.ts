@@ -90,7 +90,7 @@ export const ja = {
 			"DVB 字幕には MPEG-TS を含む SRT、Zixi または HLS 入力を指定してください。",
 	},
 	providerResources: {
-		muxingChildren: "このマクシングの DRM・ID3",
+		relatedResources: "関連リソース",
 		chooseType: "種類を選択",
 		allDrm: "すべての DRM 方式",
 		allId3: "すべての ID3 タグ",

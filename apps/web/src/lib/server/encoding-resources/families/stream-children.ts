@@ -15,7 +15,7 @@ import {
 import {
 	defineChildCollection,
 	type ResourceChildren,
-} from "../resource-children";
+} from "../child-collection";
 
 export const streamChildren: ResourceChildren = {
 	CREATE_STREAM: {

@@ -1,4 +1,5 @@
 import {
+	type ConvertSccCaption,
 	InputStreamType,
 	MuxingType,
 	SidecarErrorMode,
@@ -8,7 +9,7 @@ import {
 import {
 	defineChildCollection,
 	type ResourceChildren,
-} from "../resource-children";
+} from "../child-collection";
 
 const muxingFields = {
 	type: Object.values(MuxingType),
@@ -105,7 +106,7 @@ export const encodingChildren: ResourceChildren = {
 			get: (api, address, childId) =>
 				api.encoding.encodings.sidecars.webvtt.get(address.id, childId),
 		}),
-		"captions.scc": defineChildCollection({
+		"captions.scc": defineChildCollection<ConvertSccCaption>({
 			label: "SCC Captions",
 			fields: { outputFormat: Object.values(StreamCaptionOutputFormat) },
 			list: (api, address, page) =>

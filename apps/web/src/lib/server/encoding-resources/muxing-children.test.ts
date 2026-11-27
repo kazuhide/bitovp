@@ -1,10 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { GET as vod } from "@/app/api/encoding-jobs/[id]/resources/route";
+import {
+	DELETE as removeVod,
+	POST as verifyVodRemoval,
+	GET as vod,
+} from "@/app/api/encoding-jobs/[id]/resources/route";
 import { GET as live } from "@/app/api/live-channels/[id]/runs/[runId]/resources/route";
+import { auditedOperationCases } from "../../../../../../scripts/api-coverage-test-cases";
+import encodingChildren from "./__fixtures__/encoding-children.json";
 import { resourceFixture } from "./__fixtures__/journal";
+import manifestChildren from "./__fixtures__/manifest-children.json";
 import children from "./__fixtures__/muxing-children.json";
 import parentContracts from "./__fixtures__/sdk-contracts.json";
+import streamChildren from "./__fixtures__/stream-children.json";
 
 const { job, run, access } = vi.hoisted(() => ({
 	job: vi.fn(),
@@ -13,6 +21,7 @@ const { job, run, access } = vi.hoisted(() => ({
 }));
 vi.mock("../context", () => ({
 	getServerContext: async () => ({
+		tenant: { role: "OPERATOR", isImpersonating: false },
 		prisma: {
 			encodingJob: { findUnique: job },
 			liveChannelRun: { findFirst: run },
@@ -44,12 +53,27 @@ const ask = (req: Request, viaLive = false) =>
 	viaLive
 		? live(req, { params: Promise.resolve({ id: channelId, runId }) })
 		: vod(req, { params: Promise.resolve({ id: jobId }) });
-function seed(kind: string) {
+function parentContract(kind: string) {
+	if (kind === "CREATE_ENCODING")
+		return {
+			kind,
+			parents: {},
+			detail: "/encoding/encodings/{encoding_id}",
+		};
 	const parent = parentContracts.find((x) => x.kind === kind);
-	if (!parent) throw new Error("Missing official muxing fixture");
-	const f = resourceFixture(parent, account, version);
+	if (!parent) throw new Error("Missing recorded resource fixture");
+	return parent;
+}
+function seed(kind: string, parentPath?: string) {
+	const parent = parentContract(kind);
+	const f = resourceFixture(
+		{ ...parent, detail: parentPath ?? parent.detail },
+		account,
+		version,
+	);
 	const row = {
 		plan: {},
+		status: "FINISHED",
 		stepLog: f.steps,
 		bitmovinAccountId: account,
 		createdAt: new Date(100),
@@ -80,8 +104,182 @@ const model = {
 	customData: { embedded: "PRIVATE_TEST_VALUE" },
 	bytes: "PRIVATE_TEST_VALUE",
 	text: "PRIVATE_TEST_VALUE",
+	data: "PRIVATE_TEST_VALUE",
+	license: "PRIVATE_TEST_VALUE",
+	filename: "PRIVATE_TEST_VALUE",
+	description: "PRIVATE_TEST_VALUE",
+	input: { inputPath: "PRIVATE_TEST_VALUE" },
 	type: "WIDEVINE",
 };
+
+type RelatedCase = {
+	kind: string;
+	collection: string;
+	parentPath?: string;
+	list: string;
+	get?: string;
+	model?: object;
+	fields?: Partial<Record<string, string | boolean | number>>;
+};
+const newChildren: RelatedCase[] = [
+	...encodingChildren,
+	...manifestChildren,
+	...streamChildren,
+];
+
+it.each(
+	auditedOperationCases(
+		import.meta.url,
+		"recorded-child-reads",
+		newChildren,
+		(spec) => {
+			const prefix = spec.parentPath ?? parentContract(spec.kind).detail;
+			return [spec.list, spec.get].flatMap((path) =>
+				path ? [`GET ${prefix}/${path}`] : [],
+			);
+		},
+	),
+)("inspects the documented child transport for $kind $collection", async (spec) => {
+	const parent = seed(spec.kind, spec.parentPath);
+	const list = `${parent.expected}/${spec.list}`;
+	const detail =
+		spec.get && `${parent.expected}/${spec.get.replace(/\{[^}]+\}/g, childId)}`;
+	const expected = { id: childId, ...spec.fields };
+	const item = {
+		...model,
+		name: undefined,
+		type: undefined,
+		...spec.fields,
+		...spec.model,
+	};
+	const paths: string[] = [];
+	transport.mockImplementation(async (url: string, init: RequestInit) => {
+		const address = new URL(url);
+		paths.push(address.pathname);
+		expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+		expect(init.method?.toUpperCase()).toBe("GET");
+		if (address.pathname === list) {
+			expect(address.searchParams.get("offset")).toBe("25");
+			expect(address.searchParams.get("limit")).toBe("25");
+			return result({ items: [item], offset: 25, totalCount: 26 });
+		}
+		if (address.pathname === detail) return result(item);
+		throw new Error("Unexpected provider path");
+	});
+	const index = await (
+		await ask(new Request("http://fixture.invalid/resources"))
+	).json();
+	expect(index.resources.at(-1)?.childCollections).toContainEqual(
+		expect.objectContaining({ key: spec.collection, hasDetail: !!spec.get }),
+	);
+	expect(transport).not.toHaveBeenCalled();
+	const page = await ask(req("children", spec.collection, undefined, 25));
+	expect(page.status).toBe(200);
+	expect(await page.json()).toEqual({
+		items: [expected],
+		total: 26,
+		available: 26,
+		offset: 25,
+	});
+	if (detail) {
+		const response = await ask(
+			req("childDetail", spec.collection, childId, 25),
+		);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ fields: expected });
+	}
+	expect(paths).toEqual(detail ? [list, list, detail] : [list]);
+});
+
+it("reads the recorded encoding root without making it removable", async () => {
+	const parent = seed("CREATE_ENCODING");
+	const index = await (
+		await ask(new Request("http://fixture.invalid/resources"))
+	).json();
+	expect(index.canRemove).toBe(true);
+	expect(index.resources).toMatchObject([{ id: parent.id, readOnly: true }]);
+	for (const [method, handler] of [
+		["DELETE", removeVod],
+		["POST", verifyVodRemoval],
+	] as const) {
+		const response = await handler(
+			new Request("http://fixture.invalid/resources", {
+				method,
+				body: JSON.stringify({
+					step: "selected",
+					attempt: 0,
+					confirmResourceId: parent.id,
+				}),
+			}),
+			{ params: Promise.resolve({ id: jobId }) },
+		);
+		expect(response.status).toBe(409);
+	}
+	expect(access).not.toHaveBeenCalled();
+	expect(transport).not.toHaveBeenCalled();
+	transport.mockImplementationOnce(async (url: string, init: RequestInit) => {
+		expect(new URL(url).pathname).toBe(parent.expected);
+		expect(init.method?.toUpperCase()).toBe("GET");
+		expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+		return result({ ...model, id: parent.id, type: "VOD", status: "FINISHED" });
+	});
+	const response = await ask(
+		new Request("http://fixture.invalid/resources?step=selected&attempt=0"),
+	);
+	expect(response.status).toBe(200);
+	expect(await response.json()).toEqual({
+		fields: {
+			id: parent.id,
+			name: model.name,
+			type: "VOD",
+			status: "FINISHED",
+		},
+	});
+});
+
+it("does not read a child detail when unseen rows invalidate the provider list", async () => {
+	seed("CREATE_MUXING_FMP4");
+	const rows = Array.from({ length: 26 }, () => ({
+		...model,
+		id: randomUUID(),
+	}));
+	rows[0] = model;
+	transport.mockResolvedValueOnce(result({ items: rows, totalCount: 26 }));
+	expect((await ask(req("childDetail", "drm", childId, 25))).status).toBe(409);
+	rows[25] = model;
+	transport.mockResolvedValueOnce(
+		result({
+			items: [{ ...model, id: "../not-an-id" }, ...rows.slice(1)],
+			totalCount: 26,
+		}),
+	);
+	expect((await ask(req("childDetail", "drm", childId, 25))).status).toBe(502);
+	transport.mockResolvedValueOnce(result({ items: rows, totalCount: 26 }));
+	expect((await ask(req("childDetail", "drm", childId, 25))).status).toBe(502);
+	expect(transport).toHaveBeenCalledTimes(3);
+});
+
+it("omits numeric and enum fields with invalid provider values", async () => {
+	seed("CREATE_STREAM");
+	transport.mockResolvedValueOnce(
+		result({
+			items: [
+				{
+					...model,
+					width: "PRIVATE_TEST_VALUE",
+					aspectMode: "PRIVATE_TEST_VALUE",
+				},
+			],
+			totalCount: 1,
+		}),
+	);
+	const response = await ask(req("children", "bif"));
+	expect(response.status).toBe(200);
+	const data = await response.json();
+	expect(data).toMatchObject({ items: [{ id: childId }] });
+	expect(JSON.stringify(data)).not.toContain("PRIVATE_TEST_VALUE");
+});
+
 it.each(
 	children,
 )("inspects $kind $collection through its documented nested transport", async (spec) => {

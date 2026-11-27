@@ -135,7 +135,7 @@ describe("catalogue parity", () => {
 		// Compact lifecycle and HDR measurement wording (runtime measured: 1688).
 		// Operation analytics adds report guidance (runtime measured: 1691).
 		// Authoring controls and guidance for Live resources pending reset.
-		pinWithDriftAid(long.length, 1718, "long");
+		pinWithDriftAid(long.length, 1722, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
@@ -161,7 +161,10 @@ describe("catalogue parity", () => {
 		// Four short labels cover instance queue usage and availability.
 		// MoQ playback controls add five unique short labels (runtime measured: 3511).
 		// HDR10+, HE-AAC, and notification delivery states.
-		pinWithDriftAid(short.size, 3592, "short");
+		// The recorded muxing information view adds five short labels.
+		// The Encoding account inventory and operation ledger add short labels.
+		// Codec and filter inventory adds three unique Japanese labels.
+		pinWithDriftAid(short.size, 3623, "short");
 	});
 
 	/**

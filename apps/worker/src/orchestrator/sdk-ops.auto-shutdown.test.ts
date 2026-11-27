@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { auditedOperationCases } from "../../../../scripts/api-coverage-test-cases";
 import { type AuditRecorder, createBitmovinSdkOps } from "./sdk-ops";
 
 afterEach(() => {
@@ -7,14 +8,23 @@ afterEach(() => {
 });
 
 describe("real SDK running Live automatic stop transport", () => {
-	it.each([
-		{},
-		{
-			bytesReadTimeoutSeconds: 30,
-			streamTimeoutMinutes: 5,
-			waitingForFirstConnectTimeoutMinutes: 5,
-		},
-	])("sends one full replacement via POST and preserves the accepted stop instant: %j", async (configuration) => {
+	it.each(
+		auditedOperationCases(
+			import.meta.url,
+			"worker-live-auto-shutdown",
+			[
+				{},
+				{
+					bytesReadTimeoutSeconds: 30,
+					streamTimeoutMinutes: 5,
+					waitingForFirstConnectTimeoutMinutes: 5,
+				},
+			],
+			() => [
+				"POST /encoding/encodings/{encoding_id}/live/update-autoshutdown-config",
+			],
+		),
+	)("sends one full replacement via POST and preserves the accepted stop instant: %j", async (configuration) => {
 		const accepted = {
 			...configuration,
 			scheduledShutdownAt: "2026-10-21T00:05:00.000Z",

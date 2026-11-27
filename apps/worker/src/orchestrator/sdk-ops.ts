@@ -93,7 +93,7 @@ export type Destination = {
 	acl?: string;
 	/**
 	 * RESOLVED mirror output ids — the facade's `outputs`
-	 * expands one EncodingOutput per mirror at the SAME path and acl.
+	 * expands one EncodingOutput per mirror, with a destination-specific ACL.
 	 */
 	mirrorOutputIds?: string[];
 	/**
@@ -103,7 +103,13 @@ export type Destination = {
 	 * MSL manifest form (`/folder/`) instead.
 	 */
 	mirrorOutputPaths?: string[];
+	/** Per-mirror ACLs, aligned with IDs. A null entry omits the ACL. */
+	mirrorOutputAcls?: (string | null)[];
+	/** Resolved role-backed output IDs for manifest recovery verification. */
+	roleOutputIds?: string[];
 };
+
+export type ManifestKind = "hls" | "dash" | "smooth";
 
 /** ColorConfig with enum NAMES; copy* flags pass through. */
 export type ColorConfigParams = {
@@ -525,6 +531,13 @@ export type Scte35CueParams = {
 	manifestIds?: string[];
 };
 
+export type S3RoleStorageParams = {
+	name: string;
+	bucketName: string;
+	roleArn: string;
+	region: string;
+};
+
 export type SdkOps = {
 	createAisaLiveAnalysis(request: AisaLiveCreateRequest): Promise<string>;
 	getAisaLiveAnalysis(
@@ -543,6 +556,7 @@ export type SdkOps = {
 		accessKey: string;
 		secretKey: string;
 	}): Promise<string>;
+	createS3RoleBasedInput(p: S3RoleStorageParams): Promise<string>;
 	createAzureInput(p: {
 		name: string;
 		container: string;
@@ -594,6 +608,7 @@ export type SdkOps = {
 		accessKey: string;
 		secretKey: string;
 	}): Promise<string>;
+	createS3RoleBasedOutput(p: S3RoleStorageParams): Promise<string>;
 	createAzureOutput(p: {
 		name: string;
 		container: string;
@@ -1662,6 +1677,18 @@ export type SdkOps = {
 		p: { manifestGenerator?: string },
 	): Promise<void>;
 	getSmoothManifestStatus(manifestId: string): Promise<TaskStatusResult>;
+	getManifestRoleAcl(
+		kind: ManifestKind,
+		manifestId: string,
+		destination: Destination,
+	): Promise<boolean>;
+	ownsManifest(
+		kind: ManifestKind,
+		manifestId: string,
+		jobId: string,
+		step: string,
+	): Promise<boolean>;
+	stopManifest(kind: ManifestKind, manifestId: string): Promise<void>;
 	/** All pages (limit 100 — C6) of one muxing kind, summarized. */
 	listMuxings(encodingId: string, kind: AvMuxingKind): Promise<MuxingSummary[]>;
 	getStreamContext(
@@ -1873,6 +1900,7 @@ import {
 	bitmovinErrorText,
 	isBitmovinError,
 	ProviderResponseBarrierError,
+	providerErrorWithoutDetails,
 } from "./ops/shared";
 
 export { BitmovinCallError, sdkEnumValue } from "./ops/shared";
@@ -1881,6 +1909,8 @@ export type SdkOpsOptions = {
 	aisaLive?: AisaLiveControl;
 	/** Ownership and cancellation admission for ordinary VOD/Live START only. */
 	startControl?: StartRetryControl;
+	/** Provider prose can contain a role ARN or an unjournaled GLOBAL External ID. */
+	withholdProviderDetails?: true;
 	/** Monitoring GETs share one deadline, including body download. */
 	monitoringSignal?: AbortSignal;
 	internalHevcV2?: InternalHevcV2;
@@ -1913,12 +1943,14 @@ export function createBitmovinSdkOps(
 		: options.monitoringSignal
 			? createMonitoringFetch(options.monitoringSignal)
 			: createRetryingFetch({
+					withholdProviderDetails: options.withholdProviderDetails,
 					// A later denial cannot settle an earlier lost POST. Journaled Live
 					// children reconcile that first attempt through their exact stamp.
 					retryMutations: () =>
 						!options.stamp?.beforeMutation &&
 						!options.stamp?.childCreateJournal?.(),
 					childCreateJournal: options.stamp?.childCreateJournal,
+					roleStorageCreateJournal: options.stamp?.roleStorageCreateJournal,
 				});
 	const liveStartFetch = createLiveStartFetch(
 		options.stamp ? createStampingFetch(retrying, options.stamp) : retrying,
@@ -2002,7 +2034,10 @@ export function createBitmovinSdkOps(
 				// second, misleading provider-call failure row.
 				throw err;
 			}
-			const e = err as {
+			const publicError = options.withholdProviderDetails
+				? providerErrorWithoutDetails(err)
+				: err;
+			const e = publicError as {
 				httpStatusCode?: number;
 				shortMessage?: string;
 				requestId?: unknown;
@@ -2036,7 +2071,7 @@ export function createBitmovinSdkOps(
 							},
 						}
 					: {}),
-				error: bitmovinErrorText(err),
+				error: bitmovinErrorText(publicError),
 			});
 			// SECURITY: the SDK builds BitmovinError.message by concatenating the
 			// raw REQUEST BODY into it (BitmovinErrorBuilder.appendRequestMessage
@@ -2050,7 +2085,7 @@ export function createBitmovinSdkOps(
 			// layer's bitmovinErrorMessage); non-Bitmovin errors are ours and
 			// carry no request body, so they pass through untouched.
 			if (isBitmovinError(err)) {
-				throw new BitmovinCallError(method, path, err);
+				throw new BitmovinCallError(method, path, publicError);
 			}
 			throw err;
 		}

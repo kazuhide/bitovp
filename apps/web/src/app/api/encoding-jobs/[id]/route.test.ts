@@ -298,10 +298,13 @@ it.each([
 	else expect(JSON.stringify(projected)).not.toContain("PRIVATE_ACCESS");
 });
 
-it("protects an HTTPS ingest query in both the Viewer plan and resource history and preserves an identical literal S3 name", async () => {
+it.each([
+	"S3",
+	"S3_ROLE_BASED",
+])("protects an HTTPS query and preserves the same literal %s object key in the saved plan and resource history", async (storageKind) => {
 	const inputPath = "clips/source.mxf?ticket=VIEWER_TEST";
 	const inputs = [
-		{ key: "storage", kind: "S3" },
+		{ key: "storage", kind: storageKind },
 		{ key: "web", kind: "HTTPS" },
 	];
 	findUnique.mockResolvedValueOnce(

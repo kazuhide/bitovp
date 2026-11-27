@@ -16,7 +16,11 @@ type Params = Parameters<SdkOps["createDefaultHlsManifest"]>[0];
 type Resource = {
 	id: string;
 	manifestName: string;
-	outputs: { outputId: string; outputPath: string }[];
+	outputs: {
+		outputId: string;
+		outputPath: string;
+		acl?: { permission: string }[];
+	}[];
 	customData?: Record<string, unknown>;
 };
 const base = (): Params => ({
@@ -212,6 +216,29 @@ describe("owned Default HLS request reconciliation", () => {
 			),
 		).toBe(true);
 	});
+	it.each([
+		"missing",
+		"public",
+	] as const)("refuses a stamped role mirror with %s effective ACL", async (observed) => {
+		const t = setup();
+		const params = base();
+		params.destination.roleOutputIds = ["mirror"];
+		params.destination.mirrorOutputAcls = ["PRIVATE"];
+		const first = await t.sdk.createDefaultHlsManifest(params);
+		t.setWindow(true);
+		await expect(t.sdk.createDefaultHlsManifest(params)).resolves.toBe(first);
+		const mirror = t.resources[0]?.outputs.find(
+			(output) => output.outputId === "mirror",
+		);
+		if (!mirror) throw new Error("Missing role mirror fixture");
+		if (observed === "public") mirror.acl = [{ permission: "PUBLIC_READ" }];
+		else delete mirror.acl;
+		await expect(t.sdk.createDefaultHlsManifest(params)).rejects.toThrow(
+			/role destination ACL/,
+		);
+		expect(t.posts()).toHaveLength(1);
+	});
+
 	it.each([
 		"channels",
 		"rounding",

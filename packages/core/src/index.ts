@@ -979,6 +979,11 @@ export {
 	RESOURCE_GROUP_ORDER,
 } from "./plan/resource-tree";
 export {
+	applyRoleOutputAcl,
+	hasRecordedRoleOutputAcl,
+	vodOutputKinds,
+} from "./plan/role-output-acl";
+export {
 	inspectSavedPlanCompatibility,
 	type SavedPlanCompatibility,
 } from "./plan/saved-plan-compatibility";

@@ -312,6 +312,125 @@ describe("VodWizard — the first mount (ledger #91)", () => {
 		expect((base as HTMLInputElement).value).toContain("{uuid}");
 	});
 
+	it.each([
+		["AWS_S3_ROLE_BASED", "S3_ROLE_BASED"],
+		["AZURE_BLOB", "AZURE"],
+		["SFTP", "SFTP"],
+		["AKAMAI_NETSTORAGE", "AKAMAI_NETSTORAGE"],
+	])("authors role-based input and submits the selected %s output ACL", async (provider, outputKind) => {
+		const accountId = "33333333-3333-4333-8333-333333333333";
+		const credentialId = "44444444-4444-4444-8444-444444444444";
+		const otherOutput = "55555555-5555-4555-8555-555555555555";
+		apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+			if (url === "/api/auth/session")
+				return {
+					configured: true,
+					authenticated: true,
+					mode: "users",
+					role: "OPERATOR",
+					organizationId: "fixture-organization",
+					effectiveUserId: "fixture-operator",
+				};
+			if (url === "/api/bitmovin-accounts")
+				return [{ id: accountId, label: "Test account" }];
+			if (url === "/api/credentials")
+				return [
+					{
+						id: credentialId,
+						label: "Encoding IAM role",
+						provider: "AWS_S3_ROLE_BASED",
+					},
+					{ id: otherOutput, label: "Other storage", provider },
+				];
+			if (url === "/api/encoding-jobs" && init?.method === "POST")
+				return { id: "vod-role" };
+			return [];
+		});
+		renderWithQuery(<VodWizard />);
+		const step = async (name: RegExp) =>
+			userEvent.click(
+				within(
+					screen.getByRole("navigation", { name: /wizard steps/i }),
+				).getByRole("button", { name }),
+			);
+		fireEvent.change(screen.getByLabelText(/job name/i), {
+			target: { value: "Role-based storage" },
+		});
+		await screen.findByRole("option", { name: "Test account" });
+		await userEvent.selectOptions(
+			screen.getByRole("combobox", { name: "Bitmovin account" }),
+			accountId,
+		);
+		await step(/sources/i);
+		await userEvent.selectOptions(
+			screen.getByRole("combobox", { name: /^credential/i }),
+			credentialId,
+		);
+		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText(/^bucket/i), {
+			target: { value: "input-bucket" },
+		});
+		fireEvent.change(screen.getByLabelText(/^object path/i), {
+			target: { value: "media/clip.mp4" },
+		});
+		await step(/output/i);
+		await userEvent.selectOptions(
+			screen.getByRole("combobox", { name: /^credential/i }),
+			credentialId,
+		);
+		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText(/^bucket/i), {
+			target: { value: "output-bucket" },
+		});
+		fireEvent.change(
+			screen.getByLabelText(/output folder/i, { selector: "input" }),
+			{ target: { value: "processed/clip" } },
+		);
+		if (outputKind !== "S3_ROLE_BASED") {
+			await userEvent.selectOptions(
+				screen.getByRole("combobox", { name: /^credential/i }),
+				otherOutput,
+			);
+		}
+		await step(/review/i);
+		const start = screen.getByRole("button", { name: "Start encoding" });
+		expect(start).toBeEnabled();
+		await userEvent.click(start);
+		const submit = () =>
+			apiFetch.mock.calls.find(
+				([url, init]) =>
+					url === "/api/encoding-jobs" && init?.method === "POST",
+			);
+		await waitFor(() => expect(submit()).toBeDefined());
+		const { plan } = JSON.parse(String(submit()?.[1]?.body));
+		expect(plan.inputs).toEqual([
+			expect.objectContaining({
+				kind: "S3_ROLE_BASED",
+				credentialId,
+				bucket: "input-bucket",
+			}),
+		]);
+		expect(plan.ingest[0]).toMatchObject({ inputPath: "media/clip.mp4" });
+		expect(plan.outputs).toEqual([
+			expect.objectContaining({
+				kind: outputKind,
+				credentialId:
+					outputKind === "S3_ROLE_BASED" ? credentialId : otherOutput,
+				...(outputKind === "S3_ROLE_BASED" ? { bucket: "output-bucket" } : {}),
+				...(outputKind === "AZURE" ? { container: "output-bucket" } : {}),
+			}),
+		]);
+		expect(plan.muxings[0].destination).toMatchObject({
+			path: expect.stringContaining("processed/clip/"),
+		});
+		if (outputKind === "S3_ROLE_BASED")
+			expect(plan.muxings[0].destination.acl).toBe("PRIVATE");
+		else expect(plan.muxings[0].destination).not.toHaveProperty("acl");
+		expect(apiFetch.mock.calls.some(([url]) => url.includes("/storage/"))).toBe(
+			false,
+		);
+	});
+
 	it("the delivery-mirrors note rides its ? (review-uibatch #9)", async () => {
 		renderWithQuery(<VodWizard />);
 		const [outputTab] = screen.getAllByRole("button", { name: /output/i });

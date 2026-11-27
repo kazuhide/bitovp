@@ -938,10 +938,15 @@ describe("the wiring, pinned by shape", () => {
 		expect(runner).toContain("process.env.BITOVP_COMMIT");
 		// The source identity rides on every outcome — over EVERY ingest, not
 		// just the first (review of this PR).
-		expect(runner).toContain(
-			"sourceIdentity: await planSourceIdentity(plan, sourceIdentityFor)",
+		expect(runner).toMatch(
+			/sourceIdentity: await planSourceIdentity\(\s*plan,\s*sourceIdentityFor,\s*s3RoleBinding,?\s*\)/,
 		);
 		expect(runner).not.toContain("const ingest = plan.ingest[0];");
+		const roleSourceRefusal = resume.indexOf(
+			"S3 role source identity is needed to authorize a verification attempt",
+		);
+		expect(roleSourceRefusal).toBeGreaterThan(refusal);
+		expect(vodSpend).toBeGreaterThan(roleSourceRefusal);
 	});
 
 	it("the live teardown waits for the confirmation and a refused roll is a status, not a skip", () => {

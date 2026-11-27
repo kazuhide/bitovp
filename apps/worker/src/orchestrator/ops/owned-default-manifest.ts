@@ -1,10 +1,12 @@
 import type { DashManifest } from "@bitmovin/api-sdk";
 import { verificationRequestSha256 } from "@bitovp/core";
 import type { OpsContext } from "./context";
+import { roleOutputAclsMatch } from "./manifest-output-acl";
 import {
 	adoptOrCreateManifest,
 	findUniqueManifestByOutput,
 	ManifestCreateNotAuthorizedError,
+	readManifestLookup,
 } from "./shared";
 
 type ManifestRequest = {
@@ -35,11 +37,18 @@ export async function createOwnedDefaultManifest<
 	Request extends ManifestRequest,
 >(
 	ctx: OpsContext,
-	params: { strictIdentity?: boolean; allowCreate?: boolean },
+	params: {
+		strictIdentity?: boolean;
+		allowCreate?: boolean;
+		destination: { roleOutputIds?: string[] };
+	},
 	source: Request,
 	api: ManifestApi<Request>,
 ): Promise<string> {
 	const { label } = api;
+	const withholdProviderDetails =
+		ctx.options.withholdProviderDetails ||
+		Boolean(params.destination.roleOutputIds?.length);
 	const stamp = ctx.options.stamp;
 	const step = stamp?.currentStep();
 	if (stamp && (!stamp.jobId || !step))
@@ -89,7 +98,11 @@ export async function createOwnedDefaultManifest<
 		if (!owner) return undefined;
 		const existing = await findUniqueManifestByOutput(
 			async (query) => {
-				const result = await api.list({ ...query, encodingId: api.encodingId });
+				const result = await readManifestLookup(
+					() => api.list({ ...query, encodingId: api.encodingId }),
+					api.path,
+					withholdProviderDetails,
+				);
 				const items: { id?: string; owned: boolean }[] = [];
 				for (const manifest of result.items ?? []) {
 					if (!matchesDestination(manifest)) {
@@ -100,7 +113,12 @@ export async function createOwnedDefaultManifest<
 						throw new Error(
 							`${label} manifest identity lookup returned a candidate without an ID`,
 						);
-					const data = await api.customData(manifest.id);
+					const manifestId = manifest.id;
+					const data = await readManifestLookup(
+						() => api.customData(manifestId),
+						`${api.path}/customData`,
+						withholdProviderDetails,
+					);
 					const marker = bag(bag(data.customData)?.bitovp);
 					const ownsStep =
 						marker?.job === owner.job && marker?.step === owner.step;
@@ -115,6 +133,16 @@ export async function createOwnedDefaultManifest<
 						)
 							throw new Error(
 								`${label} manifest request identity conflict: the owned step has different or incomplete settings`,
+							);
+						if (
+							!roleOutputAclsMatch(
+								params.destination.roleOutputIds,
+								request.outputs,
+								manifest.outputs,
+							)
+						)
+							throw new Error(
+								`${label} manifest role destination ACL could not be verified`,
 							);
 					}
 					items.push({ id: manifest.id, owned: ownsStep });

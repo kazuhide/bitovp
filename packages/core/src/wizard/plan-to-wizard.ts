@@ -1637,6 +1637,7 @@ function readLocation(raw: Record<string, unknown>): string {
 /** Plan input `kind` → wizard input kind (unknown ⇒ S3, the legacy default). */
 function inputKindOf(kind: string | undefined): WizardInputFile["kind"] {
 	switch (kind) {
+		case "S3_ROLE_BASED":
 		case "AZURE":
 		case "HTTPS":
 		case "GENERIC_S3":
@@ -1657,6 +1658,7 @@ function inputKindOf(kind: string | undefined): WizardInputFile["kind"] {
 /** Plan output `kind` → wizard output kind (unknown ⇒ S3, the legacy default). */
 function outputKindOf(kind: string | undefined): WizardState["output"]["kind"] {
 	switch (kind) {
+		case "S3_ROLE_BASED":
 		case "SFTP":
 		case "AZURE":
 		case "GENERIC_S3":

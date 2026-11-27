@@ -31,6 +31,7 @@ import {
 } from "./per-title-results";
 import { streamPerTitleSettings } from "./per-title-settings";
 import { qcMirrorFilename, qcMirrorMuxingKind } from "./qc-mirror";
+import { applyRoleOutputAcl, vodOutputKinds } from "./role-output-acl";
 import type { EncodingPlan, PlanRendition } from "./schema";
 import { AUDIO_CODECS } from "./schema";
 
@@ -59,6 +60,7 @@ import { AUDIO_CODECS } from "./schema";
 
 export type OperationKind =
 	| "CREATE_INPUT_S3"
+	| "CREATE_INPUT_S3_ROLE_BASED"
 	| "CREATE_INPUT_AZURE"
 	| "CREATE_INPUT_HTTPS"
 	| "CREATE_INPUT_GENERIC_S3"
@@ -66,6 +68,7 @@ export type OperationKind =
 	| "CREATE_INPUT_GCS_SERVICE_ACCOUNT"
 	| "CREATE_INPUT_AKAMAI_NETSTORAGE"
 	| "CREATE_OUTPUT_S3"
+	| "CREATE_OUTPUT_S3_ROLE_BASED"
 	| "CREATE_OUTPUT_AZURE"
 	| "CREATE_OUTPUT_SFTP"
 	| "CREATE_OUTPUT_GENERIC_S3"
@@ -558,7 +561,7 @@ function muxingName(
 
 /**
  * mirror refs ride beside every destination's outputId — the
- * worker appends one EncodingOutput per mirror, same path and acl. Emitted
+ * worker appends one EncodingOutput per mirror at the same path. Emitted
  * only when the plan declares deliveryMirrors AND the site has a destination
  * (DRM-owned-output muxings keep their no-ref shape).
  */
@@ -657,10 +660,13 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 	for (const input of plan.inputs) {
 		// The signed HTTPS input is created once the encoding ID exists.
 		if (capturedIngest?.inputKey === input.key) continue;
-		if (input.kind === "S3") {
+		if (input.kind === "S3" || input.kind === "S3_ROLE_BASED") {
 			ops.push({
 				step: `input:${input.key}`,
-				kind: "CREATE_INPUT_S3",
+				kind:
+					input.kind === "S3"
+						? "CREATE_INPUT_S3"
+						: "CREATE_INPUT_S3_ROLE_BASED",
 				payload: {
 					name: input.name,
 					credentialId: input.credentialId,
@@ -738,10 +744,13 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 		}
 	}
 	for (const output of plan.outputs) {
-		if (output.kind === "S3") {
+		if (output.kind === "S3" || output.kind === "S3_ROLE_BASED") {
 			ops.push({
 				step: `output:${output.key}`,
-				kind: "CREATE_OUTPUT_S3",
+				kind:
+					output.kind === "S3"
+						? "CREATE_OUTPUT_S3"
+						: "CREATE_OUTPUT_S3_ROLE_BASED",
 				payload: {
 					name: output.name,
 					credentialId: output.credentialId,
@@ -2522,7 +2531,8 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 		}
 	}
 
-	return ops;
+	const outputKinds = vodOutputKinds(plan.outputs);
+	return ops.map((op) => applyRoleOutputAcl(op, outputKinds));
 }
 
 type RenditionMap = Map<string, PlanRendition>;

@@ -34,7 +34,7 @@ describe("claimableWhere", () => {
 		).toEqual({ in: ["QUEUED", "RUNNING", "AWAITING_QC"] });
 	});
 
-	it("the failed handler in index.ts uses it (pinned by text — the root has no seam)", () => {
+	it("the failed handler uses the shared lease guard and preserves pending manifest stops", () => {
 		const source = readFileSync(
 			new URL("../index.ts", import.meta.url),
 			"utf8",
@@ -44,8 +44,9 @@ describe("claimableWhere", () => {
 			source.indexOf("// Same wedge prevention for live channels"),
 		);
 		expect(handler).toMatch(
-			/where: claimableWhere\(\s*encodingJobId,\s*\["QUEUED", "RUNNING"\],/,
+			/where:\s*\{\s*\.\.\.claimableWhere\(\s*encodingJobId,\s*\["QUEUED", "RUNNING"\],/,
 		);
+		expect(handler).toMatch(/NOT:\s*roleManifestStopPendingWhere,/);
 		expect(handler).not.toMatch(/where:\s*\{\s*id: encodingJobId,\s*status:/);
 	});
 });

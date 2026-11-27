@@ -126,7 +126,7 @@ export const CREDENTIAL_PROVIDER_BROWSABLE: Record<
 	GCS_HMAC: true,
 	GCS_SERVICE_ACCOUNT: true,
 	AZURE_BLOB: true,
-	// Needs an STS broker (P2) — key-based AWS browses, this one cannot.
+	// Only Bitmovin assumes the configured role for encoding.
 	AWS_S3_ROLE_BASED: false,
 	SFTP: false,
 	// Its own HTTP API, not S3 — see the note in factory.ts against confusing it
@@ -234,8 +234,8 @@ const s3RoleConfig = z.object({
 			/^arn:aws:iam::\d{12}:role\/.+/,
 			"Must be an IAM role ARN (arn:aws:iam::<account>:role/<name>)",
 		),
-	// Deliberately non-secret config: the external id is a confused-deputy
-	// guard, useless without the role's trust policy — accepted as readable.
+	// Older credentials may carry this value. Bitmovin manages the GLOBAL
+	// External ID used by new role-based resources.
 	externalId: z.string().min(1).optional(),
 	region: z.string().min(1, "Region is required"),
 	publicBaseUrls,

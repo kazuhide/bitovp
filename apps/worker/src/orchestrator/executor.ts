@@ -1,4 +1,8 @@
-import type { CompiledOperation } from "@bitovp/core";
+import {
+	applyRoleOutputAcl,
+	type CompiledOperation,
+	type PlanOutput,
+} from "@bitovp/core";
 import { executeConfigStep } from "./ops/exec-configs";
 import { executeDrmStep } from "./ops/exec-drm";
 import { executeEncodingStep } from "./ops/exec-encoding";
@@ -29,6 +33,8 @@ export type ExecutorContext = {
 	sdk: SdkOps;
 	/** step id → created Bitmovin resource id */
 	ids: Map<string, string>;
+	/** VOD output kind by the same step reference as ids, including resumed output steps. */
+	outputKinds?: ReadonlyMap<string, PlanOutput["kind"]>;
 	resolveCredential(credentialId: string): Promise<ResolvedCredential>;
 	/** Enabled only for authoritative, version-pinned AISA input capture. */
 	captureIngestInput?(input: {
@@ -73,10 +79,13 @@ export type ExecuteOptions = {
 };
 
 export async function executeStep(
-	op: CompiledOperation,
+	operation: CompiledOperation,
 	ctx: ExecutorContext,
 	options: ExecuteOptions = {},
 ): Promise<StepResult> {
+	const op = ctx.outputKinds
+		? applyRoleOutputAcl(operation, ctx.outputKinds)
+		: operation;
 	// Snapshot for the step log: payload is secret-free by compiler
 	// contract; refs are stored resolved to Bitmovin ids where available.
 	const resolvedRefs = Object.fromEntries(
@@ -103,12 +112,14 @@ export async function executeStep(
 
 	switch (op.kind) {
 		case "CREATE_INPUT_S3":
+		case "CREATE_INPUT_S3_ROLE_BASED":
 		case "CREATE_INPUT_AZURE":
 		case "CREATE_INPUT_HTTPS":
 		case "CREATE_INPUT_GENERIC_S3":
 		case "CREATE_INPUT_GCS":
 		case "CREATE_INPUT_GCS_SERVICE_ACCOUNT":
 		case "CREATE_OUTPUT_S3":
+		case "CREATE_OUTPUT_S3_ROLE_BASED":
 		case "CREATE_OUTPUT_AZURE":
 		case "CREATE_OUTPUT_SFTP":
 		case "CREATE_OUTPUT_GENERIC_S3":

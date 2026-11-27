@@ -25,7 +25,7 @@ const vod = scenarios.filter((s) => s.kind === "VOD");
 describe("every scenario is submitted through one of the wizard's own paths", () => {
 	it("found the corpus, so a broken read cannot pass over nothing", () => {
 		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
-		expect(vod.length).toBe(72);
+		expect(vod.length).toBe(73);
 	});
 
 	it("labels every scenario with the path that produced its plan", () => {
@@ -38,9 +38,9 @@ describe("every scenario is submitted through one of the wizard's own paths", ()
 		}
 	});
 
-	it("reproduces all 72 VOD fixtures through the FORM path", () => {
+	it("reproduces all 73 VOD fixtures through the FORM path", () => {
 		const form = vod.filter((s) => s.submittedVia === "wizard-form");
-		expect(form.length).toBe(72);
+		expect(form.length).toBe(73);
 	});
 
 	it("has no residual VOD fixture requiring the import path", () => {

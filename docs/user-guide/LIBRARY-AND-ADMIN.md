@@ -223,6 +223,7 @@ Delivery presets describe output requirements, not provider credentials. See
 | `/settings/live` | Live defaults, heartbeat interval, alerts, and related resources |
 | `/settings/vmaf` | Quality-worker profiles and cloud credentials |
 | `/settings/watch-folders` | Automatically submit files found under an input prefix |
+| `/settings/encoding-native` | Browse inputs, outputs, templates, watch folders, codecs, and filters in a saved Bitmovin Encoding account (ADMIN) |
 | `/settings/webhooks` | Public receiver, automatic registrations, and receipt status |
 | `/settings/notifications` | Outbound notifications, event filters, and delivery history |
 | `/settings/tokens` | API tokens; secret shown only once at creation |
@@ -255,6 +256,12 @@ proof that a provider operation completed.
 
 ## Watch folders
 
+`/settings/encoding-native` lets an administrator inspect Bitmovin-managed
+watch folders, Encoding templates, inputs, outputs, codec settings, and filters
+in a selected account. Select the resource type for storage and codec settings.
+Open a list row for its ID and available details such as video resolution,
+bitrate or audio sample rate.
+
 Create a rule in `/settings/watch-folders` that links an input prefix to a
 complete `FULL_PLAN` VOD preset with one input placeholder. Keep output outside
 the watched input prefix to avoid processing generated output.
@@ -279,8 +286,10 @@ settings. A withheld error body protects receiver secrets; it does not mean
 registration succeeded. Manual provider hooks lack the application's signature
 and are not a substitute for managed registrations.
 
-The API coverage screen lists SDK operations and source references. Source-confirmed
-means a call exists in code, not that its GUI path or provider execution passed.
+The API coverage screen lists SDK operations and source references. Workflow
+evidence shows the reviewed app route, the SDK transport test, and the status of
+provider validation. Expand a workflow to see the scenario it covers. Filter by
+API family, workflow scope, or review state and download all matching rows as CSV.
 The current body-model inventory lists top-level SDK properties by operation,
 with direct property-key evidence where available. Search it to inspect a
 particular field. Shared response properties can appear; nested fields,

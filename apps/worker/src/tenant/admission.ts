@@ -15,6 +15,8 @@ import {
 	hasCommittedStart,
 	suppressInactiveProvision,
 } from "../live/reconcile-stranded-runs";
+import { roleManifestStopPendingWhere } from "../orchestrator/manifest-stop-recovery";
+import { claimableWhere } from "../orchestrator/processor";
 import { scheduledStartScheduleId } from "../scheduler/schedule-outcome";
 export const INACTIVE_ORGANIZATION_ERROR =
 	"Organization is inactive; new work was suppressed";
@@ -82,31 +84,57 @@ export async function admitInactiveOrganization(
 	}
 	if (key === "orchestrator") {
 		const { encodingJobId: id } = orchestratorJobSchema.parse(payload);
-		const row = await prisma.encodingJob.findUnique({
-			where: { id },
-			select: {
-				cancelRequested: true,
-				bitmovinEncodingId: true,
-				stepLog: true,
-				status: true,
+		const read = () =>
+			prisma.encodingJob.findUnique({
+				where: { id },
+				select: {
+					cancelRequested: true,
+					bitmovinEncodingId: true,
+					stepLog: true,
+					status: true,
+					updatedAt: true,
+				},
+			});
+		const claimable = claimableWhere(id, ["QUEUED", "RUNNING"], new Date());
+		const canContinue = async (row: Awaited<ReturnType<typeof read>>) => {
+			if (!row) return false;
+			if (
+				row.cancelRequested ||
+				(row.bitmovinEncodingId &&
+					hasCommittedStart(row.stepLog, "START_ENCODING")) ||
+				row.status === "AWAITING_QC"
+			)
+				return true;
+			return Boolean(
+				await prisma.encodingJob.findFirst({
+					where: {
+						id,
+						status: claimable.status,
+						...roleManifestStopPendingWhere,
+					},
+					select: { id: true },
+				}),
+			);
+		};
+		const row = await read();
+		if (!row) return false;
+		if (await canContinue(row)) return true;
+		const { count } = await prisma.encodingJob.updateMany({
+			// A recovery marker, cancel, or renewed lease can commit during admission.
+			where: {
+				...claimable,
+				cancelRequested: false,
+				updatedAt: row.updatedAt,
+				NOT: roleManifestStopPendingWhere,
 			},
-		});
-		if (
-			row?.cancelRequested ||
-			(row?.bitmovinEncodingId &&
-				hasCommittedStart(row.stepLog, "START_ENCODING")) ||
-			row?.status === "AWAITING_QC"
-		)
-			return true;
-		await prisma.encodingJob.updateMany({
-			where: { id, status: { in: ["QUEUED", "RUNNING"] } },
 			data: {
 				status: "ERROR",
 				error: INACTIVE_ORGANIZATION_ERROR,
 				attemptClaimedAt: null,
 			},
 		});
-		return false;
+		// Cancel persists the request without publishing another delivery.
+		return count === 0 && (await canContinue(await read()));
 	}
 	if (key === "feederManager") {
 		const data = feederJobSchema.parse(payload);

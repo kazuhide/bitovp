@@ -595,7 +595,13 @@ export const liveChannelPlanSchema = z
 		}),
 		/** Exactly one live source; SRT redundancy lives inside it (backup). */
 		liveInput: liveInputSchema,
-		outputs: z.array(planOutputSchema),
+		outputs: z
+			.array(planOutputSchema)
+			.refine(
+				(outputs): boolean =>
+					outputs.every((output) => output.kind !== "S3_ROLE_BASED"),
+				"S3 role-based output is available for VOD only",
+			),
 		/**
 		 * Multi-output delivery for LIVE (the Akamai customer's MSL4 + Object
 		 * Storage simultaneous case, 2026-08-23): every live muxing/manifest

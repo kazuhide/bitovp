@@ -7,12 +7,33 @@ import type {
 	DolbyDigitalPlusAudioConfiguration,
 	Eac3AudioConfiguration,
 	H264VideoConfiguration,
+	H265V2VideoConfiguration,
+	H265VideoConfiguration,
 	ImscConfiguration,
 	OpusAudioConfiguration,
+	PassthroughAudioConfiguration,
+	PcmAudioConfiguration,
 	Vp9VideoConfiguration,
 	WebVttConfiguration,
 } from "@bitmovin/api-sdk";
 import { defineFamily } from "../family";
+
+const hevcFields = [
+	"bitrate",
+	"createdAt",
+	"height",
+	"modifiedAt",
+	"rate",
+	"type",
+	"width",
+] as const;
+
+export const hevcV2 = defineFamily<H265V2VideoConfiguration>({
+	parents: [],
+	fields: hevcFields,
+	get: (api, { id }) => api.encoding.configurations.video.h265v2.get(id),
+	remove: (api, { id }) => api.encoding.configurations.video.h265v2.delete(id),
+});
 
 export const configurations = {
 	CREATE_CODEC_AAC: defineFamily<AacAudioConfiguration>({
@@ -110,6 +131,27 @@ export const configurations = {
 		get: (api, { id }) => api.encoding.configurations.audio.opus.get(id),
 		remove: (api, { id }) => api.encoding.configurations.audio.opus.delete(id),
 	}),
+	CREATE_CODEC_PCM: defineFamily<PcmAudioConfiguration>({
+		parents: [],
+		fields: [
+			"bitrate",
+			"channelLayout",
+			"createdAt",
+			"modifiedAt",
+			"rate",
+			"sampleFormat",
+			"type",
+		],
+		get: (api, { id }) => api.encoding.configurations.audio.pcm.get(id),
+		remove: (api, { id }) => api.encoding.configurations.audio.pcm.delete(id),
+	}),
+	CREATE_CODEC_AUDIO_PASSTHROUGH: defineFamily<PassthroughAudioConfiguration>({
+		parents: [],
+		fields: ["createdAt", "modifiedAt", "type"],
+		get: (api, { id }) => api.encoding.configurations.audio.passthrough.get(id),
+		remove: (api, { id }) =>
+			api.encoding.configurations.audio.passthrough.delete(id),
+	}),
 	CREATE_CODEC_IMSC: defineFamily<ImscConfiguration>({
 		parents: [],
 		fields: ["createdAt", "id", "modifiedAt", "name"],
@@ -159,6 +201,12 @@ export const configurations = {
 		],
 		get: (api, { id }) => api.encoding.configurations.video.h264.get(id),
 		remove: (api, { id }) => api.encoding.configurations.video.h264.delete(id),
+	}),
+	CREATE_CODEC_H265: defineFamily<H265VideoConfiguration>({
+		parents: [],
+		fields: hevcFields,
+		get: (api, { id }) => api.encoding.configurations.video.h265.get(id),
+		remove: (api, { id }) => api.encoding.configurations.video.h265.delete(id),
 	}),
 	CREATE_CODEC_VP9: defineFamily<Vp9VideoConfiguration>({
 		parents: [],

@@ -216,6 +216,12 @@ const PRIMARY_SURFACES: readonly SurfaceContract[] = [
 		method: "GET",
 	},
 	{
+		page: "/settings/encoding-native",
+		floor: "ADMIN",
+		api: "/api/encoding-native",
+		method: "GET",
+	},
+	{
 		page: "/settings/features",
 		floor: "VIEWER",
 		api: "/api/settings/features",

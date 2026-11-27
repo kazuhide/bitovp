@@ -3,13 +3,15 @@ import { join } from "node:path";
 import {
 	collectDestinationPaths,
 	compileExpectedArtefacts,
+	compilePlan,
 	DEFAULT_VMAF_MODEL,
 	encodingPlanSchema,
 } from "@bitovp/core";
 import { describe, expect, it, vi } from "vitest";
 import { BitmovinCallError } from "../orchestrator/ops/shared";
 import { ensureTerminal, resumeEligibility } from "./harness-rails";
-import { capabilitiesFor, sourcesOf } from "./preflight";
+import { browsable } from "./job";
+import { capabilitiesFor, loadScenarios, sourcesOf } from "./preflight";
 import type { RunReport } from "./runner";
 import {
 	breakerTripReason,
@@ -130,13 +132,20 @@ const FIXTURES = join(
 
 const CRED = "22222222-2222-4222-8222-222222222222";
 const ACCOUNT = "33333333-3333-4333-8333-333333333333";
-const OPTIONS = {
-	credentialId: CRED,
+const ROLE_BINDING = {
+	roleCredentialId: "00000000-0000-4000-8000-000000000033",
+	observerCredentialId: CRED,
 	inputBucket: "verify-in",
 	outputBucket: "verify-out",
+};
+const OPTIONS = {
+	credentialId: CRED,
+	inputBucket: ROLE_BINDING.inputBucket,
+	outputBucket: ROLE_BINDING.outputBucket,
 	sourceObject: "bbb-short.mov",
 	prefix: "verify/RUN1/scenario/",
 	bitmovinAccountId: ACCOUNT,
+	s3RoleBinding: ROLE_BINDING,
 };
 
 const planFiles = readdirSync(FIXTURES)
@@ -172,6 +181,42 @@ const gated = plans.filter(
 const rewritable = plans.filter((p) => !gated.includes(p));
 
 describe("rewriteForRun — over the whole corpus", () => {
+	it("uses role credentials for provider operations and an independently observed bucket for verification", () => {
+		const scenario = loadScenarios().find(
+			({ name }) => name === "fixed-bitrate-hls-on-aws-role",
+		);
+		if (!scenario?.plan) throw new Error("missing role-backed corpus plan");
+		const { plan } = scenario;
+		expect(scenario.submittedVia).toBe("wizard-form");
+		expect(scenario.needs).toEqual(["S3_ROLE_BASED"]);
+		expect(() =>
+			rewriteForRun(plan, { ...OPTIONS, s3RoleBinding: undefined }),
+		).toThrow(/S3 role verification/);
+		const binding = ROLE_BINDING;
+		const rewritten = rewriteForRun(plan, OPTIONS);
+		for (const [io, bucket] of [
+			[rewritten.inputs[0], binding.inputBucket],
+			[rewritten.outputs[0], binding.outputBucket],
+		] as const) {
+			expect(io).toMatchObject({
+				kind: "S3_ROLE_BASED",
+				credentialId: binding.roleCredentialId,
+				bucket,
+			});
+			expect(browsable(io, "fixture")).toMatchObject({ ok: false });
+			expect(
+				browsable(io, "fixture", {
+					...binding,
+					roleCredentialId: "different-role",
+				}),
+			).toMatchObject({ ok: false });
+			expect(browsable(io, "fixture", binding)).toEqual({
+				ok: true,
+				bucket,
+				credentialId: binding.observerCredentialId,
+			});
+		}
+	});
 	it("refuses to replace HDR10+ video and metadata with the staged SDR file", () => {
 		const fixture = rewritable[0]?.plan;
 		if (!fixture) throw new Error("Missing source fixture");
@@ -197,12 +242,12 @@ describe("rewriteForRun — over the whole corpus", () => {
 	it("has a corpus to rewrite, so a broken read cannot pass over nothing", () => {
 		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 71→72 same day: `mixed-codec-dash-hls` .
-		expect(plans.length).toBe(72);
+		expect(plans.length).toBe(73);
 		// Both sides non-empty, or one of the two suites below is silently testing nothing.
 		expect(gated.length, "fixtures the rewrite must refuse").toBe(22);
 		// 48→49: `vp9-webm-fixed-dash` has a plain output prefix, so it is
 		// namespaceable like every other fixed-ladder fixture.
-		expect(rewritable.length, "fixtures the rewrite may namespace").toBe(50);
+		expect(rewritable.length, "fixtures the rewrite may namespace").toBe(51);
 	});
 
 	it("refuses every gated fixture, naming the capability that would unblock it", () => {
@@ -245,7 +290,6 @@ describe("rewriteForRun — over the whole corpus", () => {
 		 * kinds stay as authored and are gated by their capability — which is why the test
 		 * that asserted otherwise had to change rather than the code.
 		 */
-		const S3 = new Set(["S3", "S3_ROLE"]);
 		let repointed = 0;
 		let preserved = 0;
 		for (const { name, plan } of rewritable) {
@@ -257,8 +301,13 @@ describe("rewriteForRun — over the whole corpus", () => {
 				const original = [...plan.inputs, ...plan.outputs].find(
 					(x) => x.key === io.key,
 				);
-				if (S3.has(io.kind)) {
+				if (io.kind === "S3") {
 					expect(io.credentialId, `${name}/${io.key}`).toBe(CRED);
+					repointed++;
+				} else if (io.kind === "S3_ROLE_BASED") {
+					expect(io.credentialId, `${name}/${io.key}`).toBe(
+						ROLE_BINDING.roleCredentialId,
+					);
 					repointed++;
 				} else {
 					expect(
@@ -352,7 +401,7 @@ describe("rewriteForRun — over the whole corpus", () => {
 		for (const { name, plan } of rewritable) {
 			const out = rewriteForRun(plan, OPTIONS);
 			for (const io of [...out.inputs, ...out.outputs]) {
-				if (!("bucket" in io) || io.kind !== "S3") {
+				if (io.kind !== "S3" && io.kind !== "S3_ROLE_BASED") {
 					continue;
 				}
 				const expected = out.inputs.some((i) => i.key === io.key)
@@ -652,7 +701,7 @@ describe("the run report covers every scenario", () => {
 		// And the corpus itself is pinned, so this cannot pass over a shrunken list.
 		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 71→72 same day: `mixed-codec-dash-hls` .
-		expect(plans.length).toBe(72);
+		expect(plans.length).toBe(73);
 	});
 });
 
@@ -1049,6 +1098,81 @@ describe('collectRunFingerprint — the image\'s commit, not "unknown" (re-audit
  * `--resume-from` would have handed out its prior PASS.
  */
 describe("planSourceIdentity — every ingest, or nothing", () => {
+	it.each([
+		"bbb-short.mov",
+		"/fixtures/source?literal%3F.mov",
+	])("honors a role-backed receipt for the exact source key %s", async (sourceObject) => {
+		const fixture = plans.find(
+			({ name }) => name === "fixed-bitrate-hls-on-aws-role",
+		);
+		if (!fixture) throw new Error("Missing role fixture");
+		const options = { ...OPTIONS, sourceObject };
+		const plan = rewriteForRun(fixture.plan, options);
+		expect(
+			compilePlan(plan)
+				.filter((op) => op.kind === "CREATE_INGEST_INPUT_STREAM")
+				.map((op) => op.payload.inputPath),
+		).toEqual(plan.ingest.map(() => sourceObject));
+		const identityOf = vi.fn(
+			async (credentialId: string, bucket: string, key: string) =>
+				credentialId === ROLE_BINDING.observerCredentialId &&
+				bucket === ROLE_BINDING.inputBucket
+					? key === sourceObject
+						? 'etag="verified-source"'
+						: 'etag="different-object"'
+					: "unavailable",
+		);
+		const sourceIdentity = await planSourceIdentity(
+			plan,
+			identityOf,
+			ROLE_BINDING,
+		);
+		const fingerprint = {
+			commit: "c1",
+			checkoutLatestMigration: "m1",
+			dbLatestMigration: "m1",
+		};
+		const receipt = {
+			planSha256: planIdentitySha256(fixture.plan, options, fixture.name),
+			sourceObject,
+			sourceIdentity: plan.ingest
+				.map(() => `${sourceObject}=etag="verified-source"`)
+				.join(" | "),
+			bitmovinAccountId: ACCOUNT,
+		};
+		expect(
+			resumeEligibility(
+				{ fingerprint, outcome: { verdict: "PASS", ...receipt }, runId: "r0" },
+				{ fingerprint, ...receipt, sourceIdentity },
+			),
+		).toEqual({ honor: true, runId: "r0" });
+		expect(identityOf).toHaveBeenCalledTimes(plan.ingest.length);
+		expect(identityOf).toHaveBeenCalledWith(
+			ROLE_BINDING.observerCredentialId,
+			ROLE_BINDING.inputBucket,
+			sourceObject,
+		);
+	});
+
+	it("never probes an S3 role source outside its observer binding", async () => {
+		const fixture = plans.find(
+			({ name }) => name === "fixed-bitrate-hls-on-aws-role",
+		);
+		if (!fixture) throw new Error("Missing role fixture");
+		const plan = rewriteForRun(fixture.plan, OPTIONS);
+		const identityOf = vi.fn(async () => 'etag="not-authorized"');
+		for (const binding of [
+			undefined,
+			{ ...ROLE_BINDING, roleCredentialId: "other-role" },
+			{ ...ROLE_BINDING, inputBucket: "other-source" },
+		]) {
+			expect(await planSourceIdentity(plan, identityOf, binding)).toBe(
+				"unavailable",
+			);
+		}
+		expect(identityOf).not.toHaveBeenCalled();
+	});
+
 	const TWO = plans.find((p) => p.name === "concatenation-two-sources");
 	if (!TWO) {
 		throw new Error(
@@ -1068,8 +1192,8 @@ describe("planSourceIdentity — every ingest, or nothing", () => {
 		async (_credentialId: string, _bucket: string, key: string) =>
 			etags[key] ?? "unavailable";
 
-	const A = "path/to/your/input/part-a.mp4";
-	const B = "path/to/your/input/part-b.mp4";
+	const A = "/path/to/your/input/part-a.mp4";
+	const B = "/path/to/your/input/part-b.mp4";
 
 	it("folds both sources, and a swapped SECOND object changes the identity", async () => {
 		const before = await planSourceIdentity(

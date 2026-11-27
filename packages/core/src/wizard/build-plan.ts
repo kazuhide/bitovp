@@ -79,6 +79,7 @@ export type WizardStreamSelectionMode =
  */
 export type WizardStorageKind =
 	| "S3"
+	| "S3_ROLE_BASED"
 	| "AZURE"
 	| "HTTPS"
 	| "GENERIC_S3"
@@ -88,7 +89,10 @@ export type WizardStorageKind =
 	| "AKAMAI_NETSTORAGE";
 
 /** Storage kinds that carry an object/bucket location AND can be browsed. */
-export type WizardBucketKind = Exclude<WizardStorageKind, "AZURE" | "HTTPS">;
+export type WizardBucketKind = Exclude<
+	WizardStorageKind,
+	"AZURE" | "HTTPS" | "S3_ROLE_BASED"
+>;
 
 export type WizardInputFile = {
 	/** Per-object id streams reference. */
@@ -1086,6 +1090,7 @@ export type WizardState = {
 		credentialId: string;
 		kind:
 			| "S3"
+			| "S3_ROLE_BASED"
 			| "SFTP"
 			| "AZURE"
 			| "GENERIC_S3"
@@ -1114,6 +1119,7 @@ export type WizardState = {
 		credentialId: string;
 		kind:
 			| "S3"
+			| "S3_ROLE_BASED"
 			| "SFTP"
 			| "AZURE"
 			| "GENERIC_S3"

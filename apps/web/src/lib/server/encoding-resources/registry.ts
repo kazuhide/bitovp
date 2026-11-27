@@ -1,5 +1,5 @@
 import type { OperationKind, StepLogEntry } from "@bitovp/core";
-import { configurations } from "./families/configurations";
+import { configurations, hevcV2 } from "./families/configurations";
 import { encodings } from "./families/encodings";
 import { filters } from "./families/filters";
 import { heAac } from "./families/he-aac";
@@ -22,6 +22,11 @@ const families: Partial<Record<OperationKind, ResourceFamily>> = {
 export function resourceFamilyForStep(
 	entry: StepLogEntry,
 ): ResourceFamily | undefined {
+	if (
+		entry.kind === "CREATE_CODEC_H265" &&
+		entry.payload.internalHevcV2 === true
+	)
+		return hevcV2;
 	if (
 		(entry.kind === "CREATE_MANIFEST_DASH" ||
 			entry.kind === "CREATE_MANIFEST_HLS") &&

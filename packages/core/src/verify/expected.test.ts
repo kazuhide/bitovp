@@ -127,7 +127,7 @@ describe("compileExpectedArtefacts — goldens", () => {
 		// 67 VOD plans, measured . A drop means the glob broke, not that the corpus did.
 		// 70→71 on 2026-08-28: `vp9-webm-fixed-dash`.
 		// 71→72 same day: `mixed-codec-dash-hls` .
-		expect(planFiles.length).toBe(72);
+		expect(planFiles.length).toBe(73);
 	});
 
 	for (const file of planFiles) {

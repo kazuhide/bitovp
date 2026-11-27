@@ -52,7 +52,10 @@ export function resourceFixture(
 	steps.push({
 		step: "selected",
 		kind: contract.kind as OperationKind,
-		payload: contract.muxingKind ? { muxingKind: contract.muxingKind } : {},
+		payload: {
+			...(contract.muxingKind ? { muxingKind: contract.muxingKind } : {}),
+			...(contract.hevcV2 ? { internalHevcV2: true } : {}),
+		},
 		refs,
 		request: { refs: requestRefs },
 		status: "DONE",

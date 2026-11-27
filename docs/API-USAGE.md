@@ -86,6 +86,7 @@ tests):
   `/api/credentials`, `/api/bitmovin-accounts`, `/api/infrastructure/prewarmed-pools`,
   `/api/live/standby-pools`, settings (including `/api/settings/startup-probes/run`),
   `/api/live-channels/[id]/runs/[runId]/heartbeats/export`,
+  `/api/encoding-native`,
   and `POST /api/per-title-simulator/encodings/import`.
   Refusal: `403 {"error":"This action requires the ADMIN role","minRole":"ADMIN"}`.
   OPERATOR is also required for credential-bearing reads at
@@ -103,8 +104,9 @@ tests):
 - `/api/settings/api-coverage` — GET (VIEWER): bundled current source census,
   installed/surveyed SDK and mismatch flag, current top-level SDK body-model
   properties with conservative direct property-key evidence, plus a separately
-  dated historical parameter snapshot. No provider/DB calls. Source evidence
-  is not proof of GUI reachability, API writeability, or runtime success.
+  dated historical parameter snapshot. The operation ledger gives the app route
+  and SDK transport test for audited scenarios. Provider execution and request
+  field evidence have separate statuses. No provider or database calls.
 
 - `/api/per-title-simulator/encodings/import` — POST (organization ADMIN, no view-as):
   read the original Per-Title settings of an Encoding ID. Send either
@@ -147,6 +149,19 @@ tests):
   `limit=1..200` (default100), URL-encoded `cursor=receivedAt|id` from prior page;
   strict descending keyset, including same-time ties. Invalid input400, foreign
   run404, read failure5xx (not empty success). No provider call or mutation.
+
+## Encoding API coverage
+
+Request `GET /api/settings/api-coverage?format=csv` for every matching
+operation. Optional filters are `family`, `source`, `reachability`, `scope`
+and `q`. The export includes the workflow and source references.
+
+To record a workflow, trace the app entry point to its resolved SDK call and
+use the installed SDK with a transport fixture that checks the method, target
+and applicable inputs. Register the operation identity and evidence anchors
+in `implementation-audit.json`. `pnpm test:api-coverage` checks the canonical
+operation inventory and rejects duplicate or stale proof anchors. Provider
+execution and request-field audits are tracked independently.
 
 ## Public request body limits
 
@@ -642,6 +657,31 @@ curl -H "Authorization: Bearer $TOKEN" "https://ovp.example.com/api/sample-prese
 curl -H "Authorization: Bearer $TOKEN" https://ovp.example.com/api/presets
 curl -H "Authorization: Bearer $TOKEN" "https://ovp.example.com/api/presets/<id>"   # body included
 ```
+
+### Bitmovin Encoding resource inventory
+
+`GET /api/encoding-native` (ADMIN) reads resources in the saved
+`bitmovinAccountId` (UUID) from the current organization. Set `kind=templates`,
+`kind=watch-folders`, `kind=inputs`, `kind=outputs`, `kind=video-codecs`,
+`kind=audio-codecs`, `kind=subtitle-codecs`, or `kind=filters`. Inputs, outputs,
+and codecs require `protocol`, the Bitmovin API type slug, such as `s3-role-based`,
+`h264`, `aac`, or `webvtt`. Filters accept a slug such as `scale`, and
+omitting `protocol` reads across filter types. The Settings inventory shows
+the available types. Collection queries accept `offset` (default 0) and
+`limit` (1–100, default 25). Templates also accept `type=VOD` or `type=LIVE`.
+The collection returns `{kind,offset,totalCount,items}`. To read a single
+resource, pass its UUID as `id` instead of pagination and type filters. The
+detail response is `{kind,item}`. Responses include `protocol` when supplied.
+
+Items contain the ID and available name, timestamps, template type or watch
+status. Watch-folder details can include the input ID and output count.
+Input and output metadata includes the cloud region when present.
+Video codec metadata includes available `bitrateBps`, `width`, `height` and
+`frameRate`. Audio codec metadata includes available `bitrateBps` and
+`sampleRateHz`. Filter records expose the resource ID, name and timestamps.
+Responses are private and `no-store`. Template download URLs, connection credentials,
+storage paths, and provider diagnostics are kept server-side. Missing accounts and details
+return 404. Invalid or failed upstream responses return 502.
 
 ## App name and icon
 

@@ -21,6 +21,7 @@ export const PROVIDERS_FOR_IO_KIND: Readonly<
 	Record<string, readonly CredentialProviderId[]>
 > = {
 	S3: ["AWS_S3"],
+	S3_ROLE_BASED: ["AWS_S3_ROLE_BASED"],
 	AZURE: ["AZURE_BLOB"],
 	SFTP: ["SFTP"],
 	GENERIC_S3: ["AKAMAI_OBJECT_STORAGE", "OCI_OBJECT_STORAGE", "GENERIC_S3"],

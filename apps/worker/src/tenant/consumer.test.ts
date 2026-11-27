@@ -1,6 +1,7 @@
 import type { AppPrismaClient } from "@bitovp/db";
 import type { Job } from "bullmq";
 import { describe, expect, it, vi } from "vitest";
+import { roleManifestStopPendingWhere } from "../orchestrator/manifest-stop-recovery";
 import { createTenantConsumer } from "./consumer";
 import { currentOrganizationId } from "./scope";
 
@@ -227,8 +228,10 @@ it("reserves one feeder STOP slot globally, delays excess starts and releases ca
 	).toBe("new-start");
 });
 it("fresh inactive metadata suppresses pending VOD before SDK execution and persists ERROR", async () => {
-	const findFirst = vi.fn(async () => ({ id: ID }));
+	const findFirst = vi.fn(async () => null as { id: string } | null);
+	findFirst.mockResolvedValueOnce({ id: ID });
 	const updateMany = vi.fn(async (_args: unknown) => ({ count: 1 }));
+	const updatedAt = new Date("2026-11-27T04:00:00Z");
 	const active = vi.fn(async () => false);
 	const handler = vi.fn();
 	const consumer = createTenantConsumer({
@@ -240,6 +243,7 @@ it("fresh inactive metadata suppresses pending VOD before SDK execution and pers
 					cancelRequested: false,
 					bitmovinEncodingId: null,
 					stepLog: [],
+					updatedAt,
 				}),
 				updateMany,
 			},
@@ -256,10 +260,119 @@ it("fresh inactive metadata suppresses pending VOD before SDK execution and pers
 	expect(active).toHaveBeenCalledWith(A);
 	expect(handler).not.toHaveBeenCalled();
 	expect(updateMany.mock.calls[0]?.[0]).toMatchObject({
-		where: { id: ID },
-		data: { status: "ERROR" },
+		where: {
+			id: ID,
+			status: { in: ["QUEUED", "RUNNING"] },
+			cancelRequested: false,
+			updatedAt,
+			OR: [
+				{ attemptClaimedAt: null },
+				{ attemptClaimedAt: { lt: expect.any(Date) } },
+			],
+			NOT: roleManifestStopPendingWhere,
+		},
+		data: { status: "ERROR", attemptClaimedAt: null },
 	});
 });
+
+it.each([
+	{ name: "owns a durable STOP", organizationId: A, cancelRequested: false },
+	{ name: "has an accepted cancel", organizationId: A, cancelRequested: true },
+	{
+		name: "belongs to another organization",
+		organizationId: B,
+		cancelRequested: false,
+	},
+])("inactive multi-encoding VOD that $name follows scoped cleanup admission", async ({
+	organizationId,
+	cancelRequested,
+}) => {
+	const findFirst = vi.fn(async (_args: unknown) =>
+		currentOrganizationId() === A ? { id: ID } : null,
+	);
+	const findUnique = vi.fn(async () => ({
+		status: "RUNNING",
+		cancelRequested,
+		bitmovinEncodingId: null,
+		stepLog: cancelRequested ? [] : [{ roleDeliveryBlocked: true }],
+		updatedAt: new Date("2026-11-27T04:00:00Z"),
+	}));
+	const updateMany = vi.fn(async () => ({ count: 1 }));
+	const handler = vi.fn(async () => currentOrganizationId());
+	const consume = createTenantConsumer({
+		prisma: {
+			encodingJob: { findFirst, findUnique, updateMany },
+		} as unknown as AppPrismaClient,
+		forEachOrganization: async () => {},
+		isOrganizationActive: async () => false,
+	});
+	const result = consume(
+		"orchestrator",
+		handler,
+	)({
+		data: { organizationId, payload: { encodingJobId: ID } },
+	} as Job);
+	if (organizationId === A) {
+		await expect(result).resolves.toBe(A);
+		expect(handler).toHaveBeenCalledOnce();
+		if (!cancelRequested) {
+			expect(findFirst).toHaveBeenLastCalledWith({
+				where: {
+					id: ID,
+					status: { in: ["QUEUED", "RUNNING"] },
+					...roleManifestStopPendingWhere,
+				},
+				select: { id: true },
+			});
+		}
+	} else {
+		await expect(result).rejects.toThrow("Tenant resource unavailable");
+		expect(findUnique).not.toHaveBeenCalled();
+		expect(handler).not.toHaveBeenCalled();
+	}
+	expect(updateMany).not.toHaveBeenCalled();
+});
+
+it("an ordinary Cancel winning the inactive VOD terminal CAS keeps its only delivery", async () => {
+	let row = {
+		status: "RUNNING",
+		cancelRequested: false,
+		bitmovinEncodingId: null,
+		stepLog: [],
+		updatedAt: new Date("2026-11-27T04:00:00Z"),
+	};
+	const findFirst = vi.fn(async () => null as { id: string } | null);
+	findFirst.mockResolvedValueOnce({ id: ID });
+	const findUnique = vi.fn(async () => row);
+	const updateMany = vi.fn(async () => {
+		row = {
+			...row,
+			cancelRequested: true,
+			updatedAt: new Date("2026-11-27T04:01:00Z"),
+		};
+		return { count: 0 };
+	});
+	const handler = vi.fn(async () => currentOrganizationId());
+	const consume = createTenantConsumer({
+		prisma: {
+			encodingJob: { findFirst, findUnique, updateMany },
+		} as unknown as AppPrismaClient,
+		forEachOrganization: async () => {},
+		isOrganizationActive: async () => false,
+	});
+	await expect(
+		consume(
+			"orchestrator",
+			handler,
+		)({
+			data: { organizationId: A, payload: { encodingJobId: ID } },
+		} as Job),
+	).resolves.toBe(A);
+	expect(findUnique).toHaveBeenCalledTimes(2);
+	expect(updateMany).toHaveBeenCalledOnce();
+	expect(handler).toHaveBeenCalledOnce();
+});
+
 it("inactive organization still accepts STOP and in-flight provider continuation", async () => {
 	const handler = vi.fn(async () => "continued");
 	const findFirst = async () => ({ id: ID });

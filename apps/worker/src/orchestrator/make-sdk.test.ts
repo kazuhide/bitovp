@@ -1,5 +1,8 @@
+import type { CompiledOperation } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { auditedOperationCases } from "../../../../scripts/api-coverage-test-cases";
+import { executeStep } from "./executor";
 import { makeWorkerSdk, withWorkerActor } from "./make-sdk";
 
 /**
@@ -16,6 +19,79 @@ afterEach(() => {
 });
 
 describe("makeWorkerSdk — the production seam, to the wire", () => {
+	it.each(
+		auditedOperationCases(
+			import.meta.url,
+			"worker-s3-role-create",
+			[
+				["CREATE_INPUT_S3_ROLE_BASED", "/encoding/inputs/s3-role-based"],
+				["CREATE_OUTPUT_S3_ROLE_BASED", "/encoding/outputs/s3-role-based"],
+			] as const,
+			([, path]) => [`POST ${path}`],
+		),
+	)("sends %s with its organization-specific GLOBAL role identity", async (kind, path) => {
+		const externalId = "organization-external-id-fixture";
+		const roleArn = "arn:aws:iam::123456789012:role/encoding/bitmovin";
+		const transport = vi.fn(async (url: string, init: RequestInit) => {
+			expect(url).toBe(`https://api.bitmovin.com/v1${path}`);
+			expect(init.method).toBe("POST");
+			expect(new Headers(init.headers).get("x-tenant-org-id")).toBe(
+				"provider-org",
+			);
+			const body = JSON.parse(String(init.body));
+			expect(body).toMatchObject({
+				bucketName: "media",
+				roleArn,
+				cloudRegion: "AP_NORTHEAST_1",
+				externalIdMode: "GLOBAL",
+			});
+			for (const field of [
+				"accessKey",
+				"secretKey",
+				"externalId",
+				"credentialId",
+			])
+				expect(body).not.toHaveProperty(field);
+			return Response.json({
+				data: { result: { id: "role-resource", externalId } },
+			});
+		});
+		vi.stubGlobal("fetch", transport);
+		const audit = vi.fn(async (_args: unknown) => ({}));
+		const sdk = makeWorkerSdk({
+			auditLog: { create: audit },
+		} as unknown as AppPrismaClient)({
+			apiKey: "fixture",
+			tenantOrgId: "provider-org",
+			bitmovinAccountId: "account",
+		});
+		const credentialId = "00000000-0000-4000-8000-000000000001";
+		const resolveCredential = vi.fn(async () => ({
+			provider: "AWS_S3_ROLE_BASED",
+			config: { roleArn, externalId, region: "ap-northeast-1" },
+			secret: {},
+		}));
+		const op: CompiledOperation = {
+			step: "role:media",
+			kind,
+			payload: { credentialId, bucketName: "media", name: "Media" },
+			refs: {},
+		};
+		const ctx = {
+			sdk,
+			ids: new Map<string, string>(),
+			resolveCredential,
+			poll: { intervalMs: 1, timeoutMs: 10, sleep: async () => {} },
+		};
+		const result = await executeStep(op, ctx);
+		expect(result.resourceId).toBe("role-resource");
+		expect(resolveCredential).toHaveBeenCalledWith(credentialId);
+		expect(transport).toHaveBeenCalledTimes(1);
+		for (const value of [roleArn, externalId]) {
+			expect(JSON.stringify(result)).not.toContain(value);
+			expect(JSON.stringify(audit.mock.calls)).not.toContain(value);
+		}
+	});
 	it("keeps signed status response bodies out of both SDK failure projections", async () => {
 		const wire = vi.fn(async () =>
 			Response.json(

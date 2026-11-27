@@ -8,6 +8,7 @@ import type {
 	HttpsInput,
 	RedundantRtmpInput,
 	S3Input,
+	S3RoleBasedInput,
 	SrtInput,
 	ZixiInput,
 } from "@bitmovin/api-sdk";
@@ -67,6 +68,12 @@ export const inputs = {
 		fields: ["createdAt", "id", "modifiedAt", "name"],
 		get: (api, { id }) => api.encoding.inputs.s3.get(id),
 		remove: (api, { id }) => api.encoding.inputs.s3.delete(id),
+	}),
+	CREATE_INPUT_S3_ROLE_BASED: defineFamily<S3RoleBasedInput>({
+		parents: [],
+		fields: ["cloudRegion", "createdAt", "id", "modifiedAt", "name"],
+		get: (api, { id }) => api.encoding.inputs.s3RoleBased.get(id),
+		remove: (api, { id }) => api.encoding.inputs.s3RoleBased.delete(id),
 	}),
 	CREATE_INPUT_SRT: defineFamily<SrtInput>({
 		parents: [],

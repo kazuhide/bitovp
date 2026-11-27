@@ -5,18 +5,17 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api";
+import {
+	type CoverageEndpoint,
+	filterCoverageOperations,
+	type OperationEvidence,
+	type OperationLedger,
+	operationEvidence,
+	operationScopes,
+} from "@/lib/api-coverage/operation-ledger";
 import { useT } from "@/lib/i18n/context";
 import { type RequestFieldInventory, RequestFields } from "./request-fields";
 
-type EndpointRow = {
-	path: string;
-	httpVerb: string;
-	operation: string;
-	sdkMethod: string;
-	family: string;
-	status: "source-confirmed" | "unconfirmed";
-	evidence: { file: string; line: number }[];
-};
 type ParamFamilyRow = {
 	family: string;
 	fields: number;
@@ -53,9 +52,10 @@ type CoveragePayload = {
 			sourceConfirmed: number;
 			unconfirmed: number;
 		}[];
-		endpoints: EndpointRow[];
+		endpoints: CoverageEndpoint[];
 		requestFields?: RequestFieldInventory;
 	};
+	operationLedger?: OperationLedger;
 	parameterSnapshot: {
 		surveyedSdk: string;
 		surveyedAt: string;
@@ -66,6 +66,7 @@ type CoveragePayload = {
 	};
 };
 const PAGE_SIZE = 50;
+const coveragePath = "/api/settings/api-coverage";
 const cell = "py-2 pr-4 align-top";
 const selectClass =
 	"rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200";
@@ -78,32 +79,27 @@ export function ApiCoverageClient() {
 	const { t } = useT();
 	const coverage = useQuery({
 		queryKey: ["api-coverage"],
-		queryFn: () => apiFetch<CoveragePayload>("/api/settings/api-coverage"),
+		queryFn: () => apiFetch<CoveragePayload>(coveragePath),
 		staleTime: Infinity,
 	});
 	const [family, setFamily] = useState("");
 	const [status, setStatus] = useState("");
+	const [reachability, setReachability] = useState("");
+	const [scope, setScope] = useState("");
 	const [search, setSearch] = useState("");
 	const [page, setPage] = useState(0);
-	const filtered = useMemo(() => {
-		const query = search.trim().toLowerCase();
-		return (coverage.data?.current.endpoints ?? []).filter(
-			(row) =>
-				(!family || row.family === family) &&
-				(!status || row.status === status) &&
-				(!query ||
-					[
-						`${row.httpVerb} ${row.path}`,
-						row.operation,
-						row.sdkMethod,
-						row.family,
-						...row.evidence.map((e) => `${e.file}:${e.line}`),
-					]
-						.join(" ")
-						.toLowerCase()
-						.includes(query)),
-		);
-	}, [coverage.data, family, status, search]);
+	const [downloadState, setDownloadState] = useState<
+		"idle" | "pending" | "error"
+	>("idle");
+	const filtered = useMemo(
+		() =>
+			filterCoverageOperations(
+				coverage.data?.current.endpoints ?? [],
+				coverage.data?.operationLedger,
+				{ family, source: status, reachability, scope, q: search },
+			),
+		[coverage.data, family, status, reachability, scope, search],
+	);
 
 	const heading = (
 		<h1 className="font-semibold text-xl text-zinc-50">
@@ -126,8 +122,51 @@ export function ApiCoverageClient() {
 			</div>
 		);
 
-	const { sdk, current, parameterSnapshot: historical } = coverage.data;
+	const {
+		sdk,
+		current,
+		operationLedger,
+		parameterSnapshot: historical,
+	} = coverage.data;
 	const { summary, provenance } = current;
+	const audited = operationLedger?.summary;
+	const download = new URLSearchParams({
+		format: "csv",
+		family,
+		source: status,
+		reachability,
+		scope,
+		q: search,
+	});
+	async function downloadCsv() {
+		setDownloadState("pending");
+		try {
+			const response = await fetch(`${coveragePath}?${download}`, {
+				headers: { Accept: "text/csv" },
+			});
+			if (
+				!response.ok ||
+				response.headers.get("Content-Type")?.split(";")[0] !== "text/csv"
+			) {
+				throw new Error("CSV response unavailable");
+			}
+			const objectUrl = window.URL;
+			const url = objectUrl.createObjectURL(await response.blob());
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = "encoding-api-coverage.csv";
+			document.body.append(link);
+			try {
+				link.click();
+			} finally {
+				link.remove();
+				window.setTimeout(() => objectUrl.revokeObjectURL(url), 1_000);
+			}
+			setDownloadState("idle");
+		} catch {
+			setDownloadState("error");
+		}
+	}
 	const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 	const safePage = Math.min(page, pageCount - 1);
 	const rows = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
@@ -181,6 +220,39 @@ export function ApiCoverageClient() {
 					})}
 				</p>
 			</section>
+			{audited && (
+				<section
+					className="space-y-2"
+					aria-labelledby="operation-evidence-heading"
+				>
+					<h2
+						id="operation-evidence-heading"
+						className="font-medium text-sm text-zinc-100"
+					>
+						{t("apiCoverage.operationLedger.title")}
+					</h2>
+					<dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-zinc-200">
+						{(
+							[
+								["appConfirmed", audited.appConfirmed],
+								["contractConfirmed", audited.transportConfirmed],
+								["providerVerified", audited.providerVerified],
+								["unreviewed", audited.unreviewed],
+							] as const
+						).map(([label, count]) => (
+							<div key={label} className="flex gap-2">
+								<dt>{t(`apiCoverage.operationLedger.${label}`)}</dt>
+								<dd className="tabular-nums text-zinc-400">
+									{count} / {audited.total}
+								</dd>
+							</div>
+						))}
+					</dl>
+					<p className="text-xs text-zinc-400">
+						{t("apiCoverage.operationLedger.notice")}
+					</p>
+				</section>
+			)}
 			<section>
 				<h2 className="font-medium text-sm text-zinc-100">
 					{t("apiCoverage.byFamily")}
@@ -264,6 +336,58 @@ export function ApiCoverageClient() {
 						</option>
 						<option value="unconfirmed">{t("apiCoverage.unconfirmed")}</option>
 					</select>
+					<select
+						aria-label={t("apiCoverage.operationLedger.reachability")}
+						value={reachability}
+						onChange={(e) => {
+							setReachability(e.target.value);
+							setPage(0);
+						}}
+						className={selectClass}
+					>
+						<option value="">
+							{t("apiCoverage.operationLedger.allReachability")}
+						</option>
+						<option value="app-confirmed">
+							{t("apiCoverage.operationLedger.appConfirmed")}
+						</option>
+						<option value="unreviewed">
+							{t("apiCoverage.operationLedger.unreviewed")}
+						</option>
+					</select>
+					<select
+						aria-label={t("apiCoverage.operationLedger.scope")}
+						value={scope}
+						onChange={(e) => {
+							setScope(e.target.value);
+							setPage(0);
+						}}
+						className={selectClass}
+					>
+						<option value="">
+							{t("apiCoverage.operationLedger.allScopes")}
+						</option>
+						{operationScopes.map((name) => (
+							<option key={name} value={name}>
+								{t(`apiCoverage.operationLedger.scopes.${name}`)}
+							</option>
+						))}
+					</select>
+					{operationLedger && (
+						<button
+							type="button"
+							disabled={downloadState === "pending"}
+							onClick={downloadCsv}
+							className={buttonClass}
+						>
+							{t("apiCoverage.operationLedger.download")}
+						</button>
+					)}
+					{downloadState === "error" && (
+						<span role="alert" className="text-red-400 text-xs">
+							{t("apiCoverage.operationLedger.downloadFailed")}
+						</span>
+					)}
 					<span aria-live="polite" className="text-xs text-zinc-500">
 						{t("apiCoverage.matchCount", { n: filtered.length })}
 					</span>
@@ -289,6 +413,9 @@ export function ApiCoverageClient() {
 								</th>
 								<th scope="col" className={cell}>
 									{t("apiCoverage.sourceEvidence")}
+								</th>
+								<th scope="col" className={cell}>
+									{t("apiCoverage.operationLedger.title")}
 								</th>
 							</tr>
 						</thead>
@@ -326,6 +453,14 @@ export function ApiCoverageClient() {
 													</div>
 												))
 											: "—"}
+									</td>
+									<td className={cell}>
+										<WorkflowEvidence
+											evidence={operationEvidence(
+												operationLedger,
+												row.sdkMethod,
+											)}
+										/>
 									</td>
 								</tr>
 							))}
@@ -440,6 +575,42 @@ export function ApiCoverageClient() {
 		</div>
 	);
 }
+
+function WorkflowEvidence({ evidence }: { evidence: OperationEvidence }) {
+	const { t } = useT();
+	const { proof } = evidence;
+	return (
+		<div className="min-w-36 space-y-1 text-zinc-300">
+			{proof ? (
+				<details className="max-w-72">
+					<summary className="cursor-pointer text-zinc-100">
+						{t("apiCoverage.operationLedger.appConfirmed")} ·{" "}
+						{t(`apiCoverage.operationLedger.scopes.${proof.scope}`)}
+					</summary>
+					<p className="my-1">{proof.scenario}</p>
+					<ul className="break-all font-mono text-zinc-400">
+						<li>
+							{proof.entrypoint.httpVerb} {proof.entrypoint.path}
+						</li>
+						<li>{proof.transport.file}</li>
+						<li>{proof.contractTest.file}</li>
+					</ul>
+				</details>
+			) : (
+				<p>{t("apiCoverage.operationLedger.unreviewed")}</p>
+			)}
+			<p>
+				{t(
+					evidence.contract === "transport-confirmed"
+						? "apiCoverage.operationLedger.contractConfirmed"
+						: "apiCoverage.operationLedger.contractUnverified",
+				)}
+			</p>
+			<p>{t("apiCoverage.operationLedger.providerUnverified")}</p>
+		</div>
+	);
+}
+
 function StatCard({
 	label,
 	value,

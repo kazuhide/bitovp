@@ -28,9 +28,21 @@ export async function bitmovinClientForAccount(
 		return null;
 	}
 	const apiKey = await ctx.bitmovinAccounts.revealApiKey(bitmovinAccountId);
+	return bitmovinClientFromBinding(
+		{ apiKey, tenantOrgId: account.tenantOrgId },
+		signal,
+		observeResponse,
+	);
+}
+
+export function bitmovinClientFromBinding(
+	binding: { apiKey: string; tenantOrgId?: string | null },
+	signal?: AbortSignal,
+	observeResponse?: (url: string, response: Response) => Promise<void>,
+): BitmovinApi {
 	return new BitmovinApi({
-		apiKey,
-		...(account.tenantOrgId ? { tenantOrgId: account.tenantOrgId } : {}),
+		apiKey: binding.apiKey,
+		...(binding.tenantOrgId ? { tenantOrgId: binding.tenantOrgId } : {}),
 		...(signal || observeResponse
 			? {
 					fetch: async (url, init) => {

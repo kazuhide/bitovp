@@ -1,5 +1,6 @@
 {
 	"fixed-bitrate-hls-on-aws": 1,
+	"fixed-bitrate-hls-on-aws-role": 1,
 	"fixed-bitrate-hls-on-azure": 1,
 	"fixed-bitrate-hls-streamcondition-on-aws": 1,
 	"fixed-bitrate-hls-streamcondition-on-azure": 1,

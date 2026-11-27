@@ -292,6 +292,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	};
 
 	const inputsS3: Tree = resourceTable();
+	const inputsS3RoleBased: Tree = resourceTable();
 	const inputsAzure: Tree = resourceTable();
 	const inputsHttps: Tree = resourceTable();
 	const inputsGenericS3: Tree = resourceTable();
@@ -310,6 +311,16 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				},
 			};
 			inputRef.set(input.key, `$/inputs/s3/${input.key}`);
+		} else if (input.kind === "S3_ROLE_BASED") {
+			inputsS3RoleBased[input.key] = {
+				properties: {
+					name: input.name,
+					bucketName: input.bucket,
+					roleArn: ph("INPUT", input.key, "ROLE_ARN"),
+					externalIdMode: "GLOBAL",
+				},
+			};
+			inputRef.set(input.key, `$/inputs/s3RoleBased/${input.key}`);
 		} else if (input.kind === "HTTPS") {
 			inputsHttps[input.key] = {
 				properties: { name: input.name, host: input.host },
@@ -382,6 +393,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	}
 
 	const outputsS3: Tree = resourceTable();
+	const outputsS3RoleBased: Tree = resourceTable();
 	const outputsAzure: Tree = resourceTable();
 	const outputsSftp: Tree = resourceTable();
 	const outputsGenericS3: Tree = resourceTable();
@@ -411,6 +423,16 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				},
 			};
 			outputRef.set(output.key, `$/outputs/s3/${output.key}`);
+		} else if (output.kind === "S3_ROLE_BASED") {
+			outputsS3RoleBased[output.key] = {
+				properties: {
+					name: output.name,
+					bucketName: output.bucket,
+					roleArn: ph("OUTPUT", output.key, "ROLE_ARN"),
+					externalIdMode: "GLOBAL",
+				},
+			};
+			outputRef.set(output.key, `$/outputs/s3RoleBased/${output.key}`);
 		} else if (output.kind === "SFTP") {
 			outputsSftp[output.key] = {
 				properties: {
@@ -2132,6 +2154,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		metadata: { type: "VOD", name: plan.name },
 		inputs: {
 			...(Object.keys(inputsS3).length > 0 ? { s3: inputsS3 } : {}),
+			...(Object.keys(inputsS3RoleBased).length > 0
+				? { s3RoleBased: inputsS3RoleBased }
+				: {}),
 			...(Object.keys(inputsAzure).length > 0 ? { azure: inputsAzure } : {}),
 			...(Object.keys(inputsHttps).length > 0 ? { https: inputsHttps } : {}),
 			...(Object.keys(inputsGenericS3).length > 0
@@ -2147,6 +2172,9 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		},
 		outputs: {
 			...(Object.keys(outputsS3).length > 0 ? { s3: outputsS3 } : {}),
+			...(Object.keys(outputsS3RoleBased).length > 0
+				? { s3RoleBased: outputsS3RoleBased }
+				: {}),
 			...(Object.keys(outputsAzure).length > 0 ? { azure: outputsAzure } : {}),
 			...(Object.keys(outputsSftp).length > 0 ? { sftp: outputsSftp } : {}),
 			...(Object.keys(outputsGenericS3).length > 0

@@ -201,6 +201,32 @@ The original two-output comparison exercised these controls with synthetic HLS
 in [Installed GUI](https://github.com/kazuhide/bitovp/actions/runs/43829369516/job/133170822700).
 Verify Dolby Vision display on the intended playback hardware.
 
+### AWS S3 with an IAM role
+
+In **Credentials**, save an **AWS S3 (role-based)** connection with the role
+ARN and bucket region. In the VOD wizard select it in **Sources**, **Outputs**,
+or both, then enter the bucket and object path or output folder. Plans and
+presets reference the saved credential as `S3_ROLE_BASED`. Role-based
+destinations default to private access. A role-based delivery mirror uses a
+private ACL even when the primary destination is public.
+
+Configure the IAM trust policy using Bitmovin's GLOBAL External ID for the
+organization or sub-organization that runs the job. Bitmovin supplies this
+value when it assumes the role. Grant the role read access for sources and the
+required write permissions for destinations. [Bitmovin's role-based setup guide](https://developer.bitmovin.com/encoding/docs/creating-an-s3-role-based-encoding-input-or-output-with-the-bitmovin-api)
+
+BitOVP records a receipt before creating a role-based resource. The provider
+resource name includes that receipt so BitOVP can find the original resource
+after an interrupted request. The job and provider description keep the
+authored name.
+
+Bitmovin uses the role during encoding. The storage browser, local media
+inspection and QC need independently readable storage and cannot use this
+role. To preview results, configure a playable HTTPS delivery URL for the
+bucket through the credential's public base URLs. Use a fixed ladder for
+role-based output. Bitmovin requires Encoder 2.29.0 or later for segmented
+role-based output.
+
 ## Quality checks and scene analysis
 
 Optional VMAF compares the output with a reference source. Select local execution
@@ -236,6 +262,15 @@ See [supported features and limits](../BITMOVIN-API-COVERAGE.md) for more restri
 ## Inspect or remove a provider resource
 
 Open a job’s **Resources** tab, expand **Inspect provider resources** and select a recorded step. Details are read from the provider using the job’s original account. Where available, the collection view lists resources under the selected parent. If the account binding or resource history cannot be verified, the saved job history is still available.
+
+For a recorded HDR10+ input, the detail and collection views show the track
+selection when available. They omit the video and JSON paths and the metadata
+contents. HEVC and HEVC v2, PCM and audio passthrough configurations, and
+Progressive WAV muxings can also be inspected from their recorded steps.
+
+For a recorded fMP4, MP4, Progressive MOV, Progressive TS, Progressive WAV, or
+Progressive WebM muxing, open **Output information** to see the size, container
+bitrate, and duration when the provider returns those measurements.
 
 Select a recorded fMP4, MP4, TS, Progressive TS, WebM or Progressive WebM muxing to see its DRM systems. Progressive TS also exposes ID3 tags. Choose a type, then open a row to see its public details or check whether its metadata identifies this job. The general DRM list shows the entries the provider returned. Choose a specific DRM system to browse further pages.
 

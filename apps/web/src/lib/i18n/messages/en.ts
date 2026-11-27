@@ -27,6 +27,40 @@ const PROVISIONS_AT_CREATE =
 	"The channel begins starting up as soon as it is created, and charges may accrue before the planned feed time, depending on your Live Encoding pricing plan";
 
 export const en = {
+	encodingNative: {
+		title: "Bitmovin Encoding resources",
+		caption: "Browse resources in a Bitmovin Encoding account.",
+		resource: "Resource",
+		templates: "Templates",
+		watchFolders: "Watch folders",
+		inputs: "Inputs",
+		videoCodecs: "Video codecs",
+		audioCodecs: "Audio codecs",
+		subtitleCodecs: "Subtitle codecs",
+		filters: "Filters",
+		configType: "Type",
+		bitrate: "Bitrate",
+		resolution: "Resolution",
+		frameRate: "Frame rate",
+		sampleRate: "Sample rate",
+		protocol: "Storage or protocol",
+		region: "Cloud region",
+		templateType: "Template type",
+		allTypes: "All types",
+		details: "Details",
+		statusLabel: "Status",
+		status: { STOPPED: "Stopped", STARTED: "Started", ERROR: "Error" },
+		created: "Created",
+		modified: "Updated",
+		inputId: "Input ID",
+		outputs: "Outputs",
+		outputCount: "Output count",
+		empty: "No resources on this page.",
+		loadFailed: "Could not load resources from Bitmovin.",
+		detailFailed: "Could not load resource details.",
+		pagination: "Resource pages",
+		range: "{start}–{end} of {total}",
+	},
 	streamConditions: {
 		title: "Input conditions",
 		enabled: "Input conditions set",
@@ -103,6 +137,11 @@ export const en = {
 		resource: "Resource",
 		choose: "Select a recorded resource",
 		detail: "Resource details",
+		information: "Output information",
+		informationUnavailable: "Output information is unavailable.",
+		fileSizeBytes: "Size (bytes)",
+		containerBitrateBps: "Container bitrate (bps)",
+		durationSeconds: "Duration (seconds)",
 		siblings: "Resources under the same parent",
 		loading: "Loading resources…",
 		missing: "This resource is unavailable.",
@@ -4600,6 +4639,29 @@ export const en = {
 		unknownRetry: "No recommendation",
 	},
 	apiCoverage: {
+		operationLedger: {
+			title: "Workflow evidence",
+			notice:
+				"The details show what each test covers. Transport tests use simulated Bitmovin responses.",
+			appConfirmed: "App route confirmed",
+			unreviewed: "Review pending",
+			contractConfirmed: "Mock transport passed",
+			contractUnverified: "Transport test pending",
+			providerVerified: "Provider runs verified",
+			providerUnverified: "Provider run pending",
+			reachability: "App reachability",
+			allReachability: "All app review states",
+			scope: "Workflow scope",
+			allScopes: "All workflow scopes",
+			download: "Download matching CSV",
+			downloadFailed: "Could not download the CSV.",
+			scopes: {
+				vod: "VOD",
+				live: "Live",
+				settings: "Settings",
+				shared: "Shared",
+			},
+		},
 		requestFields: {
 			title: "SDK request-body properties",
 			scopeNotice:
@@ -5113,7 +5175,7 @@ export const en = {
 			"Applies to Bitmovin I/O; browsing always signs V4",
 		azureSummary: "{subscription} · {group} · tenant {tenant}",
 		bitmovinAssumesThisRoleNoStatic:
-			"Bitmovin assumes this role — no static keys stored",
+			"Bitmovin supplies the GLOBAL External ID. Enter the bucket and path manually in the VOD wizard.",
 		contentKey32HexChars: "Content key (32 hex chars)",
 		customerSecretKey: "Customer secret key",
 		customerSecretKeyId: "Customer secret key ID",
@@ -6472,6 +6534,8 @@ export const en = {
 		curlNoEndpoint: "No single Bitmovin endpoint maps to {kind}",
 		curlVaultFieldsOmitted:
 			"Encryption keys and key-server credentials are omitted from saved logs, so this request cannot be copied as cURL.",
+		curlRoleFieldsOmitted:
+			"The saved request omits credential fields needed to run this command.",
 		curlUnresolvedPathParams:
 			"Could not resolve all URL path parameters for {kind}",
 		curlNoStepEntry: "The step entry is unavailable",

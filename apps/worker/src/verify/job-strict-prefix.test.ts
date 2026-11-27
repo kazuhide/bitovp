@@ -286,7 +286,7 @@ describe("no fixture's own artefacts are foreign", () => {
 	 *
 	 * `toBeGreaterThan(60)` was derived from the set under question — it closes
 	 * drift downward only, and it would have gone on passing at 61 while the
-	 * docblock above says "all 72". `VOD_FIXTURES` is the registry, and
+	 * docblock above says "all 73". `VOD_FIXTURES` is the registry, and
 	 * `fixture-registry.test.ts` set-equals THAT against the `.plan.json` files
 	 * on disk in both directions, so equality here makes this sweep transitively
 	 * the whole corpus: a new fixture joins it the moment it is registered, and a

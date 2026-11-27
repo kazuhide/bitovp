@@ -72,6 +72,24 @@ describe("ResourcesTab — raw snapshots in place", () => {
 		);
 	});
 	it.each([
+		"CREATE_INPUT_S3_ROLE_BASED",
+		"CREATE_OUTPUT_S3_ROLE_BASED",
+	] as const)("explains the omitted credential for %s", (kind) => {
+		const entry: StepLogEntry = {
+			step: "media",
+			kind,
+			status: "DONE",
+			payload: { credentialId: "vault-reference", bucketName: "media" },
+			refs: {},
+			request: { bucketName: "media", externalIdMode: "GLOBAL" },
+		};
+		renderLocalized(<ResourcesTab entries={[entry]} />, "en");
+		expect(screen.getByText("cURL unavailable")).toHaveAttribute(
+			"title",
+			"The saved request omits credential fields needed to run this command.",
+		);
+	});
+	it.each([
 		"en",
 		"ja",
 	] as const)("%s: does not offer cURL for an older signed VTT URL", (locale) => {

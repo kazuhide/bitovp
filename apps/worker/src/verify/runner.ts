@@ -32,6 +32,7 @@ import {
 	compileExpectedArtefacts,
 	DEFAULT_MSL_EDGE_HOST_SUFFIXES,
 	encodingPlanSchema,
+	isObjectStorageInput,
 	type LiveEvidenceLeg,
 	type LiveEvidenceSummary,
 	liveEvidenceSupportsPass,
@@ -81,7 +82,7 @@ import {
 	validateRunId,
 } from "./harness-rails";
 import type { VerifyJobResult } from "./job";
-import { verifyJob } from "./job";
+import { browsable, s3RoleMirrorIncompleteReason, verifyJob } from "./job";
 import { verifyLiveArchives } from "./live-archive-runtime";
 import {
 	finalizeLiveCleanupSeal,
@@ -145,6 +146,11 @@ import {
 	teardownAdoptedChannel,
 	validateLiveEncoderVersion,
 } from "./runner-live";
+import {
+	type S3RoleVerificationBinding,
+	type S3VerificationStorage,
+	s3VerificationStorageEnv,
+} from "./s3-verification-storage";
 
 export type ScenarioVerdict = "PASS" | "WARN" | "FAIL" | "SKIP" | "INVALID";
 
@@ -378,6 +384,7 @@ export type RunnerConfig = {
 	bitmovinAccountId?: string;
 	/** Credential + bucket the rewrite points every S3 scenario at. */
 	s3CredentialLabel: string;
+	s3RoleCredentialLabel?: string;
 	inputBucket: string;
 	outputBucket: string;
 	/** Source object every rewritten scenario reads. */
@@ -479,21 +486,15 @@ export type RunnerConfig = {
  * project keeps paying for; the smoke exists to be believed, so it has to be reading the
  * same values the corpus will.
  */
-export function storageEnv(env: NodeJS.ProcessEnv = process.env): {
-	s3CredentialLabel: string;
-	inputBucket: string;
-	outputBucket: string;
-	sourceObject: string;
+export function storageEnv(
+	env: NodeJS.ProcessEnv = process.env,
+): S3VerificationStorage & {
 	genericS3SourceObject: string;
 	assetPrefix: string;
 	longSourceObject: string;
 } {
 	return {
-		s3CredentialLabel: env.VERIFY_S3_LABEL ?? "verify-aws",
-		inputBucket: env.VERIFY_S3_INPUT_BUCKET ?? "ap-northeast-1-input",
-		outputBucket: env.VERIFY_S3_OUTPUT_BUCKET ?? "ap-northeast-1-output",
-		sourceObject:
-			env.VERIFY_SOURCE_OBJECT ?? "big_buck_bunny_1080p_h264_short.mov",
+		...s3VerificationStorageEnv(env),
 		/**
 		 * The source object in the GenericS3 input bucket, which is a DIFFERENT object.
 		 *
@@ -567,6 +568,7 @@ export async function planSourceIdentity(
 		bucket: string,
 		key: string,
 	) => Promise<string>,
+	s3RoleBinding?: S3RoleVerificationBinding,
 ): Promise<string> {
 	if (plan.ingest.length === 0) {
 		return "unavailable";
@@ -576,14 +578,24 @@ export async function planSourceIdentity(
 		const input = plan.inputs.find((i) => i.key === ingest.inputKey);
 		if (
 			!input ||
+			!isObjectStorageInput(input.kind) ||
 			!("credentialId" in input) ||
 			!("bucket" in input) ||
 			typeof input.bucket !== "string"
 		) {
 			return "unavailable";
 		}
-		const key = ingest.inputPath.replace(/^\/+/, "");
-		const identity = await identityOf(input.credentialId, input.bucket, key);
+		let credentialId = input.credentialId;
+		if (input.kind === "S3_ROLE_BASED") {
+			const source = browsable(input, "the reference input", s3RoleBinding);
+			if (!source.ok || source.bucket !== s3RoleBinding?.inputBucket) {
+				return "unavailable";
+			}
+			credentialId = source.credentialId;
+		}
+		// Probe the literal key carried by the compiled ingest request.
+		const key = ingest.inputPath;
+		const identity = await identityOf(credentialId, input.bucket, key);
 		if (identity === "unavailable") {
 			return "unavailable";
 		}
@@ -708,9 +720,10 @@ async function s3CredentialId(
 	config: RunnerConfig,
 ): Promise<string | undefined> {
 	const rows = await config.prisma.credential.findMany({
+		where: { provider: "AWS_S3" },
 		select: { id: true, label: true },
 	});
-	return rows.find((c) => c.label.startsWith(config.s3CredentialLabel))?.id;
+	return pickByLabel(rows, config.s3CredentialLabel, "S3 credential")?.id;
 }
 
 /** A browser onto the harness's output bucket. */
@@ -1348,6 +1361,10 @@ export function vodOutcomeForReport(
 				.map((c) => `${c.id}: ${c.detail}`)
 				.join(" | "),
 		};
+	}
+	const mirrorReason = s3RoleMirrorIncompleteReason(report);
+	if (mirrorReason) {
+		return { verdict: "INVALID", reason: mirrorReason };
 	}
 	const unverified = perTitleUnverifiedChecks(report);
 	if (unverified.length > 0) {
@@ -2729,6 +2746,7 @@ export function rewriteForRun(
 		 * capability gate reports it, which is the honest outcome.
 		 */
 		genericS3?: RepointTarget;
+		s3RoleBinding?: S3RoleVerificationBinding;
 		/** The source object in the GenericS3 input bucket, when the plan reads from one. */
 		genericS3SourceObject?: string;
 		/** UC-numbered job name (uc{NN}-{scenario}); overrides the fixture name. */
@@ -2806,7 +2824,7 @@ export function rewriteForRun(
 	 * the mistake that started this.
 	 */
 	const family = (kind: string): RepointTarget | undefined => {
-		if (kind === "S3" || kind === "S3_ROLE") {
+		if (kind === "S3") {
 			// One S3 credential covers both directions for this harness; the shape still carries
 			// them separately so no family is special-cased.
 			return {
@@ -2814,6 +2832,19 @@ export function rewriteForRun(
 				outputCredentialId: options.credentialId,
 				inputBucket: options.inputBucket,
 				outputBucket: options.outputBucket,
+			};
+		}
+		if (kind === "S3_ROLE_BASED") {
+			const binding = options.s3RoleBinding;
+			if (!binding)
+				throw new Error(
+					"S3 role verification requires a configured role and separate S3 observer",
+				);
+			return {
+				inputCredentialId: binding.roleCredentialId,
+				outputCredentialId: binding.roleCredentialId,
+				inputBucket: binding.inputBucket,
+				outputBucket: binding.outputBucket,
 			};
 		}
 		if (kind === "GENERIC_S3") {
@@ -3831,7 +3862,11 @@ async function runVerificationRecorded(
 	});
 	intentLedgerFor.set(config, intents);
 
-	const pre = await preflight({ prisma: config.prisma, log });
+	const pre = await preflight({
+		prisma: config.prisma,
+		s3Storage: config,
+		log,
+	});
 	const selected = new Set(config.only ?? []);
 	/**
 	 * Which scenarios this run will actually attempt.
@@ -3930,7 +3965,7 @@ async function runVerificationRecorded(
 	// Exact label first, a prefix only when unique : "the first
 	// whose label starts with X" answered an ambiguous label silently.
 	const credential = pickByLabel(
-		credentials,
+		credentials.filter((row) => row.provider === "AWS_S3"),
 		config.s3CredentialLabel,
 		"S3 credential",
 	);
@@ -4014,6 +4049,10 @@ async function runVerificationRecorded(
 			`[verify] GCS io repoints — read ${gcsIn?.label ?? gcsOut?.label} → ${gcs.inputBucket}, write ${gcsOut?.label} → ${gcs.outputBucket}`,
 		);
 	}
+	const s3RoleBinding =
+		pre.s3RoleBinding?.observerCredentialId === credential.id
+			? pre.s3RoleBinding
+			: undefined;
 	// A run id is never reused: its prefix would let a prior run's artefacts
 	// stand as this run's evidence (BLOCKER-3). Checked at EVERY bucket the
 	// rewrite can write to — S3, and the GenericS3 (Akamai/OCI) and GCS targets
@@ -4316,6 +4355,11 @@ async function runVerificationRecorded(
 				reason: `blocked by ${s.blockedBy.join("+")}`,
 			};
 		}
+		if (s.needs.includes("S3_ROLE_BASED") && !s3RoleBinding)
+			return {
+				...base,
+				reason: "S3 role verification observer changed during preflight",
+			};
 		if (s.kind === "LIVE") {
 			// Phase C. The live tier has its own runner because the loop is different in kind
 			// — provision, feed, sample twice, stop, roll to VOD — not because it is a
@@ -4534,6 +4578,7 @@ async function runVerificationRecorded(
 			...(account ? { bitmovinAccountId: account.id } : {}),
 			...(genericS3 ? { genericS3 } : {}),
 			...(gcs ? { gcs } : {}),
+			...(s3RoleBinding ? { s3RoleBinding } : {}),
 			jobName: ucNameFor(s.name),
 			...(config.genericS3SourceObject
 				? { genericS3SourceObject: config.genericS3SourceObject }
@@ -4653,14 +4698,36 @@ async function runVerificationRecorded(
 			// GenericS3 / GCS sources are HEADed through their own credential
 			// and bucket, and a two-source plan cannot hide a swapped second
 			// object (review of this PR).
-			sourceIdentity: await planSourceIdentity(plan, sourceIdentityFor),
+			sourceIdentity: await planSourceIdentity(
+				plan,
+				sourceIdentityFor,
+				s3RoleBinding,
+			),
 			bitmovinAccountId: account?.id ?? null,
 		};
+		const priorOutcome = priorReport?.outcomes?.find(
+			(o) => o.scenario === s.name,
+		);
+		if (
+			plan.inputs.some((input) => input.kind === "S3_ROLE_BASED") &&
+			(identity.sourceIdentity === "unavailable" ||
+				(priorOutcome?.verdict === "PASS" &&
+					(!priorOutcome.sourceIdentity ||
+						priorOutcome.sourceIdentity === "unavailable")))
+		) {
+			return {
+				...base,
+				...identity,
+				verdict: "INVALID" as const,
+				reason:
+					"S3 role source identity is needed to authorize a verification attempt",
+			};
+		}
 		if (priorReport) {
 			const eligibility = resumeEligibility(
 				{
 					fingerprint: priorReport.fingerprint,
-					outcome: priorReport.outcomes?.find((o) => o.scenario === s.name),
+					outcome: priorOutcome,
 					runId: priorReport.runId,
 				},
 				{ fingerprint, ...identity },
@@ -4950,6 +5017,7 @@ async function runVerificationRecorded(
 				prisma: config.prisma,
 				ffprobePath: config.ffprobePath,
 				jobIdPrefix: jobId,
+				s3RoleBinding,
 				//  (BLOCKER-3): objects written before this job, or
 				// matching nothing the plan declares, are FOREIGN and fail the run.
 				// The declared population was completed by #207, which is what

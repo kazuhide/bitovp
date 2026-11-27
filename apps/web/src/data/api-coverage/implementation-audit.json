@@ -1,6 +1,4247 @@
 {
-	"schemaVersion": 1,
+	"schemaVersion": 2,
 	"sdkVersion": "1.289.0",
+	"operations": [
+		{
+			"sdkMethod": "encoding.configurations.audio.aac.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/aac/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect AAC codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.aac.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.aac.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/aac",
+			"scope": "settings",
+			"scenario": "List AAC codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.aac.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.ac3.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/ac3/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect AC-3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.ac3.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.ac3.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/ac3",
+			"scope": "settings",
+			"scenario": "List AC-3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.ac3.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-atmos/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Dolby Atmos codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyAtmos.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-atmos",
+			"scope": "settings",
+			"scenario": "List Dolby Atmos codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyAtmos.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigital.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-digital/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Dolby Digital codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyDigital.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigital.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-digital",
+			"scope": "settings",
+			"scenario": "List Dolby Digital codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyDigital.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-digital-plus/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Dolby Digital Plus codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyDigitalPlus.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-digital-plus",
+			"scope": "settings",
+			"scenario": "List Dolby Digital Plus codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyDigitalPlus.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dts/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect DTS codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dts.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dts",
+			"scope": "settings",
+			"scenario": "List DTS codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dts.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect DTS passthrough codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dtsPassthrough.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dts-passthrough",
+			"scope": "settings",
+			"scenario": "List DTS passthrough codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dtsPassthrough.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dtsx/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect DTS:X codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dtsx.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dtsx",
+			"scope": "settings",
+			"scenario": "List DTS:X codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dtsx.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.eac3.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/eac3/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect E-AC-3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.eac3.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.eac3.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/eac3",
+			"scope": "settings",
+			"scenario": "List E-AC-3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.eac3.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV1.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/he-aac-v1/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect HE-AAC v1 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.heAacV1.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV1.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/he-aac-v1",
+			"scope": "settings",
+			"scenario": "List HE-AAC v1 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.heAacV1.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV2.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/he-aac-v2/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect HE-AAC v2 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.heAacV2.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV2.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/he-aac-v2",
+			"scope": "settings",
+			"scenario": "List HE-AAC v2 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.heAacV2.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/mp2/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect MP2 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.mp2.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/mp2",
+			"scope": "settings",
+			"scenario": "List MP2 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.mp2.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp3.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/mp3/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect MP3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.mp3.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp3.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/mp3",
+			"scope": "settings",
+			"scenario": "List MP3 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.mp3.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.opus.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/opus/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Opus codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.opus.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.opus.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/opus",
+			"scope": "settings",
+			"scenario": "List Opus codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.opus.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.passthrough.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/audio/passthrough/{configuration_id}",
+			"scope": "vod",
+			"scenario": "Remove audio passthrough configurations through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
+				"anchor": "api.encoding.configurations.audio.passthrough.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.passthrough.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/passthrough/{configuration_id}",
+			"scope": "vod",
+			"scenario": "Inspect audio passthrough configurations through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
+				"anchor": "api.encoding.configurations.audio.passthrough.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
+				"anchor": "\"reaches the official typed transport for $kind and projects public fields",
+				"caseGroup": "recorded-resource-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.passthrough.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/passthrough",
+			"scope": "settings",
+			"scenario": "List Audio passthrough codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.passthrough.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.pcm.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/audio/pcm/{configuration_id}",
+			"scope": "vod",
+			"scenario": "Remove PCM configurations through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
+				"anchor": "api.encoding.configurations.audio.pcm.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.pcm.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/pcm/{configuration_id}",
+			"scope": "vod",
+			"scenario": "Inspect PCM configurations through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
+				"anchor": "api.encoding.configurations.audio.pcm.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
+				"anchor": "\"reaches the official typed transport for $kind and projects public fields",
+				"caseGroup": "recorded-resource-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.pcm.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/pcm",
+			"scope": "settings",
+			"scenario": "List PCM codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.pcm.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/vorbis/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Vorbis codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.vorbis.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/vorbis",
+			"scope": "settings",
+			"scenario": "List Vorbis codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.vorbis.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect DVB subtitles codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.dvbSubtitle.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle",
+			"scope": "settings",
+			"scenario": "List DVB subtitles codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.dvbSubtitle.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.imsc.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/imsc/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect IMSC codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.imsc.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.imsc.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/imsc",
+			"scope": "settings",
+			"scenario": "List IMSC codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.imsc.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.webvtt.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/webvtt/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect WebVTT codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.webvtt.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.webvtt.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/webvtt",
+			"scope": "settings",
+			"scenario": "List WebVTT codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.webvtt.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/av1/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect AV1 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.av1.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.av1.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/av1",
+			"scope": "settings",
+			"scenario": "List AV1 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.av1.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h262/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect H.262 (MPEG-2) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h262.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h262",
+			"scope": "settings",
+			"scenario": "List H.262 (MPEG-2) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h262.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h264.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h264/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect H.264 (AVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h264.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h264.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h264",
+			"scope": "settings",
+			"scenario": "List H.264 (AVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h264.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/video/h265/{configuration_id}",
+			"scope": "vod",
+			"scenario": "Remove HEVC configurations through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
+				"anchor": "api.encoding.configurations.video.h265.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h265/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect H.265 (HEVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h265.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h265",
+			"scope": "settings",
+			"scenario": "List H.265 (HEVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h265.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265v2.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/configurations/video/h265v2/{configuration_id}",
+			"scope": "vod",
+			"scenario": "Remove HEVC v2 configurations through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/configurations.ts",
+				"anchor": "api.encoding.configurations.video.h265v2.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265v2.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h265v2/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect H.265 v2 (HEVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h265v2.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265v2.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h265v2",
+			"scope": "settings",
+			"scenario": "List H.265 v2 (HEVC) codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h265v2.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/mjpeg/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect Motion JPEG codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.mjpeg.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/mjpeg",
+			"scope": "settings",
+			"scenario": "List Motion JPEG codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.mjpeg.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp8.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/vp8/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect VP8 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.vp8.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp8.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/vp8",
+			"scope": "settings",
+			"scenario": "List VP8 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.vp8.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp9.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/vp9/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect VP9 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.vp9.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp9.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/vp9",
+			"scope": "settings",
+			"scenario": "List VP9 codec settings in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.vp9.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
+				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
+				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.inputStreams.hdr10Plus.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus",
+			"scope": "vod",
+			"scenario": "Create an HDR10+ input stream for a VOD job using video and its metadata sidecar in the same input storage.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/media.ts",
+				"anchor": "api.encoding.encodings.inputStreams.hdr10Plus.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.hdr10plus.test.ts",
+				"anchor": "\"/v1/encoding/encodings/encoding-id/input-streams/hdr10-plus\"",
+				"caseGroup": "worker-hdr10-plus-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.inputStreams.hdr10Plus.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus/{hdr10_plus_input_stream_id}",
+			"scope": "vod",
+			"scenario": "Remove HDR10+ input streams through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.inputStreams.hdr10Plus.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.inputStreams.hdr10Plus.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus/{hdr10_plus_input_stream_id}",
+			"scope": "vod",
+			"scenario": "Inspect HDR10+ input streams through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.inputStreams.hdr10Plus.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
+				"anchor": "\"reaches the official typed transport for $kind and projects public fields",
+				"caseGroup": "recorded-resource-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.inputStreams.hdr10Plus.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/input-streams/hdr10-plus",
+			"scope": "vod",
+			"scenario": "List HDR10+ input streams through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.inputStreams.hdr10Plus.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
+				"anchor": "\"reaches the official typed transport for $kind and projects public fields",
+				"caseGroup": "recorded-resource-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.live.hd.start",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/live/hd/start",
+			"scope": "live",
+			"scenario": "Start an eligible Live HD channel and apply its manifest reupload intervals.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/live-channels/[id]/actions",
+				"anchor": "case \"start\":"
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/live.ts",
+				"anchor": "live.hd.start(encodingId, request)"
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/start-sdk-contract.test.ts",
+				"anchor": "expect(Boolean(match[2])).toBe(encodingOption === \"HD\");",
+				"caseGroup": "worker-live-start"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.live.start",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/live/start",
+			"scope": "live",
+			"scenario": "Start a Custom Live channel with compiled manifest timing, automatic stop, and reupload controls.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/live-channels/[id]/actions",
+				"anchor": "case \"start\":"
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/live.ts",
+				"anchor": "live.start(encodingId, request)"
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/start-sdk-contract.test.ts",
+				"anchor": "expect(Boolean(match[2])).toBe(encodingOption === \"HD\");",
+				"caseGroup": "worker-live-start"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.live.updateAutoshutdownConfig.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/live/update-autoshutdown-config",
+			"scope": "live",
+			"scenario": "Replace the automatic-stop configuration for an active Live encoding owned by the selected channel.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/live-channels/[id]/auto-shutdown",
+				"anchor": "action: \"update-auto-shutdown\","
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/live.ts",
+				"anchor": "api.encoding.encodings.live.updateAutoshutdownConfig.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.auto-shutdown.test.ts",
+				"anchor": "\"/v1/encoding/encodings/encoding-owned/live/update-autoshutdown-config\"",
+				"caseGroup": "worker-live-auto-shutdown"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.information.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/information",
+			"scope": "vod",
+			"scenario": "Inspect the reported output size, container bitrate and duration of a recorded fMP4 VOD muxing.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.muxings.fmp4.information\n\t\t\t\t.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
+				"anchor": "\"reads output information using the recorded encoding and muxing for $kind",
+				"caseGroup": "recorded-muxing-information"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp4.information.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/information",
+			"scope": "vod",
+			"scenario": "Inspect the reported output size, container bitrate and duration of a recorded MP4 VOD muxing.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.muxings.mp4.information\n\t\t\t\t.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
+				"anchor": "\"reads output information using the recorded encoding and muxing for $kind",
+				"caseGroup": "recorded-muxing-information"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveMov.information.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-mov/{muxing_id}/information",
+			"scope": "vod",
+			"scenario": "Inspect the reported output size, container bitrate and duration of a recorded progressive MOV VOD muxing.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.muxings.progressiveMov.information\n\t\t\t\t.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
+				"anchor": "\"reads output information using the recorded encoding and muxing for $kind",
+				"caseGroup": "recorded-muxing-information"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveTs.information.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}/information",
+			"scope": "vod",
+			"scenario": "Inspect the reported output size, container bitrate and duration of a recorded progressive TS VOD muxing.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.muxings.progressiveTs.information\n\t\t\t\t.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
+				"anchor": "\"reads output information using the recorded encoding and muxing for $kind",
+				"caseGroup": "recorded-muxing-information"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveWav.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-wav/{muxing_id}",
+			"scope": "vod",
+			"scenario": "Remove progressive WAV muxings through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.muxings.progressiveWav.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveWav.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-wav/{muxing_id}",
+			"scope": "vod",
+			"scenario": "Inspect progressive WAV muxings through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.muxings.progressiveWav.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
+				"anchor": "\"reaches the official typed transport for $kind and projects public fields",
+				"caseGroup": "recorded-resource-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveWav.information.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-wav/{muxing_id}/information",
+			"scope": "vod",
+			"scenario": "Inspect the reported output size, container bitrate and duration of a recorded progressive WAV VOD muxing.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.muxings.progressiveWav.information\n\t\t\t\t.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
+				"anchor": "\"reads output information using the recorded encoding and muxing for $kind",
+				"caseGroup": "recorded-muxing-information"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveWebm.information.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-webm/{muxing_id}/information",
+			"scope": "vod",
+			"scenario": "Inspect the reported output size, container bitrate and duration of a recorded progressive WebM VOD muxing.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encodings.ts",
+				"anchor": "api.encoding.encodings.muxings.progressiveWebm.information\n\t\t\t\t.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/route.test.ts",
+				"anchor": "\"reads output information using the recorded encoding and muxing for $kind",
+				"caseGroup": "recorded-muxing-information"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.start",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/start",
+			"scope": "vod",
+			"scenario": "Submit a VOD job with compiled START settings, including Per-Title or VOD manifest generation options.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/encoding.ts",
+				"anchor": "api.encoding.encodings.start("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/start-sdk-contract.test.ts",
+				"anchor": "\"preserves VOD START options with %s manifests",
+				"caseGroup": "worker-vod-start"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.errorDefinitions.list",
+			"httpVerb": "GET",
+			"path": "/encoding/error-definitions",
+			"scope": "settings",
+			"scenario": "Read the paginated error-definition catalogue for a saved Bitmovin account in the selected organization.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-error-definitions",
+				"anchor": "export async function GET"
+			},
+			"transport": {
+				"file": "apps/web/src/app/api/encoding-error-definitions/route.ts",
+				"anchor": "api.encoding.errorDefinitions.list({ limit: PAGE_SIZE, offset })"
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-error-definitions/route.sdk.test.ts",
+				"anchor": "expect(new URL(url).pathname).toBe(\"/v1/encoding/error-definitions\");"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.audioMix.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/audio-mix/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Audio mix filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.audioMix.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.audioMix.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/audio-mix",
+			"scope": "settings",
+			"scenario": "List Audio mix filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.audioMix.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.audioVolume.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/audio-volume/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Audio volume filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.audioVolume.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.audioVolume.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/audio-volume",
+			"scope": "settings",
+			"scenario": "List Audio volume filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.audioVolume.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/azure-speech-to-captions/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Azure Speech to Captions filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.azureSpeechToCaptions.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/azure-speech-to-captions",
+			"scope": "settings",
+			"scenario": "List Azure Speech to Captions filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.azureSpeechToCaptions.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.conform.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/conform/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Conform filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.conform.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.conform.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/conform",
+			"scope": "settings",
+			"scenario": "List Conform filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.conform.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.crop.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/crop/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Crop filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.crop.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.crop.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/crop",
+			"scope": "settings",
+			"scenario": "List Crop filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.crop.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.deinterlace.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/deinterlace/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Deinterlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.deinterlace.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.deinterlace.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/deinterlace",
+			"scope": "settings",
+			"scenario": "List Deinterlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.deinterlace.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.denoiseHqdn3d.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/denoise-hqdn3d/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect HQDN3D denoise filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.denoiseHqdn3d.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.denoiseHqdn3d.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/denoise-hqdn3d",
+			"scope": "settings",
+			"scenario": "List HQDN3D denoise filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.denoiseHqdn3d.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.dolbyLoudness.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/dolby-loudness/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Dolby Loudness filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.dolbyLoudness.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.dolbyLoudness.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/dolby-loudness",
+			"scope": "settings",
+			"scenario": "List Dolby Loudness filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.dolbyLoudness.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.ebuR128SinglePass.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/ebu-r128-single-pass/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect EBU R128 single-pass filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.ebuR128SinglePass.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.ebuR128SinglePass.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/ebu-r128-single-pass",
+			"scope": "settings",
+			"scenario": "List EBU R128 single-pass filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.ebuR128SinglePass.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedDeinterlace.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/enhanced-deinterlace/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Enhanced deinterlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.enhancedDeinterlace.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedDeinterlace.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/enhanced-deinterlace",
+			"scope": "settings",
+			"scenario": "List Enhanced deinterlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.enhancedDeinterlace.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedWatermark.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/enhanced-watermark/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Enhanced watermark filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.enhancedWatermark.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedWatermark.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/enhanced-watermark",
+			"scope": "settings",
+			"scenario": "List Enhanced watermark filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.enhancedWatermark.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect filter metadata across types in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.interlace.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/interlace/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Interlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.interlace.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.interlace.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/interlace",
+			"scope": "settings",
+			"scenario": "List Interlace filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.interlace.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters",
+			"scope": "settings",
+			"scenario": "List filter metadata across types in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.rotate.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/rotate/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Rotate filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.rotate.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.rotate.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/rotate",
+			"scope": "settings",
+			"scenario": "List Rotate filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.rotate.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.scale.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/scale/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Scale filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.scale.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.scale.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/scale",
+			"scope": "settings",
+			"scenario": "List Scale filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.scale.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.text.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/text/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Text filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.text.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.text.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/text",
+			"scope": "settings",
+			"scenario": "List Text filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.text.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.unsharp.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/unsharp/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Unsharp filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.unsharp.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.unsharp.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/unsharp",
+			"scope": "settings",
+			"scenario": "List Unsharp filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.unsharp.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.watermark.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/watermark/{filter_id}",
+			"scope": "settings",
+			"scenario": "Inspect Watermark filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.watermark.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.watermark.list",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/watermark",
+			"scope": "settings",
+			"scenario": "List Watermark filter metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.watermark.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
+				"anchor": "\"reads the official paged collection and detail at $path\"",
+				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.akamaiNetstorage.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/akamai-netstorage/{input_id}",
+			"scope": "settings",
+			"scenario": "Read Akamai NetStorage input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.akamaiNetstorage.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.akamaiNetstorage.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/akamai-netstorage",
+			"scope": "settings",
+			"scenario": "List Akamai NetStorage input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.akamaiNetstorage.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.aspera.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/aspera/{input_id}",
+			"scope": "settings",
+			"scenario": "Read Aspera input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.aspera.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.aspera.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/aspera",
+			"scope": "settings",
+			"scenario": "List Aspera input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.aspera.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.azure.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/azure/{input_id}",
+			"scope": "settings",
+			"scenario": "Read Azure input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.azure.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.azure.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/azure",
+			"scope": "settings",
+			"scenario": "List Azure input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.azure.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.directFileUpload.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/direct-file-upload/{input_id}",
+			"scope": "settings",
+			"scenario": "Read Direct file upload input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.directFileUpload.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.directFileUpload.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/direct-file-upload",
+			"scope": "settings",
+			"scenario": "List Direct file upload input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.directFileUpload.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.ftp.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/ftp/{input_id}",
+			"scope": "settings",
+			"scenario": "Read FTP input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.ftp.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.ftp.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/ftp",
+			"scope": "settings",
+			"scenario": "List FTP input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.ftp.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcs.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/gcs/{input_id}",
+			"scope": "settings",
+			"scenario": "Read Google Cloud Storage input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.gcs.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcs.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/gcs",
+			"scope": "settings",
+			"scenario": "List Google Cloud Storage input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.gcs.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcsServiceAccount.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/gcs-service-account/{input_id}",
+			"scope": "settings",
+			"scenario": "Read GCS service account input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.gcsServiceAccount.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcsServiceAccount.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/gcs-service-account",
+			"scope": "settings",
+			"scenario": "List GCS service account input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.gcsServiceAccount.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.genericS3.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/generic-s3/{input_id}",
+			"scope": "settings",
+			"scenario": "Read S3-compatible input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.genericS3.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.genericS3.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/generic-s3",
+			"scope": "settings",
+			"scenario": "List S3-compatible input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.genericS3.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.hls.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/hls/{input_id}",
+			"scope": "settings",
+			"scenario": "Read HLS input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.hls.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.hls.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/hls",
+			"scope": "settings",
+			"scenario": "List HLS input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.hls.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.http.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/http/{input_id}",
+			"scope": "settings",
+			"scenario": "Read HTTP input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.http.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.http.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/http",
+			"scope": "settings",
+			"scenario": "List HTTP input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.http.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.https.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/https/{input_id}",
+			"scope": "settings",
+			"scenario": "Read HTTPS input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.https.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.https.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/https",
+			"scope": "settings",
+			"scenario": "List HTTPS input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.https.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.local.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/local/{input_id}",
+			"scope": "settings",
+			"scenario": "Read Local input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.local.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.local.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/local",
+			"scope": "settings",
+			"scenario": "List Local input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.local.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.redundantRtmp.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/redundant-rtmp/{input_id}",
+			"scope": "settings",
+			"scenario": "Read Redundant RTMP input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.redundantRtmp.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.redundantRtmp.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/redundant-rtmp",
+			"scope": "settings",
+			"scenario": "List Redundant RTMP input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.redundantRtmp.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.rtmp.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/rtmp/{input_id}",
+			"scope": "settings",
+			"scenario": "Read RTMP input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.rtmp.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.rtmp.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/rtmp",
+			"scope": "settings",
+			"scenario": "List RTMP input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.rtmp.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/s3/{input_id}",
+			"scope": "settings",
+			"scenario": "Read Amazon S3 input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.s3.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/s3",
+			"scope": "settings",
+			"scenario": "List Amazon S3 input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.s3.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3RoleBased.create",
+			"httpVerb": "POST",
+			"path": "/encoding/inputs/s3-role-based",
+			"scope": "vod",
+			"scenario": "Submit a fixed-ladder VOD job that provisions a Bitmovin S3 role-based input with GLOBAL External ID.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/io.ts",
+				"anchor": "api.encoding.inputs.s3RoleBased.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/make-sdk.test.ts",
+				"anchor": "\"sends %s with its organization-specific GLOBAL role identity",
+				"caseGroup": "worker-s3-role-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3RoleBased.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/inputs/s3-role-based/{input_id}",
+			"scope": "vod",
+			"scenario": "Remove S3 role-based inputs through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/inputs.ts",
+				"anchor": "api.encoding.inputs.s3RoleBased.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3RoleBased.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/s3-role-based/{input_id}",
+			"scope": "settings",
+			"scenario": "Read Amazon S3 (IAM role) input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.s3RoleBased.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3RoleBased.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/s3-role-based",
+			"scope": "settings",
+			"scenario": "List Amazon S3 (IAM role) input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.s3RoleBased.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.sftp.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/sftp/{input_id}",
+			"scope": "settings",
+			"scenario": "Read SFTP input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.sftp.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.sftp.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/sftp",
+			"scope": "settings",
+			"scenario": "List SFTP input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.sftp.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.srt.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/srt/{input_id}",
+			"scope": "settings",
+			"scenario": "Read SRT input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.srt.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.srt.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/srt",
+			"scope": "settings",
+			"scenario": "List SRT input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.srt.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.zixi.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/zixi/{input_id}",
+			"scope": "settings",
+			"scenario": "Read Zixi input metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.zixi.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.zixi.list",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/zixi",
+			"scope": "settings",
+			"scenario": "List Zixi input resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.zixi.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.live.encodings.actions.patch",
+			"httpVerb": "PATCH",
+			"path": "/encoding/live/encodings/{encoding_id}/actions/update-rtmp-ingest-points",
+			"scope": "live",
+			"scenario": "Replace the selected dynamic redundant RTMP ingest points of the current running Live channel.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/live-channels/[id]/actions",
+				"anchor": "case \"update-rtmp-ingest\":"
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/live.ts",
+				"anchor": "api.encoding.live.encodings.actions.patch("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.rtmp-ingest-wire.test.ts",
+				"anchor": "\"/v1/encoding/live/encodings/encoding-owned/actions/update-rtmp-ingest-points\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.periods.create",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods",
+			"scope": "live",
+			"scenario": "Create the first Period at time zero when starting a Live channel with a DASH manifest.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/live-channels/[id]/actions",
+				"anchor": "case \"start\":"
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.dash.periods.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.period.test.ts",
+				"anchor": "\"preserves compiler zero through executor, real SDK wire and audit"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.stop",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/dash/{manifest_id}/stop",
+			"scope": "vod",
+			"scenario": "Stop an owned DASH manifest task that cannot safely resume publishing.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs/[id]/retry",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.dash.stop("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
+				"anchor": "\"sends the official %s manifest stop once via the worker SDK\"",
+				"caseGroup": "worker-standalone-manifest-stop"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.hls.stop",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/hls/{manifest_id}/stop",
+			"scope": "vod",
+			"scenario": "Stop an owned HLS manifest task that cannot safely resume publishing.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs/[id]/retry",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.hls.stop("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
+				"anchor": "\"sends the official %s manifest stop once via the worker SDK\"",
+				"caseGroup": "worker-standalone-manifest-stop"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.smooth.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests/smooth/{manifest_id}/customData",
+			"scope": "vod",
+			"scenario": "Verify ownership of a recorded Smooth Streaming manifest before stopping its generation.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs/[id]/retry",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.smooth.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
+				"anchor": "\"reads the official %s manifest owner marker via the worker SDK\"",
+				"caseGroup": "worker-smooth-manifest-owner"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.smooth.stop",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/smooth/{manifest_id}/stop",
+			"scope": "vod",
+			"scenario": "Stop an owned Smooth Streaming manifest task that cannot safely resume publishing.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs/[id]/retry",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.smooth.stop("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
+				"anchor": "\"sends the official %s manifest stop once via the worker SDK\"",
+				"caseGroup": "worker-standalone-manifest-stop"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiMsl.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/akamai-msl/{output_id}",
+			"scope": "settings",
+			"scenario": "Read Akamai MSL output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.akamaiMsl.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiMsl.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/akamai-msl",
+			"scope": "settings",
+			"scenario": "List Akamai MSL output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.akamaiMsl.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiNetstorage.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/akamai-netstorage/{output_id}",
+			"scope": "settings",
+			"scenario": "Read Akamai NetStorage output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.akamaiNetstorage.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.akamaiNetstorage.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/akamai-netstorage",
+			"scope": "settings",
+			"scenario": "List Akamai NetStorage output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.akamaiNetstorage.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.azure.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/azure/{output_id}",
+			"scope": "settings",
+			"scenario": "Read Azure output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.azure.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.azure.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/azure",
+			"scope": "settings",
+			"scenario": "List Azure output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.azure.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.cdn.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/cdn/{output_id}",
+			"scope": "settings",
+			"scenario": "Read Bitmovin CDN output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.cdn.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.cdn.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/cdn",
+			"scope": "settings",
+			"scenario": "List Bitmovin CDN output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.cdn.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.ftp.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/ftp/{output_id}",
+			"scope": "settings",
+			"scenario": "Read FTP output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.ftp.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.ftp.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/ftp",
+			"scope": "settings",
+			"scenario": "List FTP output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.ftp.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcs.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/gcs/{output_id}",
+			"scope": "settings",
+			"scenario": "Read Google Cloud Storage output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.gcs.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcs.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/gcs",
+			"scope": "settings",
+			"scenario": "List Google Cloud Storage output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.gcs.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcsServiceAccount.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/gcs-service-account/{output_id}",
+			"scope": "settings",
+			"scenario": "Read GCS service account output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.gcsServiceAccount.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcsServiceAccount.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/gcs-service-account",
+			"scope": "settings",
+			"scenario": "List GCS service account output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.gcsServiceAccount.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.genericS3.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/generic-s3/{output_id}",
+			"scope": "settings",
+			"scenario": "Read S3-compatible output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.genericS3.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.genericS3.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/generic-s3",
+			"scope": "settings",
+			"scenario": "List S3-compatible output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.genericS3.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.liveMediaIngest.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/live-media-ingest/{output_id}",
+			"scope": "settings",
+			"scenario": "Read Live Media Ingest output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.liveMediaIngest.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.liveMediaIngest.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/live-media-ingest",
+			"scope": "settings",
+			"scenario": "List Live Media Ingest output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.liveMediaIngest.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.local.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/local/{output_id}",
+			"scope": "settings",
+			"scenario": "Read Local output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.local.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.local.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/local",
+			"scope": "settings",
+			"scenario": "List Local output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.local.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/moq/{output_id}",
+			"scope": "settings",
+			"scenario": "Read MoQ output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.moq.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.moq.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/moq",
+			"scope": "settings",
+			"scenario": "List MoQ output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.moq.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/s3/{output_id}",
+			"scope": "settings",
+			"scenario": "Read Amazon S3 output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.s3.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/s3",
+			"scope": "settings",
+			"scenario": "List Amazon S3 output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.s3.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3RoleBased.create",
+			"httpVerb": "POST",
+			"path": "/encoding/outputs/s3-role-based",
+			"scope": "vod",
+			"scenario": "Submit a fixed-ladder VOD job that provisions a Bitmovin S3 role-based output with GLOBAL External ID.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/io.ts",
+				"anchor": "api.encoding.outputs.s3RoleBased.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/make-sdk.test.ts",
+				"anchor": "\"sends %s with its organization-specific GLOBAL role identity",
+				"caseGroup": "worker-s3-role-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3RoleBased.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/outputs/s3-role-based/{output_id}",
+			"scope": "vod",
+			"scenario": "Remove S3 role-based outputs through a recorded VOD job and its original provider account.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/outputs.ts",
+				"anchor": "api.encoding.outputs.s3RoleBased.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3RoleBased.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/s3-role-based/{output_id}",
+			"scope": "settings",
+			"scenario": "Read Amazon S3 (IAM role) output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.s3RoleBased.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3RoleBased.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/s3-role-based",
+			"scope": "settings",
+			"scenario": "List Amazon S3 (IAM role) output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.s3RoleBased.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.sftp.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/sftp/{output_id}",
+			"scope": "settings",
+			"scenario": "Read SFTP output metadata in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.get(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.sftp.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"reads $kind/$protocol details without connection secrets",
+				"caseGroup": "native-io-get"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.sftp.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/sftp",
+			"scope": "settings",
+			"scenario": "List SFTP output resources in the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "reader.list(api,"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.sftp.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
+				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.templates.get",
+			"httpVerb": "GET",
+			"path": "/encoding/templates/{encoding_template_id}",
+			"scope": "settings",
+			"scenario": "Read native template detail metadata for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "api.encoding.templates.get("
+			},
+			"transport": {
+				"file": "apps/web/src/app/api/encoding-native/route.ts",
+				"anchor": "api.encoding.templates.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"sends the template detail GET"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.templates.list",
+			"httpVerb": "GET",
+			"path": "/encoding/templates",
+			"scope": "settings",
+			"scenario": "List native template collection metadata for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "api.encoding.templates.list("
+			},
+			"transport": {
+				"file": "apps/web/src/app/api/encoding-native/route.ts",
+				"anchor": "api.encoding.templates.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"sends the template collection GET"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.watchFolders.get",
+			"httpVerb": "GET",
+			"path": "/encoding/watch-folders/{watch_folder_id}",
+			"scope": "settings",
+			"scenario": "Read native watch folder detail metadata for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "api.encoding.watchFolders.get("
+			},
+			"transport": {
+				"file": "apps/web/src/app/api/encoding-native/route.ts",
+				"anchor": "api.encoding.watchFolders.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"sends the watch folder detail GET"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.watchFolders.list",
+			"httpVerb": "GET",
+			"path": "/encoding/watch-folders",
+			"scope": "settings",
+			"scenario": "List native watch folder collection metadata for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "api.encoding.watchFolders.list("
+			},
+			"transport": {
+				"file": "apps/web/src/app/api/encoding-native/route.ts",
+				"anchor": "api.encoding.watchFolders.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
+				"anchor": "\"sends the watch folder collection GET"
+			},
+			"provider": "unverified"
+		}
+	],
 	"entries": [
 		{
 			"sdkMethod": "encoding.configurations.video.h264.create",

@@ -90,6 +90,33 @@ export async function executeIoStep(
 			return { resourceId, request, response: { id: resourceId } };
 		}
 
+		case "CREATE_INPUT_S3_ROLE_BASED":
+		case "CREATE_OUTPUT_S3_ROLE_BASED": {
+			const cred = await ctx.resolveCredential(str(p.credentialId));
+			if (cred.provider !== "AWS_S3_ROLE_BASED") {
+				throw new Error(
+					`step "${op.step}" needs an AWS_S3_ROLE_BASED credential but got provider "${cred.provider}"`,
+				);
+			}
+			const parsed =
+				CREDENTIAL_PROVIDER_SHAPES.AWS_S3_ROLE_BASED.config.safeParse(
+					cred.config,
+				);
+			if (!parsed.success)
+				throw new Error("Invalid S3 role credential configuration");
+			const payload = {
+				name: str(p.name),
+				bucketName: str(p.bucketName),
+				roleArn: parsed.data.roleArn,
+				region: parsed.data.region,
+			};
+			const resourceId =
+				op.kind === "CREATE_INPUT_S3_ROLE_BASED"
+					? await ctx.sdk.createS3RoleBasedInput(payload)
+					: await ctx.sdk.createS3RoleBasedOutput(payload);
+			return { resourceId, request, response: { id: resourceId } };
+		}
+
 		case "CREATE_INPUT_AZURE": {
 			const cred = await ctx.resolveCredential(str(p.credentialId));
 			if (cred.provider !== "AZURE_BLOB") {

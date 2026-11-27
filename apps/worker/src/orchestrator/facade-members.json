@@ -92,6 +92,8 @@
 	"createRedundantRtmpInput",
 	"createS3Input",
 	"createS3Output",
+	"createS3RoleBasedInput",
+	"createS3RoleBasedOutput",
 	"createSftpOutput",
 	"createSmoothContentProtection",
 	"createSmoothManifest",
@@ -123,6 +125,7 @@
 	"getLiveHeartbeat",
 	"getLiveInsertableContent",
 	"getLiveStartRequest",
+	"getManifestRoleAcl",
 	"getSmoothManifestStatus",
 	"getStreamContext",
 	"getVideoConfigBitrate",
@@ -136,6 +139,7 @@
 	"listRtmpInputs",
 	"listRunningLiveEncodings",
 	"listScheduledInsertableContent",
+	"ownsManifest",
 	"resetLiveManifestTimeshift",
 	"restartLiveEncoding",
 	"scheduleInsertableContent",
@@ -148,6 +152,7 @@
 	"stopAisaLiveAnalysis",
 	"stopEncoding",
 	"stopLiveEncoding",
+	"stopManifest",
 	"updateLiveAutoShutdown",
 	"updateLiveRtmpIngestPoints"
 ]

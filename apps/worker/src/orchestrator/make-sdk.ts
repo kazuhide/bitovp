@@ -38,6 +38,7 @@ export function makeWorkerSdk(prisma: AppPrismaClient) {
 		orphanStopOnly?: true;
 		monitoringSignal?: AbortSignal;
 		startControl?: StartRetryControl;
+		withholdProviderDetails?: true;
 		internalHevcV2?: InternalHevcV2;
 		aisaLive?: AisaLiveControl;
 	}): SdkOps =>

@@ -83,6 +83,7 @@ export const VOD_FIXTURES = [
 	// cloudRegion. Excluded from the sample-preset / plan-import suites below.
 	"generic-s3-akamai-io",
 	"gcs-service-account-io",
+	"fixed-bitrate-hls-on-aws-role",
 	// Trick-play sprites (encodings.streams.sprites) — synthetic (no
 	// encoding examples, like Live/trimming). Sprites ARE template-representable,
 	// so this one IS pinned in template.test.ts too. Excluded from the

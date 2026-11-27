@@ -12,6 +12,7 @@ import { formatPreflight, preflight } from "../src/verify/preflight";
 import {
 	runCleanCommand,
 	runRecoveryCommand,
+	storageEnv,
 	main as verifyRunMain,
 } from "../src/verify/runner";
 import {
@@ -31,6 +32,7 @@ if (command === "preflight") {
 	try {
 		const report = await preflight({
 			prisma,
+			s3Storage: storageEnv(),
 			log: (line) => console.log(`[preflight] ${line}`),
 		});
 		console.log("");

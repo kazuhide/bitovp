@@ -128,6 +128,13 @@ export const planInputSchema = z.discriminatedUnion("kind", [
 	}),
 	z.strictObject({
 		key: refKey,
+		kind: z.literal("S3_ROLE_BASED"),
+		credentialId: z.uuid(),
+		bucket: z.string().min(1),
+		name: z.string().min(1).default("S3 Role-Based Input"),
+	}),
+	z.strictObject({
+		key: refKey,
 		// Auth-free https host (the dolby https-input sample) — the only
 		// credential-less input kind.
 		kind: z.literal("HTTPS"),
@@ -255,6 +262,13 @@ export const planOutputSchema = z.discriminatedUnion("kind", [
 		credentialId: z.uuid(),
 		bucket: z.string().min(1),
 		name: z.string().min(1).default("S3 Output"),
+	}),
+	z.strictObject({
+		key: refKey,
+		kind: z.literal("S3_ROLE_BASED"),
+		credentialId: z.uuid(),
+		bucket: z.string().min(1),
+		name: z.string().min(1).default("S3 Role-Based Output"),
 	}),
 	z.strictObject({
 		key: refKey,
@@ -2010,7 +2024,8 @@ export const encodingPlanSchema = z.strictObject({
 	/**
 	 * Multi-output delivery : every muxing/DRM/thumbnail/sprite/
 	 * manifest destination is ALSO written to each mirror output, at the SAME
-	 * path and acl — one encode, N storages (S3 and GCS alike). Plan-level by
+	 * path — one encode, N storages. Role-based S3 mirrors always use a
+	 * separate private ACL. Plan-level by
 	 * design: the owner's ask is fan-out, not per-muxing routing; the compiler
 	 * spreads mirror refs at every destination site and the worker appends
 	 * them to the SDK outputs array. `.optional` (not `.default([])`) so

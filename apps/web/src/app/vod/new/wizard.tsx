@@ -117,6 +117,7 @@ import {
 	outputKindIsBrowsable,
 	outputNameForKind,
 	reconcileHdr10PlusSidecars,
+	withOutputCredential,
 } from "./stream-model";
 import { ThumbnailsSection } from "./thumbnails-section";
 import { useVmafExecutionValidation } from "./vmaf-execution-settings";
@@ -855,8 +856,8 @@ export function VodWizard({
 		// `outputSelectable` (the picker filter) and this provider→kind mapping are
 		// the single source of truth for which providers are offered as encoding
 		// I/O. AWS_S3→S3, Azure→AZURE, SFTP→SFTP, Akamai/OCI/GenericS3→GENERIC_S3
-		// (C10), GCS-HMAC→GCS, GCS-service-account→GCS_SERVICE_ACCOUNT. A provider
-		// with no mapping (e.g. role-based) is never collapsed to S3 — we skip.
+		// (C10), GCS-HMAC→GCS, GCS-service-account→GCS_SERVICE_ACCOUNT.
+		// Role credentials map to their own kind and use manual bucket and path.
 		const kind = outputKindForProvider(provider);
 		if (kind === null) {
 			console.warn(
@@ -866,15 +867,7 @@ export function VodWizard({
 		}
 		setState((prev) => ({
 			...prev,
-			output: {
-				...prev.output,
-				credentialId: id,
-				kind,
-				name: outputNameForKind(kind),
-				// PUBLIC_READ/PRIVATE ACL applies to the S3-family + GCS buckets;
-				// Azure/SFTP have no object ACL, so force it off.
-				publicRead: outputKindHasAcl(kind) ? prev.output.publicRead : false,
-			},
+			output: withOutputCredential(prev.output, kind, id),
 		}));
 	}
 
@@ -2206,14 +2199,8 @@ export function VodWizard({
 						setState((prev) => ({
 							...prev,
 							output: {
-								...prev.output,
-								credentialId,
-								kind,
-								name: outputNameForKind(kind),
+								...withOutputCredential(prev.output, kind, credentialId),
 								bucket,
-								publicRead: outputKindHasAcl(kind)
-									? prev.output.publicRead
-									: false,
 								// Picked prefix is the folder. A streaming package gets a
 								// folder of its own under it, named after the job; files
 								// are written into the picked folder itself.

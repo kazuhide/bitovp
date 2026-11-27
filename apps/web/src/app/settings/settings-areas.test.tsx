@@ -26,6 +26,7 @@ function session(over: Record<string, unknown>) {
 }
 
 const ADMIN_AREA_HREFS = [
+	"/settings/encoding-native",
 	"/settings/clip-editing",
 	"/settings/tokens",
 	"/settings/users",
@@ -230,6 +231,7 @@ describe("SettingsAreas — category panels", () => {
 				"自動化・連携",
 				[
 					"/settings/watch-folders",
+					"/settings/encoding-native",
 					"/settings/notifications",
 					"/settings/webhooks",
 				],

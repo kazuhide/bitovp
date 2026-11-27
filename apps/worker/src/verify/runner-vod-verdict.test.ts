@@ -135,6 +135,20 @@ describe("vodVerdictForCounts", () => {
 });
 
 describe("vodOutcomeForReport", () => {
+	it("keeps an otherwise healthy VOD outcome incomplete when its role mirror was skipped", () => {
+		const report = reportOf({ PASS: 20, WARN: 0, FAIL: 0, SKIP: 1 });
+		report.checks.push({
+			id: "hygiene:s3-role-mirror:archive",
+			area: "hygiene",
+			verdict: "SKIP",
+			detail: 'S3 role mirror "archive" was not independently verified',
+		});
+		expect(vodOutcomeForReport(report, "role-mirror")).toEqual({
+			verdict: "INVALID",
+			reason: expect.stringContaining('S3 role mirror "archive"'),
+		});
+	});
+
 	it("carries the INVALID reason, not just the verdict", () => {
 		const out = vodOutcomeForReport(
 			reportOf({ PASS: 0, WARN: 0, FAIL: 0, SKIP: 9 }),

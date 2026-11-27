@@ -15,8 +15,8 @@ import {
 import { CopyableId } from "@/components/copyable-id";
 import { DetailPopover, KeyValueRows } from "@/components/ui/detail-popover";
 import { useMutationAccess } from "@/lib/auth/use-role-access";
+import { formatBitrate } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
-import { formatBitrate } from "./rendition-tables";
 
 /**
  * What the per-title algorithm actually produced — the RESULT half of bm-xray's

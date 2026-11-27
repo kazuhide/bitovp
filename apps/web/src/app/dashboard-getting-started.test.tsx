@@ -114,7 +114,6 @@ describe("First-encoding dashboard guidance", () => {
 	it.each([
 		"SRT_PASSPHRASE",
 		"DRM_CENC",
-		"AWS_S3_ROLE_BASED",
 	])("does not count input-only or unrelated %s credentials as output setup", async (provider) => {
 		accounts = [account];
 		providers = [provider];
@@ -123,6 +122,20 @@ describe("First-encoding dashboard guidance", () => {
 		expect(within(panel).getAllByText("Registered")).toHaveLength(1);
 		expect(
 			within(panel).queryByRole("link", { name: "Create VOD job" }),
+		).toBeNull();
+	});
+
+	it("offers VOD with a registered role-based S3 output", async () => {
+		accounts = [account];
+		providers = ["AWS_S3_ROLE_BASED"];
+		renderWithQuery(<DashboardHome />);
+		const panel = await guide();
+		expect(within(panel).getAllByText("Registered")).toHaveLength(2);
+		expect(
+			within(panel).getByRole("link", { name: "Create VOD job" }),
+		).toHaveAttribute("href", "/vod/new");
+		expect(
+			within(panel).queryByRole("link", { name: "Create Live channel" }),
 		).toBeNull();
 	});
 

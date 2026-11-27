@@ -3,6 +3,7 @@ import type { StepLogEntry } from "@bitovp/core";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { GET as vod } from "@/app/api/encoding-jobs/[id]/resources/route";
 import { GET as live } from "@/app/api/live-channels/[id]/runs/[runId]/resources/route";
+import { auditedOperationCases } from "../../../../../../scripts/api-coverage-test-cases";
 import { resourceFixture } from "./__fixtures__/journal";
 import contracts from "./__fixtures__/sdk-contracts.json";
 import { parseResourceLog, selectResource } from "./selection";
@@ -66,8 +67,143 @@ const read = (query: string) =>
 	vod(new Request(`http://fixture.invalid/resources?${query}`), {
 		params: Promise.resolve({ id: jobId }),
 	});
+
+const muxingInformationKinds = new Set([
+	"CREATE_MUXING_FMP4",
+	"CREATE_MUXING_MP4",
+	"CREATE_MUXING_PROGRESSIVE_MOV",
+	"CREATE_MUXING_PROGRESSIVE_TS",
+	"CREATE_MUXING_PROGRESSIVE_WAV",
+	"CREATE_MUXING_PROGRESSIVE_WEBM",
+]);
+
 it.each(
-	contracts,
+	auditedOperationCases(
+		import.meta.url,
+		"recorded-muxing-information",
+		contracts.filter(({ kind }) => muxingInformationKinds.has(kind)),
+		({ detail }) => [`GET ${detail}/information`],
+	),
+)("reads output information using the recorded encoding and muxing for $kind", async (contract) => {
+	const { steps, id, expected } = fixture(contract);
+	seeded(steps);
+	const index = await (await read("")).json();
+	expect(index.resources).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ id, step: "selected", hasInformation: true }),
+		]),
+	);
+	expect(transport).not.toHaveBeenCalled();
+	transport.mockImplementation(async (url: string, init: RequestInit) => {
+		expect(new URL(url).pathname).toBe(`${expected}/information`);
+		expect(init.method).toBe("GET");
+		expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+		return Response.json({
+			status: "SUCCESS",
+			data: {
+				result: {
+					fileSize: 0,
+					containerBitrate: 5321000,
+					duration: 12.25,
+					containerFormat: "s3://private-bucket",
+					audioTracks: [{ codec: "private-token" }],
+					byteRanges: [{ offset: 0, length: 1234 }],
+					customData: { apiKey: "private-token" },
+				},
+			},
+		});
+	});
+	const result = await read("step=selected&attempt=0&view=information");
+	expect(result.status).toBe(200);
+	expect(result.headers.get("cache-control")).toBe("private, no-store");
+	expect(await result.json()).toEqual({
+		fields: {
+			fileSizeBytes: 0,
+			containerBitrateBps: 5321000,
+			durationSeconds: 12.25,
+		},
+	});
+	expect(transport).toHaveBeenCalledOnce();
+});
+
+it("uses the selected resource's current attempt, parent and original account for information", async () => {
+	const contract = contracts.find(
+		(row) => row.kind === "CREATE_MUXING_PROGRESSIVE_WAV",
+	);
+	if (!contract) throw new Error("Missing WAV fixture");
+	const { steps } = fixture(contract),
+		[parent, muxing] = steps;
+	if (!parent || !muxing)
+		throw new Error("Missing recorded encoding or muxing");
+	seeded(steps);
+	const view = "step=selected&view=information";
+	expect((await read(`${view}&attempt=1`)).status).toBe(409);
+	parent.resourceAccount = { id: accountId, version: randomUUID() };
+	expect((await read(`${view}&attempt=0`)).status).toBe(409);
+	parent.resourceAccount = { id: accountId, version };
+	muxing.request = { refs: { encodingId: randomUUID() } };
+	expect((await read(`${view}&attempt=0`)).status).toBe(404);
+	expect(transport).not.toHaveBeenCalled();
+});
+
+it("refuses output information for unsupported recorded families without sending a request", async () => {
+	const contract = contracts.find((row) => row.kind === "CREATE_MUXING_WEBM");
+	if (!contract) throw new Error("Missing WebM fixture");
+	seeded(fixture(contract).steps);
+	expect((await read("step=selected&attempt=0&view=information")).status).toBe(
+		400,
+	);
+	expect(transport).not.toHaveBeenCalled();
+});
+
+it("omits invalid and absent measurements and reports unavailable information independently of the muxing", async () => {
+	const contract = contracts.find((row) => row.kind === "CREATE_MUXING_MP4");
+	if (!contract) throw new Error("Missing MP4 fixture");
+	seeded(fixture(contract).steps);
+	const view = "step=selected&attempt=0&view=information";
+	transport.mockResolvedValueOnce(
+		Response.json({
+			status: "SUCCESS",
+			data: {
+				result: {
+					fileSize: "private-path",
+					duration: -1,
+					containerBitrate: null,
+				},
+			},
+		}),
+	);
+	expect(await (await read(view)).json()).toEqual({ fields: {} });
+	transport.mockResolvedValueOnce(
+		Response.json({
+			status: "SUCCESS",
+			data: { result: { id: randomUUID(), fileSize: 800 } },
+		}),
+	);
+	expect((await read(view)).status).toBe(502);
+	transport.mockResolvedValueOnce(
+		Response.json(
+			{ status: "ERROR", data: { message: "private-path" } },
+			{ status: 404 },
+		),
+	);
+	const missing = await read(view);
+	expect(missing.status).toBe(404);
+	expect(await missing.text()).toContain("output information");
+});
+
+it.each(
+	auditedOperationCases(
+		import.meta.url,
+		"recorded-resource-reads",
+		contracts,
+		({ detail, collection }) => [
+			`GET ${detail}`,
+			...(collection
+				? [`GET ${detail.slice(0, detail.lastIndexOf("/"))}`]
+				: []),
+		],
+	),
 )("reaches the official typed transport for $kind and projects public fields", async (contract) => {
 	const { steps, id, expected } = fixture(contract);
 	seeded(steps);
@@ -77,6 +213,8 @@ it.each(
 		password: "fixture-secret",
 		apiKey: "fixture-secret",
 		host: "fixture-private",
+		roleArn: "arn:aws:iam::123456789012:role/fixture-private",
+		externalId: "fixture-secret",
 	};
 	let expectedPath = expected;
 	transport.mockImplementation(async (url: URL | string, init: RequestInit) => {
@@ -117,6 +255,97 @@ it.each(
 	}
 	expect(transport).toHaveBeenCalledTimes(contract.collection ? 2 : 1);
 });
+
+it("projects an HDR10+ track without exposing its media, sidecar, or free-form provider fields", async () => {
+	const contract = contracts.find(
+		(c) => c.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",
+	);
+	if (!contract) throw new Error("Missing HDR10+ fixture");
+	const { steps, id, expected } = fixture(contract);
+	seeded(steps);
+	const privateFields = {
+		inputId: "private-input",
+		videoInputPath: "s3://private-picture",
+		metadataInputPath: "private-metadata.json",
+		customData: { liveToken: "private-token" },
+		name: "private-name",
+		description: "private-description",
+		metadata: { source: "private-content" },
+	};
+	const createdAt = "2026-11-25T12:13:14.000Z";
+	const item = {
+		...privateFields,
+		id,
+		createdAt,
+		selectionMode: "VIDEO_RELATIVE",
+		position: 0,
+	};
+	const selectedPath = expected.slice(0, expected.lastIndexOf("/"));
+	const siblingId = randomUUID();
+	transport.mockImplementation(async (url: URL | string, init: RequestInit) => {
+		const address = new URL(url);
+		expect(init.method).toBe("GET");
+		expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+		if (address.pathname === expected) {
+			return Response.json({ status: "SUCCESS", data: { result: item } });
+		}
+		expect(address.pathname).toBe(selectedPath);
+		expect(Object.fromEntries(address.searchParams)).toEqual({
+			offset: "1",
+			limit: "25",
+		});
+		return Response.json({
+			status: "SUCCESS",
+			data: {
+				result: {
+					items: [
+						{
+							...item,
+							id: siblingId,
+							selectionMode: "private-token",
+							position: 99,
+						},
+					],
+					offset: 1,
+					totalCount: 2,
+				},
+			},
+		});
+	});
+	const res = await read("step=selected&attempt=0");
+	expect(res.status).toBe(200);
+	expect(await res.json()).toEqual({
+		fields: { id, createdAt, selectionMode: "VIDEO_RELATIVE", position: 0 },
+	});
+	const page = await read("step=selected&attempt=0&view=siblings&offset=1");
+	expect(page.status).toBe(200);
+	expect(await page.json()).toEqual({
+		offset: 1,
+		total: 2,
+		items: [{ id: siblingId, createdAt }],
+	});
+	expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it("refuses an HDR10+ read outside the recorded encoding and account scope", async () => {
+	const contract = contracts.find(
+		(c) => c.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",
+	);
+	if (!contract) throw new Error("Missing HDR10+ fixture");
+	const { steps } = fixture(contract),
+		[parent, track] = steps;
+	if (!parent || !track) throw new Error("Missing recorded encoding and track");
+	const attempt = "step=selected&attempt=0";
+	parent.resourceAccount = { id: accountId, version: randomUUID() };
+	seeded(steps);
+	expect((await read(attempt)).status).toBe(409);
+	expect((await read(`${attempt}&view=siblings`)).status).toBe(409);
+	parent.resourceAccount = { id: accountId, version };
+	track.request = { refs: { encodingId: randomUUID() } };
+	expect((await read(attempt)).status).toBe(404);
+	expect(transport).not.toHaveBeenCalled();
+});
+
 it("rejects a swapped parent, stale attempt, changed account or a foreign execution before using the provider", async () => {
 	const sample = contracts.find(
 		(c) => c.kind === "CREATE_DASH_REPRESENTATION_FMP4",

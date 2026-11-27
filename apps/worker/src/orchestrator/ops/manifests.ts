@@ -53,6 +53,7 @@ import {
 	StreamInfo,
 	SubtitleAdaptationSet,
 	SubtitlesMediaInfo,
+	type Task,
 	VariantStreamDroppingMode,
 	VideoAdaptationSet,
 	VideoMediaInfo,
@@ -73,12 +74,15 @@ import type { SdkOps } from "../sdk-ops";
 import type { OpsContext } from "./context";
 import { createOwnedDefaultDashManifest } from "./default-dash-manifest";
 import { createOwnedDefaultHlsManifest } from "./default-hls-manifest";
+import { roleOutputAclsMatch } from "./manifest-output-acl";
 import {
 	adoptOrCreateManifest,
+	BitmovinCallError,
 	findManifestByOutput,
 	isBitmovinError,
 	optEnum,
 	outputs,
+	providerErrorWithoutDetails,
 	sdkEnumValue,
 	taskResult,
 } from "./shared";
@@ -126,9 +130,88 @@ export function createManifestOps(
 	| "deleteDashManifest"
 	| "startSmoothManifest"
 	| "getSmoothManifestStatus"
+	| "getManifestRoleAcl"
+	| "ownsManifest"
+	| "stopManifest"
 > {
 	const { api, audited, id, options, record } = ctx;
+	async function manifestStatus(
+		kind: "hls" | "dash" | "smooth",
+		manifestId: string,
+		read: () => Promise<Task>,
+	) {
+		try {
+			return taskResult(await read(), options.withholdProviderDetails);
+		} catch (error) {
+			if (!options.withholdProviderDetails) throw error;
+			throw new BitmovinCallError(
+				"GET",
+				`/encoding/manifests/${kind}/${manifestId}/status`,
+				providerErrorWithoutDetails(error),
+			);
+		}
+	}
 	return {
+		getManifestRoleAcl: async (kind, manifestId, destination) => {
+			const manifest =
+				kind === "hls"
+					? await api.encoding.manifests.hls.get(manifestId)
+					: kind === "dash"
+						? await api.encoding.manifests.dash.get(manifestId)
+						: await api.encoding.manifests.smooth.get(manifestId);
+			return (
+				manifest.id === manifestId &&
+				roleOutputAclsMatch(
+					destination.roleOutputIds,
+					outputs(destination),
+					manifest.outputs,
+				)
+			);
+		},
+		ownsManifest: async (kind, manifestId, jobId, step) => {
+			const data =
+				kind === "hls"
+					? await api.encoding.manifests.hls.customdata.get(manifestId)
+					: kind === "dash"
+						? await api.encoding.manifests.dash.customdata.get(manifestId)
+						: await api.encoding.manifests.smooth.customdata.get(manifestId);
+			const customData: unknown = data?.customData;
+			if (
+				!customData ||
+				typeof customData !== "object" ||
+				Array.isArray(customData)
+			)
+				throw new Error("Bitmovin did not return manifest ownership data");
+			if (!("bitovp" in customData)) return false;
+			const marker = customData.bitovp;
+			if (
+				!marker ||
+				typeof marker !== "object" ||
+				!("job" in marker) ||
+				typeof marker.job !== "string" ||
+				!marker.job.trim() ||
+				!("step" in marker) ||
+				typeof marker.step !== "string" ||
+				!marker.step.trim()
+			)
+				throw new Error(
+					"Bitmovin returned an incomplete manifest owner marker",
+				);
+			return marker.job === jobId && marker.step === step;
+		},
+		stopManifest: (kind, manifestId) =>
+			audited(
+				"POST",
+				`/encoding/manifests/${kind}/${manifestId}/stop`,
+				{},
+				() =>
+					kind === "hls"
+						? api.encoding.manifests.hls.stop(manifestId)
+						: kind === "dash"
+							? api.encoding.manifests.dash.stop(manifestId)
+							: api.encoding.manifests.smooth.stop(manifestId),
+				() => ({ stopRequested: true }),
+			).then(() => undefined),
 		/**
 		 * Default manifests adopt by ENCODING ID — S6's rule from the manifest
 		 * docblock above: live outputs are per-CHANNEL, not per-run, so a
@@ -356,6 +439,7 @@ export function createManifestOps(
 		 * .
 		 */
 		createHlsManifest: async (p) => {
+			const requestedOutputs = outputs(p.destination);
 			const lookup = () =>
 				findManifestByOutput(
 					(q) => api.encoding.manifests.hls.list(q),
@@ -365,8 +449,15 @@ export function createManifestOps(
 							(o: { outputId?: string; outputPath?: string }) =>
 								o.outputId === p.destination.outputId &&
 								o.outputPath === p.destination.outputPath,
+						) &&
+						roleOutputAclsMatch(
+							p.destination.roleOutputIds,
+							requestedOutputs,
+							m.outputs,
 						),
 					"HLS",
+					options.withholdProviderDetails ||
+						Boolean(p.destination.roleOutputIds?.length),
 				);
 			return adoptOrCreateManifest({
 				label: "HLS",
@@ -405,7 +496,7 @@ export function createManifestOps(
 										p.mediaVersion,
 										"HlsVersion",
 									),
-									outputs: outputs(p.destination),
+									outputs: requestedOutputs,
 								}),
 							),
 						(r) => ({ id: r.id }),
@@ -467,6 +558,7 @@ export function createManifestOps(
 			).then(id),
 
 		createDashManifest: async (p) => {
+			const requestedOutputs = outputs(p.destination);
 			const lookup = () =>
 				findManifestByOutput(
 					(q) => api.encoding.manifests.dash.list(q),
@@ -476,8 +568,15 @@ export function createManifestOps(
 							(o: { outputId?: string; outputPath?: string }) =>
 								o.outputId === p.destination.outputId &&
 								o.outputPath === p.destination.outputPath,
+						) &&
+						roleOutputAclsMatch(
+							p.destination.roleOutputIds,
+							requestedOutputs,
+							m.outputs,
 						),
 					"DASH",
+					options.withholdProviderDetails ||
+						Boolean(p.destination.roleOutputIds?.length),
 				);
 			return adoptOrCreateManifest({
 				label: "DASH",
@@ -507,7 +606,7 @@ export function createManifestOps(
 									manifestName: p.manifestName,
 									name: p.name,
 									profile: optEnum(DashProfile, p.profile, "DashProfile"),
-									outputs: outputs(p.destination),
+									outputs: requestedOutputs,
 								}),
 							),
 						(r) => ({ id: r.id }),
@@ -820,6 +919,7 @@ export function createManifestOps(
 		},
 
 		createSmoothManifest: async (p) => {
+			const requestedOutputs = outputs(p.destination);
 			const lookup = () =>
 				findManifestByOutput(
 					(q) => api.encoding.manifests.smooth.list(q),
@@ -830,8 +930,15 @@ export function createManifestOps(
 							(o: { outputId?: string; outputPath?: string }) =>
 								o.outputId === p.destination.outputId &&
 								o.outputPath === p.destination.outputPath,
+						) &&
+						roleOutputAclsMatch(
+							p.destination.roleOutputIds,
+							requestedOutputs,
+							m.outputs,
 						),
 					"Smooth",
+					options.withholdProviderDetails ||
+						Boolean(p.destination.roleOutputIds?.length),
 				);
 			return adoptOrCreateManifest({
 				label: "Smooth",
@@ -861,7 +968,7 @@ export function createManifestOps(
 									serverManifestName: p.serverManifestName,
 									clientManifestName: p.clientManifestName,
 									name: p.name,
-									outputs: outputs(p.destination),
+									outputs: requestedOutputs,
 								}),
 							),
 						(r) => ({ id: r.id }),
@@ -915,7 +1022,9 @@ export function createManifestOps(
 			).then(() => undefined),
 
 		getHlsManifestStatus: (manifestId) =>
-			api.encoding.manifests.hls.status(manifestId).then(taskResult),
+			manifestStatus("hls", manifestId, () =>
+				api.encoding.manifests.hls.status(manifestId),
+			),
 
 		/**
 		 *  — compensating terminal cleanup for live-to-VOD. Audited
@@ -959,7 +1068,9 @@ export function createManifestOps(
 			).then(() => undefined),
 
 		getDashManifestStatus: (manifestId) =>
-			api.encoding.manifests.dash.status(manifestId).then(taskResult),
+			manifestStatus("dash", manifestId, () =>
+				api.encoding.manifests.dash.status(manifestId),
+			),
 
 		deleteDashManifest: (manifestId) =>
 			audited(
@@ -998,7 +1109,9 @@ export function createManifestOps(
 			).then(() => undefined),
 
 		getSmoothManifestStatus: (manifestId) =>
-			api.encoding.manifests.smooth.status(manifestId).then(taskResult),
+			manifestStatus("smooth", manifestId, () =>
+				api.encoding.manifests.smooth.status(manifestId),
+			),
 	};
 }
 

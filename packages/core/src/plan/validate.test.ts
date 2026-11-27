@@ -3412,12 +3412,18 @@ describe("C4's per-title allowlist, pinned PER KIND against the schema (ledger #
 	);
 
 	/**
-	 * Per-title CANNOT write here, and each has a reason that is not "we did
-	 * not get to it":
+	 * The output modes outside this application's Per-Title contract:
 	 *  - SFTP: no object placeholders — per-title paths need {uuid}/{bitrate}.
-	 *  - AKAMAI_MSL: a live ingest target with no path at all .
+	 *  - AKAMAI_MSL, LIVE_MEDIA_INGEST and MOQ: live delivery.
+	 *  - S3_ROLE_BASED: role-based VOD currently qualifies a fixed ladder.
 	 */
-	const REFUSED = new Set(["SFTP", "AKAMAI_MSL", "LIVE_MEDIA_INGEST", "MOQ"]);
+	const REFUSED = new Set([
+		"SFTP",
+		"AKAMAI_MSL",
+		"LIVE_MEDIA_INGEST",
+		"MOQ",
+		"S3_ROLE_BASED",
+	]);
 
 	it("found the schema's output kinds", () => {
 		expect(outputKinds.length).toBeGreaterThan(6);

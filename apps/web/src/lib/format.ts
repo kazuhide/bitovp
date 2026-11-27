@@ -1,5 +1,14 @@
 const UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
+export function formatBitrate(bitrate: number | null | undefined): string {
+	if (bitrate === null || bitrate === undefined) {
+		return "—";
+	}
+	return bitrate >= 1_000_000
+		? `${(bitrate / 1_000_000).toFixed(bitrate % 1_000_000 === 0 ? 0 : 1)} Mbps`
+		: `${Math.round(bitrate / 1000)} kbps`;
+}
+
 export function formatBytes(size: number): string {
 	if (!Number.isFinite(size) || size < 0) {
 		return "—";

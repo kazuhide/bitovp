@@ -10,6 +10,7 @@ can create billable resources; use dedicated inputs/outputs and bounded runs.
 | Capability | What satisfies it | Preflight evidence |
 |---|---|---|
 | S3 | AWS S3 credential and the configured verification buckets | credential decrypt plus applicable list/read probe |
+| S3_ROLE_BASED | Dedicated AWS S3 role credential and a separate key-based S3 observer for the configured verification buckets | role configuration, list of both buckets, and read of staged source through the observer |
 | AKAMAI | Akamai/Linode Object Storage credential used through GenericS3 | provider kind, endpoint validation, list/read probe |
 | AKAMAI_MSL | Akamai-provisioned stream identity (`streamId` and `eventName`); the credential's optional `edgeBaseUrl` is the default edge base for the delivery-edge closure (`--live-msl-edge-base-url` overrides; a value off the delivery-host allowlist is INVALID before spend unless `VERIFY_LIVE_MSL_EDGE_ALLOWED_HOSTS` names it) | decryptable `AKAMAI_MSL` credential with complete provisioning fields |
 | LIVE_MEDIA_INGEST | Live Media and Metadata Ingest compatible Origin | receiver acceptance is outside the storage harness; no automatic runnable claim |
@@ -36,6 +37,24 @@ Credential presence alone is not success. If the applicable probe fails, the
 capability remains unsatisfied and the scenario is a named SKIP. If preflight
 declares it satisfied and the provider later fails, that is a runtime verdict,
 not an environment relabeling.
+
+For role-based S3 verification, set `VERIFY_S3_ROLE_BASED_LABEL` to the exact
+label of a dedicated `verify-` AWS S3 role credential. `VERIFY_S3_LABEL` selects
+the key-based observer. The role must trust the Bitmovin organization running
+the encode and allow access to `VERIFY_S3_INPUT_BUCKET` and
+`VERIFY_S3_OUTPUT_BUCKET`. The encoding run confirms the role's IAM access.
+
+Use `verify run --only fixed-bitrate-hls-on-aws-role --dry-run` to check
+whether the role-backed H.264 HLS scenario is ready. Corpus execution uses the
+observer to identify the staged source before submission. A prior PASS with
+no source identity makes `--resume-from` incomplete.
+For an existing job, use
+`verify job <jobId>` with the same labels and buckets. It reads the saved
+job's output through the observer when the saved role credential and bucket
+match the configuration. An existing-job check reads the saved source path
+when available.
+Role-backed delivery mirrors remain a named SKIP and prevent a successful
+verification outcome until each mirror can be checked independently.
 
 For HEVC/HDR10+ verification, stage the declared HDR10 video and its matching
 metadata JSON. The harness checks both `HDR10_ASSET` and

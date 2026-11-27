@@ -59,8 +59,8 @@ describe("loadScenarios", () => {
 		// 85→86 / 71→72 same day: `mixed-codec-dash-hls` .
 		// 86→87 / 14→15 live on 2026-08-29: `live-mixed-codec-dash` (paid
 		// the live half of the mixed-codec DASH rule).
-		expect(scenarios.length).toBe(87);
-		expect(scenarios.filter((s) => s.kind === "VOD").length).toBe(72);
+		expect(scenarios.length).toBe(88);
+		expect(scenarios.filter((s) => s.kind === "VOD").length).toBe(73);
 		expect(scenarios.filter((s) => s.kind === "LIVE").length).toBe(15);
 	});
 

@@ -741,6 +741,8 @@ export function curlForStep(
 	options: CurlOptions = {},
 ): CurlResult {
 	if (
+		entry.kind === "CREATE_INPUT_S3_ROLE_BASED" ||
+		entry.kind === "CREATE_OUTPUT_S3_ROLE_BASED" ||
 		entry.kind === "CREATE_DRM_CENC" ||
 		entry.kind === "CREATE_DRM_FAIRPLAY" ||
 		entry.kind === "CREATE_DRM_SPEKE"

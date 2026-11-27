@@ -9,9 +9,11 @@ import {
 	AkamaiMslVersion,
 	AkamaiNetStorageInput,
 	AkamaiNetStorageOutput,
+	AwsCloudRegion,
 	AzureInput,
 	AzureOutput,
 	BackupSrtInputs,
+	ExternalIdMode,
 	GcsInput,
 	GcsOutput,
 	GcsServiceAccountInput,
@@ -28,6 +30,8 @@ import {
 	RtmpIngestPoint,
 	S3Input,
 	S3Output,
+	S3RoleBasedInput,
+	S3RoleBasedOutput,
 	S3SignatureVersion,
 	SftpOutput,
 	SrtInput,
@@ -37,7 +41,12 @@ import {
 	StreamKeyConfigurationType,
 	ZixiInput,
 } from "@bitmovin/api-sdk";
-import type { SdkOps, SrtConnectionParams } from "../sdk-ops";
+import type {
+	S3RoleStorageParams,
+	SdkOps,
+	SrtConnectionParams,
+} from "../sdk-ops";
+import type { RoleStorageCreateReceipt } from "../stamping-fetch";
 import type { OpsContext } from "./context";
 import { isBitmovinError, optEnum, sdkEnumValue } from "./shared";
 
@@ -46,12 +55,14 @@ export function createIoOps(
 ): Pick<
 	SdkOps,
 	| "createS3Input"
+	| "createS3RoleBasedInput"
 	| "createAzureInput"
 	| "createHttpsInput"
 	| "createGenericS3Input"
 	| "createGcsInput"
 	| "createGcsServiceAccountInput"
 	| "createS3Output"
+	| "createS3RoleBasedOutput"
 	| "createAzureOutput"
 	| "createSftpOutput"
 	| "createGenericS3Output"
@@ -67,8 +78,158 @@ export function createIoOps(
 	| "createZixiInput"
 	| "listRtmpInputs"
 > {
-	const { api, audited, id } = ctx;
+	const { api, audited, id, options, stampAuditAdopt } = ctx;
+	async function createS3RoleResource(
+		direction: "inputs" | "outputs",
+		p: S3RoleStorageParams,
+	): Promise<string> {
+		const path = `/encoding/${direction}/s3-role-based`;
+		const journal = options.stamp?.roleStorageCreateJournal?.();
+		async function findReservedResource({
+			lookupName,
+		}: RoleStorageCreateReceipt) {
+			const roleApi =
+				direction === "inputs"
+					? api.encoding.inputs.s3RoleBased
+					: api.encoding.outputs.s3RoleBased;
+			const limit = 100;
+			// Search by the reserved name, then prove uniqueness within one complete
+			// result. The SDK normalizes both missing and empty item arrays.
+			const page = await roleApi.list({ name: lookupName, offset: 0, limit });
+			const items = page.items;
+			if (
+				!Array.isArray(items) ||
+				items.length === 0 ||
+				items.length > limit ||
+				(page.offset !== undefined && page.offset !== 0) ||
+				(page.limit !== undefined && page.limit !== limit) ||
+				(page.totalCount === undefined
+					? items.length === limit
+					: page.totalCount !== items.length) ||
+				page.next
+			)
+				return;
+
+			const seen = new Set<string>();
+			let match: string | undefined;
+			for (const item of items) {
+				if (
+					typeof item?.id !== "string" ||
+					!item.id.trim() ||
+					seen.has(item.id)
+				)
+					throw new Error(
+						"Role storage lookup returned an invalid resource ID",
+					);
+				seen.add(item.id);
+				if (
+					(item.name !== undefined && item.name !== lookupName) ||
+					(item.description !== undefined && item.description !== p.name)
+				)
+					continue;
+				const candidate = await roleApi.get(item.id);
+				if (candidate.id !== item.id)
+					throw new Error(
+						"Role storage detail returned a different resource ID",
+					);
+				// Bitmovin assigns the GLOBAL External ID. An older local
+				// credential value does not identify this resource.
+				if (
+					candidate.name !== lookupName ||
+					candidate.description !== p.name ||
+					candidate.bucketName !== p.bucketName ||
+					candidate.roleArn !== p.roleArn ||
+					typeof candidate.externalId !== "string" ||
+					!candidate.externalId.trim() ||
+					(candidate.externalIdMode !== undefined &&
+						candidate.externalIdMode !== ExternalIdMode.GLOBAL)
+				)
+					continue;
+				if (match)
+					throw new Error("More than one role resource matches this receipt");
+				match = candidate.id;
+			}
+			return match;
+		}
+		async function recover(
+			receipt: RoleStorageCreateReceipt,
+			phase: "pre" | "post-failure",
+		) {
+			let match: string | undefined;
+			try {
+				match = await findReservedResource(receipt);
+			} catch {
+				throw new Error("S3 role-based storage create could not be verified");
+			}
+			if (!match)
+				throw new Error(
+					"S3 role-based storage create is awaiting provider confirmation",
+				);
+			await stampAuditAdopt(path)(match, phase);
+			return match;
+		}
+		const unresolved = journal?.current();
+		if (unresolved) return recover(unresolved, "pre");
+
+		const regionKey = p.region.toUpperCase().replaceAll("-", "_");
+		// Leave provider discovery enabled for AWS regions outside the SDK enum.
+		const cloudRegion = Object.hasOwn(AwsCloudRegion, regionKey)
+			? AwsCloudRegion[regionKey as keyof typeof AwsCloudRegion]
+			: undefined;
+		const request = {
+			name: p.name,
+			bucketName: p.bucketName,
+			externalIdMode: ExternalIdMode.GLOBAL,
+			cloudRegion,
+		};
+		const receipt = await journal?.reserve();
+		const model = {
+			...request,
+			roleArn: p.roleArn,
+			// S3 output customData can break JIT manifests. The provider name
+			// carries identity, and the authored name stays in the description.
+			...(receipt ? { name: receipt.lookupName, description: p.name } : {}),
+		};
+		try {
+			const resource = await audited(
+				"POST",
+				path,
+				request,
+				async () => {
+					try {
+						return direction === "inputs"
+							? await api.encoding.inputs.s3RoleBased.create(
+									new S3RoleBasedInput(model),
+								)
+							: await api.encoding.outputs.s3RoleBased.create(
+									new S3RoleBasedOutput(model),
+								);
+					} catch (error) {
+						const message = "S3 role-based storage creation failed";
+						if (isBitmovinError(error))
+							throw Object.assign(new Error(message), {
+								httpStatusCode: error.httpStatusCode,
+								errorCode: error.errorCode,
+								requestId: error.requestId,
+								shortMessage: message,
+							});
+						throw new Error(message);
+					}
+				},
+				(result) => ({ id: result.id }),
+			);
+			// AWS checks the provider-managed GLOBAL External ID at usage time.
+			return id(resource);
+		} catch (error) {
+			if (receipt && journal?.current()?.id === receipt.id)
+				return recover(receipt, "post-failure");
+			throw error;
+		}
+	}
+
 	return {
+		createS3RoleBasedInput: (p) => createS3RoleResource("inputs", p),
+		createS3RoleBasedOutput: (p) => createS3RoleResource("outputs", p),
 		createMoqOutput: (p) =>
 			audited(
 				"POST",

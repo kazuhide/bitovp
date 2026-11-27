@@ -187,6 +187,7 @@ export function selectResource(
 			hasList: !!family.list,
 			listScope: family.listScope,
 			hasCustomData: !!family.customData,
+			...(family.information && { hasInformation: true }),
 			childCollections: childChoices(entry.kind),
 		},
 	};

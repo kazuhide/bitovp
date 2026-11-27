@@ -52,7 +52,7 @@ export const FEATURES = Object.freeze(
 				"VOD, Live and single-pass feeder creation and request identity",
 			files: {
 				"src/lib/server/create-request.test.ts": 11,
-				"src/app/api/encoding-jobs/route.test.ts": 79,
+				"src/app/api/encoding-jobs/route.test.ts": 82,
 				"src/app/api/live-channels/route.test.ts": 94,
 				"src/app/api/feeder-sessions/route.test.ts": 50,
 			},

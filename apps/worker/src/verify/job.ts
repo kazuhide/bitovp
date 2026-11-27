@@ -48,6 +48,12 @@ import {
 	perTitleUnverifiedChecks,
 	verifyArtefacts,
 } from "./engine";
+import {
+	type S3RoleVerificationBinding,
+	type S3VerificationStorage,
+	s3VerificationStorageEnv,
+	selectS3RoleObserver,
+} from "./s3-verification-storage";
 
 /**
  * Where a plan input/output can be BROWSED, or why it cannot be.
@@ -793,6 +799,19 @@ export function addQcMeasurementChecks(
 	}
 }
 
+export function s3RoleMirrorIncompleteReason(
+	report: Pick<VerificationReport, "checks">,
+): string | undefined {
+	const mirrors = report.checks.filter(
+		(check) =>
+			check.verdict === "SKIP" &&
+			check.id.startsWith("hygiene:s3-role-mirror:"),
+	);
+	return mirrors.length > 0
+		? mirrors.map((mirror) => mirror.detail).join("; ")
+		: undefined;
+}
+
 /**
  * The process exit code for a finished report, and why it is non-zero.
  *
@@ -817,6 +836,10 @@ export function exitCodeFor(report: VerificationReport): {
 		};
 	}
 	if (report.failed === 0) {
+		const mirrorReason = s3RoleMirrorIncompleteReason(report);
+		if (mirrorReason) {
+			return { code: 1, invalid: mirrorReason };
+		}
 		const unverified = perTitleUnverifiedChecks(report);
 		if (unverified.length > 0) {
 			return {
@@ -855,9 +878,28 @@ export function browsable(
 		| EncodingPlan["inputs"][number]
 		| undefined,
 	role: string,
+	s3RoleBinding?: S3RoleVerificationBinding,
 ): Browsable {
 	if (!entry) {
 		return { ok: false, reason: `${role} is not declared in the plan` };
+	}
+	if (entry.kind === "S3_ROLE_BASED") {
+		if (
+			s3RoleBinding?.roleCredentialId === entry.credentialId &&
+			s3RoleBinding.observerCredentialId !== entry.credentialId &&
+			(entry.bucket === s3RoleBinding.inputBucket ||
+				entry.bucket === s3RoleBinding.outputBucket)
+		) {
+			return {
+				ok: true,
+				bucket: entry.bucket,
+				credentialId: s3RoleBinding.observerCredentialId,
+			};
+		}
+		return {
+			ok: false,
+			reason: `${role} requires a separate S3 verification observer for the configured bucket`,
+		};
 	}
 	if ("bucket" in entry && "credentialId" in entry) {
 		return { ok: true, bucket: entry.bucket, credentialId: entry.credentialId };
@@ -880,6 +922,8 @@ export type VerifyJobOptions = {
 	ffprobePath: string;
 	/** Job id, or a unique prefix of one. */
 	jobIdPrefix: string;
+	s3RoleBinding?: S3RoleVerificationBinding;
+	s3Storage?: S3VerificationStorage;
 	/**
 	 * When true, an object is FOREIGN if it was written before this job's creation time
 	 * OR sits in no directory this plan can write into — see `makeForeignKeyFilter`.
@@ -950,6 +994,25 @@ export async function verifyJob(
 	}
 	const plan: EncodingPlan = encodingPlanSchema.parse(job.plan);
 	const expected = compileExpectedArtefacts(plan);
+	const roleMirrors = new Set(
+		expected.deliveryMirrorOutputKeys?.filter((key) =>
+			plan.outputs.some(
+				(output) => output.key === key && output.kind === "S3_ROLE_BASED",
+			),
+		),
+	);
+	let s3RoleBinding = options.s3RoleBinding;
+	if (
+		!s3RoleBinding &&
+		options.s3Storage?.s3RoleCredentialLabel &&
+		[...plan.inputs, ...plan.outputs].some((io) => io.kind === "S3_ROLE_BASED")
+	) {
+		const credentials = createCredentialStore(options.prisma, cipherFromEnv());
+		s3RoleBinding = selectS3RoleObserver(
+			options.s3Storage,
+			await credentials.list(),
+		)?.binding;
+	}
 	/**
 	 * The job's per-title capture, read ONCE for its two consumers (row 284).
 	 *
@@ -992,14 +1055,18 @@ export async function verifyJob(
 			string,
 			{ bucket: string; browser: ObjectStorageBrowser }
 		>();
-		const unbrowsable: string[] = [];
+		const unbrowsable = new Map<string, string>();
 		for (const outputKey of expected.outputKeys) {
+			// Fixed-ladder expectations cover the primary routes. An open handle
+			// for a mirror does not establish that any mirrored artefacts exist.
+			if (roleMirrors.has(outputKey)) continue;
 			const where = browsable(
 				plan.outputs.find((o) => o.key === outputKey),
 				`output "${outputKey}"`,
+				s3RoleBinding,
 			);
 			if (!where.ok) {
-				unbrowsable.push(where.reason);
+				unbrowsable.set(outputKey, where.reason);
 				continue;
 			}
 			outputs.set(outputKey, {
@@ -1014,6 +1081,7 @@ export async function verifyJob(
 		const where = browsable(
 			plan.inputs.find((i) => i.key === ingest?.inputKey),
 			"the reference input",
+			s3RoleBinding,
 		);
 		if (ingest && where.ok) {
 			try {
@@ -1062,7 +1130,10 @@ export async function verifyJob(
 			outputFor: (outputKey) => {
 				const hit = outputs.get(outputKey);
 				if (!hit) {
-					throw new Error(`plan output "${outputKey}" has no credential`);
+					throw new Error(
+						unbrowsable.get(outputKey) ??
+							`plan output "${outputKey}" has no credential`,
+					);
 				}
 				return hit;
 			},
@@ -1093,9 +1164,17 @@ export async function verifyJob(
 		}
 
 		const report = await verifyArtefacts(expected, deps);
+		for (const outputKey of roleMirrors) {
+			appendCheck(report, {
+				id: `hygiene:s3-role-mirror:${outputKey}`,
+				area: "hygiene",
+				verdict: "SKIP",
+				detail: `S3 role mirror "${outputKey}" was not independently verified`,
+			});
+		}
 		addHygieneChecks(report, {
 			truncations,
-			unbrowsable,
+			unbrowsable: [...unbrowsable.values()],
 			notes: expected.notes,
 		});
 		// : the measurement, joined — read only when the plan asked for one.
@@ -1168,6 +1247,7 @@ export async function main(argv: string[]): Promise<number> {
 		const result = await verifyJob({
 			prisma,
 			ffprobePath: process.env.FFPROBE_PATH ?? "ffprobe",
+			s3Storage: s3VerificationStorageEnv(),
 			jobIdPrefix,
 			excludeOlderThanJob: argv.includes("--strict-prefix"),
 			log: (line) => console.log(`[verify] ${line}`),

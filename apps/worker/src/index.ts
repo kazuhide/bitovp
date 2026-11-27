@@ -146,6 +146,10 @@ import {
 } from "./orchestrator/live-processor";
 import { makeWorkerSdk } from "./orchestrator/make-sdk";
 import {
+	createManifestStopRecovery,
+	roleManifestStopPendingWhere,
+} from "./orchestrator/manifest-stop-recovery";
+import {
 	claimableWhere,
 	createOrchestratorProcessor,
 } from "./orchestrator/processor";
@@ -1058,6 +1062,13 @@ const liveHeartbeatSweepInner = tenantService(() =>
 const reconcileUnstoppedEncodings = tenantService(() =>
 	createUnstoppedEncodingReconciler(processorDeps),
 );
+const recoverVODManifestStops = tenantService(() =>
+	createManifestStopRecovery({
+		prisma,
+		queue: orchestratorProducerQueue,
+		now: () => new Date(),
+	}),
+);
 const orphanEncodingSweep = () =>
 	reconcileUnstoppedEncodings()
 		.then((stopped) => {
@@ -1073,8 +1084,20 @@ const orphanEncodingSweep = () =>
 				err instanceof Error ? err.message : err,
 			),
 		);
-setTenantInterval(orphanEncodingSweep, 60_000).unref();
-runTenantTick(() => orphanEncodingSweep());
+const vodRecoverySweep = tenantService(() =>
+	createSweepLoop(async () => {
+		await Promise.all([
+			orphanEncodingSweep(),
+			recoverVODManifestStops().catch(() =>
+				console.error(
+					"[orchestrator] manifest stop recovery could not enqueue",
+				),
+			),
+		]);
+	}),
+);
+setTenantInterval(() => vodRecoverySweep.run(), 60_000).unref();
+runTenantTick(() => vodRecoverySweep.run());
 const reconcileUncertainStops = tenantService(() =>
 	createUncertainStopReconciler(processorDeps, (job, activeTargets) =>
 		liveChannel(job, undefined, false, activeTargets),
@@ -1836,11 +1859,16 @@ function startQueueWorker(
 								// correctly ; on status alone this
 								// handler ERRORed that winner and stopped its encoding
 								// (review-322 C2). Same derivation as the processor's claim.
-								where: claimableWhere(
-									encodingJobId,
-									["QUEUED", "RUNNING"],
-									new Date(),
-								),
+								where: {
+									...claimableWhere(
+										encodingJobId,
+										["QUEUED", "RUNNING"],
+										new Date(),
+									),
+									// The tenant recovery sweep requeues durable manifest stops
+									// even if this BullMQ delivery could not move to delayed.
+									NOT: roleManifestStopPendingWhere,
+								},
 								// Redacted like every other persisted error string —
 								// this is the one path outside the processors.
 								// The lease is RELEASED here too (CRITICAL-1): this handler
@@ -2192,6 +2220,11 @@ const shutdown = createShutdown({
 		{
 			name: "VOD input preview recovery",
 			run: () => drainTenantLoop(vodInputPreviewSweepLoop),
+		},
+		{
+			name: "VOD manifest stop recovery",
+			run: () => drainTenantLoop(vodRecoverySweep),
+			recovery: "pending manifest stops resume after restart",
 		},
 		{
 			name: "local semantic heartbeat",

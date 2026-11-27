@@ -75,6 +75,11 @@ const WRITE_METHODS = ["POST", "PUT", "PATCH", "DELETE"] as const;
  */
 export const ROUTE_RULES: readonly RouteRule[] = [
 	{
+		prefix: "/api/encoding-native",
+		minRole: "ADMIN",
+		reason: "Account-wide Bitmovin Encoding resource inventory",
+	},
+	{
 		prefix: "/api/live/analyses/[analysisId]/ingest",
 		methods: ["GET", "HEAD"],
 		minRole: "OPERATOR",

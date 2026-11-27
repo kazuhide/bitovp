@@ -5,6 +5,40 @@ const PROVISIONS_AT_CREATE =
 	"チャンネルは作成後すぐに起動準備を始めます。Live Encoding の料金プランによっては、入力送出予定時刻より前にも料金が発生する場合があります";
 
 export const ja = {
+	encodingNative: {
+		title: "Bitmovin Encoding リソース",
+		caption: "Bitmovin Encoding アカウントのリソースを確認します。",
+		resource: "リソース",
+		templates: "テンプレート",
+		watchFolders: "監視フォルダー",
+		inputs: "入力",
+		videoCodecs: "映像コーデック",
+		audioCodecs: "音声コーデック",
+		subtitleCodecs: "字幕コーデック",
+		filters: "フィルター",
+		configType: "種別",
+		bitrate: "ビットレート",
+		resolution: "解像度",
+		frameRate: "フレームレート",
+		sampleRate: "サンプルレート",
+		protocol: "ストレージ・プロトコル",
+		region: "クラウドリージョン",
+		templateType: "テンプレート種別",
+		allTypes: "すべての種別",
+		details: "詳細",
+		statusLabel: "状態",
+		status: { STOPPED: "停止", STARTED: "稼働中", ERROR: "エラー" },
+		created: "作成日時",
+		modified: "更新日時",
+		inputId: "入力 ID",
+		outputs: "出力",
+		outputCount: "出力数",
+		empty: "このページにリソースはありません。",
+		loadFailed: "Bitmovin のリソースを読み込めませんでした。",
+		detailFailed: "リソースの詳細を読み込めませんでした。",
+		pagination: "リソースのページ",
+		range: "{total}件中 {start}〜{end}件",
+	},
 	streamConditions: {
 		title: "入力条件",
 		enabled: "入力条件（設定あり）",
@@ -82,6 +116,11 @@ export const ja = {
 		resource: "リソース",
 		choose: "作成履歴から選択",
 		detail: "リソースの詳細",
+		information: "出力情報",
+		informationUnavailable: "出力情報を表示できません。",
+		fileSizeBytes: "サイズ（バイト）",
+		containerBitrateBps: "コンテナのビットレート（bps）",
+		durationSeconds: "再生時間（秒）",
 		siblings: "同じ親に属するリソース",
 		loading: "リソースを読み込み中…",
 		missing: "このリソースは利用できません。",
@@ -4538,6 +4577,29 @@ export const ja = {
 		unknownRetry: "再試行の目安なし",
 	},
 	apiCoverage: {
+		operationLedger: {
+			title: "操作経路の検証",
+			notice:
+				"各操作の詳細に検証範囲を表示します。通信テストには模擬応答を使います。",
+			appConfirmed: "アプリの操作経路あり",
+			unreviewed: "レビュー待ち",
+			contractConfirmed: "モック通信テスト済み",
+			contractUnverified: "通信テスト待ち",
+			providerVerified: "Bitmovin 実行検証済み",
+			providerUnverified: "Bitmovin 実行検証待ち",
+			reachability: "アプリの操作経路",
+			allReachability: "すべてのレビュー状況",
+			scope: "操作範囲",
+			allScopes: "すべての操作範囲",
+			download: "表示条件で CSV をダウンロード",
+			downloadFailed: "CSV をダウンロードできませんでした。",
+			scopes: {
+				vod: "VOD ワークフロー",
+				live: "ライブ",
+				settings: "設定",
+				shared: "共通",
+			},
+		},
 		requestFields: {
 			title: "SDK のリクエスト属性",
 			scopeNotice:
@@ -5051,7 +5113,7 @@ export const ja = {
 			"Bitmovin の入力・出力に適用します。ストレージを参照するときは、常に V4 署名を使います",
 		azureSummary: "{subscription} · {group} · テナント {tenant}",
 		bitmovinAssumesThisRoleNoStatic:
-			"Bitmovin がこのロールを引き受けます。固定キーは保存しません",
+			"GLOBAL 外部 ID は Bitmovin が設定します。VOD のバケットとパスは手入力します。",
 		contentKey32HexChars: "コンテンツキー(16 進 32 文字)",
 		customerSecretKey: "カスタマーシークレットキー",
 		customerSecretKeyId: "カスタマーシークレットキー ID",
@@ -6422,6 +6484,8 @@ export const ja = {
 			"{kind} に対応する Bitmovin の単一エンドポイントがありません",
 		curlVaultFieldsOmitted:
 			"暗号化の作成には保存済みの鍵が必要です。履歴には鍵を含めていないため、cURL は利用できません。",
+		curlRoleFieldsOmitted:
+			"このコマンドの実行に必要な認証情報は、リクエスト履歴に含まれていません。",
 		curlUnresolvedPathParams:
 			"{kind} の URL パスパラメータをすべて解決できませんでした",
 		curlNoStepEntry: "ステップの記録がありません",

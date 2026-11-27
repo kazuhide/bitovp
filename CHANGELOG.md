@@ -8,6 +8,10 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- Browse Bitmovin Encoding inputs, outputs, templates, watch folders, codecs and filters from Settings with an explicitly scoped account.
+- Configure AWS S3 role-based input and output for a fixed-ladder VOD job and reuse those settings in saved plans and template YAML.
+- Keep role-based S3 delivery mirrors private and reconcile role resources after an interrupted create request.
+- Inspect HDR10+ sidecar input streams, HEVC configurations and additional audio outputs in recorded jobs. Open output information for supported muxings to view their duration, container bitrate and file size.
 - Send a pseudo-live source once through the feeder API, with duplicate playback prevention and a recorded end-of-file result.
 - Optionally run the QC queue on a dedicated worker with the same tenant checks and shared host reservations as the main worker.
 - Export a selected VOD audio track to a mono or stereo PCM WAV file, or copy a verified AAC or PCM track into a supported MP4, MOV or WAV file from the file-output wizard.
@@ -24,6 +28,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- Show the Encoding API operation census, app routes and SDK transport test evidence in Settings, with filters and CSV export.
 - Default new VOD wizard configurations to Encoder 2.294.0 (Beta), preserving saved account defaults, drafts and imported version choices.
 - Document the Encoder 2.294.0 Live HLS `BANDWIDTH` / `AVERAGE-BANDWIDTH` correction: produced bitrate with a configured-bitrate floor. The provider supplies this behavior; bitovp does not rewrite these values, and VOD manifests are unchanged. See the [official release notes](https://developer.bitmovin.com/encoding/docs/encoder-22500-22990#22940-beta).
 - Align the VOD, Live, Content Library, and quality guides with the current workflows. Consolidate completed plans into the relevant guides and correct shell examples in the API reference.

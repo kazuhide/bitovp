@@ -10,6 +10,7 @@ import type { CompiledOperation, OperationKind } from "./compiler";
 
 export const OPERATION_KINDS = [
 	"CREATE_INPUT_S3",
+	"CREATE_INPUT_S3_ROLE_BASED",
 	"CREATE_INPUT_AZURE",
 	"CREATE_INPUT_HTTPS",
 	"CREATE_INPUT_GENERIC_S3",
@@ -17,6 +18,7 @@ export const OPERATION_KINDS = [
 	"CREATE_INPUT_GCS_SERVICE_ACCOUNT",
 	"CREATE_INPUT_AKAMAI_NETSTORAGE",
 	"CREATE_OUTPUT_S3",
+	"CREATE_OUTPUT_S3_ROLE_BASED",
 	"CREATE_OUTPUT_AZURE",
 	"CREATE_OUTPUT_SFTP",
 	"CREATE_OUTPUT_GENERIC_S3",
@@ -265,6 +267,7 @@ void _unionIsSubsetOfArray;
  */
 const OPERATION_KIND_EXECUTION = {
 	CREATE_INPUT_S3: "executable",
+	CREATE_INPUT_S3_ROLE_BASED: "executable",
 	CREATE_INPUT_AZURE: "executable",
 	CREATE_INPUT_HTTPS: "executable",
 	CREATE_INPUT_GENERIC_S3: "executable",
@@ -272,6 +275,7 @@ const OPERATION_KIND_EXECUTION = {
 	CREATE_INPUT_GCS_SERVICE_ACCOUNT: "executable",
 	CREATE_INPUT_AKAMAI_NETSTORAGE: "executable",
 	CREATE_OUTPUT_S3: "executable",
+	CREATE_OUTPUT_S3_ROLE_BASED: "executable",
 	CREATE_OUTPUT_AZURE: "executable",
 	CREATE_OUTPUT_SFTP: "executable",
 	CREATE_OUTPUT_GENERIC_S3: "executable",
@@ -485,6 +489,21 @@ export const stepLogEntrySchema = z.strictObject({
 	 * Recover it by exact marker until a positive result is available. */
 	adoptExistingOnly: z.literal(true).optional(),
 	childCreateDispatch: z.enum(["PREPARING", "DISPATCHING"]).optional(),
+	/** Unsafe role delivery is blocked while an owned manifest STOP is reconciled. */
+	roleDeliveryBlocked: z.literal(true).optional(),
+	/** This VOD role-storage CREATE may already exist at the original provider. */
+	roleStorageCreate: z
+		.strictObject({
+			id: z.uuid(),
+			accountId: z.uuid(),
+			scopeVersion: z.uuid().optional(),
+			lookupName: z.string(),
+		})
+		.refine(({ id, lookupName }) => lookupName === `bitovp-role-${id}`, {
+			path: ["lookupName"],
+			error: "Role storage lookup name must match its receipt ID",
+		})
+		.optional(),
 	/** Redacted request/response snapshots (C7). */
 	request: z.unknown().optional(),
 	response: z.unknown().optional(),

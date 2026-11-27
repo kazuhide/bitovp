@@ -5,6 +5,7 @@
 		"concatenation-two-sources",
 		"generic-s3-akamai-io",
 		"gcs-service-account-io",
+		"fixed-bitrate-hls-on-aws-role",
 		"sprites-trickplay",
 		"av1-fmp4-dash-hls",
 		"pertitle-av1-fmp4-dash-on-aws",

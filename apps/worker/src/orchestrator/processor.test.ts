@@ -5,12 +5,15 @@ import {
 	downgradeJitManifests,
 	encodingPlanSchema,
 	initStepLog,
+	reseedFailedSteps,
 	type StepLogEntry,
 } from "@bitovp/core";
 import type { AppPrismaClient } from "@bitovp/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ResolvedCredential } from "./executor";
 import { fakeSdk as baseFakeSdk } from "./fake-sdk";
 import { applyJitFallback } from "./jit-fallback";
+import { makeWorkerSdk } from "./make-sdk";
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
 import {
 	createOrchestratorProcessor,
@@ -205,6 +208,620 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("orchestrator processor", () => {
+	it.each([
+		["HLS", "jit"],
+		["HLS", "default"],
+		["HLS", "upstream-safe"],
+		["DASH", "stopped"],
+		["DASH", "scope-changed"],
+		["SMOOTH", "still-active"],
+		["SMOOTH", "foreign"],
+		["SMOOTH", "lost-lease"],
+		["SMOOTH", "user-cancel"],
+		["SMOOTH", "cancel-during-start"],
+		["SMOOTH", "cancel-at-error-write"],
+		["SMOOTH", "status-503"],
+		["SMOOTH", "owner-503"],
+		["SMOOTH", "owner-forbidden"],
+		["SMOOTH", "stop-forbidden"],
+		["SMOOTH", "cancel-account-unavailable"],
+		["SMOOTH", "cancel-account-lease-lost"],
+		["SMOOTH", "blocked-account-deleted"],
+		["SMOOTH", "blocked-account-crossed"],
+		["SMOOTH", "blocked-account-scope-refused"],
+		["SMOOTH", "blocked-account-malformed-identity"],
+		["SMOOTH", "blocked-preparation-changed"],
+	] as const)("guards the recorded %s manifest on resume (%s)", async (format, scenario) => {
+		const sample = basePlan.manifests[0];
+		const primary = basePlan.outputs[0];
+		if (!sample || !primary || !("credentialId" in primary))
+			throw new Error("Missing role manifest fixture");
+		const preparationChanged =
+			scenario === "blocked-preparation-changed" ||
+			scenario === "cancel-account-unavailable";
+		const plan = encodingPlanSchema.parse({
+			...basePlan,
+			...(preparationChanged
+				? {
+						inputTimelinePreparation: {
+							taskId: "00000000-0000-4000-8000-000000000001",
+							requestHash: "a".repeat(64),
+						},
+						qc: { vmaf: true, model: "vmaf_v1.0.16_3d0h" },
+					}
+				: {}),
+			bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
+			outputs: [
+				...basePlan.outputs,
+				{
+					kind: "S3_ROLE_BASED",
+					key: "role",
+					name: "Role output",
+					bucket: "role-manifest-test",
+					credentialId: primary.credentialId,
+				},
+			],
+			deliveryMirrors: [{ outputKey: "role" }],
+			generation: {
+				...basePlan.generation,
+				timing: scenario === "jit" ? "JUST_IN_TIME" : "POST_ENCODING",
+			},
+			manifests:
+				format === "HLS"
+					? [
+							{
+								...sample,
+								...(scenario === "default"
+									? { generationMode: "DEFAULT" }
+									: {}),
+							},
+						]
+					: [
+							{
+								key: sample.key,
+								kind: format,
+								destination: sample.destination,
+							},
+						],
+		});
+		const journal = initStepLog(compilePlan(plan));
+		const createKind = `CREATE_MANIFEST_${format}`;
+		const startKind =
+			scenario === "jit" ? "START_ENCODING" : `START_MANIFEST_${format}`;
+		const startIndex = journal.findIndex((entry) => entry.kind === startKind);
+		const manifest = journal.find((entry) => entry.kind === createKind);
+		if (!manifest || startIndex < 0)
+			throw new Error("Missing compiled manifest");
+		const account = {
+			id: ACCOUNT_ID,
+			version: "00000000-0000-4000-8000-0000000000fe",
+		};
+		for (const [index, step] of journal.entries()) {
+			if (index >= startIndex) break;
+			step.status = "DONE";
+			step.resourceId = `provider-${step.step}`;
+			step.request = { ...step.payload };
+			step.resourceAccount = account;
+		}
+		const lostStart =
+			scenario === "cancel-during-start" ||
+			scenario === "cancel-at-error-write";
+		const retryableCancel =
+			scenario === "status-503" || scenario === "owner-503";
+		const accountReadForCancel =
+			scenario === "cancel-account-unavailable" ||
+			scenario === "cancel-account-lease-lost";
+		const permanentScopeError =
+			scenario === "blocked-account-scope-refused"
+				? "42501"
+				: scenario === "blocked-account-malformed-identity"
+					? "22P02"
+					: undefined;
+		const permanentAccountFailure =
+			permanentScopeError !== undefined ||
+			scenario === "blocked-account-deleted" ||
+			scenario === "blocked-account-crossed";
+		const userCancel =
+			accountReadForCancel ||
+			scenario === "user-cancel" ||
+			scenario === "owner-forbidden" ||
+			scenario === "stop-forbidden" ||
+			retryableCancel;
+		const attempted =
+			userCancel ||
+			permanentAccountFailure ||
+			preparationChanged ||
+			[
+				"stopped",
+				"still-active",
+				"foreign",
+				"lost-lease",
+				"scope-changed",
+			].includes(scenario);
+		const start = journal[startIndex];
+		if (!start || !manifest.resourceId)
+			throw new Error("Missing attempted manifest");
+		if (attempted) {
+			start.status = "RUNNING";
+			start.startedAt = "2026-06-11T00:00:00.000Z";
+		}
+		if (permanentAccountFailure || scenario === "blocked-preparation-changed")
+			manifest.roleDeliveryBlocked = true;
+		// Persisted ACL is correct even though the provider-side old adoption is public.
+		expect(manifest.request).toMatchObject({ mirrorOutputAcls: ["PRIVATE"] });
+		const h = setup({
+			plan,
+			stepLog: journal,
+			bitmovinAccountId:
+				scenario === "blocked-account-crossed"
+					? "00000000-0000-4000-8000-0000000000bb"
+					: ACCOUNT_ID,
+			status: "RUNNING",
+			cancelRequested: userCancel,
+		});
+		if (preparationChanged) {
+			h.deps.validateInputPreparation = vi.fn(async () => {
+				throw new Error("INPUT_PREPARATION_INVALID");
+			});
+			h.deps.vmafModelAvailable = vi.fn(() => false);
+		}
+		if (scenario === "cancel-at-error-write") {
+			const persist = h.updateMany.getMockImplementation();
+			if (!persist) throw new Error("Missing fixture persistence");
+			h.updateMany.mockImplementation(async (args) => {
+				if (args.data.status === "ERROR") h.row.cancelRequested = true;
+				return persist(args);
+			});
+		}
+		const revealAccount = vi.mocked(h.deps.revealBitmovinAccount);
+		revealAccount.mockResolvedValue({
+			apiKey: "synthetic-only",
+			tenantOrgId: "fixture-org",
+			resourceScopeVersion:
+				scenario === "scope-changed"
+					? "00000000-0000-4000-8000-0000000000ff"
+					: account.version,
+		});
+		const unavailableAccount = Object.assign(
+			new Error("Synthetic temporary database connection failure"),
+			{ errorCode: "P1002" },
+		);
+		if (permanentScopeError) {
+			revealAccount.mockRejectedValueOnce(
+				Object.assign(new Error("Synthetic tenant scope failure"), {
+					code: "P2010",
+					meta: { code: permanentScopeError },
+				}),
+			);
+		} else if (scenario === "blocked-account-deleted") {
+			revealAccount.mockRejectedValueOnce(
+				new Error("Bitmovin account no longer exists"),
+			);
+		} else if (scenario === "cancel-account-lease-lost") {
+			revealAccount.mockImplementationOnce(async () => {
+				h.row.attemptClaimedAt = new Date("2030-01-01Z");
+				throw unavailableAccount;
+			});
+		} else if (accountReadForCancel || permanentAccountFailure) {
+			revealAccount.mockRejectedValueOnce(unavailableAccount);
+		}
+		const makeSdk = makeWorkerSdk({
+			...h.prisma,
+			auditLog: { create: vi.fn() },
+		} as unknown as AppPrismaClient);
+		h.deps.makeSdk = (args) => {
+			const real = makeSdk(args);
+			return {
+				...h.sdk,
+				...(lostStart ? { startSmoothManifest: real.startSmoothManifest } : {}),
+				getManifestRoleAcl: real.getManifestRoleAcl,
+				ownsManifest: real.ownsManifest,
+				stopManifest: real.stopManifest,
+				getHlsManifestStatus: real.getHlsManifestStatus,
+				getDashManifestStatus: real.getDashManifestStatus,
+				getSmoothManifestStatus: real.getSmoothManifestStatus,
+			};
+		};
+		const reads: string[] = [];
+		let stopped = false;
+		let atStop: typeof h.row | undefined;
+		const manifestId = manifest.resourceId;
+		const path = `/v1/encoding/manifests/${format.toLowerCase()}/${manifestId}`;
+		const result = (resource: unknown, status = 200) =>
+			Response.json({ data: { result: resource } }, { status });
+		const unavailable = (status: number) =>
+			Response.json(
+				{
+					status: "ERROR",
+					data: { code: 1004, message: "Synthetic manifest lookup error" },
+				},
+				{ status },
+			);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (raw: string, init: RequestInit) => {
+				const { pathname } = new URL(raw);
+				const decoded = decodeURIComponent(pathname);
+				expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(
+					"fixture-org",
+				);
+				reads.push(`${init.method} ${decoded}`);
+				if (decoded === path) {
+					return result({
+						id: manifestId,
+						outputs: [
+							{
+								outputId: "provider-output:role",
+								outputPath: manifest.payload.outputPath,
+								acl: [
+									{
+										permission:
+											scenario === "upstream-safe" || lostStart
+												? "PRIVATE"
+												: "PUBLIC_READ",
+									},
+								],
+							},
+						],
+					});
+				}
+				if (decoded.endsWith("/customData")) {
+					if (scenario === "owner-503") return unavailable(503);
+					if (scenario === "owner-forbidden") return unavailable(403);
+					if (scenario === "lost-lease")
+						h.row.attemptClaimedAt = new Date("2030-01-01Z");
+					return result({
+						customData: {
+							bitovp: {
+								job: scenario === "foreign" ? "other-job" : JOB_ID,
+								step: manifest.step,
+							},
+						},
+					});
+				}
+				if (decoded.endsWith("/status")) {
+					if (scenario === "status-503") return unavailable(503);
+					return result({
+						status:
+							scenario === "upstream-safe"
+								? "FINISHED"
+								: stopped &&
+										(scenario === "stopped" ||
+											scenario === "blocked-preparation-changed" ||
+											scenario === "user-cancel" ||
+											accountReadForCancel ||
+											lostStart)
+									? "CANCELED"
+									: "RUNNING",
+					});
+				}
+				if (decoded.endsWith("/stop") && init.method === "POST") {
+					if (scenario === "stop-forbidden") return unavailable(403);
+					stopped = true;
+					atStop = structuredClone(h.row);
+					return result({}, 202);
+				}
+				if (
+					decoded === `${path}/start` &&
+					init.method === "POST" &&
+					lostStart
+				) {
+					if (scenario === "cancel-during-start") h.row.cancelRequested = true;
+					throw new TypeError("Synthetic lost START response after acceptance");
+				}
+				throw new Error("Unexpected role manifest request");
+			}),
+		);
+		try {
+			if (permanentAccountFailure) {
+				const crossed = scenario === "blocked-account-crossed";
+				await expect(h.processor({ encodingJobId: JOB_ID })).rejects.toThrow(
+					crossed
+						? "The recorded Bitmovin account is required for manifest stop"
+						: permanentScopeError
+							? "Synthetic tenant scope failure"
+							: "Bitmovin account no longer exists",
+				);
+				expect(revealAccount).toHaveBeenCalledTimes(crossed ? 0 : 1);
+				expect(h.row).toMatchObject({
+					status: "ERROR",
+					attemptClaimedAt: null,
+					stepLog: journal,
+				});
+				expect(reads).toHaveLength(0);
+				return;
+			}
+			if (accountReadForCancel) {
+				const displaced = scenario === "cancel-account-lease-lost";
+				await expect(
+					h.processor({ encodingJobId: JOB_ID }),
+				).resolves.toMatchObject({
+					status: displaced ? "LEASE_LOST" : "MANIFEST_STOP_PENDING",
+				});
+				expect(h.row).toMatchObject({
+					status: "RUNNING",
+					cancelRequested: true,
+					attemptClaimedAt: displaced ? new Date("2030-01-01Z") : null,
+					stepLog: journal,
+				});
+				expect(h.emitted).toHaveLength(0);
+				expect(reads).toHaveLength(0);
+				if (displaced) return;
+			}
+			const outcome = await h.processor({ encodingJobId: JOB_ID });
+			if (scenario === "scope-changed") expect(reads).toHaveLength(0);
+			else if (!userCancel && !preparationChanged)
+				expect(reads).toContain(`GET ${path}`);
+			if (preparationChanged) {
+				expect(h.deps.validateInputPreparation).not.toHaveBeenCalled();
+				expect(h.deps.vmafModelAvailable).not.toHaveBeenCalled();
+			}
+			expect(stopped).toBe(
+				scenario === "stopped" ||
+					scenario === "blocked-preparation-changed" ||
+					scenario === "still-active" ||
+					scenario === "user-cancel" ||
+					accountReadForCancel ||
+					lostStart,
+			);
+			expect(h.sdk.startEncoding).not.toHaveBeenCalled();
+			expect(h.sdk.startHlsManifest).toHaveBeenCalledTimes(
+				scenario === "upstream-safe" ? 1 : 0,
+			);
+			expect(h.sdk.startDashManifest).not.toHaveBeenCalled();
+			expect(h.sdk.startSmoothManifest).not.toHaveBeenCalled();
+			if (scenario === "still-active" || retryableCancel) {
+				expect(outcome.status).toBe("MANIFEST_STOP_PENDING");
+				expect(h.row.status).toBe("RUNNING");
+				expect(h.row.attemptClaimedAt).toBeNull();
+				expect(h.emitted).toHaveLength(0);
+				const durableBlock = expect.arrayContaining([
+					expect.objectContaining({
+						step: manifest.step,
+						roleDeliveryBlocked: true,
+					}),
+				]);
+				expect(h.row.stepLog).toEqual(durableBlock);
+				if (scenario === "still-active") {
+					expect(atStop?.stepLog).toEqual(durableBlock);
+					Object.assign(h.row, atStop, {
+						status: "RUNNING",
+						attemptClaimedAt: new Date(0),
+					});
+					const saved = structuredClone(h.row.stepLog);
+					const beforeRead = reads.length;
+					// The tenant-scoped account lookup can surface raw PostgreSQL
+					// errors from the RLS setup statements as Prisma P2010.
+					for (const failure of [
+						{ code: "P2024" },
+						...[
+							"57014",
+							"08006",
+							"40001",
+							"40P01",
+							"55P03",
+							"57P03",
+							"53000",
+							"53100",
+							"53200",
+							"53300",
+							"53400",
+							"58030",
+						].map((sqlState) => ({ code: "P2010", meta: { code: sqlState } })),
+					]) {
+						revealAccount.mockRejectedValueOnce(
+							Object.assign(
+								new Error("Synthetic temporary account read failure"),
+								failure,
+							),
+						);
+						await expect(
+							createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
+						).resolves.toMatchObject({ status: "MANIFEST_STOP_PENDING" });
+						expect(h.row).toMatchObject({
+							status: "RUNNING",
+							attemptClaimedAt: null,
+							stepLog: saved,
+						});
+						expect(h.emitted).toHaveLength(0);
+						expect(reads).toHaveLength(beforeRead);
+					}
+				}
+				const post = reads.filter(
+					(call) => call === `POST ${path}/stop`,
+				).length;
+				let later503 = scenario === "still-active";
+				vi.stubGlobal(
+					"fetch",
+					vi.fn(async (raw: string, init: RequestInit) => {
+						const pathRead = decodeURIComponent(new URL(raw).pathname);
+						reads.push(`${init.method} ${pathRead}`);
+						if (pathRead === path)
+							return result({
+								id: manifestId,
+								outputs: [
+									{
+										outputId: "provider-output:role",
+										outputPath: manifest.payload.outputPath,
+										acl: [{ permission: "PRIVATE" }],
+									},
+								],
+							});
+						if (pathRead === `${path}/status`) {
+							if (later503) {
+								later503 = false;
+								return unavailable(503);
+							}
+							return result({ status: "CANCELED" });
+						}
+						throw new Error(
+							"Terminal readback must not issue another mutation",
+						);
+					}),
+				);
+				if (scenario === "still-active") {
+					await expect(
+						createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
+					).resolves.toMatchObject({ status: "MANIFEST_STOP_PENDING" });
+					expect(h.row.status).toBe("RUNNING");
+					expect(h.row.attemptClaimedAt).toBeNull();
+					expect(h.emitted).toHaveLength(0);
+				}
+				await expect(
+					createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
+				).resolves.toMatchObject({ status: userCancel ? "CANCELED" : "ERROR" });
+				expect(
+					reads.filter((call) => call === `POST ${path}/stop`),
+				).toHaveLength(post);
+				expect(h.sdk.startSmoothManifest).not.toHaveBeenCalled();
+			} else if (scenario === "upstream-safe") {
+				expect(outcome.status).toBe("FINISHED");
+			} else if (scenario === "lost-lease") {
+				expect(outcome.status).toBe("LEASE_LOST");
+				expect(h.emitted).toHaveLength(0);
+			} else if (
+				scenario === "user-cancel" ||
+				accountReadForCancel ||
+				lostStart
+			) {
+				expect(outcome.status).toBe("CANCELED");
+				if (lostStart)
+					expect(
+						reads.filter((call) => call === `POST ${path}/start`),
+					).toHaveLength(1);
+				expect(h.emitted).toContainEqual(
+					expect.objectContaining({ kind: "JOB_CANCELED" }),
+				);
+			} else if (
+				scenario === "owner-forbidden" ||
+				scenario === "stop-forbidden"
+			) {
+				expect(outcome.status).toBe("ERROR");
+				expect(
+					reads.filter((call) => call === `POST ${path}/stop`),
+				).toHaveLength(scenario === "stop-forbidden" ? 1 : 0);
+				expect(h.emitted).toContainEqual(
+					expect.objectContaining({
+						kind: "JOB_ERROR",
+						error: expect.stringContaining(
+							"Could not verify whether Bitmovin stopped",
+						),
+					}),
+				);
+			} else {
+				expect(outcome.status).toBe("ERROR");
+				expect(h.emitted).toContainEqual(
+					expect.objectContaining({
+						kind: "JOB_ERROR",
+						error: expect.stringMatching(/role output ACL/i),
+					}),
+				);
+			}
+			if (
+				scenario === "stopped" ||
+				scenario === "user-cancel" ||
+				preparationChanged
+			)
+				expect(
+					reads.filter((read) => read === `GET ${path}/status`),
+				).toHaveLength(2);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it("records an ordinary account setup failure without a manifest stop to reconcile", async () => {
+		const h = setup();
+		const outage = Object.assign(new Error("Synthetic exhausted pool"), {
+			code: "P2024",
+		});
+		vi.mocked(h.deps.revealBitmovinAccount).mockRejectedValueOnce(outage);
+		await expect(h.processor({ encodingJobId: JOB_ID })).rejects.toBe(outage);
+		expect(h.row).toMatchObject({ status: "ERROR", attemptClaimedAt: null });
+		expect(h.sdk.createEncoding).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"pending",
+		"safe-done",
+		"unsafe-done",
+		"uncertain",
+	] as const)("hydrates VOD role output ACLs and refuses an unsafe prior destination (%s)", async (previous) => {
+		const plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		const primary = plan.outputs[0];
+		if (!primary) throw new Error("Missing primary fixture");
+		plan.outputs.push({
+			kind: "S3_ROLE_BASED",
+			key: "mirror",
+			name: "Private mirror",
+			credentialId: primary.credentialId,
+			bucket: "private-role-mirror",
+		});
+		plan.deliveryMirrors = [{ outputKey: "mirror" }];
+		const history = initStepLog(compilePlan(plan));
+		const mirror = history.find(
+			(row) => row.kind === "CREATE_OUTPUT_S3_ROLE_BASED",
+		);
+		const firstMuxing = history.find(
+			(row) => row.kind === "CREATE_MUXING_FMP4",
+		);
+		if (!mirror || !firstMuxing) throw new Error("Missing role mirror steps");
+		mirror.status = "DONE";
+		mirror.resourceId = "adopted-role-output";
+		for (const entry of history) {
+			if (previous !== "safe-done" || entry !== firstMuxing)
+				delete entry.payload.mirrorOutputAcls;
+		}
+		if (previous === "safe-done" || previous === "unsafe-done") {
+			firstMuxing.status = "DONE";
+			firstMuxing.resourceId = "recorded-muxing";
+			firstMuxing.request = { ...firstMuxing.payload, refs: firstMuxing.refs };
+		} else if (previous === "uncertain") {
+			firstMuxing.status = "RUNNING";
+			firstMuxing.startedAt = "2026-06-11T00:00:00.000Z";
+		}
+		const h = setup({ plan, stepLog: history });
+		if (previous === "unsafe-done" || previous === "uncertain") {
+			await expect(
+				h.processor({ encodingJobId: JOB_ID }),
+			).resolves.toMatchObject({ status: "ERROR" });
+			expect(h.row.error).toMatch(/prior.*role output ACL/i);
+			expect(h.emitted).toEqual([
+				expect.objectContaining({ kind: "JOB_ERROR", jobId: JOB_ID }),
+			]);
+			expect(h.sdk.startEncoding).not.toHaveBeenCalled();
+			expect(h.sdk.createFmp4Muxing).not.toHaveBeenCalled();
+			return;
+		}
+		await expect(h.processor({ encodingJobId: JOB_ID })).resolves.toMatchObject(
+			{ status: "FINISHED" },
+		);
+		const destination = expect.objectContaining({
+			acl: "PUBLIC_READ",
+			mirrorOutputIds: ["adopted-role-output"],
+			mirrorOutputAcls: ["PRIVATE"],
+			roleOutputIds: ["adopted-role-output"],
+		});
+		expect(h.sdk.createS3RoleBasedOutput).not.toHaveBeenCalled();
+		expect(h.sdk.createFmp4Muxing).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({ destination }),
+		);
+		expect(h.sdk.createHlsManifest).toHaveBeenCalledWith(
+			expect.objectContaining({ destination }),
+		);
+		expect(h.row.stepLog).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "CREATE_MANIFEST_HLS",
+					payload: expect.objectContaining({ mirrorOutputAcls: ["PRIVATE"] }),
+					request: expect.objectContaining({ mirrorOutputAcls: ["PRIVATE"] }),
+				}),
+			]),
+		);
+	});
+
 	it("persists the exact caption key from its executed S3 input", async () => {
 		const inputPath = "archive/scene.ts?key=wide";
 		const plan = structuredClone(basePlan);
@@ -316,6 +933,56 @@ describe("orchestrator processor", () => {
 			),
 		});
 	}
+	it.each([
+		"pending",
+		"sent",
+	] as const)("preserves internal HEVCv2 replay across role ACL expansion (%s)", async (prior) => {
+		vi.stubEnv("BITOVP_INTERNAL_HEVC_V2_ACCOUNT_ID", ACCOUNT_ID);
+		const plan = internalPlan();
+		const primary = plan.outputs[0];
+		if (!primary || !("credentialId" in primary))
+			throw new Error("Missing output");
+		plan.outputs.push({
+			kind: "S3_ROLE_BASED",
+			key: "mirror",
+			name: "Role mirror",
+			bucket: "fixture-hevc-role",
+			credentialId: primary.credentialId,
+		});
+		plan.deliveryMirrors = [{ outputKey: "mirror" }];
+		const log = initStepLog(compilePlan(plan));
+		const roleOutput = log.find(
+			(entry) => entry.kind === "CREATE_OUTPUT_S3_ROLE_BASED",
+		);
+		const muxing = log.find((entry) => entry.kind === "CREATE_MUXING_FMP4");
+		if (!roleOutput || !muxing) throw new Error("Missing role replay steps");
+		for (const entry of log) delete entry.payload.mirrorOutputAcls;
+		roleOutput.status = "DONE";
+		roleOutput.resourceId = "role-output";
+		if (prior === "sent") {
+			muxing.status = "RUNNING";
+			muxing.startedAt = "2026-06-11T00:00:00.000Z";
+		}
+		const h = setup({ plan, stepLog: log, bitmovinAccountId: ACCOUNT_ID });
+		await expect(h.processor({ encodingJobId: JOB_ID })).resolves.toMatchObject(
+			{
+				status: prior === "sent" ? "ERROR" : "FINISHED",
+			},
+		);
+		if (prior === "sent") {
+			expect(h.row.error).toMatch(/role output ACL/);
+			expect(h.sdk.startEncoding).not.toHaveBeenCalled();
+		} else {
+			expect(h.sdk.createFmp4Muxing).toHaveBeenCalledWith(
+				expect.any(String),
+				expect.objectContaining({
+					destination: expect.objectContaining({
+						mirrorOutputAcls: ["PRIVATE"],
+					}),
+				}),
+			);
+		}
+	});
 	it.each([
 		"internalHevcV2",
 		"bcfVersion",
@@ -791,6 +1458,368 @@ describe("orchestrator processor", () => {
 		);
 	});
 
+	it("retains successful S3 role creates when IAM denies the subsequent start", async () => {
+		const plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		plan.inputs = plan.inputs.map((input) =>
+			input.kind === "S3" ? { ...input, kind: "S3_ROLE_BASED" } : input,
+		);
+		plan.outputs = plan.outputs.map((output) =>
+			output.kind === "S3" ? { ...output, kind: "S3_ROLE_BASED" } : output,
+		);
+		const transport = vi.fn(async (url: string) => {
+			if (url.endsWith("/encoding/inputs/s3-role-based"))
+				return Response.json({
+					data: {
+						result: { id: "role-input", externalId: "provider-global-id" },
+					},
+				});
+			if (url.endsWith("/encoding/outputs/s3-role-based"))
+				return Response.json({ data: { result: { id: "role-output" } } });
+			throw new Error("Unexpected provider call");
+		});
+		vi.stubGlobal("fetch", transport);
+		try {
+			const roleSdk = createBitmovinSdkOps(
+				{ apiKey: "fixture" },
+				async () => {},
+			);
+			const startEncoding = vi.fn(async () => {});
+			startEncoding.mockRejectedValueOnce(
+				new Error("IAM trust policy rejected the role"),
+			);
+			const { processor, row, deps } = setup(
+				{ plan, stepLog: initStepLog(compilePlan(plan)) },
+				{
+					startEncoding,
+					createS3RoleBasedInput: roleSdk.createS3RoleBasedInput,
+					createS3RoleBasedOutput: roleSdk.createS3RoleBasedOutput,
+				},
+			);
+			vi.mocked(deps.resolveCredential).mockResolvedValue({
+				provider: "AWS_S3_ROLE_BASED",
+				config: {
+					roleArn: "arn:aws:iam::123456789012:role/encoding",
+					externalId: "legacy-local-id",
+					region: "us-east-1",
+				},
+				secret: {},
+			});
+			await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow(
+				"IAM trust policy rejected the role",
+			);
+			const persisted = row.stepLog as StepLogEntry[];
+			expect(persisted).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: "CREATE_INPUT_S3_ROLE_BASED",
+						status: "DONE",
+						resourceId: "role-input",
+					}),
+					expect.objectContaining({
+						kind: "CREATE_OUTPUT_S3_ROLE_BASED",
+						status: "DONE",
+						resourceId: "role-output",
+					}),
+					expect.objectContaining({ kind: "START_ENCODING", status: "FAILED" }),
+				]),
+			);
+			expect(JSON.stringify(persisted)).not.toMatch(
+				/legacy-local-id|provider-global-id|arn:aws:/,
+			);
+			row.stepLog = reseedFailedSteps(persisted);
+			row.status = "QUEUED";
+			expect(await processor({ encodingJobId: JOB_ID })).toMatchObject({
+				status: "FINISHED",
+			});
+			expect(transport).toHaveBeenCalledTimes(2);
+			expect(startEncoding).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it.each([
+		["inputs", "late-visible"],
+		["outputs", "late-visible"],
+		["outputs", "exact-refusal"],
+		["outputs", "done-write-failed"],
+		["outputs", "invalid-role"],
+		["outputs", "provider-500"],
+	] as const)("recovers %s role storage without duplicating %s creates", async (direction, outcome) => {
+		const plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		if (direction === "inputs")
+			plan.inputs = plan.inputs.map((input) =>
+				input.kind === "S3" ? { ...input, kind: "S3_ROLE_BASED" } : input,
+			);
+		else
+			plan.outputs = plan.outputs.map((output) =>
+				output.kind === "S3" ? { ...output, kind: "S3_ROLE_BASED" } : output,
+			);
+		const kind =
+			direction === "inputs"
+				? "CREATE_INPUT_S3_ROLE_BASED"
+				: "CREATE_OUTPUT_S3_ROLE_BASED";
+		const roleArn = "arn:aws:iam::111122223333:role/fixture-encoding";
+		const externalId = "fixture-provider-external";
+		const steps = initStepLog(compilePlan(plan));
+		const target = steps.find((entry) => entry.kind === kind);
+		const credentialId = target?.payload.credentialId;
+		const originalName = target?.payload.name;
+		if (typeof originalName !== "string")
+			throw new Error("Missing authored storage name");
+		const needsRecovery =
+			outcome !== "exact-refusal" && outcome !== "invalid-role";
+		const originalRole =
+			outcome === "invalid-role"
+				? "arn:aws:iam::111122223333:role/rejected-by-provider"
+				: roleArn;
+		let activeRole = originalRole;
+		const h = setup({ plan, stepLog: steps });
+		const savedAccount = {
+			apiKey: "fixture-key",
+			tenantOrgId: "fixture-tenant",
+			resourceScopeVersion: "00000000-0000-4000-8000-0000000000fe",
+		};
+		vi.mocked(h.deps.revealBitmovinAccount).mockResolvedValue(savedAccount);
+		vi.mocked(h.deps.resolveCredential).mockImplementation(
+			async (id): Promise<ResolvedCredential> =>
+				id === credentialId
+					? {
+							provider: "AWS_S3_ROLE_BASED",
+							config: { roleArn: activeRole, region: "us-east-1" },
+							secret: {},
+						}
+					: {
+							provider: "AWS_S3",
+							config: {},
+							secret: { accessKeyId: "a", secretAccessKey: "s" },
+						},
+		);
+		const audit = vi.fn(
+			async (_entry: { data: Record<string, unknown> }) => {},
+		);
+		const makeSdk = makeWorkerSdk({
+			...h.prisma,
+			auditLog: { create: audit },
+		} as unknown as AppPrismaClient);
+		h.deps.makeSdk = (args) => {
+			const real = makeSdk(args);
+			return {
+				...h.sdk,
+				createS3RoleBasedInput: real.createS3RoleBasedInput,
+				createS3RoleBasedOutput: real.createS3RoleBasedOutput,
+			};
+		};
+		const firstId = "00000000-0000-4000-8000-0000000000aa";
+		const otherId = "00000000-0000-4000-8000-0000000000ab";
+		const prefix = `/v1/encoding/${direction}/s3-role-based`;
+		const requests: Record<string, unknown>[] = [];
+		const journalAtSend: Array<StepLogEntry["roleStorageCreate"]> = [];
+		let providerResource: Record<string, unknown> | undefined;
+		let crashSnapshot: Record<string, unknown> | undefined;
+		let isVisible = false;
+		const visiblePages: URLSearchParams[] = [];
+		const wire = vi.fn(async (rawUrl: string, init: RequestInit) => {
+			const url = new URL(rawUrl);
+			expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(
+				"fixture-tenant",
+			);
+			if (init.method === "POST" && url.pathname === prefix) {
+				const body = JSON.parse(String(init.body));
+				requests.push(body);
+				journalAtSend.push(
+					(h.row.stepLog as StepLogEntry[]).find((entry) => entry.kind === kind)
+						?.roleStorageCreate,
+				);
+				if (requests.length === 1 && !needsRecovery)
+					return Response.json(
+						{
+							status: "ERROR",
+							data: {
+								code: outcome === "invalid-role" ? 1001 : 1002,
+								message: `Role rejected ${originalRole}`,
+							},
+						},
+						{ status: outcome === "invalid-role" ? 400 : 403 },
+					);
+				if (requests.length === 1) {
+					providerResource = { ...body, id: firstId, externalId };
+					crashSnapshot = structuredClone(h.row);
+					if (outcome === "late-visible")
+						throw new TypeError("connection lost after committed role storage");
+					if (outcome === "provider-500")
+						return Response.json(
+							{
+								status: "ERROR",
+								data: { code: 1004, message: "Unexpected provider error" },
+							},
+							{ status: 500 },
+						);
+					return Response.json({ data: { result: providerResource } });
+				}
+				return Response.json({ data: { result: { id: otherId, externalId } } });
+			}
+			if (init.method === "GET" && url.pathname === prefix) {
+				const inventory =
+					isVisible && providerResource
+						? [
+								{
+									...providerResource,
+									id: otherId,
+									description: "another attempt",
+								},
+								providerResource,
+								...(direction === "outputs" && outcome === "late-visible"
+									? Array.from({ length: 600 }, (_, index) => ({
+											id: `another-resource-${index}`,
+											name: originalName,
+											description: "another attempt",
+										}))
+									: []),
+							]
+						: [];
+				const { searchParams } = url;
+				const query = searchParams.get("name") ?? "";
+				const matches = inventory.filter((item) =>
+					String(item.name).includes(query),
+				);
+				const offset = Number(searchParams.get("offset"));
+				const limit = Number(searchParams.get("limit"));
+				if (isVisible) visiblePages.push(searchParams);
+				return Response.json({
+					data: {
+						result: {
+							items: matches.slice(offset, offset + limit),
+							totalCount: matches.length,
+						},
+					},
+				});
+			}
+			if (init.method === "GET" && url.pathname === `${prefix}/${firstId}`)
+				return Response.json({ data: { result: providerResource } });
+			throw new Error("Unexpected provider call in role create fixture");
+		});
+		if (outcome === "done-write-failed") {
+			const persist = h.updateMany.getMockImplementation();
+			if (!persist) throw new Error("Missing fixture persistence");
+			let fail = true;
+			h.updateMany.mockImplementation(async (args) => {
+				const entries = args.data.stepLog as StepLogEntry[] | undefined;
+				if (
+					fail &&
+					entries?.some(
+						(entry) => entry.kind === kind && entry.status === "DONE",
+					)
+				) {
+					fail = false;
+					throw new Error("Synthetic lost role DONE write");
+				}
+				return persist(args);
+			});
+		}
+		vi.stubGlobal("fetch", wire);
+		try {
+			const first = h.processor({ encodingJobId: JOB_ID });
+			if (outcome === "invalid-role")
+				await expect(first).rejects.toMatchObject({
+					httpStatusCode: 400,
+					errorCode: 1001,
+				});
+			else await expect(first).rejects.toThrow();
+			expect(requests).toHaveLength(1);
+			expect(journalAtSend).toEqual([
+				expect.objectContaining({ id: expect.any(String) }),
+			]);
+			expect(requests[0]?.name).toBe(journalAtSend[0]?.lookupName);
+			expect(requests[0]?.name).toContain(journalAtSend[0]?.id);
+			expect(requests[0]?.description).toBe(originalName);
+			if (direction === "outputs")
+				expect(requests[0]).not.toHaveProperty("customData");
+			expect(h.row.status).toBe("ERROR");
+			const failed = (h.row.stepLog as StepLogEntry[]).find(
+				(entry) => entry.kind === kind,
+			);
+			if (needsRecovery)
+				expect(failed?.roleStorageCreate?.id).toEqual(expect.any(String));
+			else expect(failed?.roleStorageCreate).toBeUndefined();
+			h.row.stepLog = reseedFailedSteps(h.row.stepLog as StepLogEntry[]);
+			h.row.status = "QUEUED";
+			isVisible = true;
+			activeRole = roleArn;
+			if (direction === "inputs" && crashSnapshot) {
+				Object.assign(h.row, crashSnapshot, {
+					status: "RUNNING",
+					attemptClaimedAt: new Date(0),
+				});
+			}
+			if (direction === "outputs" && outcome === "late-visible") {
+				const priorCalls = wire.mock.calls.length;
+				vi.mocked(h.deps.revealBitmovinAccount).mockResolvedValueOnce({
+					...savedAccount,
+					resourceScopeVersion: "00000000-0000-4000-8000-0000000000ff",
+				});
+				await expect(
+					createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
+				).rejects.toThrow("The original Bitmovin account is required");
+				expect(wire).toHaveBeenCalledTimes(priorCalls);
+				h.row.stepLog = reseedFailedSteps(h.row.stepLog as StepLogEntry[]);
+				h.row.status = "QUEUED";
+			}
+			await expect(
+				createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
+			).resolves.toMatchObject({
+				status: "FINISHED",
+			});
+			expect(requests).toHaveLength(needsRecovery ? 1 : 2);
+			if (direction === "outputs" && outcome === "late-visible") {
+				expect(visiblePages).toHaveLength(1);
+				expect(visiblePages[0]?.get("name")).toBe(requests[0]?.name);
+				expect(requests[0]?.name).not.toBe(originalName);
+				expect(requests[0]?.description).toContain(originalName);
+			}
+			if (outcome === "invalid-role") {
+				expect(requests.map((body) => body.roleArn)).toEqual([
+					originalRole,
+					roleArn,
+				]);
+				expect(visiblePages).toHaveLength(0);
+			}
+			if (needsRecovery) {
+				expect(audit.mock.calls.map(([entry]) => entry.data)).toContainEqual(
+					expect.objectContaining({
+						method: "GET",
+						path: prefix.replace(/^\/v1/, ""),
+						bitmovinAccountId: ACCOUNT_ID,
+						response: { id: firstId },
+					}),
+				);
+			} else {
+				expect(journalAtSend[1]?.id).toEqual(expect.any(String));
+				expect(journalAtSend[1]?.id).not.toBe(journalAtSend[0]?.id);
+			}
+			expect(
+				(h.row.stepLog as StepLogEntry[]).find((entry) => entry.kind === kind),
+			).toMatchObject({
+				status: "DONE",
+				resourceId: needsRecovery ? firstId : otherId,
+			});
+			const stored = JSON.stringify([
+				h.row.stepLog,
+				h.emitted,
+				audit.mock.calls,
+			]);
+			expect(
+				stored.includes(roleArn) ||
+					stored.includes(originalRole) ||
+					stored.includes(externalId),
+			).toBe(false);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it("marks the failing step and the job on error, then rethrows", async () => {
 		const { processor, row, sdk } = setup();
 		(sdk.createEncoding as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
@@ -811,6 +1840,196 @@ describe("orchestrator processor", () => {
 		expect(failed?.error).toBe("region rejected");
 		// Earlier steps stay DONE for resume.
 		expect(entries[0]?.status).toBe("DONE");
+	});
+
+	it.each([
+		["START", "input", null],
+		["STATUS_READ", "output", null],
+		["STATUS_TASK", "output", null],
+		["STATUS_TASK", "output", "HLS"],
+		["STATUS_TASK", "output", "DASH"],
+		["STATUS_TASK", "output", "SMOOTH"],
+		["STATUS_READ", "output", "SMOOTH"],
+		["START", null, null],
+		["STATUS_TASK", null, "DASH"],
+	] as const)("projects a %s failure with %s role-backed storage and manifest %s", async (failure, storage, manifest) => {
+		let plan = structuredClone(basePlan);
+		plan.bitmovin.accountId = ACCOUNT_ID;
+		if (manifest) {
+			const sample = plan.manifests[0];
+			if (!sample) throw new Error("Missing manifest fixture");
+			plan = encodingPlanSchema.parse({
+				...plan,
+				generation: { ...plan.generation, timing: "POST_ENCODING" },
+				manifests:
+					manifest === "HLS"
+						? [sample]
+						: [
+								{
+									key: sample.key,
+									kind: manifest,
+									destination: sample.destination,
+								},
+							],
+			});
+		}
+		if (storage === "input")
+			plan.inputs = plan.inputs.map((input) =>
+				input.kind === "S3" ? { ...input, kind: "S3_ROLE_BASED" } : input,
+			);
+		if (storage === "output")
+			plan.outputs = plan.outputs.map((output) =>
+				output.kind === "S3" ? { ...output, kind: "S3_ROLE_BASED" } : output,
+			);
+		const stepLog = initStepLog(compilePlan(plan));
+		for (const entry of stepLog) {
+			if (
+				entry.kind === "CREATE_INPUT_S3_ROLE_BASED" ||
+				entry.kind === "CREATE_OUTPUT_S3_ROLE_BASED"
+			) {
+				entry.status = "DONE";
+				entry.resourceId = `prior-${storage}-resource`;
+			}
+		}
+		const h = setup({ plan, stepLog });
+		const audit = vi.fn(
+			async (_entry: { data: Record<string, unknown> }) => {},
+		);
+		const makeSdk = makeWorkerSdk({
+			...h.prisma,
+			auditLog: { create: audit },
+		} as unknown as AppPrismaClient);
+		h.deps.makeSdk = (args) => {
+			const real = makeSdk(args);
+			return {
+				...h.sdk,
+				startEncoding: real.startEncoding,
+				getEncodingStatus: real.getEncodingStatus,
+				startHlsManifest: real.startHlsManifest,
+				getHlsManifestStatus: real.getHlsManifestStatus,
+				startDashManifest: real.startDashManifest,
+				getDashManifestStatus: real.getDashManifestStatus,
+				startSmoothManifest: real.startSmoothManifest,
+				getSmoothManifestStatus: real.getSmoothManifestStatus,
+			};
+		};
+
+		const role = "arn:aws:iam::111122223333:role/fixture-encoding";
+		const external = "global-credential-fixture-value";
+		const providerText = storage
+			? `AssumeRole denied for ${role}; received ${external}`
+			: "Provider refused this account's encoding setup";
+		const diagnostic = {
+			code: 2104,
+			message: providerText,
+			developerMessage: storage ? external : "Internal debugging message",
+		};
+		const rejected = () =>
+			Response.json(
+				{
+					requestId: "fixture-request",
+					status: "ERROR",
+					data: diagnostic,
+				},
+				{ status: 403 },
+			);
+		const wire = vi.fn(async (url: string, init: RequestInit) => {
+			if (url.endsWith("/bm-encoding/start") && init.method === "POST")
+				return failure === "START"
+					? rejected()
+					: Response.json({ data: { result: { status: "CREATED" } } });
+			if (url.endsWith("/bm-encoding/status") && init.method === "GET") {
+				if (manifest)
+					return Response.json({ data: { result: { status: "FINISHED" } } });
+				if (failure === "STATUS_READ") return rejected();
+				return Response.json({
+					data: {
+						result:
+							failure === "STATUS_TASK"
+								? {
+										status: "ERROR",
+										error: { ...diagnostic, text: providerText },
+										messages: [{ type: "ERROR", text: providerText }],
+									}
+								: { status: "CREATED" },
+					},
+				});
+			}
+			if (
+				manifest &&
+				url.includes(`/v1/encoding/manifests/${manifest.toLowerCase()}/`)
+			) {
+				if (init.method === "POST" && url.endsWith("/start"))
+					return Response.json({ data: { result: { status: "CREATED" } } });
+				if (init.method === "GET" && url.endsWith("/status")) {
+					if (failure === "STATUS_READ") return rejected();
+					return Response.json({
+						data: {
+							result: {
+								status: "ERROR",
+								error: { ...diagnostic, text: providerText },
+								messages: [{ type: "ERROR", text: providerText }],
+							},
+						},
+					});
+				}
+			}
+			throw new Error("Unexpected provider call in role diagnostics fixture");
+		});
+		vi.stubGlobal("fetch", wire);
+		try {
+			const outcome = await h
+				.processor({ encodingJobId: JOB_ID })
+				.catch((error: unknown) => error);
+			expect(outcome).toBeInstanceOf(Error);
+			const message = (outcome as Error).message;
+			if (storage || failure === "START") expect(message).toContain("2104");
+			expect(h.row).toMatchObject({ status: "ERROR", error: message });
+			expect(h.row.stepLog).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: manifest
+							? `AWAIT_MANIFEST_${manifest}`
+							: failure === "START"
+								? "START_ENCODING"
+								: "AWAIT_ENCODING",
+						status: "FAILED",
+						error: message,
+					}),
+				]),
+			);
+			expect(h.emitted).toContainEqual(
+				expect.objectContaining({ kind: "JOB_ERROR", error: message }),
+			);
+			expect(wire).toHaveBeenCalledTimes(manifest ? 4 : 2);
+			const startAudit = audit.mock.calls[0]?.[0].data;
+			expect(startAudit).toMatchObject({
+				method: "POST",
+				path: "/encoding/encodings/bm-encoding/start",
+				statusCode: failure === "START" ? 403 : 200,
+			});
+			if (failure === "START")
+				expect(startAudit?.response).toMatchObject({ errorCode: 2104 });
+			if (storage) {
+				const outward = JSON.stringify([
+					message,
+					h.updates,
+					h.emitted,
+					audit.mock.calls,
+				]);
+				expect(
+					outward.includes(role) ||
+						outward.includes(external) ||
+						outward.includes(providerText),
+				).toBe(false);
+			} else {
+				expect(message).toContain(providerText);
+				if (failure === "START")
+					expect(startAudit?.error).toContain(providerText);
+			}
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it("ignores already-finished jobs", async () => {

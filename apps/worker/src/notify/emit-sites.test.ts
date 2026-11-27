@@ -44,12 +44,13 @@ const EXPECTATIONS: Expectation[] = [
 		// regex). STILL blind to: a status carried in a variable, and writes
 		// built by a helper outside these files — named limits, not claims.
 		// `persistIf(` is the same funnel with an extra where-guard (review-322
-		// C1: the post-park ERROR write also CASes on status) — the count stays
-		// 6 because the write moved spelling, not existence.
+		// C1: the post-park ERROR write also CASes on status).
+		// An unsafe saved S3 role output ACL adds an ERROR write and a JOB_ERROR
+		// emit before the processor can start or reuse that encoding.
 		writes:
 			/(data:\s*\{[^}]*status:\s*"(ERROR|FINISHED|CANCELED|QC_FAILED)"|persist(?:If)?\([^)]*\{[^}]*status:\s*"(ERROR|FINISHED|CANCELED|QC_FAILED)")/gs,
-		writeCount: 6,
-		emitCount: 6,
+		writeCount: 7,
+		emitCount: 7,
 	},
 	{
 		// markError, stop-STOPPED, restart-RUNNING, setup-ERROR, step-loop

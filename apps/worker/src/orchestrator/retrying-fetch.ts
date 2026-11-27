@@ -20,10 +20,8 @@ import type { CreateStamp } from "./stamping-fetch";
  * load balancer sends FIN on an idle pooled socket, and undici writes the next
  * request into it just as it closes. Retrying opens a fresh socket.
  *
- * Only a REJECTION is retried. A response that arrived is returned untouched whatever
- * its status — the SDK turns 4xx/5xx into a `BitmovinError` carrying the API's own
- * message, and repeating a request the API deliberately refused only wastes time and
- * doubles the audit trail.
+ * Only a REJECTION is retried. The SDK turns a received 4xx/5xx into a
+ * `BitmovinError`. Repeating an HTTP refusal wastes time and doubles the audit trail.
  *
  * The cost, stated plainly: for a POST a dropped response means the outcome is
  * UNKNOWN, so a request that did reach the API leaves a duplicate resource behind.
@@ -58,6 +56,7 @@ export type RetryingFetchOptions = {
 	/** A job-owned mutation must be reconciled after an uncertain transport response. */
 	retryMutations?: boolean | (() => boolean);
 	childCreateJournal?: CreateStamp["childCreateJournal"];
+	roleStorageCreateJournal?: CreateStamp["roleStorageCreateJournal"];
 	/** Base backoff; attempt n waits `delayMs * 2^(n-1)`. */
 	delayMs?: number;
 	/** Injected for tests — the default is a real timer. */
@@ -66,10 +65,16 @@ export type RetryingFetchOptions = {
 	warn?: (message: string) => void;
 	/** Injected for tests; defaults to global `fetch`. */
 	fetchImpl?: SdkFetch;
+	/** Protected jobs keep request URLs and transport errors out of retry logs. */
+	withholdProviderDetails?: boolean;
 };
 
 const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_DELAY_MS = 250;
+const ROLE_STORAGE_CREATE_PATH =
+	/^\/v1\/encoding\/(?:inputs|outputs)\/s3-role-based\/?$/;
+const MANIFEST_PROBE_PATH =
+	/^\/v1\/encoding\/manifests\/(?:hls|dash|smooth)\/[^/]+\/(?:status|customData)\/?$/;
 
 export function createRetryingFetch(
 	options: RetryingFetchOptions = {},
@@ -88,22 +93,34 @@ export function createRetryingFetch(
 			request?.method?.toUpperCase() === "POST"
 				? options.childCreateJournal?.()
 				: undefined;
-		if (child) {
+		const roleStorageCreate =
+			request?.method?.toUpperCase() === "POST" &&
+			ROLE_STORAGE_CREATE_PATH.test(pathOf(url));
+		const role = roleStorageCreate
+			? options.roleStorageCreateJournal?.()
+			: undefined;
+		const markNotAdmitted = child
+			? () => child.record("PREPARING")
+			: role?.release;
+		if (child || roleStorageCreate) {
 			// Send exactly once. Following a redirect could produce a refusal or DNS
 			// error for a later request after the original server received its POST.
 			let response: Response;
 			try {
 				response = await doFetch(url, { ...request, redirect: "manual" });
 			} catch (error) {
-				if (failedOriginalDnsLookup(error, url))
-					await child.record("PREPARING");
+				if (failedOriginalDnsLookup(error, url)) await markNotAdmitted?.();
 				throw error;
 			}
 			// Fetch resolves after headers. A broken body must not erase the original
 			// POST's refusal. A failed GET never reaches this journal.
-			if (!response.redirected && [401, 403, 429].includes(response.status)) {
+			// The role-storage endpoint also rejects malformed creates with 400.
+			const notAdmitted =
+				[401, 403, 429].includes(response.status) ||
+				(roleStorageCreate && response.status === 400);
+			if (!response.redirected && notAdmitted) {
 				try {
-					await child.record("PREPARING");
+					await markNotAdmitted?.();
 				} catch (error) {
 					// The SDK cannot consume the response after a lost journal write.
 					// Cancel its stream and preserve the original ownership failure.
@@ -117,10 +134,17 @@ export function createRetryingFetch(
 			typeof options.retryMutations === "function"
 				? options.retryMutations()
 				: options.retryMutations;
+		const protectedManifestProbe =
+			options.withholdProviderDetails &&
+			request?.method?.toUpperCase() === "GET" &&
+			MANIFEST_PROBE_PATH.test(pathOf(url));
 		let lastError: unknown;
 		for (let attempt = 1; attempt <= attempts; attempt++) {
 			try {
-				return await doFetch(url, init);
+				const response = await doFetch(url, init);
+				return protectedManifestProbe && response.status >= 400
+					? protectedManifestErrorResponse(response)
+					: response;
 			} catch (err) {
 				lastError = err;
 				if (attempt === attempts) {
@@ -163,14 +187,30 @@ export function createRetryingFetch(
 						? String((init as { method?: unknown }).method ?? "GET")
 						: "GET";
 				warn(
-					`[sdk-fetch] ${method} ${url} failed at the transport layer ` +
-						`(${errorSummary(err)}); retrying ${attempt}/${attempts - 1}`,
+					options.withholdProviderDetails
+						? `[sdk-fetch] ${method} failed at the transport layer; retrying ${attempt}/${attempts - 1}`
+						: `[sdk-fetch] ${method} ${url} failed at the transport layer ` +
+								`(${errorSummary(err)}); retrying ${attempt}/${attempts - 1}`,
 				);
 				await sleep(delayMs * 2 ** (attempt - 1));
 			}
 		}
 		throw lastError;
 	};
+}
+
+async function protectedManifestErrorResponse(response: Response) {
+	// SDK 1.289.0 can lose the HTTP status if the body is unreadable or its
+	// error envelope contains unexpected nulls. Supply only structured data.
+	const body: unknown = await response.json().catch(() => undefined);
+	const data =
+		body && typeof body === "object" && "data" in body ? body.data : undefined;
+	const code =
+		data && typeof data === "object" && "code" in data ? data.code : undefined;
+	return Response.json(
+		{ data: { code: Number.isSafeInteger(code) ? code : undefined } },
+		{ status: response.status },
+	);
 }
 
 function failedOriginalDnsLookup(error: unknown, url: string): boolean {
@@ -222,12 +262,15 @@ export function isRetryable(url: string, init: unknown): boolean {
 	// `/start` (VOD), `/live/start` (live) — and with a query string or trailing slash, because a
 	// path check that a URL shape can slip past is not a guard.
 	const path = pathOf(url);
+	if (method === "POST" && ROLE_STORAGE_CREATE_PATH.test(path)) return false;
 	// This PATCH mutates an active encoder through a durable effect claim.
 	// A response lost after assignment must reach that claim as AMBIGUOUS,
 	// never be sent again inside the transport layer (or logged with its key).
 	if (/\/actions\/update-rtmp-ingest-points\/?$/.test(path)) return false;
 	// Repeating this full replacement restarts the running encoder's timeout.
 	if (/\/live\/update-autoshutdown-config\/?$/.test(path)) return false;
+	if (/\/encoding\/manifests\/(hls|dash|smooth)\/[^/]+\/stop\/?$/.test(path))
+		return false;
 	return !/\/(live\/)?start\/?$/.test(path);
 }
 

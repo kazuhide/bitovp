@@ -40,7 +40,7 @@ describe("detail-view selectors — corpus sweep", () => {
 		// partial shrink (66 -> 61) pass silently (stack review) — and the corpus
 		// changes only when a fixture PR changes it, which is precisely when this
 		// number should be re-measured and moved.
-		expect(planNames.length).toBe(72);
+		expect(planNames.length).toBe(73);
 	});
 
 	it.each(planNames)("%s: every rendition appears exactly once", (name) => {

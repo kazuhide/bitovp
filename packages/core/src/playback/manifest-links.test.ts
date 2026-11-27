@@ -58,6 +58,30 @@ describe("manifestPlaybackLinks", () => {
 		expect(links[0]?.reason?.code).toBe("NO_CREDENTIAL");
 	});
 
+	it("resolves role-based storage through a configured delivery URL", () => {
+		const plan = loadPlan("fixed-bitrate-hls-on-aws");
+		plan.outputs = plan.outputs.map((output) =>
+			output.kind === "S3" ? { ...output, kind: "S3_ROLE_BASED" } : output,
+		);
+		for (const manifest of plan.manifests) manifest.destination.acl = "PRIVATE";
+		const [link] = manifestPlaybackLinks(plan, [
+			{
+				id: CREDENTIAL_ID,
+				provider: "AWS_S3_ROLE_BASED",
+				config: {
+					region: "ap-northeast-1",
+					publicBaseUrls: {
+						"sample-output-bucket": "https://cdn.example.test/delivery",
+					},
+				},
+			},
+		]);
+		expect(link).toMatchObject({
+			via: "publicBaseUrls",
+			url: "https://cdn.example.test/delivery/output/h264-aac-fmp4-fixed-bitrate-hls-aws/stream.m3u8",
+		});
+	});
+
 	it("uses path-style URLs for dotted bucket names", () => {
 		const plan = loadPlan("fixed-bitrate-hls-on-aws");
 		const output = plan.outputs[0];

@@ -30,6 +30,7 @@ export type ResourceGroupId =
 
 const GROUP_OF_KIND: Record<OperationKind, ResourceGroupId> = {
 	CREATE_INPUT_S3: "inputs",
+	CREATE_INPUT_S3_ROLE_BASED: "inputs",
 	CREATE_INPUT_AZURE: "inputs",
 	CREATE_INPUT_HTTPS: "inputs",
 	CREATE_INPUT_GENERIC_S3: "inputs",
@@ -41,6 +42,7 @@ const GROUP_OF_KIND: Record<OperationKind, ResourceGroupId> = {
 	CREATE_INPUT_ZIXI: "inputs",
 	CREATE_INPUT_HLS_LIVE: "inputs",
 	CREATE_OUTPUT_S3: "outputs",
+	CREATE_OUTPUT_S3_ROLE_BASED: "outputs",
 	CREATE_OUTPUT_AZURE: "outputs",
 	CREATE_OUTPUT_SFTP: "outputs",
 	CREATE_OUTPUT_GENERIC_S3: "outputs",

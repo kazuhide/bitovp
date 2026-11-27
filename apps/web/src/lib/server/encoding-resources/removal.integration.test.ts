@@ -20,6 +20,7 @@ import {
 	vi,
 } from "vitest";
 import {
+	GET as listVod,
 	DELETE as removeVod,
 	POST as verifyVod,
 } from "@/app/api/encoding-jobs/[id]/resources/route";
@@ -27,6 +28,7 @@ import {
 	GET as listLive,
 	DELETE as removeLive,
 } from "@/app/api/live-channels/[id]/runs/[runId]/resources/route";
+import { auditedOperationCases } from "../../../../../../scripts/api-coverage-test-cases";
 import * as auth from "../context";
 import { routeError } from "../http";
 import { resourceFixture } from "./__fixtures__/journal";
@@ -225,7 +227,12 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 			});
 		}
 		it.each(
-			contracts,
+			auditedOperationCases(
+				import.meta.url,
+				"recorded-resource-deletes",
+				contracts,
+				({ detail }) => [`DELETE ${detail}`],
+			),
 		)("removes the recorded $kind through its exact SDK path and persists the result", async (c) => {
 			const s = await seed(own, a, c);
 			wire(s);
@@ -253,11 +260,27 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 			});
 			expect(send).toHaveBeenCalledTimes(2);
 		});
-		it("rejects a foreign job, a viewer, impersonation, wrong confirmation and an active job before provider access", async () => {
-			const s = await seed();
+		it.each([
+			"CREATE_CODEC_AAC",
+			"CREATE_HDR10_PLUS_INPUT_STREAM",
+		])("protects %s across tenant and role boundaries and refuses removal of active jobs", async (kind) => {
+			const contract = contracts.find((c) => c.kind === kind);
+			if (!contract) throw new Error("Missing recorded resource fixture");
+			const s = await seed(own, a, contract);
+			const index = () =>
+				listVod(new Request("http://fixture/resources"), {
+					params: Promise.resolve({ id: s.sourceId }),
+				});
 			useTenant(foreign, otherOrg);
+			expect((await index()).status).toBe(404);
 			expect((await submit(s)).status).toBe(404);
 			useTenant(own, ownOrg, "VIEWER");
+			expect(await (await index()).json()).toMatchObject({
+				canRemove: false,
+				resources: expect.arrayContaining([
+					expect.objectContaining({ id: s.id }),
+				]),
+			});
 			expect((await submit(s)).status).toBe(403);
 			useTenant(own, ownOrg, "ADMIN", true);
 			expect((await submit(s)).status).toBe(403);

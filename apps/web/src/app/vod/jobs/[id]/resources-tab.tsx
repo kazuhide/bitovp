@@ -125,7 +125,12 @@ function ResourceRow({
 				: curl.code === "NO_ENDPOINT"
 					? t("ui.curlNoEndpoint", { kind: curl.kind })
 					: curl.code === "VAULT_FIELDS_OMITTED"
-						? t("ui.curlVaultFieldsOmitted")
+						? t(
+								curl.kind === "CREATE_INPUT_S3_ROLE_BASED" ||
+									curl.kind === "CREATE_OUTPUT_S3_ROLE_BASED"
+									? "ui.curlRoleFieldsOmitted"
+									: "ui.curlVaultFieldsOmitted",
+							)
 						: curl.code === "UNSAFE_EXTERNAL_VTT_URL"
 							? t("manifestDetail.publicVttUrl")
 							: t("ui.curlUnresolvedPathParams", { kind: curl.kind });

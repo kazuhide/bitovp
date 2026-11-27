@@ -39,6 +39,12 @@ export const streamChildren: ResourceChildren = {
 					id,
 					childId,
 				),
+			metadata: (api, { id, parent }, childId) =>
+				api.encoding.encodings.streams.bifs.customdata.get(
+					parent("encodingId"),
+					id,
+					childId,
+				),
 		}),
 		"burnInSubtitles.assa": defineChildCollection<BurnInSubtitleAssa>({
 			label: "Burn-in subtitles (ASSA)",
@@ -87,6 +93,12 @@ export const streamChildren: ResourceChildren = {
 					id,
 					childId,
 				),
+			metadata: (api, { id, parent }, childId) =>
+				api.encoding.encodings.streams.captions.cea.scc.customdata.get(
+					parent("encodingId"),
+					id,
+					childId,
+				),
 		}),
 		"captions.cea.srt": defineChildCollection<SrtToCea608708Caption>({
 			label: "CEA-608/708 captions (SRT)",
@@ -102,6 +114,12 @@ export const streamChildren: ResourceChildren = {
 				),
 			get: (api, { id, parent }, childId) =>
 				api.encoding.encodings.streams.captions.cea.srt.get(
+					parent("encodingId"),
+					id,
+					childId,
+				),
+			metadata: (api, { id, parent }, childId) =>
+				api.encoding.encodings.streams.captions.cea.srt.customdata.get(
 					parent("encodingId"),
 					id,
 					childId,
@@ -122,6 +140,12 @@ export const streamChildren: ResourceChildren = {
 					),
 				get: (api, { id, parent }, childId) =>
 					api.encoding.encodings.streams.watermarking.nexguardFileMarker.get(
+						parent("encodingId"),
+						id,
+						childId,
+					),
+				metadata: (api, { id, parent }, childId) =>
+					api.encoding.encodings.streams.watermarking.nexguardFileMarker.customdata.get(
 						parent("encodingId"),
 						id,
 						childId,

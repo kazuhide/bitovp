@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { ApiError, apiFetch } from "@/lib/api";
 import { useT } from "@/lib/i18n/context";
 import { type ChildChoice, ResourceChildren } from "./resource-children";
+import {
+	type ProviderDiagnostic,
+	ResourceDiagnostics,
+} from "./resource-diagnostics";
 
 type Selection = {
 	step: string;
@@ -16,6 +20,7 @@ type Selection = {
 	listScope?: "linked";
 	hasCustomData?: boolean;
 	hasInformation?: boolean;
+	diagnostics?: ProviderDiagnostic[];
 	childCollections?: ChildChoice[];
 	removalState?: string | null;
 	retainedForPublication?: boolean;
@@ -349,6 +354,14 @@ function ResourceInspector({
 					)}
 				</div>
 			) : null}
+			{selected.removalState !== "REMOVED" &&
+				!!selected.diagnostics?.length && (
+					<ResourceDiagnostics
+						endpoint={endpoint}
+						subject={selected}
+						choices={selected.diagnostics}
+					/>
+				)}
 			{selected.removalState !== "REMOVED" &&
 				!!selected.childCollections?.length && (
 					<ResourceChildren

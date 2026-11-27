@@ -20,6 +20,7 @@ import {
 } from "../http";
 import { isAisaLiveChannelView } from "../live-channel-aisa-view";
 import type { ChildDiscriminator } from "./child-collection";
+import { diagnosticFor, inspectDiagnostic } from "./diagnostics";
 import { InvalidResourceResponse } from "./family";
 import {
 	childCollectionsFor,
@@ -46,9 +47,12 @@ const query = z
 				"children",
 				"childDetail",
 				"childMetadata",
+				"diagnostic",
+				"childDiagnostic",
 			])
 			.default("detail"),
 		collection: z.string().min(1).max(48).optional(),
+		diagnostic: z.string().min(1).max(48).optional(),
 		childId: z.uuid().optional(),
 		offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
 	})
@@ -56,11 +60,16 @@ const query = z
 		const childView =
 			input.view === "children" ||
 			input.view === "childDetail" ||
-			input.view === "childMetadata";
+			input.view === "childMetadata" ||
+			input.view === "childDiagnostic";
 		return (
 			childView === !!input.collection &&
+			!!input.diagnostic ===
+				(input.view === "diagnostic" || input.view === "childDiagnostic") &&
 			!!input.childId ===
-				(input.view === "childDetail" || input.view === "childMetadata")
+				(input.view === "childDetail" ||
+					input.view === "childMetadata" ||
+					input.view === "childDiagnostic")
 		);
 	}, "Invalid child resource selection.");
 const pageSize = 25;
@@ -235,16 +244,23 @@ export function resourceSdk(
 	access: NonNullable<Awaited<ReturnType<typeof originalAccess>>>,
 	signal: AbortSignal,
 	id: string,
-	expectedDiscriminator?: ChildDiscriminator,
+	expected: { discriminator?: ChildDiscriminator; encodingId?: string } = {},
 ) {
 	// Typed endpoints can omit their discriminator. Check a supplied value before
 	// the SDK maps it to a model and potentially substitutes the default type.
-	const matchesDiscriminator = (value: unknown) => {
-		if (!expectedDiscriminator) return true;
+	const { discriminator, encodingId } = expected;
+	const matchesBinding = (value: unknown) => {
 		const model = object(value);
 		if (!model) return false;
-		const actual = model[expectedDiscriminator.field];
-		return actual === undefined || actual === expectedDiscriminator.value;
+		if (discriminator) {
+			const actual = model[discriminator.field];
+			if (actual !== undefined && actual !== discriminator.value) return false;
+		}
+		return (
+			!encodingId ||
+			model.encodingId === undefined ||
+			model.encodingId === encodingId
+		);
 	};
 	return new BitmovinApi({
 		apiKey: access.apiKey,
@@ -262,18 +278,22 @@ export function resourceSdk(
 			if (!result) throw new InvalidResourceResponse();
 			const path = new URL(String(url)).pathname.replace(/\/$/, "");
 			if (path.toLowerCase().endsWith("/customdata")) {
-				if (!object(result.customData)) throw new InvalidResourceResponse();
+				if (
+					!object(result.customData) ||
+					(result.id !== undefined && result.id !== id)
+				)
+					throw new InvalidResourceResponse();
 			} else if (path.endsWith(`/${encodeURIComponent(id)}/information`)) {
 				// Information describes the addressed muxing and omits its ID.
 				if (result.id !== undefined && result.id !== id)
 					throw new InvalidResourceResponse();
 			} else if (path.endsWith(`/${encodeURIComponent(id)}`)) {
-				if (result.id !== id || !matchesDiscriminator(result))
+				if (result.id !== id || !matchesBinding(result))
 					throw new InvalidResourceResponse();
 			} else if (
 				!Array.isArray(result.items) ||
 				typeof result.totalCount !== "number" ||
-				(expectedDiscriminator && !result.items.every(matchesDiscriminator))
+				((discriminator || encodingId) && !result.items.every(matchesBinding))
 			)
 				throw new InvalidResourceResponse();
 			return response;
@@ -287,12 +307,14 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 		if (invalid) return invalid;
 	}
 	const params = new URL(req.url).searchParams;
-	const parsed = params.size
-		? query.safeParse(Object.fromEntries(params))
-		: null;
+	const values = Object.fromEntries(params);
+	if (params.size !== Object.keys(values).length)
+		return jsonError(400, "Duplicate resource query parameter.");
+	const parsed = params.size ? query.safeParse(values) : null;
 	if (parsed && !parsed.success) return validationError(parsed.error);
 	try {
 		const ctx = await getServerContext();
+		const live = !("jobId" in owner);
 		const row = await resourceSource(ctx, owner);
 		if (!row) return jsonError(404, "Not found");
 		const log = parseResourceLog(row.stepLog);
@@ -320,7 +342,7 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 				canManage: mayRemove(ctx),
 				canRemove: mayRemove(ctx) && removalAllowed(owner, row.removable),
 				resources: [...log.steps.keys()].flatMap((step) => {
-					const s = selectResource(log, step)?.summary;
+					const s = selectResource(log, step, live)?.summary;
 					return s
 						? [
 								{
@@ -366,22 +388,38 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 		if (
 			key &&
 			(!child ||
+				(child.liveOnly && !live) ||
 				(view === "childDetail" && !child.get) ||
 				(view === "childMetadata" && !child.metadata))
 		)
 			return jsonError(400, "This resource does not have this child view.");
-		const api = resourceSdk(
-			access,
-			AbortSignal.any([req.signal, AbortSignal.timeout(15000)]),
-			parsed.data.childId ?? address.id,
-			child?.expectedDiscriminator,
-		);
+		const diagnosticKey = parsed.data.diagnostic;
+		const diagnostic = diagnosticKey
+			? diagnosticFor(entry.kind, diagnosticKey, key)
+			: undefined;
+		if (diagnosticKey && !diagnostic)
+			return jsonError(400, "This resource does not have this diagnostic.");
+		const signal = AbortSignal.any([req.signal, AbortSignal.timeout(15000)]);
+		const page = { offset, limit: pageSize };
+		const childId = parsed.data.childId;
 		try {
+			if (view === "diagnostic" && diagnostic)
+				return respond(
+					await inspectDiagnostic(
+						diagnostic,
+						{ address, id: address.id, page },
+						access,
+						signal,
+					),
+				);
+			const api = resourceSdk(access, signal, childId ?? address.id, {
+				discriminator: child?.expectedDiscriminator,
+				encodingId: child?.encodingScope ? address.id : undefined,
+			});
 			if (child) {
-				const page = { offset, limit: pageSize };
 				if (view === "children")
 					return respond(await readChildPage(api, child, address, page));
-				const id = parsed.data.childId;
+				const id = childId;
 				if (!id || !(await childIsOnPage(api, child, address, page, id)))
 					return jsonError(
 						409,
@@ -391,6 +429,15 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 					return respond({
 						fields: await readChildDetail(api, child, address, id),
 					});
+				if (view === "childDiagnostic" && diagnostic)
+					return respond(
+						await inspectDiagnostic(
+							diagnostic,
+							{ address, id, page },
+							access,
+							signal,
+						),
+					);
 				if (view === "childMetadata" && child.metadata) {
 					const value = object(
 						(await child.metadata(api, address, id)).customData,

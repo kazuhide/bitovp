@@ -28,6 +28,8 @@ export type ChildDiscriminator = {
 type FieldRule = "number" | "boolean" | readonly string[];
 type Collection<T> = {
 	label: string;
+	liveOnly?: boolean;
+	encodingScope?: boolean;
 	wholeCollection?: boolean;
 	expectedDiscriminator?: ChildDiscriminator;
 	list(

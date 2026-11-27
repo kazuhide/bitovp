@@ -70,3 +70,60 @@ it("reads measurements only after selecting Output information and resets to det
 		screen.queryByRole("button", { name: "Output information" }),
 	).not.toBeInTheDocument();
 });
+
+it("loads a selected provider diagnostic and pages the original stream", async () => {
+	const endpoint = "/api/encoding-jobs/job/resources";
+	apiFetch.mockReset();
+	apiFetch.mockImplementation(async (url: string) => {
+		const query = new URL(url, "http://fixture.invalid").searchParams;
+		if (!query.size)
+			return {
+				canManage: false,
+				canRemove: false,
+				resources: [
+					{
+						step: "stream:video",
+						id: "recorded-video",
+						attempt: 2,
+						diagnostics: [
+							{
+								key: "psnr",
+								label: "Provider PSNR",
+								labelJa: "BitmovinのPSNR",
+							},
+						],
+					},
+				],
+			};
+		if (query.get("view") === "diagnostic")
+			return {
+				items:
+					query.get("offset") === "25"
+						? [{ id: "30:40", fromSeconds: 30, toSeconds: 40, psnrDb: 46 }]
+						: [{ id: "0:10", fromSeconds: 0, toSeconds: 10, psnrDb: 39 }],
+				total: 26,
+			};
+		return { fields: { id: "recorded-video" } };
+	});
+	const user = userEvent.setup();
+	renderWithQuery(<ProviderResources endpoint={endpoint} />);
+	await user.click(screen.getByText("Inspect provider resources"));
+	await user.selectOptions(
+		await screen.findByRole("combobox", { name: "Resource" }),
+		screen.getByRole("option", { name: "stream:video · recorded-video" }),
+	);
+	expect(await screen.findByText("recorded-video")).toBeVisible();
+	expect(apiFetch).toHaveBeenCalledTimes(2);
+
+	await user.selectOptions(
+		screen.getByRole("combobox", { name: "Diagnostics" }),
+		"psnr",
+	);
+	expect(await screen.findByText("39")).toBeVisible();
+	await user.click(screen.getByRole("button", { name: "Next page" }));
+	expect(await screen.findByText("46")).toBeVisible();
+	expect(apiFetch).toHaveBeenLastCalledWith(
+		`${endpoint}?step=stream%3Avideo&attempt=2&view=diagnostic&diagnostic=psnr&offset=25`,
+		expect.objectContaining({ signal: expect.anything() }),
+	);
+});

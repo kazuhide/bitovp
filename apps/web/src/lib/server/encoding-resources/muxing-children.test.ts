@@ -7,6 +7,7 @@ import {
 } from "@/app/api/encoding-jobs/[id]/resources/route";
 import { GET as live } from "@/app/api/live-channels/[id]/runs/[runId]/resources/route";
 import { auditedOperationCases } from "../../../../../../scripts/api-coverage-test-cases";
+import diagnosticContracts from "./__fixtures__/diagnostic-contracts.json";
 import encodingChildren from "./__fixtures__/encoding-children.json";
 import { resourceFixture } from "./__fixtures__/journal";
 import manifestChildren from "./__fixtures__/manifest-children.json";
@@ -111,6 +112,247 @@ const model = {
 	input: { inputPath: "PRIVATE_TEST_VALUE" },
 	type: "WIDEVINE",
 };
+
+type DiagnosticContract = {
+	sdkMethod: string;
+	path: string;
+	kind: string;
+	view: string;
+	diagnostic?: string;
+	collection?: string;
+	listPath?: string;
+	member?: object;
+	offset?: number;
+	paged?: boolean;
+	live?: boolean;
+	raw: unknown;
+	expected: unknown;
+};
+
+function diagnosticRequest(spec: DiagnosticContract) {
+	const params = new URLSearchParams({
+		step: "selected",
+		attempt: "0",
+		view: spec.view,
+		offset: String(spec.offset ?? 0),
+	});
+	if (spec.collection) params.set("collection", spec.collection);
+	if (spec.listPath) params.set("childId", childId);
+	if (spec.diagnostic) params.set("diagnostic", spec.diagnostic);
+	return new Request(`http://fixture.invalid/resources?${params}`);
+}
+
+function contractPath(
+	path: string,
+	kind: string,
+	fixture: ReturnType<typeof seed>,
+) {
+	const contract = parentContract(kind);
+	const ownerParam = contract.detail.match(/\{([^}]+)\}$/)?.[1];
+	const ownerParameters: Record<string, string | undefined> = contract.parents;
+	return (
+		"/v1" +
+		path.replace(/\{([^}]+)\}/g, (_match, key: string) => {
+			if (key === ownerParam) return fixture.id;
+			const ref = ownerParameters[key];
+			if (!ref) return childId;
+			const parent = fixture.steps.find((s) => s.step === `source:${ref}`);
+			if (!parent?.resourceId) throw new Error("Missing fixture scope");
+			return parent.resourceId;
+		})
+	);
+}
+
+function resolveFixture(
+	value: unknown,
+	fixture: ReturnType<typeof seed>,
+): unknown {
+	if (value === "$child") return childId;
+	if (value === "$job") return jobId;
+	if (value === "$selected") return fixture.id;
+	if (value === "$other" || value === "$input") return randomUUID();
+	if (Array.isArray(value))
+		return value.map((item) => resolveFixture(item, fixture));
+	if (value && typeof value === "object")
+		return Object.fromEntries(
+			Object.entries(value).map(([key, item]) => [
+				key,
+				resolveFixture(item, fixture),
+			]),
+		);
+	return value;
+}
+
+it.each(
+	auditedOperationCases(
+		import.meta.url,
+		"recorded-job-diagnostics",
+		diagnosticContracts as readonly DiagnosticContract[],
+		(spec) => [`GET ${spec.path}`],
+	),
+)("reads the documented recorded diagnostic $sdkMethod", async (spec) => {
+	const fixture = seed(spec.kind);
+	const list = spec.listPath && contractPath(spec.listPath, spec.kind, fixture);
+	const detail = contractPath(spec.path, spec.kind, fixture);
+	const requests: string[] = [];
+	const offset = spec.offset ?? 0;
+	transport.mockReset();
+	transport.mockImplementation(async (url: URL | string, init: RequestInit) => {
+		const address = new URL(url);
+		requests.push(address.pathname);
+		const headers = new Headers(init.headers);
+		expect(headers.get("X-Tenant-Org-Id")).toBe(upstream);
+		expect(headers.get("X-Api-Key")).toBe("fixture");
+		expect(init.method?.toUpperCase()).toBe("GET");
+		if (address.pathname === list) {
+			expect(address.searchParams.get("offset")).toBe(String(offset));
+			expect(address.searchParams.get("limit")).toBe("25");
+			return result({
+				items: [
+					{ id: childId, ...(resolveFixture(spec.member, fixture) as object) },
+				],
+				offset,
+				totalCount: offset + 1,
+			});
+		}
+		expect(address.pathname).toBe(detail);
+		if (spec.paged) {
+			expect(address.searchParams.get("offset")).toBe(String(offset));
+			expect(address.searchParams.get("limit")).toBe("25");
+		} else {
+			expect(address.search).toBe("");
+		}
+		return result(resolveFixture(spec.raw, fixture));
+	});
+	const response = await ask(diagnosticRequest(spec), spec.live);
+	const body: unknown = await response.json();
+	expect(response.status).toBe(200);
+	expect(body).toEqual(resolveFixture(spec.expected, fixture));
+	expect(JSON.stringify(body)).not.toContain("PRIVATE_TEST_VALUE");
+	expect(requests).toEqual(list ? [list, detail] : [detail]);
+});
+
+it("does not fetch recorded diagnostics after a resource-scope change", async () => {
+	seed("CREATE_STREAM");
+	access.mockResolvedValueOnce({
+		apiKey: "fixture",
+		resourceScopeVersion: randomUUID(),
+		resourceScopeSince: new Date(0),
+	});
+	const response = await ask(
+		new Request(
+			"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=input",
+		),
+	);
+	expect(response.status).toBe(409);
+	expect(transport).not.toHaveBeenCalled();
+});
+
+it("rejects duplicate diagnostic selectors before fetching anything", async () => {
+	seed("CREATE_ENCODING");
+	const response = await ask(
+		new Request(
+			"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=start&diagnostic=template",
+		),
+	);
+	expect(response.status).toBe(400);
+	expect(transport).not.toHaveBeenCalled();
+});
+
+it("only reads child diagnostics after an exact page membership check", async () => {
+	seed("CREATE_ENCODING");
+	transport.mockResolvedValueOnce(
+		result({
+			items: [{ id: randomUUID(), type: "FMP4" }],
+			offset: 0,
+			totalCount: 1,
+		}),
+	);
+	const response = await ask(
+		new Request(
+			`http://fixture.invalid/resources?step=selected&attempt=0&view=childDiagnostic&diagnostic=type&collection=muxings&childId=${childId}`,
+		),
+	);
+	expect(response.status).toBe(409);
+	expect(transport).toHaveBeenCalledTimes(1);
+});
+
+it("limits DNS mapping diagnostics to live runs and rejects a conflicting encoding association", async () => {
+	const fixture = seed("CREATE_ENCODING");
+	const diagnostic = req("childDetail", "dnsMappings", childId);
+	const reply = await ask(diagnostic);
+	expect(reply.status).toBe(400);
+	expect(transport).not.toHaveBeenCalled();
+	transport.mockResolvedValueOnce(
+		result({
+			items: [{ id: childId, encodingId: fixture.id }],
+			offset: 0,
+			totalCount: 1,
+		}),
+	);
+	transport.mockResolvedValueOnce(
+		result({
+			id: childId,
+			encodingId: randomUUID(),
+			hostname: "PRIVATE_TEST_VALUE",
+		}),
+	);
+	const denied = await ask(diagnostic, true);
+	expect(denied.status).toBe(502);
+	expect(await denied.text()).not.toContain("PRIVATE_TEST_VALUE");
+	expect(transport).toHaveBeenCalledTimes(2);
+});
+
+it("rejects noncanonical diagnostic response envelopes and conflicting singleton IDs", async () => {
+	seed("CREATE_ENCODING");
+	const diagnostic = new Request(
+		"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=start",
+	);
+	transport.mockResolvedValueOnce(
+		Response.json({
+			status: "ERROR",
+			data: {
+				result: { encodingMode: "STANDARD", private: "PRIVATE_TEST_VALUE" },
+			},
+		}),
+	);
+	const envelope = await ask(diagnostic);
+	expect(envelope.status).toBe(502);
+	expect(await envelope.text()).not.toContain("PRIVATE_TEST_VALUE");
+	transport.mockResolvedValueOnce(
+		result({ id: randomUUID(), encodingMode: "STANDARD" }),
+	);
+	expect((await ask(diagnostic)).status).toBe(502);
+});
+
+it("rejects provider PSNR pagination that contradicts the requested window", async () => {
+	seed("CREATE_STREAM");
+	transport.mockResolvedValueOnce(
+		result({
+			offset: 0,
+			totalCount: 26,
+			items: [{ timeSpan: { from: 30, to: 40 }, psnr: 34 }],
+		}),
+	);
+	const request = new Request(
+		"http://fixture.invalid/resources?step=selected&attempt=0&view=diagnostic&diagnostic=psnr&offset=25",
+	);
+	expect((await ask(request)).status).toBe(502);
+});
+
+it("rejects metadata claiming a different recorded resource", async () => {
+	seed("CREATE_THUMBNAIL");
+	transport.mockResolvedValueOnce(
+		result({ id: randomUUID(), customData: { token: "PRIVATE_TEST_VALUE" } }),
+	);
+	const response = await ask(
+		new Request(
+			"http://fixture.invalid/resources?step=selected&attempt=0&view=customData",
+		),
+	);
+	expect(response.status).toBe(502);
+	expect(await response.text()).not.toContain("PRIVATE_TEST_VALUE");
+});
 
 type RelatedCase = {
 	kind: string;

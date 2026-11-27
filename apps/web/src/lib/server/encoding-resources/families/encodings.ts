@@ -630,6 +630,12 @@ export const encodings = {
 			),
 	}),
 	CREATE_SPRITE: defineFamily<Sprite>({
+		customData: (api, { id, parent }) =>
+			api.encoding.encodings.streams.sprites.customdata.get(
+				parent("encodingId"),
+				parent("streamId"),
+				id,
+			),
 		parents: ["encodingId", "streamId"],
 		fields: ["createdAt", "height", "id", "modifiedAt", "name", "width"],
 		get: (api, { id, parent }) =>
@@ -652,6 +658,12 @@ export const encodings = {
 			),
 	}),
 	CREATE_THUMBNAIL: defineFamily<Thumbnail>({
+		customData: (api, { id, parent }) =>
+			api.encoding.encodings.streams.thumbnails.customdata.get(
+				parent("encodingId"),
+				parent("streamId"),
+				id,
+			),
 		parents: ["encodingId", "streamId"],
 		fields: ["createdAt", "height", "id", "modifiedAt", "name", "width"],
 		get: (api, { id, parent }) =>

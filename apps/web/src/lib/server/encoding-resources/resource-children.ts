@@ -8,6 +8,7 @@ import type {
 	ResourceChildren,
 } from "./child-collection";
 import { inspectChildWindow } from "./child-window";
+import { diagnosticChoices } from "./diagnostics";
 import { encodingChildren } from "./families/encoding-children";
 import { manifestChildren } from "./families/manifest-children";
 import { muxingChildren } from "./families/muxing-children";
@@ -144,16 +145,20 @@ const children: ResourceChildren = {
 export function childCollectionsFor(kind: string) {
 	return Object.hasOwn(children, kind) ? children[kind] : undefined;
 }
-export function childChoices(kind: string) {
+export function childChoices(kind: string, live: boolean) {
 	const collections = childCollectionsFor(kind);
 	if (!collections) return undefined;
-	return Object.entries(collections).map(([key, collection]) => ({
-		key,
-		label: collection.label,
-		hasDetail: !!collection.get,
-		hasMetadata: !!collection.metadata,
-	}));
+	return Object.entries(collections)
+		.filter(([, collection]) => !collection.liveOnly || live)
+		.map(([key, collection]) => ({
+			key,
+			label: collection.label,
+			hasDetail: !!collection.get,
+			hasMetadata: !!collection.metadata,
+			diagnostics: diagnosticChoices(kind, key),
+		}));
 }
+
 async function verifiedWindow(
 	api: BitmovinApi,
 	collection: ResourceChildCollection,

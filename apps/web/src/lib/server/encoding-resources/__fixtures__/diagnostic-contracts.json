@@ -1,0 +1,881 @@
+[
+	{
+		"sdkMethod": "encoding.encodings.getStartRequest",
+		"path": "/encoding/encodings/{encoding_id}/start",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "diagnostic",
+		"diagnostic": "start",
+		"raw": {
+			"encodingMode": "THREE_PASS",
+			"manifestGenerator": "V2",
+			"handleVariableInputFps": false,
+			"vodHlsManifests": [
+				{
+					"manifestId": "$child",
+					"outputPath": "PRIVATE_TEST_VALUE"
+				}
+			],
+			"trimming": {
+				"offset": 3,
+				"duration": 10
+			},
+			"webhook": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"startRequestAvailable": true,
+				"encodingMode": "THREE_PASS",
+				"manifestGenerator": "V2",
+				"handleVariableInputFps": false,
+				"vodHlsManifestCount": 1,
+				"trimOffsetSeconds": 3,
+				"trimDurationSeconds": 10
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.kantarWatermark.get",
+		"path": "/encoding/encodings/{encoding_id}/kantar-watermark",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "diagnostic",
+		"diagnostic": "kantar",
+		"raw": {
+			"licenseId": 13,
+			"login": "PRIVATE_TEST_VALUE",
+			"password": "PRIVATE_TEST_VALUE",
+			"channelName": "PRIVATE_TEST_VALUE",
+			"reportOutputs": [
+				{
+					"outputPath": "PRIVATE_TEST_VALUE"
+				}
+			]
+		},
+		"expected": {
+			"fields": {
+				"configured": true,
+				"reportOutputCount": 1
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.outputPaths.get",
+		"path": "/encoding/encodings/{encoding_id}/output-paths",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "diagnostic",
+		"diagnostic": "outputPaths",
+		"raw": [
+			{
+				"output": {
+					"bucketName": "PRIVATE_TEST_VALUE",
+					"accessKey": "PRIVATE_TEST_VALUE"
+				},
+				"paths": {
+					"dashManifests": [
+						{
+							"path": "PRIVATE_TEST_VALUE"
+						}
+					],
+					"hlsManifests": [
+						{
+							"path": "PRIVATE_TEST_VALUE"
+						},
+						{
+							"path": "PRIVATE_TEST_VALUE"
+						}
+					]
+				}
+			}
+		],
+		"expected": {
+			"fields": {
+				"outputCount": 1,
+				"dashManifestCount": 1,
+				"hlsManifestCount": 2,
+				"smoothManifestCount": 0
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.template.get",
+		"path": "/encoding/encodings/{encoding_id}/template",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "diagnostic",
+		"diagnostic": "template",
+		"raw": {
+			"url": "https://provider.invalid/PRIVATE_TEST_VALUE?signed=true"
+		},
+		"expected": {
+			"fields": {
+				"available": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.streams.filters.list",
+		"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/filters",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_STREAM",
+		"view": "diagnostic",
+		"diagnostic": "filters",
+		"raw": {
+			"filters": [
+				{
+					"id": "$child",
+					"position": 0,
+					"secret": "PRIVATE_TEST_VALUE"
+				},
+				{
+					"id": "$other",
+					"position": 1,
+					"description": "PRIVATE_TEST_VALUE"
+				}
+			]
+		},
+		"expected": {
+			"fields": {
+				"filterCount": 2,
+				"firstPosition": 0,
+				"lastPosition": 1
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.streams.input.get",
+		"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/input",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_STREAM",
+		"view": "diagnostic",
+		"diagnostic": "input",
+		"raw": {
+			"duration": 10,
+			"size": 1234,
+			"bitrate": 567,
+			"videoStreams": [
+				{
+					"tags": {
+						"title": "PRIVATE_TEST_VALUE"
+					}
+				}
+			],
+			"audioStreams": [],
+			"tags": {
+				"creation_tool": "PRIVATE_TEST_VALUE"
+			}
+		},
+		"expected": {
+			"fields": {
+				"durationSeconds": 10,
+				"fileSizeBytes": 1234,
+				"bitrateBps": 567,
+				"videoTrackCount": 1,
+				"audioTrackCount": 0
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.streams.inputs.list",
+		"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/inputs",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_STREAM",
+		"view": "diagnostic",
+		"diagnostic": "inputs",
+		"raw": {
+			"offset": 0,
+			"totalCount": 2,
+			"items": [
+				{
+					"inputId": "$input",
+					"inputPath": "PRIVATE_TEST_VALUE",
+					"details": {
+						"duration": 10
+					}
+				}
+			]
+		},
+		"expected": {
+			"fields": {
+				"inputCount": 2,
+				"reportedInputs": 1,
+				"analyzedInputs": 1
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.streams.qc.psnr.list",
+		"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/qc/psnr",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_STREAM",
+		"view": "diagnostic",
+		"diagnostic": "psnr",
+		"raw": {
+			"offset": 25,
+			"totalCount": 26,
+			"items": [
+				{
+					"timeSpan": {
+						"from": 30,
+						"to": 40
+					},
+					"psnr": 39.5,
+					"file": "PRIVATE_TEST_VALUE"
+				}
+			]
+		},
+		"expected": {
+			"offset": 25,
+			"total": 26,
+			"items": [
+				{
+					"id": "30:40",
+					"fromSeconds": 30,
+					"toSeconds": 40,
+					"psnrDb": 39.5
+				}
+			]
+		},
+		"offset": 25,
+		"paged": true
+	},
+	{
+		"sdkMethod": "encoding.manifests.dash.getStartRequest",
+		"path": "/encoding/manifests/dash/{manifest_id}/start",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_MANIFEST_DASH",
+		"view": "diagnostic",
+		"diagnostic": "start",
+		"raw": {
+			"manifestGenerator": "V2",
+			"opaque": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"startRequestAvailable": true,
+				"manifestGenerator": "V2"
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.manifests.hls.getStartRequest",
+		"path": "/encoding/manifests/hls/{manifest_id}/start",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_MANIFEST_HLS",
+		"view": "diagnostic",
+		"diagnostic": "start",
+		"raw": {
+			"manifestGenerator": "V2",
+			"opaque": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"startRequestAvailable": true,
+				"manifestGenerator": "V2"
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.manifests.smooth.getStartRequest",
+		"path": "/encoding/manifests/smooth/{manifest_id}/start",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_MANIFEST_SMOOTH",
+		"view": "diagnostic",
+		"diagnostic": "start",
+		"raw": {
+			"manifestGenerator": "V2",
+			"opaque": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"startRequestAvailable": true,
+				"manifestGenerator": "V2"
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.manifests.type.get",
+		"path": "/encoding/manifests/{manifest_id}/type",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_MANIFEST_DASH",
+		"view": "diagnostic",
+		"diagnostic": "type",
+		"raw": {
+			"type": "DASH",
+			"name": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"type": "DASH"
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.type.get",
+		"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/type",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_DASH_ADAPTATION_SET_VIDEO",
+		"view": "diagnostic",
+		"diagnostic": "type",
+		"raw": {
+			"type": "VIDEO",
+			"name": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"type": "VIDEO"
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.type.get",
+		"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/{representation_id}/type",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_DASH_REPRESENTATION_CMAF",
+		"view": "diagnostic",
+		"diagnostic": "type",
+		"raw": {
+			"type": "CMAF",
+			"customData": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"type": "CMAF"
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.manifests.hls.media.type.get",
+		"path": "/encoding/manifests/hls/{manifest_id}/media/{media_id}/type",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_HLS_AUDIO_MEDIA",
+		"view": "diagnostic",
+		"diagnostic": "type",
+		"raw": {
+			"type": "AUDIO",
+			"name": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"type": "AUDIO"
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.muxings.type.get",
+		"path": "/encoding/encodings/{encoding_id}/muxings/{muxing_id}/type",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childDiagnostic",
+		"diagnostic": "type",
+		"raw": {
+			"type": "FMP4",
+			"private": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"type": "FMP4"
+			}
+		},
+		"collection": "muxings",
+		"listPath": "/encoding/encodings/{encoding_id}/muxings",
+		"member": {
+			"type": "FMP4"
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.inputStreams.type.get",
+		"path": "/encoding/encodings/{encoding_id}/input-streams/{input_stream_id}/type",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childDiagnostic",
+		"diagnostic": "type",
+		"raw": {
+			"type": "INGEST",
+			"inputPath": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"type": "INGEST"
+			}
+		},
+		"collection": "inputStreams",
+		"listPath": "/encoding/encodings/{encoding_id}/input-streams",
+		"member": {
+			"type": "INGEST"
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.muxings.broadcastTs.information.get",
+		"path": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts/{muxing_id}/information",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childDiagnostic",
+		"diagnostic": "information",
+		"raw": {
+			"fileSize": 1024,
+			"containerBitrate": 96000,
+			"duration": 3,
+			"audioTracks": [
+				{
+					"codec": "PRIVATE_TEST_VALUE"
+				}
+			],
+			"mimeType": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"fileSizeBytes": 1024,
+				"containerBitrateBps": 96000,
+				"durationSeconds": 3,
+				"audioTrackCount": 1
+			}
+		},
+		"collection": "muxings.broadcastTs",
+		"listPath": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts"
+	},
+	{
+		"sdkMethod": "encoding.encodings.muxings.mp3.information.get",
+		"path": "/encoding/encodings/{encoding_id}/muxings/mp3/{muxing_id}/information",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childDiagnostic",
+		"diagnostic": "information",
+		"raw": {
+			"fileSize": 1024,
+			"containerBitrate": 96000,
+			"duration": 3,
+			"audioTracks": [
+				{
+					"codec": "PRIVATE_TEST_VALUE"
+				}
+			],
+			"mimeType": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"fileSizeBytes": 1024,
+				"containerBitrateBps": 96000,
+				"durationSeconds": 3,
+				"audioTrackCount": 1
+			}
+		},
+		"collection": "muxings.mp3",
+		"listPath": "/encoding/encodings/{encoding_id}/muxings/mp3"
+	},
+	{
+		"sdkMethod": "encoding.encodings.muxings.packedAudio.information.get",
+		"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}/information",
+		"transport": "diagnostics.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childDiagnostic",
+		"diagnostic": "information",
+		"raw": {
+			"fileSize": 1024,
+			"containerBitrate": 96000,
+			"duration": 3,
+			"audioTracks": [
+				{
+					"codec": "PRIVATE_TEST_VALUE"
+				}
+			],
+			"mimeType": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"fileSizeBytes": 1024,
+				"containerBitrateBps": 96000,
+				"durationSeconds": 3,
+				"audioTrackCount": 1
+			}
+		},
+		"collection": "muxings.packedAudio",
+		"listPath": "/encoding/encodings/{encoding_id}/muxings/packed-audio"
+	},
+	{
+		"sdkMethod": "encoding.encodings.muxings.broadcastTs.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts/{muxing_id}/customData",
+		"transport": "families/encoding-children.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childMetadata",
+		"collection": "muxings.broadcastTs",
+		"listPath": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.muxings.mp3.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/muxings/mp3/{muxing_id}/customData",
+		"transport": "families/encoding-children.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childMetadata",
+		"collection": "muxings.mp3",
+		"listPath": "/encoding/encodings/{encoding_id}/muxings/mp3",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.muxings.mxf.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/muxings/mxf/{muxing_id}/customData",
+		"transport": "families/encoding-children.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childMetadata",
+		"collection": "muxings.mxf",
+		"listPath": "/encoding/encodings/{encoding_id}/muxings/mxf",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.muxings.packedAudio.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}/customData",
+		"transport": "families/encoding-children.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childMetadata",
+		"collection": "muxings.packedAudio",
+		"listPath": "/encoding/encodings/{encoding_id}/muxings/packed-audio",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.muxings.segmentedRaw.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/muxings/segmented-raw/{muxing_id}/customData",
+		"transport": "families/encoding-children.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childMetadata",
+		"collection": "muxings.segmentedRaw",
+		"listPath": "/encoding/encodings/{encoding_id}/muxings/segmented-raw",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.sidecars.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/sidecars/{sidecar_id}/customData",
+		"transport": "families/encoding-children.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childMetadata",
+		"collection": "sidecars",
+		"listPath": "/encoding/encodings/{encoding_id}/sidecars",
+		"member": {
+			"type": "WEB_VTT"
+		},
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.captions.scc.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/captions/scc/{captions_id}/customData",
+		"transport": "families/encoding-children.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childMetadata",
+		"collection": "captions.scc",
+		"listPath": "/encoding/encodings/{encoding_id}/captions/scc",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.streams.bifs.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/bifs/{bif_id}/customData",
+		"transport": "families/stream-children.ts",
+		"kind": "CREATE_STREAM",
+		"view": "childMetadata",
+		"collection": "bif",
+		"listPath": "/encoding/encodings/{encoding_id}/streams/{stream_id}/bifs",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.streams.captions.cea.scc.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/scc/{captions_id}/customData",
+		"transport": "families/stream-children.ts",
+		"kind": "CREATE_STREAM",
+		"view": "childMetadata",
+		"collection": "captions.cea.scc",
+		"listPath": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/scc",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.streams.captions.cea.srt.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/srt/{captions_id}/customData",
+		"transport": "families/stream-children.ts",
+		"kind": "CREATE_STREAM",
+		"view": "childMetadata",
+		"collection": "captions.cea.srt",
+		"listPath": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/srt",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.streams.watermarking.nexguardFileMarker.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/watermarking/nexguard-file-marker/{nexguard_id}/customData",
+		"transport": "families/stream-children.ts",
+		"kind": "CREATE_STREAM",
+		"view": "childMetadata",
+		"collection": "watermarking.nexguardFileMarker",
+		"listPath": "/encoding/encodings/{encoding_id}/streams/{stream_id}/watermarking/nexguard-file-marker",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.streams.sprites.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/sprites/{sprite_id}/customData",
+		"transport": "families/encodings.ts",
+		"kind": "CREATE_SPRITE",
+		"view": "customData",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.streams.thumbnails.customdata.get",
+		"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/thumbnails/{thumbnail_id}/customData",
+		"transport": "families/encodings.ts",
+		"kind": "CREATE_THUMBNAIL",
+		"view": "customData",
+		"raw": {
+			"customData": {
+				"token": "PRIVATE_TEST_VALUE",
+				"bitovp": {
+					"job": "$job",
+					"step": "selected"
+				}
+			}
+		},
+		"expected": {
+			"fields": {
+				"keyCount": 2,
+				"executionStamp": true
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.scte35Triggers.list",
+		"path": "/encoding/encodings/{encoding_id}/scte-35-triggers",
+		"transport": "families/encoding-children.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "children",
+		"collection": "scte35",
+		"paged": true,
+		"raw": {
+			"totalCount": 1,
+			"offset": 0,
+			"items": [
+				{
+					"id": "$child",
+					"base64EncodedMetadata": "PRIVATE_TEST_VALUE",
+					"name": "PRIVATE_TEST_VALUE"
+				}
+			]
+		},
+		"expected": {
+			"offset": 0,
+			"total": 1,
+			"available": 1,
+			"items": [
+				{
+					"id": "$child"
+				}
+			]
+		}
+	},
+	{
+		"sdkMethod": "encoding.encodings.scte35Triggers.get",
+		"path": "/encoding/encodings/{encoding_id}/scte-35-triggers/{scte35trigger_id}",
+		"transport": "families/encoding-children.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childDetail",
+		"collection": "scte35",
+		"listPath": "/encoding/encodings/{encoding_id}/scte-35-triggers",
+		"raw": {
+			"id": "$child",
+			"base64EncodedMetadata": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"id": "$child"
+			}
+		}
+	},
+	{
+		"sdkMethod": "encoding.live.encodings.dnsMappings.get",
+		"path": "/encoding/live/encodings/{encoding_id}/dns-mappings/{id}",
+		"transport": "families/encoding-children.ts",
+		"kind": "CREATE_ENCODING",
+		"view": "childDetail",
+		"collection": "dnsMappings",
+		"live": true,
+		"listPath": "/encoding/live/encodings/{encoding_id}/dns-mappings",
+		"member": {
+			"encodingId": "$selected",
+			"subdomain": "PRIVATE_TEST_VALUE"
+		},
+		"raw": {
+			"id": "$child",
+			"encodingId": "$selected",
+			"hostname": "PRIVATE_TEST_VALUE",
+			"subdomain": "PRIVATE_TEST_VALUE",
+			"ip": "PRIVATE_TEST_VALUE"
+		},
+		"expected": {
+			"fields": {
+				"id": "$child"
+			}
+		}
+	}
+]

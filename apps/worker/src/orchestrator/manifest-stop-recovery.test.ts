@@ -4,7 +4,7 @@ import { ATTEMPT_LEASE_MS } from "./processor";
 
 const now = new Date("2026-11-27T02:00:00.000Z");
 
-it("requeues only stale, claimable VOD jobs with a durable manifest stop marker", async () => {
+it("requeues claimable VOD manifest stops after either the block or the role cancel is saved", async () => {
 	const findMany = vi.fn().mockResolvedValue([{ id: "encoding-1" }]);
 	const addBulk = vi.fn().mockResolvedValue([]);
 	const recover = createManifestStopRecovery({
@@ -16,12 +16,29 @@ it("requeues only stale, claimable VOD jobs with a durable manifest stop marker"
 	expect(findMany).toHaveBeenCalledWith({
 		where: {
 			status: { in: ["QUEUED", "RUNNING"] },
-			stepLog: { array_contains: [{ roleDeliveryBlocked: true }] },
 			updatedAt: { lt: new Date(now.getTime() - 60_000) },
-			OR: [
-				{ attemptClaimedAt: null },
+			AND: [
 				{
-					attemptClaimedAt: { lt: new Date(now.getTime() - ATTEMPT_LEASE_MS) },
+					OR: [
+						{ stepLog: { array_contains: [{ roleDeliveryBlocked: true }] } },
+						{
+							cancelRequested: true,
+							plan: {
+								path: ["outputs"],
+								array_contains: [{ kind: "S3_ROLE_BASED" }],
+							},
+						},
+					],
+				},
+				{
+					OR: [
+						{ attemptClaimedAt: null },
+						{
+							attemptClaimedAt: {
+								lt: new Date(now.getTime() - ATTEMPT_LEASE_MS),
+							},
+						},
+					],
 				},
 			],
 		},

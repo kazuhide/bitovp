@@ -3,7 +3,17 @@ import type { Queue } from "bullmq";
 import { attemptLeaseAvailable } from "./processor";
 
 export const roleManifestStopPendingWhere = {
-	stepLog: { array_contains: [{ roleDeliveryBlocked: true }] },
+	OR: [
+		{ stepLog: { array_contains: [{ roleDeliveryBlocked: true }] } },
+		// An accepted cancel is durable even when its first cleanup write failed.
+		{
+			cancelRequested: true,
+			plan: {
+				path: ["outputs"],
+				array_contains: [{ kind: "S3_ROLE_BASED" }],
+			},
+		},
+	],
 } satisfies Prisma.EncodingJobWhereInput;
 
 export function createManifestStopRecovery({
@@ -19,9 +29,8 @@ export function createManifestStopRecovery({
 		const at = now();
 		const jobs = await prisma.encodingJob.findMany({
 			where: {
-				...roleManifestStopPendingWhere,
 				status: { in: ["QUEUED", "RUNNING"] },
-				...attemptLeaseAvailable(at),
+				AND: [roleManifestStopPendingWhere, attemptLeaseAvailable(at)],
 				// Give a normally delayed delivery (30s) time to resume.
 				updatedAt: { lt: new Date(at.getTime() - 60_000) },
 			},

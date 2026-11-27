@@ -114,6 +114,20 @@ export function NativeEncodingClient() {
 			<h1 className="font-semibold text-xl text-zinc-50">
 				{t("encodingNative.title")}
 			</h1>
+			<nav className="flex flex-wrap gap-x-4 gap-y-2 text-emerald-400 text-sm">
+				<Link
+					href="/settings/encoding-native/statistics"
+					className="underline underline-offset-4"
+				>
+					{t("encodingStatistics.title")}
+				</Link>
+				<Link
+					href="/settings/encoding-native/codecs"
+					className="underline underline-offset-4"
+				>
+					{t("encodingNative.manageCodecs")}
+				</Link>
+			</nav>
 			{accounts.isError ? (
 				<LoadFailure
 					message={t("errorDefinitions.accountsFailed")}

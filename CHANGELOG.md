@@ -13,6 +13,8 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Keep role-based S3 delivery mirrors private and reconcile role resources after an interrupted create request.
 - Inspect HDR10+ sidecar input streams, HEVC configurations and additional audio outputs in recorded jobs. Open output information for supported muxings to view their duration, container bitrate and file size.
 - Browse related muxings, input streams, sidecars, captions, and DASH or HLS resources in a recorded job or run using its original provider account.
+- Inspect resource types, metadata field counts, recorded encoding diagnostics, and provider usage statistics in the selected Bitmovin account.
+- Create and remove supported Bitmovin codec configurations in Settings, with a recorded result to recover an interrupted request.
 - Send a pseudo-live source once through the feeder API, with duplicate playback prevention and a recorded end-of-file result.
 - Optionally run the QC queue on a dedicated worker with the same tenant checks and shared host reservations as the main worker.
 - Export a selected VOD audio track to a mono or stereo PCM WAV file, or copy a verified AAC or PCM track into a supported MP4, MOV or WAV file from the file-output wizard.

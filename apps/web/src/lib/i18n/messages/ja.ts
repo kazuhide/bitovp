@@ -17,6 +17,7 @@ export const ja = {
 		subtitleCodecs: "字幕コーデック",
 		filters: "フィルター",
 		codecs: "コーデック設定",
+		manageCodecs: "コーデック設定を管理",
 		metadata: "メタデータを確認",
 		metadataFields: "カスタムメタデータ項目数",
 		typeCheck: "種別を確認",

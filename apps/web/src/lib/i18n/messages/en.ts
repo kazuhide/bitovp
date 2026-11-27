@@ -39,6 +39,7 @@ export const en = {
 		subtitleCodecs: "Subtitle codecs",
 		filters: "Filters",
 		codecs: "Codec configurations",
+		manageCodecs: "Manage codec configurations",
 		metadata: "Check metadata",
 		metadataFields: "Custom metadata fields",
 		typeCheck: "Check type",

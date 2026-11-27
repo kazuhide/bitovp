@@ -3,6 +3,28 @@
 	"sdkVersion": "1.289.0",
 	"operations": [
 		{
+			"sdkMethod": "encoding.configurations.audio.aac.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/aac/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.aac.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.aac.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/aac/{configuration_id}",
@@ -43,6 +65,28 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.ac3.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/ac3/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.ac3.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -91,6 +135,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-atmos/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyAtmos.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.dolbyAtmos.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/dolby-atmos/{configuration_id}",
@@ -131,6 +197,28 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigital.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-digital/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyDigital.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -179,6 +267,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dolby-digital-plus/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dolbyDigitalPlus.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.dolbyDigitalPlus.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/dolby-digital-plus/{configuration_id}",
@@ -219,6 +329,28 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dts.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dts/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dts.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -267,6 +399,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dtsPassthrough.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.dtsPassthrough.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/dts-passthrough/{configuration_id}",
@@ -307,6 +461,28 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.dtsx.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/dtsx/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.dtsx.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -355,6 +531,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.eac3.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/eac3/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.eac3.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.eac3.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/eac3/{configuration_id}",
@@ -395,6 +593,28 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.heAacV1.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/he-aac-v1/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.heAacV1.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -443,6 +663,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.heAacV2.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/he-aac-v2/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.heAacV2.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.heAacV2.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/he-aac-v2/{configuration_id}",
@@ -483,6 +725,28 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.mp2.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/mp2/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.mp2.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -531,6 +795,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.mp3.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/mp3/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.mp3.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.mp3.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/mp3/{configuration_id}",
@@ -571,6 +857,28 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.audio.opus.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/opus/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.opus.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -685,6 +993,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.pcm.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/pcm/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.pcm.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.pcm.delete",
 			"httpVerb": "DELETE",
 			"path": "/encoding/configurations/audio/pcm/{configuration_id}",
@@ -751,6 +1081,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.audio.vorbis.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/audio/vorbis/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.audio.vorbis.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.audio.vorbis.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/audio/vorbis/{configuration_id}",
@@ -791,6 +1143,72 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/{configuration_id}",
+			"scope": "settings",
+			"scenario": "Inspect resource types and catalogue entries in the selected provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.get(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-generic-reads",
+				"anchor": "\"projects a bounded $kind $view response from $sdkMethod\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.list",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations",
+			"scope": "settings",
+			"scenario": "Inspect resource types and catalogue entries in the selected provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.list(api, { offset, limit })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-generic-reads",
+				"anchor": "\"projects a bounded $kind $view response from $sdkMethod\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.dvbSubtitle.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/dvb-subtitle/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.dvbSubtitle.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -839,6 +1257,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.subtitles.imsc.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/imsc/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.imsc.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.subtitles.imsc.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/subtitles/imsc/{configuration_id}",
@@ -879,6 +1319,28 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.subtitles.webvtt.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/subtitles/webvtt/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.subtitles.webvtt.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -927,6 +1389,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.video.av1.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/av1/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.av1.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.video.av1.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/video/av1/{configuration_id}",
@@ -967,6 +1451,28 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h262.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h262/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h262.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -1015,6 +1521,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.video.h264.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h264/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h264.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.video.h264.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/video/h264/{configuration_id}",
@@ -1055,6 +1583,28 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.h265.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/h265/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.h265.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -1191,6 +1741,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.video.mjpeg.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/mjpeg/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.mjpeg.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.video.mjpeg.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/video/mjpeg/{configuration_id}",
@@ -1235,6 +1807,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.configurations.video.vp8.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/vp8/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.vp8.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.configurations.video.vp8.get",
 			"httpVerb": "GET",
 			"path": "/encoding/configurations/video/vp8/{configuration_id}",
@@ -1275,6 +1869,28 @@
 				"file": "apps/web/src/lib/server/encoding-codec-catalogue.test.ts",
 				"anchor": "\"sends exact paginated list and detail GETs for $kind/$protocol\"",
 				"caseGroup": "native-codec-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.configurations.video.vp9.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/configurations/video/vp9/{configuration_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-codec-catalogue.ts",
+				"anchor": "api.encoding.configurations.video.vp9.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -2421,6 +3037,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.filters.audioMix.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/audio-mix/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.audioMix.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.filters.audioMix.get",
 			"httpVerb": "GET",
 			"path": "/encoding/filters/audio-mix/{filter_id}",
@@ -2461,6 +3099,28 @@
 				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
 				"anchor": "\"reads the official paged collection and detail at $path\"",
 				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.audioVolume.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/audio-volume/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.audioVolume.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -2509,6 +3169,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/azure-speech-to-captions/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.azureSpeechToCaptions.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.filters.azureSpeechToCaptions.get",
 			"httpVerb": "GET",
 			"path": "/encoding/filters/azure-speech-to-captions/{filter_id}",
@@ -2549,6 +3231,28 @@
 				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
 				"anchor": "\"reads the official paged collection and detail at $path\"",
 				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.conform.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/conform/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.conform.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -2597,6 +3301,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.filters.crop.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/crop/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.crop.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.filters.crop.get",
 			"httpVerb": "GET",
 			"path": "/encoding/filters/crop/{filter_id}",
@@ -2637,6 +3363,28 @@
 				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
 				"anchor": "\"reads the official paged collection and detail at $path\"",
 				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.deinterlace.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/deinterlace/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.deinterlace.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -2685,6 +3433,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.filters.denoiseHqdn3d.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/denoise-hqdn3d/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.denoiseHqdn3d.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.filters.denoiseHqdn3d.get",
 			"httpVerb": "GET",
 			"path": "/encoding/filters/denoise-hqdn3d/{filter_id}",
@@ -2725,6 +3495,28 @@
 				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
 				"anchor": "\"reads the official paged collection and detail at $path\"",
 				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.dolbyLoudness.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/dolby-loudness/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.dolbyLoudness.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -2773,6 +3565,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.filters.ebuR128SinglePass.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/ebu-r128-single-pass/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.ebuR128SinglePass.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.filters.ebuR128SinglePass.get",
 			"httpVerb": "GET",
 			"path": "/encoding/filters/ebu-r128-single-pass/{filter_id}",
@@ -2817,6 +3631,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.filters.enhancedDeinterlace.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/enhanced-deinterlace/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.enhancedDeinterlace.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.filters.enhancedDeinterlace.get",
 			"httpVerb": "GET",
 			"path": "/encoding/filters/enhanced-deinterlace/{filter_id}",
@@ -2857,6 +3693,28 @@
 				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
 				"anchor": "\"reads the official paged collection and detail at $path\"",
 				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.enhancedWatermark.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/enhanced-watermark/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.enhancedWatermark.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -2927,6 +3785,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.filters.interlace.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/interlace/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.interlace.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.filters.interlace.get",
 			"httpVerb": "GET",
 			"path": "/encoding/filters/interlace/{filter_id}",
@@ -2993,6 +3873,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.filters.rotate.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/rotate/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.rotate.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.filters.rotate.get",
 			"httpVerb": "GET",
 			"path": "/encoding/filters/rotate/{filter_id}",
@@ -3033,6 +3935,28 @@
 				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
 				"anchor": "\"reads the official paged collection and detail at $path\"",
 				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.scale.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/scale/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.scale.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -3081,6 +4005,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.filters.text.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/text/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.text.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.filters.text.get",
 			"httpVerb": "GET",
 			"path": "/encoding/filters/text/{filter_id}",
@@ -3121,6 +4067,50 @@
 				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
 				"anchor": "\"reads the official paged collection and detail at $path\"",
 				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.type.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/{filter_id}/type",
+			"scope": "settings",
+			"scenario": "Inspect resource types and catalogue entries in the selected provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.readType(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.type.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-generic-reads",
+				"anchor": "\"projects a bounded $kind $view response from $sdkMethod\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.unsharp.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/unsharp/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.unsharp.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -3169,6 +4159,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.filters.watermark.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/filters/watermark/{filter_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-filter-catalogue.ts",
+				"anchor": "api.encoding.filters.watermark.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.filters.watermark.get",
 			"httpVerb": "GET",
 			"path": "/encoding/filters/watermark/{filter_id}",
@@ -3209,6 +4221,28 @@
 				"file": "apps/web/src/lib/server/encoding-filter-catalogue.test.ts",
 				"anchor": "\"reads the official paged collection and detail at $path\"",
 				"caseGroup": "native-filter-pairs"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.akamaiNetstorage.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/akamai-netstorage/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.akamaiNetstorage.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -3257,6 +4291,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.inputs.aspera.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/aspera/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.aspera.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.inputs.aspera.get",
 			"httpVerb": "GET",
 			"path": "/encoding/inputs/aspera/{input_id}",
@@ -3297,6 +4353,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.azure.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/azure/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.azure.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -3345,6 +4423,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.inputs.directFileUpload.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/direct-file-upload/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.directFileUpload.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.inputs.directFileUpload.get",
 			"httpVerb": "GET",
 			"path": "/encoding/inputs/direct-file-upload/{input_id}",
@@ -3385,6 +4485,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.ftp.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/ftp/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.ftp.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -3433,6 +4555,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.inputs.gcs.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/gcs/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.gcs.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.inputs.gcs.get",
 			"httpVerb": "GET",
 			"path": "/encoding/inputs/gcs/{input_id}",
@@ -3473,6 +4617,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.gcsServiceAccount.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/gcs-service-account/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.gcsServiceAccount.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -3521,6 +4687,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.inputs.genericS3.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/generic-s3/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.genericS3.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.inputs.genericS3.get",
 			"httpVerb": "GET",
 			"path": "/encoding/inputs/generic-s3/{input_id}",
@@ -3561,6 +4749,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/{input_id}",
+			"scope": "settings",
+			"scenario": "Inspect resource types and catalogue entries in the selected provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.get(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-generic-reads",
+				"anchor": "\"projects a bounded $kind $view response from $sdkMethod\""
 			},
 			"provider": "unverified"
 		},
@@ -3609,6 +4819,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.inputs.http.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/http/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.http.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.inputs.http.get",
 			"httpVerb": "GET",
 			"path": "/encoding/inputs/http/{input_id}",
@@ -3653,6 +4885,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.inputs.https.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/https/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.https.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.inputs.https.get",
 			"httpVerb": "GET",
 			"path": "/encoding/inputs/https/{input_id}",
@@ -3693,6 +4947,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.local.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/local/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.local.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -3829,6 +5105,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.inputs.s3.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/s3/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.s3.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.inputs.s3.get",
 			"httpVerb": "GET",
 			"path": "/encoding/inputs/s3/{input_id}",
@@ -3891,6 +5189,28 @@
 				"file": "apps/worker/src/orchestrator/make-sdk.test.ts",
 				"anchor": "\"sends %s with its organization-specific GLOBAL role identity",
 				"caseGroup": "worker-s3-role-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.s3RoleBased.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/s3-role-based/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.s3RoleBased.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -3961,6 +5281,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.inputs.sftp.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/sftp/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.sftp.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.inputs.sftp.get",
 			"httpVerb": "GET",
 			"path": "/encoding/inputs/sftp/{input_id}",
@@ -4005,6 +5347,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.inputs.srt.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/srt/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.srt.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.inputs.srt.get",
 			"httpVerb": "GET",
 			"path": "/encoding/inputs/srt/{input_id}",
@@ -4045,6 +5409,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.zixi.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/inputs/zixi/{input_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.inputs.zixi.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -4399,6 +5785,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.outputs.akamaiMsl.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/akamai-msl/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.akamaiMsl.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.outputs.akamaiMsl.get",
 			"httpVerb": "GET",
 			"path": "/encoding/outputs/akamai-msl/{output_id}",
@@ -4443,6 +5851,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.outputs.akamaiNetstorage.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/akamai-netstorage/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.akamaiNetstorage.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.outputs.akamaiNetstorage.get",
 			"httpVerb": "GET",
 			"path": "/encoding/outputs/akamai-netstorage/{output_id}",
@@ -4483,6 +5913,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.azure.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/azure/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.azure.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -4575,6 +6027,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.outputs.ftp.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/ftp/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.ftp.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.outputs.ftp.get",
 			"httpVerb": "GET",
 			"path": "/encoding/outputs/ftp/{output_id}",
@@ -4615,6 +6089,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.gcs.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/gcs/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.gcs.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -4663,6 +6159,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.outputs.gcsServiceAccount.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/gcs-service-account/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.gcsServiceAccount.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.outputs.gcsServiceAccount.get",
 			"httpVerb": "GET",
 			"path": "/encoding/outputs/gcs-service-account/{output_id}",
@@ -4703,6 +6221,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.genericS3.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/generic-s3/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.genericS3.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -4751,6 +6291,72 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.outputs.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/{output_id}",
+			"scope": "settings",
+			"scenario": "Inspect resource types and catalogue entries in the selected provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.get(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-generic-reads",
+				"anchor": "\"projects a bounded $kind $view response from $sdkMethod\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.list",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs",
+			"scope": "settings",
+			"scenario": "Inspect resource types and catalogue entries in the selected provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.list(api, { offset, limit })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-generic-reads",
+				"anchor": "\"projects a bounded $kind $view response from $sdkMethod\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.liveMediaIngest.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/live-media-ingest/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.liveMediaIngest.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.outputs.liveMediaIngest.get",
 			"httpVerb": "GET",
 			"path": "/encoding/outputs/live-media-ingest/{output_id}",
@@ -4791,6 +6397,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.local.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/local/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.local.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -4839,6 +6467,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.outputs.moq.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/moq/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.moq.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.outputs.moq.get",
 			"httpVerb": "GET",
 			"path": "/encoding/outputs/moq/{output_id}",
@@ -4879,6 +6529,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.s3.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/s3/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.s3.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
 			},
 			"provider": "unverified"
 		},
@@ -4949,6 +6621,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.outputs.s3RoleBased.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/s3-role-based/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.s3RoleBased.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.outputs.s3RoleBased.delete",
 			"httpVerb": "DELETE",
 			"path": "/encoding/outputs/s3-role-based/{output_id}",
@@ -5015,6 +6709,28 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.outputs.sftp.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/sftp/{output_id}/customData",
+			"scope": "settings",
+			"scenario": "Inspect the number of custom metadata fields on an account-scoped provider resource.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.metadata(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.sftp.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-metadata-reads",
+				"anchor": "\"counts custom metadata for $kind/$protocol without returning the contents\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.outputs.sftp.get",
 			"httpVerb": "GET",
 			"path": "/encoding/outputs/sftp/{output_id}",
@@ -5055,6 +6771,28 @@
 				"file": "apps/web/src/app/api/encoding-native/route.sdk.test.ts",
 				"anchor": "\"lists $kind/$protocol and withholds provider credentials",
 				"caseGroup": "native-io-list"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.type.get",
+			"httpVerb": "GET",
+			"path": "/encoding/outputs/{output_id}/type",
+			"scope": "settings",
+			"scenario": "Inspect resource types and catalogue entries in the selected provider account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native",
+				"anchor": "await reader.readType(api, id)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-io-catalogue.ts",
+				"anchor": "api.encoding.outputs.type.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/route.catalogue.sdk.test.ts",
+				"caseGroup": "native-generic-reads",
+				"anchor": "\"projects a bounded $kind $view response from $sdkMethod\""
 			},
 			"provider": "unverified"
 		},

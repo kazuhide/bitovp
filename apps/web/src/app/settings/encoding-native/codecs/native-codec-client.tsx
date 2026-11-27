@@ -5,7 +5,7 @@ import Link from "next/link";
 import { type FormEvent, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 import type { SessionDto } from "@/lib/auth/dto";
 import { SESSION_QUERY_KEY, useSession } from "@/lib/auth/use-session";
 import {
@@ -51,6 +51,8 @@ const copy = {
 		noRows: "No configurations created here.",
 		scopeChanged: "Earlier account scope",
 		failed: "Action failed. Refresh the account and check the receipt.",
+		removedSubmission:
+			"The previous configuration was removed. Submit again to create it.",
 		invalid: "Check the configuration fields.",
 		unavailable: "Could not load codec configurations.",
 		previous: "Previous",
@@ -86,6 +88,8 @@ const copy = {
 		noRows: "この画面で作成した構成はありません。",
 		scopeChanged: "以前のアカウント設定",
 		failed: "操作に失敗しました。アカウントと操作記録を確認してください。",
+		removedSubmission:
+			"前回の構成は削除済みです。作成するにはもう一度送信してください。",
 		invalid: "構成の入力値を確認してください。",
 		unavailable: "コーデック構成を読み込めませんでした。",
 		previous: "前へ",
@@ -104,14 +108,28 @@ type Account = { id: string; label: string };
 const pageSize = 25;
 const audio = new Set(["dts", "mp2", "mp3", "vorbis"]);
 const video = new Set(["h262", "mjpeg", "vp8"]);
+const submissionPrefix = (identity: string) =>
+	`bitovp.native-codec:${identity}:`;
 
 async function submissionKey(identity: string, body: CreateNativeCodec) {
 	const bytes = new TextEncoder().encode(canonicalCreateRequestJson(body));
 	const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-	const storageKey = `bitovp.native-codec:${identity}:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+	const storageKey =
+		submissionPrefix(identity) +
+		Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
 	const key = sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
 	sessionStorage.setItem(storageKey, key);
-	return { key, storageKey };
+	return key;
+}
+
+function clearPendingCreation(identity: string, receiptId: string) {
+	const prefix = submissionPrefix(identity);
+	for (let index = sessionStorage.length - 1; index >= 0; index--) {
+		const key = sessionStorage.key(index);
+		// The create journal uses the idempotency key as its receipt ID.
+		if (key?.startsWith(prefix) && sessionStorage.getItem(key) === receiptId)
+			sessionStorage.removeItem(key);
+	}
 }
 
 export function NativeCodecClient() {
@@ -178,10 +196,16 @@ export function NativeCodecClient() {
 		setError(undefined);
 		try {
 			const receipt = await action();
+			if (identity && receipt.state !== "CREATING")
+				clearPendingCreation(identity, receipt.id);
 			setNotice(label[receipt.state]);
 			setConfirm(null);
-		} catch {
-			setError(label.failed);
+		} catch (error) {
+			setError(
+				error instanceof ApiError && error.status === 410
+					? label.removedSubmission
+					: label.failed,
+			);
 		} finally {
 			setBusy(false);
 			inFlight.current = false;
@@ -214,7 +238,7 @@ export function NativeCodecClient() {
 		}
 		const body = accepted.data;
 		void run(async () => {
-			const pending = await submissionKey(identity, body);
+			const key = await submissionKey(identity, body);
 			const result = await apiFetch<NativeCodecReceipt>(
 				"/api/encoding-native/codecs",
 				{
@@ -222,12 +246,14 @@ export function NativeCodecClient() {
 					body: JSON.stringify(body),
 					headers: {
 						...headersForCurrentSession(),
-						"Idempotency-Key": pending.key,
+						"Idempotency-Key": key,
 					},
 				},
-			);
-			if (result.state !== "CREATING")
-				sessionStorage.removeItem(pending.storageKey);
+			).catch((error: unknown) => {
+				if (error instanceof ApiError && error.status === 410)
+					clearPendingCreation(identity, key);
+				throw error;
+			});
 			if (result.state === "ACTIVE") setName("");
 			return result;
 		});

@@ -228,6 +228,8 @@ describe("orchestrator processor", () => {
 		["SMOOTH", "cancel-account-lease-lost"],
 		["SMOOTH", "blocked-account-deleted"],
 		["SMOOTH", "blocked-account-crossed"],
+		["SMOOTH", "blocked-account-scope-refused"],
+		["SMOOTH", "blocked-account-malformed-identity"],
 		["SMOOTH", "blocked-preparation-changed"],
 	] as const)("guards the recorded %s manifest on resume (%s)", async (format, scenario) => {
 		const sample = basePlan.manifests[0];
@@ -309,7 +311,14 @@ describe("orchestrator processor", () => {
 		const accountReadForCancel =
 			scenario === "cancel-account-unavailable" ||
 			scenario === "cancel-account-lease-lost";
+		const permanentScopeError =
+			scenario === "blocked-account-scope-refused"
+				? "42501"
+				: scenario === "blocked-account-malformed-identity"
+					? "22P02"
+					: undefined;
 		const permanentAccountFailure =
+			permanentScopeError !== undefined ||
 			scenario === "blocked-account-deleted" ||
 			scenario === "blocked-account-crossed";
 		const userCancel =
@@ -377,7 +386,14 @@ describe("orchestrator processor", () => {
 			new Error("Synthetic temporary database connection failure"),
 			{ errorCode: "P1002" },
 		);
-		if (scenario === "blocked-account-deleted") {
+		if (permanentScopeError) {
+			revealAccount.mockRejectedValueOnce(
+				Object.assign(new Error("Synthetic tenant scope failure"), {
+					code: "P2010",
+					meta: { code: permanentScopeError },
+				}),
+			);
+		} else if (scenario === "blocked-account-deleted") {
 			revealAccount.mockRejectedValueOnce(
 				new Error("Bitmovin account no longer exists"),
 			);
@@ -502,7 +518,9 @@ describe("orchestrator processor", () => {
 				await expect(h.processor({ encodingJobId: JOB_ID })).rejects.toThrow(
 					crossed
 						? "The recorded Bitmovin account is required for manifest stop"
-						: "Bitmovin account no longer exists",
+						: permanentScopeError
+							? "Synthetic tenant scope failure"
+							: "Bitmovin account no longer exists",
 				);
 				expect(revealAccount).toHaveBeenCalledTimes(crossed ? 0 : 1);
 				expect(h.row).toMatchObject({
@@ -572,23 +590,37 @@ describe("orchestrator processor", () => {
 					});
 					const saved = structuredClone(h.row.stepLog);
 					const beforeRead = reads.length;
-					revealAccount.mockRejectedValueOnce(
-						Object.assign(new Error("Synthetic exhausted pool"), {
-							code: "P2024",
-						}),
-					);
-					await expect(
-						createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
-					).resolves.toMatchObject({
-						status: "MANIFEST_STOP_PENDING",
-					});
-					expect(h.row).toMatchObject({
-						status: "RUNNING",
-						attemptClaimedAt: null,
-						stepLog: saved,
-					});
-					expect(h.emitted).toHaveLength(0);
-					expect(reads).toHaveLength(beforeRead);
+					// The tenant-scoped account lookup can surface raw PostgreSQL
+					// errors from the RLS setup statements as Prisma P2010.
+					for (const failure of [
+						{ code: "P2024" },
+						...[
+							"57014",
+							"08006",
+							"40001",
+							"40P01",
+							"55P03",
+							"57P03",
+							"53300",
+						].map((sqlState) => ({ code: "P2010", meta: { code: sqlState } })),
+					]) {
+						revealAccount.mockRejectedValueOnce(
+							Object.assign(
+								new Error("Synthetic temporary account read failure"),
+								failure,
+							),
+						);
+						await expect(
+							createOrchestratorProcessor(h.deps)({ encodingJobId: JOB_ID }),
+						).resolves.toMatchObject({ status: "MANIFEST_STOP_PENDING" });
+						expect(h.row).toMatchObject({
+							status: "RUNNING",
+							attemptClaimedAt: null,
+							stepLog: saved,
+						});
+						expect(h.emitted).toHaveLength(0);
+						expect(reads).toHaveLength(beforeRead);
+					}
 				}
 				const post = reads.filter(
 					(call) => call === `POST ${path}/stop`,

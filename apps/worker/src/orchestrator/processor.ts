@@ -247,7 +247,34 @@ export class AttemptLeaseLostError extends Error {
 function isTemporaryAccountReadError(error: unknown): boolean {
 	// Initialization errors use errorCode. Tenant-scoped reads can also fail
 	// while opening or running the Prisma transaction that supplies RLS.
-	const failure = error as { code?: string; errorCode?: string } | null;
+	const failure = error as {
+		code?: string;
+		errorCode?: string;
+		meta?: { code?: unknown };
+	} | null;
+	const prismaCode = failure?.code ?? failure?.errorCode;
+	if (prismaCode === "P2010") {
+		// The RLS setup statements run as raw SQL. Prisma keeps PostgreSQL's
+		// SQLSTATE in meta.code, including when a statement times out.
+		const sqlState = failure?.meta?.code;
+		return (
+			typeof sqlState === "string" &&
+			((/^(08|40)[A-Z0-9]{3}$/.test(sqlState) &&
+				sqlState !== "08P01" &&
+				sqlState !== "40002") ||
+				[
+					"25P03",
+					"25P04",
+					"53300",
+					"55P03",
+					"57014",
+					"57P01",
+					"57P02",
+					"57P03",
+					"57P05",
+				].includes(sqlState))
+		);
+	}
 	return [
 		"P1001",
 		"P1002",
@@ -257,7 +284,7 @@ function isTemporaryAccountReadError(error: unknown): boolean {
 		"P2028",
 		"P2034",
 		"P2037",
-	].includes(failure?.code ?? failure?.errorCode ?? "");
+	].includes(prismaCode ?? "");
 }
 
 export function createOrchestratorProcessor(deps: OrchestratorDeps) {

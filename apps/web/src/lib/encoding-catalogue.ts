@@ -6,6 +6,7 @@ export const encodingCatalogueKinds = [
 	"watch-folders",
 	"inputs",
 	"outputs",
+	"codecs",
 	"video-codecs",
 	"audio-codecs",
 	"subtitle-codecs",
@@ -60,3 +61,25 @@ export const encodingCatalogueProtocols: Partial<
 	...encodingCodecProtocols,
 	filters: encodingFilterProtocols,
 };
+
+const typesWithoutMetadata: Partial<Record<EncodingCatalogueKind, string[]>> = {
+	inputs: ["hls", "redundant-rtmp", "rtmp"],
+	outputs: ["cdn"],
+	"video-codecs": ["h265v2"],
+	"audio-codecs": ["passthrough"],
+};
+
+export function encodingCatalogueDiagnostic(
+	kind: EncodingCatalogueKind,
+	protocol?: string,
+): "metadata" | "type" | undefined {
+	if (protocol === undefined)
+		return kind === "outputs" || kind === "filters" ? "type" : undefined;
+	const protocols = encodingCatalogueProtocols[kind];
+	if (
+		protocols &&
+		Object.hasOwn(protocols, protocol) &&
+		!typesWithoutMetadata[kind]?.includes(protocol)
+	)
+		return "metadata";
+}

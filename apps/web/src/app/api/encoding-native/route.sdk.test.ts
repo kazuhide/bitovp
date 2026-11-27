@@ -342,7 +342,7 @@ describe("native Encoding resources through the installed SDK", () => {
 		["templates", "&offset=0&offset=1"],
 		["templates", "&limit=0"],
 		["watch-folders", "&type=LIVE"],
-		["inputs", ""],
+		["inputs", "&view=metadata"],
 		["inputs", "&protocol=cdn"],
 		["outputs", "&protocol=__proto__"],
 		["outputs", "&protocol=s3&type=LIVE"],

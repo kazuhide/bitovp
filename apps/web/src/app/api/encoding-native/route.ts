@@ -1,12 +1,20 @@
 import {
 	AwsCloudRegion,
+	CodecConfigType,
 	EncodingTemplateType,
+	FilterType,
 	GoogleCloudRegion,
+	InputType,
+	OutputType,
 } from "@bitmovin/api-sdk";
 import { publicStorageDiagnostic } from "@bitovp/core";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { encodingCatalogueKinds } from "@/lib/encoding-catalogue";
+import {
+	type EncodingCatalogueKind,
+	encodingCatalogueKinds,
+} from "@/lib/encoding-catalogue";
+import { projectEncodingMetadata } from "@/lib/encoding-metadata";
 import { bitmovinClientFromBinding } from "@/lib/server/bitmovin";
 import { getServerContext } from "@/lib/server/context";
 import { encodingCodecReader } from "@/lib/server/encoding-codec-catalogue";
@@ -27,6 +35,7 @@ const querySchema = z.strictObject({
 	id: uuid.optional(),
 	type: templateType.optional(),
 	protocol: z.string().min(1).max(40).optional(),
+	view: z.enum(["metadata", "type"]).optional(),
 	offset: pageNumber.pipe(z.int().nonnegative()).optional(),
 	limit: pageNumber.pipe(z.int().min(1).max(MAX_LIMIT)).optional(),
 });
@@ -34,6 +43,11 @@ const querySchema = z.strictObject({
 const resourceSchema = z.looseObject({
 	id: uuid,
 });
+const metadataResponse = z.object({
+	id: uuid.optional(),
+	customData: z.unknown(),
+});
+const typeResponse = z.object({ id: uuid.optional(), type: z.string() });
 const providerPage = z.object({
 	items: z.array(resourceSchema).max(MAX_LIMIT),
 	totalCount: z.int().nonnegative(),
@@ -59,6 +73,13 @@ const watchInput = z.object({ inputId: uuid });
 const watchOutputs = z.array(z.object({ outputId: uuid }));
 const positiveInteger = z.int().positive();
 const positiveRate = z.number().positive();
+const resourceTypes: Partial<Record<EncodingCatalogueKind, z.ZodType<string>>> =
+	{
+		codecs: z.enum(CodecConfigType),
+		inputs: z.enum(InputType),
+		outputs: z.enum(OutputType),
+		filters: z.enum(FilterType),
+	};
 
 function project(item: Resource, { kind, protocol }: Target, detail = false) {
 	const id = item.id;
@@ -68,7 +89,17 @@ function project(item: Resource, { kind, protocol }: Target, detail = false) {
 			: undefined;
 	const createdAt = timestamp.safeParse(item.createdAt).data;
 	const modifiedAt = timestamp.safeParse(item.modifiedAt).data;
-	const metadata = { id, name: name || undefined, createdAt, modifiedAt };
+	const resourceType =
+		protocol === undefined
+			? resourceTypes[kind]?.safeParse(item.type).data
+			: undefined;
+	const metadata = {
+		id,
+		name: name || undefined,
+		createdAt,
+		modifiedAt,
+		resourceType,
+	};
 	if (kind === "templates") {
 		return { ...metadata, type: templateType.safeParse(item.type).data };
 	}
@@ -126,7 +157,7 @@ export async function GET(req: Request) {
 	}
 	const query = querySchema.safeParse(values);
 	if (!query.success) return validationError(query.error);
-	const { kind, bitmovinAccountId, id, type, protocol } = query.data;
+	const { kind, bitmovinAccountId, id, type, protocol, view } = query.data;
 	const native = kind === "templates" || kind === "watch-folders";
 	const reader =
 		kind === "filters"
@@ -139,6 +170,8 @@ export async function GET(req: Request) {
 				query.data.offset !== undefined ||
 				query.data.limit !== undefined)) ||
 		(type && kind !== "templates") ||
+		(view === "metadata" && (!id || !reader?.metadata)) ||
+		(view === "type" && (!id || !reader?.readType)) ||
 		(native ? protocol !== undefined : !reader)
 	) {
 		return jsonError(
@@ -168,9 +201,50 @@ export async function GET(req: Request) {
 			},
 		);
 		try {
-			if (reader) {
-				if (id) await reader.get(api, id);
-				else await reader.list(api, { offset, limit });
+			if (reader && id) {
+				await reader.get(api, id);
+				if (view) {
+					const parent = resourceSchema.safeParse(result).data;
+					if (parent?.id !== id) return malformedResponse();
+					const parentType = parent.type;
+					signal.throwIfAborted();
+					result = undefined;
+					if (view === "metadata" && reader.metadata) {
+						if (parentType !== undefined && parentType !== reader.expectedType)
+							return malformedResponse();
+						await reader.metadata(api, id);
+						signal.throwIfAborted();
+						const data = metadataResponse.safeParse(result).data;
+						if (!data || (data.id !== undefined && data.id !== id))
+							return malformedResponse();
+						const metadata = projectEncodingMetadata(data.customData);
+						return metadata
+							? response({ kind, protocol, id, ...metadata })
+							: malformedResponse();
+					}
+					if (view === "type" && reader.readType) {
+						await reader.readType(api, id);
+						signal.throwIfAborted();
+						// The filter SDK returns a scalar enum, while output wraps its type.
+						const data = typeResponse.safeParse(
+							kind === "filters" && typeof result === "string"
+								? { type: result }
+								: result,
+						).data;
+						const resourceType = resourceTypes[kind]?.safeParse(
+							data?.type,
+						).data;
+						return data &&
+							resourceType &&
+							(data.id === undefined || data.id === id) &&
+							(parentType === undefined || parentType === resourceType)
+							? response({ kind, id, resourceType })
+							: malformedResponse();
+					}
+					return malformedResponse();
+				}
+			} else if (reader) {
+				await reader.list(api, { offset, limit });
 			} else if (kind === "templates") {
 				if (id) await api.encoding.templates.get(id);
 				else

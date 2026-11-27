@@ -20,10 +20,8 @@ import type { CreateStamp } from "./stamping-fetch";
  * load balancer sends FIN on an idle pooled socket, and undici writes the next
  * request into it just as it closes. Retrying opens a fresh socket.
  *
- * Only a REJECTION is retried. A response that arrived is returned untouched whatever
- * its status — the SDK turns 4xx/5xx into a `BitmovinError` carrying the API's own
- * message, and repeating a request the API deliberately refused only wastes time and
- * doubles the audit trail.
+ * Only a REJECTION is retried. The SDK turns a received 4xx/5xx into a
+ * `BitmovinError`. Repeating an HTTP refusal wastes time and doubles the audit trail.
  *
  * The cost, stated plainly: for a POST a dropped response means the outcome is
  * UNKNOWN, so a request that did reach the API leaves a duplicate resource behind.
@@ -75,6 +73,8 @@ const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_DELAY_MS = 250;
 const ROLE_STORAGE_CREATE_PATH =
 	/^\/v1\/encoding\/(?:inputs|outputs)\/s3-role-based\/?$/;
+const MANIFEST_PROBE_PATH =
+	/^\/v1\/encoding\/manifests\/(?:hls|dash|smooth)\/[^/]+\/(?:status|customData)\/?$/;
 
 export function createRetryingFetch(
 	options: RetryingFetchOptions = {},
@@ -134,10 +134,17 @@ export function createRetryingFetch(
 			typeof options.retryMutations === "function"
 				? options.retryMutations()
 				: options.retryMutations;
+		const protectedManifestProbe =
+			options.withholdProviderDetails &&
+			request?.method?.toUpperCase() === "GET" &&
+			MANIFEST_PROBE_PATH.test(pathOf(url));
 		let lastError: unknown;
 		for (let attempt = 1; attempt <= attempts; attempt++) {
 			try {
-				return await doFetch(url, init);
+				const response = await doFetch(url, init);
+				return protectedManifestProbe && response.status >= 400
+					? protectedManifestErrorResponse(response)
+					: response;
 			} catch (err) {
 				lastError = err;
 				if (attempt === attempts) {
@@ -190,6 +197,20 @@ export function createRetryingFetch(
 		}
 		throw lastError;
 	};
+}
+
+async function protectedManifestErrorResponse(response: Response) {
+	// SDK 1.289.0 can lose the HTTP status if the body is unreadable or its
+	// error envelope contains unexpected nulls. Supply only structured data.
+	const body: unknown = await response.json().catch(() => undefined);
+	const data =
+		body && typeof body === "object" && "data" in body ? body.data : undefined;
+	const code =
+		data && typeof data === "object" && "code" in data ? data.code : undefined;
+	return Response.json(
+		{ data: { code: Number.isSafeInteger(code) ? code : undefined } },
+		{ status: response.status },
+	);
 }
 
 function failedOriginalDnsLookup(error: unknown, url: string): boolean {

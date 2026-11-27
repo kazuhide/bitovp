@@ -5059,6 +5059,270 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.statistics.cdn.usage.get",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics/cdn/usage",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.cdn.usage.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.statistics.daily.list",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics/daily",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.daily.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.statistics.daily.listByDateRange",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics/daily/{from}/{to}",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.daily.listByDateRange("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.live.list",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics/encodings/live",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.encodings.live.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.live.listByDateRange",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics/encodings/live/{from}/{to}",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.encodings.live.listByDateRange("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.live.options.get",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics/encodings/live/{encoding_id}/options",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.encodings.live.options.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.vod.list",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics/encodings/vod",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.encodings.vod.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.statistics.encodings.vod.listByDateRange",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics/encodings/vod/{from}/{to}",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.encodings.vod.listByDateRange("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.statistics.get",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.statistics.labels.daily.list",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics/labels/daily",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.labels.daily.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.statistics.labels.listByDateRange",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics/labels/{from}/{to}",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.labels.listByDateRange("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.statistics.list",
+			"httpVerb": "GET",
+			"path": "/encoding/statistics/{from}/{to}",
+			"scope": "settings",
+			"scenario": "Read provider usage statistics for the selected Bitmovin account.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/statistics",
+				"anchor": "readStatistics(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/provider-statistics.ts",
+				"anchor": "api.encoding.statistics.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/statistics/route.test.ts",
+				"anchor": "\"uses the documented SDK statistics transport $sdkMethod\"",
+				"caseGroup": "native-statistics-reads"
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.templates.get",
 			"httpVerb": "GET",
 			"path": "/encoding/templates/{encoding_template_id}",
@@ -5148,7 +5412,9 @@
 			"sdkMethod": "encoding.configurations.video.h264.create",
 			"target": {
 				"location": "body",
-				"propertyPath": ["autoLevelSetup"]
+				"propertyPath": [
+					"autoLevelSetup"
+				]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -5204,7 +5470,9 @@
 			"sdkMethod": "encoding.configurations.video.av1.create",
 			"target": {
 				"location": "body",
-				"propertyPath": ["maxLevel"]
+				"propertyPath": [
+					"maxLevel"
+				]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -5245,14 +5513,18 @@
 					"url": "https://developer.bitmovin.com/encoding/reference/postencodingconfigurationsvideoav1",
 					"reviewedAt": "2026-11-16"
 				},
-				"conditions": ["Has no effect when autoLevelSetup is DISABLED."]
+				"conditions": [
+					"Has no effect when autoLevelSetup is DISABLED."
+				]
 			}
 		},
 		{
 			"sdkMethod": "encoding.configurations.video.av1.create",
 			"target": {
 				"location": "body",
-				"propertyPath": ["autoLevelSetup"]
+				"propertyPath": [
+					"autoLevelSetup"
+				]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -5302,7 +5574,9 @@
 			"sdkMethod": "encoding.configurations.video.av1.create",
 			"target": {
 				"location": "body",
-				"propertyPath": ["masterDisplay"]
+				"propertyPath": [
+					"masterDisplay"
+				]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -5350,7 +5624,9 @@
 			"sdkMethod": "encoding.configurations.video.av1.create",
 			"target": {
 				"location": "body",
-				"propertyPath": ["maxContentLightLevel"]
+				"propertyPath": [
+					"maxContentLightLevel"
+				]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -5398,7 +5674,9 @@
 			"sdkMethod": "encoding.configurations.video.av1.create",
 			"target": {
 				"location": "body",
-				"propertyPath": ["maxPictureAverageLightLevel"]
+				"propertyPath": [
+					"maxPictureAverageLightLevel"
+				]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -5446,7 +5724,9 @@
 			"sdkMethod": "encoding.outputs.moq.create",
 			"target": {
 				"location": "body",
-				"propertyPath": ["relayUrl"]
+				"propertyPath": [
+					"relayUrl"
+				]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -5497,14 +5777,18 @@
 					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
 					"reviewedAt": "2026-11-25"
 				},
-				"conditions": ["Required for a Live MoQ output."]
+				"conditions": [
+					"Required for a Live MoQ output."
+				]
 			}
 		},
 		{
 			"sdkMethod": "encoding.outputs.moq.create",
 			"target": {
 				"location": "body",
-				"propertyPath": ["authToken"]
+				"propertyPath": [
+					"authToken"
+				]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -5555,14 +5839,18 @@
 					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
 					"reviewedAt": "2026-11-25"
 				},
-				"conditions": ["Optional relay authorization token."]
+				"conditions": [
+					"Optional relay authorization token."
+				]
 			}
 		},
 		{
 			"sdkMethod": "encoding.outputs.moq.create",
 			"target": {
 				"location": "body",
-				"propertyPath": ["authTokenType"]
+				"propertyPath": [
+					"authTokenType"
+				]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -5622,7 +5910,9 @@
 			"sdkMethod": "encoding.outputs.moq.create",
 			"target": {
 				"location": "body",
-				"propertyPath": ["trackNamespace"]
+				"propertyPath": [
+					"trackNamespace"
+				]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -5679,14 +5969,18 @@
 					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
 					"reviewedAt": "2026-11-25"
 				},
-				"conditions": ["Required tuple of one to 32 strings."]
+				"conditions": [
+					"Required tuple of one to 32 strings."
+				]
 			}
 		},
 		{
 			"sdkMethod": "encoding.outputs.moq.create",
 			"target": {
 				"location": "body",
-				"propertyPath": ["draftVersion"]
+				"propertyPath": [
+					"draftVersion"
+				]
 			},
 			"access": "gui-confirmed",
 			"evidence": {
@@ -5731,7 +6025,9 @@
 					"url": "https://developer.bitmovin.com/encoding/reference/livepostencodingoutputsmoq",
 					"reviewedAt": "2026-11-25"
 				},
-				"conditions": ["Required. The API accepts DRAFT_16 and DRAFT_18."]
+				"conditions": [
+					"Required. The API accepts DRAFT_16 and DRAFT_18."
+				]
 			}
 		}
 	]

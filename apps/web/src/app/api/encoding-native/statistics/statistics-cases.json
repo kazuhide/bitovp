@@ -1,0 +1,80 @@
+[
+	{
+		"sdkMethod": "encoding.statistics.get",
+		"path": "/encoding/statistics",
+		"view": "totals",
+		"mode": "single"
+	},
+	{
+		"sdkMethod": "encoding.statistics.list",
+		"path": "/encoding/statistics/{from}/{to}",
+		"view": "totals",
+		"mode": "page",
+		"range": true
+	},
+	{
+		"sdkMethod": "encoding.statistics.daily.list",
+		"path": "/encoding/statistics/daily",
+		"view": "daily",
+		"mode": "page"
+	},
+	{
+		"sdkMethod": "encoding.statistics.daily.listByDateRange",
+		"path": "/encoding/statistics/daily/{from}/{to}",
+		"view": "daily",
+		"mode": "prefix",
+		"range": true
+	},
+	{
+		"sdkMethod": "encoding.statistics.encodings.live.list",
+		"path": "/encoding/statistics/encodings/live",
+		"view": "live",
+		"mode": "page"
+	},
+	{
+		"sdkMethod": "encoding.statistics.encodings.live.listByDateRange",
+		"path": "/encoding/statistics/encodings/live/{from}/{to}",
+		"view": "live",
+		"mode": "page",
+		"range": true
+	},
+	{
+		"sdkMethod": "encoding.statistics.encodings.vod.list",
+		"path": "/encoding/statistics/encodings/vod",
+		"view": "vod",
+		"mode": "page"
+	},
+	{
+		"sdkMethod": "encoding.statistics.encodings.vod.listByDateRange",
+		"path": "/encoding/statistics/encodings/vod/{from}/{to}",
+		"view": "vod",
+		"mode": "page",
+		"range": true
+	},
+	{
+		"sdkMethod": "encoding.statistics.labels.listByDateRange",
+		"path": "/encoding/statistics/labels/{from}/{to}",
+		"view": "labels",
+		"mode": "page",
+		"range": true
+	},
+	{
+		"sdkMethod": "encoding.statistics.labels.daily.list",
+		"path": "/encoding/statistics/labels/daily",
+		"view": "daily-labels",
+		"mode": "page"
+	},
+	{
+		"sdkMethod": "encoding.statistics.cdn.usage.get",
+		"path": "/encoding/statistics/cdn/usage",
+		"view": "cdn",
+		"mode": "single",
+		"range": true
+	},
+	{
+		"sdkMethod": "encoding.statistics.encodings.live.options.get",
+		"path": "/encoding/statistics/encodings/live/{encoding_id}/options",
+		"view": "live-options",
+		"mode": "single"
+	}
+]

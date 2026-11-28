@@ -409,6 +409,94 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 		});
 
 		it.each(
+			filterDeletes,
+		)("does not confuse offset shifts with absence during $mode filter removal", async ({
+			mode,
+		}) => {
+			const s = await seed(
+				own,
+				a,
+				contracts.find((entry) => entry.kind === "CREATE_STREAM"),
+			);
+			const filterId = await attachFilter(s);
+			const filters =
+				mode === "one" ? { mode, filterId } : { mode, filterIds: [filterId] };
+			const path = `${s.expected}/filters`;
+			const withTailTarget = () => [
+				...Array.from({ length: 100 }, (_, position) => ({
+					id: randomUUID(),
+					position,
+				})),
+				{ id: filterId, position: 100 },
+			];
+			let attached =
+				mode === "one" ? withTailTarget() : [{ id: filterId, position: 0 }];
+			let loseDelete = true;
+			const reads: number[] = [];
+			const deletes: string[] = [];
+			const ok = (result: object) =>
+				Response.json({ status: "SUCCESS", data: { result } });
+			send.mockImplementation(async (url: string, init: RequestInit) => {
+				const target = new URL(url);
+				expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+				if (init.method === "GET") {
+					expect(target.pathname).toBe(path);
+					const offset = Number(target.searchParams.get("offset"));
+					expect(target.searchParams.get("limit")).toBe("100");
+					reads.push(offset);
+					// A concurrent, unrelated removal makes item 101 move into page 1.
+					if (offset === 100) attached.shift();
+					return ok({ filters: attached.slice(offset, offset + 100) });
+				}
+				expect(init.method).toBe("DELETE");
+				expect(target.pathname).toBe(`${path}/${filterId}`);
+				expect(attached.some(({ id }) => id === filterId)).toBe(true);
+				deletes.push(target.pathname);
+				if (loseDelete) throw new Error("lost delete response");
+				attached = attached.filter(({ id }) => id !== filterId);
+				return ok({ id: filterId });
+			});
+
+			const initial = await submit(s, "remove", { filters });
+			expect(initial.status).toBe(502);
+			expect(await initial.json()).toMatchObject({ state: "UNKNOWN" });
+			expect(reads).toEqual(mode === "one" ? [0, 100] : [0]);
+			expect(deletes).toHaveLength(1);
+
+			attached = withTailTarget();
+			const verify = await submit(s, "verify", { filters });
+			expect(verify.status).toBe(502);
+			expect(await verify.json()).toMatchObject({
+				state: "UNKNOWN",
+				disposition: "unknown",
+			});
+			expect(reads.slice(-2)).toEqual([0, 100]);
+			expect(deletes).toHaveLength(1);
+			expect(
+				await own.encodingResourceRemoval.findFirst({
+					where: { sourceId: s.sourceId },
+				}),
+			).toMatchObject({ state: "UNKNOWN", pendingJobId: s.sourceId });
+
+			attached = withTailTarget();
+			loseDelete = false;
+			const retry = await submit(s, "remove", { filters, retry: true });
+			expect(retry.status).toBe(200);
+			expect(await retry.json()).toEqual({
+				state: "REMOVED",
+				disposition: "removed",
+			});
+			expect(reads.slice(-2)).toEqual([0, 100]);
+			expect(deletes).toEqual([`${path}/${filterId}`, `${path}/${filterId}`]);
+			expect(attached).toHaveLength(99);
+			expect(
+				await own.encodingResourceRemoval.findFirst({
+					where: { sourceId: s.sourceId },
+				}),
+			).toMatchObject({ state: "REMOVED", pendingJobId: null });
+		});
+
+		it.each(
 			auditedOperationCases(
 				import.meta.url,
 				"recorded-resource-deletes",

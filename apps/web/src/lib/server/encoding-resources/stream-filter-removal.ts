@@ -30,6 +30,7 @@ export const streamFilterRemovalSchema = z.discriminatedUnion("mode", [
 ]);
 type Command = z.infer<typeof streamFilterRemovalSchema>;
 const filterList = z.array(z.object({ id: z.uuid() }));
+type FilterInspection = { present: string[]; complete: boolean };
 
 export function recordedFilterScopes(
 	log: NonNullable<ReturnType<typeof parseResourceLog>>,
@@ -94,10 +95,14 @@ export function streamFilterChange(
 				: createHash("sha256")
 						.update(cmd.filterIds.toSorted().join(","))
 						.digest("hex"),
-		async inspect(api: BitmovinApi, requireCompleteMatch: boolean) {
+		async inspect(
+			api: BitmovinApi,
+			requireCompleteMatch: boolean,
+		): Promise<FilterInspection> {
 			const observed = new Set<string>();
 			const limit = 100;
-			for (let offset = 0; ; offset += limit) {
+			let offset = 0;
+			for (; ; offset += limit) {
 				const page = await api.encoding.encodings.streams.filters.list(
 					encodingId,
 					id,
@@ -111,20 +116,22 @@ export function streamFilterChange(
 				}
 				if (rows.length < limit) break;
 			}
-			const remaining = confirmedIds.filter((filterId) =>
-				observed.has(filterId),
-			);
+			const present = confirmedIds.filter((filterId) => observed.has(filterId));
+			// Once a second page is needed, other edits can move an unseen
+			// attachment behind the offset. The walk only proves presence.
+			const complete = offset === 0;
 			if (
 				cmd.mode === "all" &&
 				requireCompleteMatch &&
-				remaining.length &&
+				(!complete || present.length > 0) &&
 				!sameConfirmedResourceIds([...observed], confirmedIds)
 			)
 				throw new InvalidResourceResponse();
-			return remaining;
+			return { present, complete };
 		},
-		async remove(api: BitmovinApi, remaining: readonly string[]) {
-			for (const filterId of remaining) {
+		async remove(api: BitmovinApi, inspection: FilterInspection) {
+			const targets = inspection.complete ? inspection.present : confirmedIds;
+			for (const filterId of targets) {
 				try {
 					const result = await api.encoding.encodings.streams.filters.delete(
 						encodingId,

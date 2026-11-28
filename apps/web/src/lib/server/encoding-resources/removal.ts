@@ -263,19 +263,20 @@ export async function removeResource(
 		let sent = false;
 		try {
 			if (!claim.change) await family.detail(api, address);
-			const remaining = await claim.change?.inspect(
+			const inspection = await claim.change?.inspect(
 				api,
 				action === "remove" && !claim.uncertain,
 			);
-			if (remaining?.length === 0) {
+			if (inspection?.complete && inspection.present.length === 0) {
 				state = "REMOVED";
 				disposition = "absent";
 			} else if (action === "verify") {
-				disposition = "present";
+				if (!inspection || inspection.present.length > 0)
+					disposition = "present";
 			} else {
 				sent = true;
-				if (claim.change && remaining)
-					await claim.change.remove(api, remaining);
+				if (claim.change && inspection)
+					await claim.change.remove(api, inspection);
 				else if (claim.remove) await claim.remove(api, address);
 				state = "REMOVED";
 				disposition = "removed";

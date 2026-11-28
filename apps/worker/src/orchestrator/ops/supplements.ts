@@ -57,8 +57,8 @@ export function createSupplementOps(
 							output.container,
 						]);
 					}),
-				).catch(() => []);
-				if (!targets.length || targets.includes(undefined))
+				).catch(() => undefined);
+				if (!targets?.length || targets.includes(undefined))
 					throw new SupplementOutputPreflightError(
 						"Could not verify the Azure supplement destinations",
 					);

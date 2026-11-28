@@ -1,5 +1,9 @@
 const definitiveRefusals = new Set([400, 401, 403, 404, 422, 429]);
 
+export function isDefinitiveCreateRefusalStatus(status: number): boolean {
+	return definitiveRefusals.has(status);
+}
+
 export class ProviderCreateRefusal extends Error {
 	constructor(readonly status: number) {
 		super(`Provider refused resource creation (HTTP ${status})`);
@@ -17,7 +21,7 @@ export async function withProviderCreateRefusal<T>(
 			error instanceof Error && "httpStatusCode" in error
 				? error.httpStatusCode
 				: undefined;
-		if (typeof status === "number" && definitiveRefusals.has(status))
+		if (typeof status === "number" && isDefinitiveCreateRefusalStatus(status))
 			throw new ProviderCreateRefusal(status);
 		throw error;
 	}

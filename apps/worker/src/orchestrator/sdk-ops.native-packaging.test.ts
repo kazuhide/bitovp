@@ -8,6 +8,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import sample from "../../../../packages/core/src/plan/__fixtures__/fixed-bitrate-hls-on-aws.plan.json";
 import { executeStep } from "./executor";
+import { ProviderCreateRefusal } from "./provider-create-refusal";
 import { createBitmovinSdkOps } from "./sdk-ops";
 import type { CreateStamp } from "./stamping-fetch";
 
@@ -451,4 +452,65 @@ it("preserves a confirmed provider refusal for the ID3 retry journal", async () 
 		resourceId: created,
 	});
 	expect(posts).toBe(2);
+});
+
+it.each([
+	403, 429,
+])("retains ID3 refusal %i when the response stream breaks", async (status) => {
+	const { context, transport } = setup();
+	transport.mockImplementationOnce(
+		async () =>
+			new Response(
+				new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode("{"));
+						controller.error(new Error("Body interrupted"));
+					},
+				}),
+				{ status },
+			),
+	);
+	const request = context.sdk.createProgressiveTsId3(enc, muxingId, {
+		format: "RAW",
+		positionMode: "TIME",
+		time: 1,
+		bytes: "SUQzAwAAAAAAAA==",
+	});
+	await expect(request).rejects.toBeInstanceOf(ProviderCreateRefusal);
+	await expect(request).rejects.toMatchObject({ status });
+	expect(transport).toHaveBeenCalledTimes(1);
+	expect(transport.mock.calls[0]?.[1]).toMatchObject({
+		method: "POST",
+		redirect: "manual",
+	});
+});
+
+it("preserves the original verification ID3 POST refusal without relying on read access", async () => {
+	const { context, transport } = setup({
+		jobId: randomUUID(),
+		currentStep: () => "id3:fixture:cue",
+		verification: { key: "verify:fixture:id3", requestSha256: "a".repeat(64) },
+	});
+	transport.mockImplementation(async (_url, request) =>
+		Response.json(
+			{
+				status: "ERROR",
+				data: {
+					code: 1002,
+					message:
+						request.method === "POST" ? "Creation denied" : "List denied",
+				},
+			},
+			{ status: 403 },
+		),
+	);
+	const request = context.sdk.createProgressiveTsId3(enc, muxingId, {
+		format: "RAW",
+		positionMode: "TIME",
+		time: 1,
+		bytes: "SUQzAwAAAAAAAA==",
+	});
+	await expect(request).rejects.toBeInstanceOf(ProviderCreateRefusal);
+	await expect(request).rejects.toMatchObject({ status: 403 });
+	expect(transport.mock.calls.map(([, init]) => init.method)).toEqual(["POST"]);
 });

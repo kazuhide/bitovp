@@ -8,6 +8,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { loadPlan } from "../../../../packages/core/src/plan/test-support";
 import { auditedOperationCases } from "../../../../scripts/api-coverage-test-cases";
 import { executeStep } from "./executor";
+import { ProviderCreateRefusal } from "./provider-create-refusal";
 import { createBitmovinSdkOps } from "./sdk-ops";
 
 const cases = [
@@ -293,6 +294,53 @@ it("records a known PSNR refusal from the installed SDK without repeating the PO
 		),
 	).rejects.toMatchObject({ status: 429 });
 	expect(response).toHaveBeenCalledOnce();
+});
+
+it.each([
+	403, 429,
+])("retains PSNR refusal %i when the response stream breaks", async (status) => {
+	const transport = vi.fn(
+		async (_url: string, _init: RequestInit) =>
+			new Response(
+				new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode("{"));
+						controller.error(new Error("Body interrupted"));
+					},
+				}),
+				{ status },
+			),
+	);
+	vi.stubGlobal("fetch", transport);
+	const sdk = createBitmovinSdkOps({ apiKey: "test-only" }, async () => {});
+	const request = sdk.createEncodingSupplement(
+		"encoding-id",
+		{ kind: "PSNR", key: "quality", renditionKey: "video" },
+		{ streamId: "stream-id" },
+	);
+	await expect(request).rejects.toBeInstanceOf(ProviderCreateRefusal);
+	await expect(request).rejects.toMatchObject({ status });
+	expect(transport).toHaveBeenCalledTimes(1);
+	expect(transport.mock.calls[0]?.[1]).toMatchObject({
+		method: "POST",
+		redirect: "manual",
+	});
+});
+
+it("keeps a redirected PSNR refusal ambiguous", async () => {
+	const denial = Response.json({ status: "ERROR" }, { status: 403 });
+	Object.defineProperty(denial, "redirected", { value: true });
+	const transport = vi.fn(async () => denial);
+	vi.stubGlobal("fetch", transport);
+	const sdk = createBitmovinSdkOps({ apiKey: "test-only" }, async () => {});
+	await expect(
+		sdk.createEncodingSupplement(
+			"encoding-id",
+			{ kind: "PSNR", key: "quality", renditionKey: "video" },
+			{ streamId: "stream-id" },
+		),
+	).rejects.toMatchObject({ httpStatusCode: 0 });
+	expect(transport).toHaveBeenCalledOnce();
 });
 
 it("reuses a BIF whose owned create completed before the worker saved its reply", async () => {

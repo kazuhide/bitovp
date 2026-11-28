@@ -473,18 +473,24 @@ describe("a non-per-title postEncoding manifest keeps its exact count", () => {
  * constructed: the real Smooth fixture with `perTitle` flipped off, which is exactly the
  * plan shape that has no representative on disk.
  */
-const validSmoothServer = `<?xml version="1.0" encoding="UTF-8"?>
+function smoothServer(videoTracks: number, audioTracks: number) {
+	const tracks = (kind: "video" | "audio", count: number) =>
+		Array.from(
+			{ length: count },
+			(
+				_,
+				index,
+			) => `<${kind} src="media/${index}.ismv" systemBitrate="${(index + 1) * (kind === "video" ? 400000 : 128000)}">
+      <param name="trackID" value="${kind === "video" ? 1 : 2}" valuetype="data"/>
+    </${kind}>`,
+		).join("");
+	return `<?xml version="1.0" encoding="UTF-8"?>
 <smil xmlns="http://www.w3.org/2001/SMIL20/Language">
   <head><meta name="clientManifestRelativePath" content="stream.ismc"/></head>
-  <body><switch>
-    <video src="media/media.ismv" systemBitrate="400000">
-      <param name="trackID" value="1" valuetype="data"/>
-    </video>
-    <audio src="media/media.ismv" systemBitrate="128000">
-      <param name="trackID" value="2" valuetype="data"/>
-    </audio>
-  </switch></body>
+  <body><switch>${tracks("video", videoTracks)}${tracks("audio", audioTracks)}</switch></body>
 </smil>`;
+}
+const validSmoothServer = smoothServer(1, 1);
 
 function smoothClient(videoLevels: number, audioLevels = 0) {
 	const video = Array.from(
@@ -557,6 +563,30 @@ describe("Smooth server and client files", () => {
 			serverVerdict: "PASS",
 			clientVerdict: "PASS",
 			quality: "PASS",
+		},
+		{
+			case: "planned audio absent only from the server",
+			server: smoothServer(1, 0),
+			client: smoothClient(1, 1),
+			serverVerdict: "FAIL",
+			clientVerdict: "PASS",
+			quality: "PASS",
+		},
+		{
+			case: "an extra video quality substitutes for planned client audio",
+			server: validSmoothServer,
+			client: smoothClient(2, 0),
+			serverVerdict: "PASS",
+			clientVerdict: "PASS",
+			quality: "FAIL",
+		},
+		{
+			case: "an extra audio track substitutes for planned video in both files",
+			server: smoothServer(0, 2),
+			client: smoothClient(0, 2),
+			serverVerdict: "FAIL",
+			clientVerdict: "PASS",
+			quality: "FAIL",
 		},
 		{
 			case: "client XML in the server file",
@@ -644,12 +674,13 @@ describe("the Smooth quality-levels arm", () => {
 		return e;
 	}
 
-	/** A Smooth manifest declaring `levels` QualityLevel elements. */
-	function withLevels(levels: number) {
+	function withLevels(video: number, audio: number) {
 		return {
 			...(deps() as object),
 			readText: async (_output: string, key: string) =>
-				key.endsWith(".ismc") ? smoothClient(levels) : validSmoothServer,
+				key.endsWith(".ismc")
+					? smoothClient(video, audio)
+					: smoothServer(video, audio),
 		} as never;
 	}
 
@@ -660,7 +691,7 @@ describe("the Smooth quality-levels arm", () => {
 			throw new Error("fixture has no Smooth manifest");
 		}
 		const want = smooth.videoEntries + smooth.audioEntries;
-		const short = await verifyArtefacts(e, withLevels(1));
+		const short = await verifyArtefacts(e, withLevels(1, 1));
 		expect(
 			short.checks
 				.filter((c) => /:quality-levels$/.test(c.id))
@@ -668,7 +699,10 @@ describe("the Smooth quality-levels arm", () => {
 			`a non-per-title Smooth manifest must require exactly ${want}`,
 		).toContain("FAIL");
 
-		const exact = await verifyArtefacts(e, withLevels(want));
+		const exact = await verifyArtefacts(
+			e,
+			withLevels(smooth.videoEntries, smooth.audioEntries),
+		);
 		expect(
 			exact.checks
 				.filter((c) => /:quality-levels$/.test(c.id) && c.verdict === "FAIL")
@@ -681,7 +715,7 @@ describe("the Smooth quality-levels arm", () => {
 		// Smooth manifest legitimately carries fewer levels than the templates declare.
 		const perTitle = await verifyArtefacts(
 			smoothExpectation(true),
-			withLevels(1),
+			withLevels(1, 1),
 		);
 		expect(
 			perTitle.checks
@@ -689,6 +723,39 @@ describe("the Smooth quality-levels arm", () => {
 				.map((c) => c.detail),
 			"per-title must not be held to the template count",
 		).toEqual([]);
+	});
+
+	it("preserves the planned audio count when the encoder chose the video ladder", async () => {
+		const expected = smoothExpectation(true);
+		const manifest = expected.manifests.find((row) => row.kind === "SMOOTH");
+		if (!manifest) throw new Error("Missing Smooth fixture");
+		manifest.audioEntries = 2;
+		const report = await verifyArtefacts(expected, withLevels(1, 1));
+		expect(
+			report.checks
+				.filter(
+					({ id }) =>
+						id.endsWith(":stream-ism:smooth") ||
+						id.endsWith(":stream-ismc:quality-levels"),
+				)
+				.map(({ verdict }) => verdict),
+		).toEqual(["FAIL", "FAIL"]);
+	});
+
+	it("still requires every planned kind when the encoder chose the ladder", async () => {
+		const report = await verifyArtefacts(
+			smoothExpectation(true),
+			withLevels(2, 0),
+		);
+		expect(
+			report.checks
+				.filter(
+					({ id }) =>
+						id.endsWith(":stream-ism:smooth") ||
+						id.endsWith(":stream-ismc:quality-levels"),
+				)
+				.map(({ verdict }) => verdict),
+		).toEqual(["FAIL", "FAIL"]);
 	});
 });
 

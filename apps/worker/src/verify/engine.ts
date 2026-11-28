@@ -79,7 +79,7 @@ import {
 	scopedPerTitleResults,
 	scopedPerTitleVideoFamilies,
 } from "./per-title-selection";
-import { smoothClientQualityLevels, smoothServerHasMedia } from "./smooth-xml";
+import { smoothClientQualityLevels, smoothServerTracks } from "./smooth-xml";
 import { MAX_SUBTITLE_XML_BYTES, validateSubtitleXml } from "./subtitle-xml";
 
 export type Verdict = "PASS" | "WARN" | "FAIL" | "SKIP";
@@ -4172,31 +4172,43 @@ async function verifyManifest(
 
 		if (manifest.kind === "SMOOTH") {
 			// The expectation stores the server name first and the client name second.
-			if (manifest.files.length > 1 && index === 0) {
+			const server = manifest.files.length > 1 && index === 0;
+			const counts = server
+				? smoothServerTracks(text)
+				: smoothClientQualityLevels(text);
+			const perTitleVideo = manifest.perTitle && manifest.videoEntries > 0;
+			const valid =
+				counts !== undefined &&
+				(counts.video > 0 || counts.audio > 0) &&
+				(perTitleVideo
+					? counts.video > 0
+					: counts.video === manifest.videoEntries) &&
+				counts.audio === manifest.audioEntries;
+			const wanted = `${perTitleVideo ? "at least 1" : manifest.videoEntries} video, ${manifest.audioEntries} audio`;
+			const found = counts
+				? `${counts.video} video, ${counts.audio} audio`
+				: "invalid XML or manifest structure";
+			const detail = `expected ${wanted} — ${found}`;
+			if (server) {
 				report.assert(
 					`${id}:smooth`,
 					"manifest",
-					smoothServerHasMedia(text),
-					`${key} must be a SMIL server manifest with media references`,
+					valid,
+					`${key} SMIL media references (${detail})`,
 				);
 				continue;
 			}
-			const levels = smoothClientQualityLevels(text);
 			report.assert(
 				`${id}:smooth`,
 				"manifest",
-				levels !== undefined,
+				counts !== undefined,
 				`${key} must be a SmoothStreamingMedia client manifest`,
 			);
-			const want = manifest.videoEntries + manifest.audioEntries;
 			report.assert(
 				`${id}:quality-levels`,
 				"manifest",
-				levels !== undefined &&
-					(manifest.perTitle ? levels > 0 : levels === want),
-				manifest.perTitle
-					? `a per-title Smooth manifest must declare at least one QualityLevel — ${levels ?? "invalid XML"}`
-					: `${want} QualityLevel element(s) — ${levels ?? "invalid XML"}`,
+				valid,
+				`QualityLevel elements (${detail})`,
 			);
 		}
 	}

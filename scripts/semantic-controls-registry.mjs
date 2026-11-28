@@ -74,12 +74,15 @@ const controls = [
 		workspace: "@bitovp/worker",
 		directory: "apps/worker",
 		files: {
-			"src/orchestrator/retrying-fetch.test.ts": 26,
+			"src/orchestrator/retrying-fetch.test.ts": 29,
 		},
 		source: "apps/worker/src/orchestrator/retrying-fetch.ts",
 		anchor: "return !/\\/(live\\/)?start\\/?$/.test(path);",
 		replacement: "return true;",
 		cases: [
+			"never resends or redirects an ambiguous Progressive TS ID3 frame-id POST",
+			"never resends or redirects an ambiguous Progressive TS ID3 plain-text POST",
+			"never resends or redirects an ambiguous Progressive TS ID3 raw POST",
 			"closes a refused child POST response when its durable journal loses the lease",
 			"journals a real child POST refusal before its response body breaks and never follows a redirect",
 			"createRetryingFetch refuses RTMP reassignment retries with URL query/trailing slash, while preserving reads",

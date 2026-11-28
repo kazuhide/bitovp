@@ -127,6 +127,8 @@ type Effect = {
 	request: object;
 	body?: object;
 	type?: string;
+	inputType?: string;
+	outputType?: string;
 	preflights?: string[];
 	wire?: object;
 	result?: object;
@@ -144,8 +146,10 @@ async function effect(spec: Effect) {
 		if (init.method === "GET") {
 			expect(path).toBe(`/v1${preflights[requests.length - 1]}`);
 			expect(mocks.claim).toHaveBeenCalledTimes(1);
-			if (path.includes(inputId)) return success({ id: inputId, type: "S3" });
-			if (path.includes(outputId)) return success({ id: outputId, type: "S3" });
+			if (path.includes(inputId))
+				return success({ id: inputId, type: spec.inputType ?? "S3" });
+			if (path.includes(outputId))
+				return success({ id: outputId, type: spec.outputType ?? "S3" });
 			return success({
 				id: providerId,
 				type: spec.type,
@@ -158,6 +162,8 @@ async function effect(spec: Effect) {
 		if (spec.body) {
 			const body = JSON.parse(String(init.body));
 			expect(body).toMatchObject(spec.body);
+			if (spec.action === "create-watch-folder")
+				expect(body).toEqual(spec.body);
 			if (
 				spec.action === "create-template" ||
 				spec.action === "start-template"
@@ -504,22 +510,46 @@ it("dispatches templates.delete", async () => {
 	});
 });
 
+const watchCreation: Effect = {
+	action: "create-watch-folder",
+	verb: "POST",
+	path: "/encoding/watch-folders",
+	request: watch,
+	inputType: "AKAMAI_NETSTORAGE",
+	body: {
+		name,
+		input: { inputId, inputPath: watch.inputPath },
+		outputs: [{ outputId, outputPath: watch.outputPath }],
+	},
+	preflights: [`/encoding/inputs/${inputId}`, `/encoding/outputs/${outputId}`],
+};
+
 it("dispatches watchFolders.create", async () => {
-	await effect({
-		action: "create-watch-folder",
-		verb: "POST",
-		path: `/encoding/watch-folders`,
-		request: watch,
-		body: {
-			name,
-			input: { inputId, inputPath: watch.inputPath },
-			outputs: [{ outputId, outputPath: watch.outputPath }],
-		},
-		preflights: [
-			`/encoding/inputs/${inputId}`,
-			`/encoding/outputs/${outputId}`,
-		],
-	});
+	await effect(watchCreation);
+});
+
+it("saves a Watch Folder with a role-based S3 output", async () => {
+	await effect({ ...watchCreation, outputType: "S3_ROLE_BASED" });
+});
+
+it("refuses an S3 input for Watch Folders before reading the output or creating anything", async () => {
+	mocks.fetch.mockResolvedValueOnce(success({ id: inputId, type: "S3" }));
+	const response = await POST(request("create-watch-folder", watch));
+	expect(response.status).toBe(404);
+	expect(mocks.fetch).toHaveBeenCalledTimes(1);
+	expect(mocks.fetch.mock.calls[0]?.[1].method).toBe("GET");
+});
+
+it("refuses a non-S3 output for a Watch Folder even with a verified Akamai input", async () => {
+	mocks.fetch
+		.mockResolvedValueOnce(success({ id: inputId, type: "AKAMAI_NETSTORAGE" }))
+		.mockResolvedValueOnce(success({ id: outputId, type: "FTP" }));
+	const response = await POST(request("create-watch-folder", watch));
+	expect(response.status).toBe(404);
+	expect(mocks.fetch.mock.calls.map(([, init]) => init.method)).toEqual([
+		"GET",
+		"GET",
+	]);
 });
 
 it("dispatches watchFolders.delete", async () => {

@@ -62,6 +62,54 @@ function submit() {
 	fireEvent.click(screen.getByRole("button", { name: "Submit operation" }));
 }
 
+it("replays the verified storage pair after reopening Watch Folder setup without starting it", async () => {
+	const copiedIds = [
+		["Name", "Watch smoke"],
+		["Akamai NetStorage input ID", inputId],
+		["Amazon S3 output ID", outputId],
+		["Input path", "incoming"],
+		["Output folder prefix", "renders"],
+	] as const;
+	operation
+		.mockImplementationOnce(() => {
+			throw new TypeError("lost response");
+		})
+		.mockReturnValueOnce(
+			Response.json({ state: "ACCEPTED", providerId: outputId }),
+		);
+
+	const first = await select("create-watch-folder");
+	for (const [label, value] of copiedIds) fill(label, value);
+	expect(
+		screen.queryByRole("checkbox", { name: /Allow this billable operation/ }),
+	).toBeNull();
+	submit();
+	await screen.findByText(/Refresh the operation history/);
+	first.unmount();
+
+	await select("create-watch-folder");
+	for (const [label, value] of copiedIds) fill(label, value);
+	submit();
+	expect(await screen.findByText("Accepted by Bitmovin")).toBeInTheDocument();
+	expect(operation).toHaveBeenCalledTimes(2);
+	const replayed = operation.mock.calls.map(([init]) => ({
+		key: new Headers(init.headers).get("Idempotency-Key"),
+		body: JSON.parse(String(init.body)),
+	}));
+	expect(replayed[0]?.key).toBeTruthy();
+	expect(replayed[1]).toEqual(replayed[0]);
+	expect(replayed[0]?.body).toEqual({
+		bitmovinAccountId: account,
+		scopeVersion: scope,
+		action: "create-watch-folder",
+		name: "Watch smoke",
+		inputId,
+		outputId,
+		inputPath: "incoming",
+		outputPath: "renders",
+	});
+});
+
 it("binds a paid run to the selected account, output and explicit consent", async () => {
 	operation.mockImplementation((init) => {
 		const headers = new Headers(init.headers);

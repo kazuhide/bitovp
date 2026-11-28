@@ -168,6 +168,21 @@ const fields = {
 	confirmId: ["Confirm resource ID", "確認用リソースID"],
 } as const;
 type Field = keyof typeof fields;
+
+function fieldLabel(field: Field, action: NativeOperationAction, lang: Lang) {
+	if (action === "create-watch-folder") {
+		if (field === "inputId")
+			return lang === "ja"
+				? "Akamai NetStorage 入力ID"
+				: "Akamai NetStorage input ID";
+		if (field === "outputId")
+			return lang === "ja" ? "Amazon S3 出力ID" : "Amazon S3 output ID";
+	}
+	if (field === "confirmId" && action === "start-template")
+		return lang === "ja" ? "確認用出力ID" : "Confirm output ID";
+	return fields[field][lang === "ja" ? 1 : 0];
+}
+
 const optional = new Set<Field>([
 	"username",
 	"password",
@@ -521,13 +536,7 @@ function OperationForm({
 							htmlFor={`${id}-${field}`}
 							className="space-y-1 text-sm"
 						>
-							<span>
-								{field === "confirmId" && action === "start-template"
-									? lang === "ja"
-										? "確認用出力ID"
-										: "Confirm output ID"
-									: fields[field][lang === "ja" ? 1 : 0]}
-							</span>
+							<span>{fieldLabel(field, action, lang)}</span>
 							<Input
 								id={`${id}-${field}`}
 								name={field}

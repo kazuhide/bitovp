@@ -172,7 +172,8 @@ const mediaInputs = new Set([
 	"HTTPS",
 	"DIRECT_FILE_UPLOAD",
 ]);
-const watchStorage = new Set(["S3", "S3_ROLE_BASED"]);
+const watchInputs = new Set(["AKAMAI_NETSTORAGE"]);
+const watchOutputs = new Set(["S3", "S3_ROLE_BASED"]);
 
 function checkIdentity(
 	raw: unknown,
@@ -202,13 +203,13 @@ export async function checkNativeProviderTargets(
 			checkIdentity(
 				observed.raw(),
 				command.inputId,
-				watching ? watchStorage : mediaInputs,
+				watching ? watchInputs : mediaInputs,
 			);
 			await api.encoding.outputs.get(command.outputId);
 			checkIdentity(
 				observed.raw(),
 				command.outputId,
-				watching ? watchStorage : objectStorage,
+				watching ? watchOutputs : objectStorage,
 			);
 		} else if ("resourceId" in command) {
 			await readTarget(api, command);

@@ -663,6 +663,36 @@ describe("Smooth server and client files", () => {
 	});
 });
 
+it("accepts MANUAL per-title Smooth with a separate FMP4-only audio rendition", async () => {
+	const source = loadPlan("pertitle-h264-mp4-smooth-drm-on-aws");
+	const audio = source.renditions.find((row) => row.codec === "AAC");
+	const manifest = source.manifests[0];
+	if (!audio || manifest?.kind !== "SMOOTH")
+		throw new Error("Missing Smooth fixture");
+	manifest.generationMode = "MANUAL";
+	source.renditions.push({ ...audio, key: "website-audio", bitrate: 96000 });
+	source.muxings.push({
+		kind: "FMP4",
+		key: "separate-audio",
+		streamKey: "website-audio",
+		segmentLength: 4,
+		initSegmentName: "init.mp4",
+		segmentNaming: "segment_%number%.m4s",
+		destination: { outputKey: "origin", path: "website/audio/" },
+	});
+	const report = await verifyArtefacts(
+		compileExpectedArtefacts(source),
+		deps({
+			readText: async (_output: string, key: string) =>
+				key.endsWith(".ismc") ? smoothClient(2, 1) : smoothServer(2, 1),
+		}) as never,
+	);
+	const checks = new Map(report.checks.map(({ id, verdict }) => [id, verdict]));
+	const base = `manifest:${manifest.key}`;
+	expect(checks.get(`${base}:stream-ism:smooth`)).toBe("PASS");
+	expect(checks.get(`${base}:stream-ismc:quality-levels`)).toBe("PASS");
+});
+
 describe("the Smooth quality-levels arm", () => {
 	function smoothExpectation(perTitle: boolean) {
 		const e = load("pertitle-h264-mp4-smooth-drm-on-aws");

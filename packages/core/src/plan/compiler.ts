@@ -5,6 +5,7 @@ import {
 } from "./codec-detail-controls";
 import { filterParametersForPlan } from "./conform-rate";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
+import { manualSmoothManifestSelection } from "./default-manifest-selection";
 import { heAacConfiguration, isHeAac } from "./he-aac";
 import {
 	type HlsAudioMediaDefaults,
@@ -3468,17 +3469,8 @@ function compileSmoothManifest(
 		},
 	];
 
-	for (const muxing of plan.muxings) {
-		const rendition = renditions.get(muxing.streamKey);
-		if (
-			!rendition ||
-			muxing.kind !== "MP4" ||
-			rendition.codec === "WEBVTT" ||
-			rendition.codec === "IMSC" ||
-			isPerTitle(rendition)
-		) {
-			continue;
-		}
+	const tracks = manualSmoothManifestSelection(plan.muxings, renditions);
+	for (const { muxing, rendition, trackName } of tracks.fixed) {
 		const drm = manifest.drmKind
 			? plan.drm.find(
 					(d) => d.muxingKey === muxing.key && d.kind === manifest.drmKind,
@@ -3494,7 +3486,7 @@ function compileSmoothManifest(
 			payload: {
 				mediaFile: joinFilePath(base, muxing.filename),
 				language: manifest.language,
-				trackName: isVideoCodec(rendition) ? "video" : "audio",
+				trackName,
 			},
 			refs: {
 				manifestId: manifestStep,
@@ -3519,7 +3511,8 @@ function compileSmoothManifest(
 
 	// Run-time expansion: per-title MP4 result muxings become mp4
 	// representations (+ ContentProtection when drm is pinned).
-	if (plan.renditions.some(isPerTitle)) {
+	const perTitleTrack = tracks.perTitle[0];
+	if (perTitleTrack) {
 		ops.push({
 			step: `${manifestStep}:pertitle`,
 			kind: "CREATE_SMOOTH_PER_TITLE_ENTRIES",
@@ -3533,7 +3526,7 @@ function compileSmoothManifest(
 			},
 			refs: {
 				manifestId: manifestStep,
-				encodingId: perTitleEncStep(plan, encStepFor),
+				encodingId: encStepFor(perTitleTrack.rendition.key),
 			},
 		});
 	}

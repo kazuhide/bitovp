@@ -25,7 +25,10 @@
  * see.
  */
 
-import { defaultSmoothManifestSelection } from "../plan/default-manifest-selection";
+import {
+	defaultSmoothManifestSelection,
+	manualSmoothManifestSelection,
+} from "../plan/default-manifest-selection";
 import {
 	hlsAudioMediaDefaults,
 	hlsChildEntries,
@@ -661,6 +664,7 @@ export function compileExpectedArtefacts(
 ): ExpectedArtefacts {
 	const notes: string[] = [];
 	const outputKeys = new Set<string>();
+	const renditionByKey = new Map(plan.renditions.map((r) => [r.key, r]));
 	const deliveryMirrorOutputKeys =
 		plan.deliveryMirrors?.map(({ outputKey }) => outputKey) ?? [];
 	for (const outputKey of deliveryMirrorOutputKeys) {
@@ -1002,7 +1006,6 @@ export function compileExpectedArtefacts(
 				audioMuxes: ExpectedMuxing[],
 				mediaUri: Map<string, string>,
 			): ExpectedHlsVariant[] => {
-				const renditionByKey = new Map(plan.renditions.map((r) => [r.key, r]));
 				const out: ExpectedHlsVariant[] = [];
 				const seen = new Set<string>();
 				for (const entry of hlsChildEntries(plan, hlsManifest)) {
@@ -1367,25 +1370,44 @@ export function compileExpectedArtefacts(
 				}
 				return configured;
 			}
-			const smoothTracks =
-				manifest.generationMode === "DEFAULT"
-					? defaultSmoothManifestSelection(plan).renditions
-					: undefined;
+			let smooth: Pick<
+				ExpectedManifest,
+				"videoEntries" | "audioEntries" | "perTitle"
+			>;
+			if (manifest.generationMode === "DEFAULT") {
+				const { renditions } = defaultSmoothManifestSelection(plan);
+				smooth = {
+					videoEntries: renditions.filter(({ codec }) =>
+						VIDEO_CODECS.has(codec),
+					).length,
+					audioEntries: renditions.filter(({ codec }) =>
+						AUDIO_CODECS.has(codec),
+					).length,
+					perTitle: renditions.some(isPerTitle),
+				};
+			} else {
+				const { fixed, perTitle } = manualSmoothManifestSelection(
+					plan.muxings,
+					renditionByKey,
+				);
+				smooth = {
+					videoEntries:
+						fixed.filter(({ trackName }) => trackName === "video").length +
+						perTitle.length,
+					audioEntries: fixed.filter(({ trackName }) => trackName === "audio")
+						.length,
+					perTitle: perTitle.length > 0,
+				};
+			}
 			return {
 				manifestKey: manifest.key,
 				kind: "SMOOTH",
 				outputKey: manifest.destination.outputKey,
 				dir,
 				files: [manifest.serverManifestName, manifest.clientManifestName],
-				videoEntries:
-					smoothTracks?.filter(({ codec }) => VIDEO_CODECS.has(codec)).length ??
-					videoRenditions.length,
-				audioEntries:
-					smoothTracks?.filter(({ codec }) => AUDIO_CODECS.has(codec)).length ??
-					audioRenditions.length,
+				...smooth,
 				textEntries: 0,
 				postEncoding,
-				perTitle: smoothTracks?.some(isPerTitle) ?? perTitleLadderHere,
 				...(manifest.drmKind ? { drmKind: manifest.drmKind } : {}),
 			};
 		},

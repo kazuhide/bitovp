@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-28T01:09:57.096Z",
-		"sourceCommit": "f82576664a9156b61172b40480e5b7be12bb01f4",
-		"sourceFingerprint": "fd514dd40b714aa25565a7f068180d90395a3be1870c88b14fa2e355d6542a9f",
+		"generatedAt": "2026-11-28T01:24:24.436Z",
+		"sourceCommit": "0bd766ceafad3ee78c609faf722f48117b4cc59f",
+		"sourceFingerprint": "7082c9bbbacc51531aef738ecf379fe07649e8f8e1c30e7955f8a8f182a658ec",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -2556,7 +2556,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 125
+					"line": 108
 				}
 			]
 		},
@@ -2606,7 +2606,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 126
+					"line": 109
 				}
 			]
 		},
@@ -2624,7 +2624,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 128
+					"line": 111
 				}
 			]
 		},
@@ -7856,7 +7856,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 182
+					"line": 165
 				}
 			]
 		},
@@ -7906,7 +7906,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 157
+					"line": 140
 				}
 			]
 		},
@@ -7920,7 +7920,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 144
+					"line": 127
 				}
 			]
 		},
@@ -7984,7 +7984,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 151
+					"line": 134
 				}
 			]
 		},
@@ -7998,7 +7998,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 145
+					"line": 128
 				}
 			]
 		},
@@ -8048,7 +8048,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 149
+					"line": 132
 				}
 			]
 		},
@@ -8126,7 +8126,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 205
+					"line": 188
 				}
 			]
 		},
@@ -8176,7 +8176,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 210
+					"line": 193
 				}
 			]
 		},
@@ -8194,7 +8194,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 212
+					"line": 195
 				}
 			]
 		},
@@ -8208,7 +8208,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 229
+					"line": 212
 				}
 			]
 		},
@@ -8244,7 +8244,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 236
+					"line": 219
 				}
 			]
 		},
@@ -8262,7 +8262,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 234
+					"line": 217
 				}
 			]
 		},
@@ -8276,7 +8276,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 248
+					"line": 231
 				}
 			]
 		},
@@ -8312,7 +8312,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 255
+					"line": 238
 				}
 			]
 		},
@@ -8330,7 +8330,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 253
+					"line": 236
 				}
 			]
 		},
@@ -8400,7 +8400,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 272
+					"line": 255
 				}
 			]
 		},
@@ -8450,7 +8450,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 277
+					"line": 260
 				}
 			]
 		},
@@ -8468,7 +8468,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 279
+					"line": 262
 				}
 			]
 		},
@@ -8482,7 +8482,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 297
+					"line": 280
 				}
 			]
 		},
@@ -8532,7 +8532,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 302
+					"line": 285
 				}
 			]
 		},
@@ -8550,7 +8550,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 304
+					"line": 287
 				}
 			]
 		},
@@ -8717,7 +8717,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 318
+					"line": 301
 				}
 			]
 		},
@@ -15458,7 +15458,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-					"line": 48
+					"line": 41
 				}
 			]
 		},
@@ -32554,8 +32554,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/supplements.ts",
-								"line": 185,
-								"callLine": 182
+								"line": 168,
+								"callLine": 165
 							}
 						]
 					},

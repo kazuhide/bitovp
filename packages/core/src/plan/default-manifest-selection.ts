@@ -1,4 +1,11 @@
-import { AUDIO_CODECS } from "./schema";
+import { muxingStreamKeys } from "./muxing-streams";
+import { isPerTitleRendition } from "./per-title-results";
+import {
+	AUDIO_CODECS,
+	type EncodingPlan,
+	type PlanMuxing,
+	type PlanRendition,
+} from "./schema";
 
 type SelectionSource = {
 	encodings?: readonly { key: string }[];
@@ -15,6 +22,60 @@ export function defaultManifestSelection<T extends SelectionSource>(plan: T) {
 			(row) => (row.encodingKey ?? fallback) === encodingKey,
 		) as T["renditions"][number][],
 	};
+}
+
+export function defaultSmoothManifestSelection(
+	plan: Pick<EncodingPlan, "encodings" | "renditions" | "muxings">,
+) {
+	const muxings = plan.muxings.filter(
+		(muxing) =>
+			muxing.kind === "MP4" &&
+			muxing.fragmentDuration !== undefined &&
+			(muxing.manifestType ?? "SMOOTH") === "SMOOTH",
+	);
+	const keys = new Set(muxings.flatMap(muxingStreamKeys));
+	const selection = defaultManifestSelection({
+		encodings: plan.encodings,
+		renditions: plan.renditions.filter(({ key }) => keys.has(key)),
+	});
+	return { ...selection, muxings };
+}
+
+type ManualSmoothTrack = {
+	muxing: Extract<PlanMuxing, { kind: "MP4" }>;
+	rendition: PlanRendition;
+	trackName: "video" | "audio";
+};
+
+/** Manual Smooth publishes one named track for each selected MP4 muxing. */
+export function manualSmoothManifestSelection(
+	muxings: readonly PlanMuxing[],
+	renditions: ReadonlyMap<string, PlanRendition>,
+) {
+	const fixed: ManualSmoothTrack[] = [];
+	const perTitle: ManualSmoothTrack[] = [];
+	for (const muxing of muxings) {
+		if (muxing.kind !== "MP4") continue;
+		const rendition = renditions.get(muxing.streamKey);
+		if (
+			!rendition ||
+			rendition.codec === "WEBVTT" ||
+			rendition.codec === "IMSC"
+		)
+			continue;
+		const video =
+			rendition.codec === "H264" ||
+			rendition.codec === "H265" ||
+			rendition.codec === "VP9" ||
+			rendition.codec === "AV1";
+		const track: ManualSmoothTrack = {
+			muxing,
+			rendition,
+			trackName: video ? "video" : "audio",
+		};
+		(isPerTitleRendition(rendition) ? perTitle : fixed).push(track);
+	}
+	return { fixed, perTitle };
 }
 
 type HlsSelectionSource = SelectionSource & {

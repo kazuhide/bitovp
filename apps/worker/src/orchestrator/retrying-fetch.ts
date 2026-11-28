@@ -1,3 +1,4 @@
+import { isDefinitiveCreateRefusalStatus } from "./provider-create-refusal";
 import type { CreateStamp } from "./stamping-fetch";
 
 /**
@@ -73,6 +74,10 @@ const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_DELAY_MS = 250;
 const ROLE_STORAGE_CREATE_PATH =
 	/^\/v1\/encoding\/(?:inputs|outputs)\/s3-role-based\/?$/;
+const PROGRESSIVE_TS_ID3_CREATE_PATH =
+	/\/muxings\/progressive-ts\/[^/]+\/id3\/(?:frame-id|plain-text|raw)\/?$/;
+const ENCODING_SUPPLEMENT_CREATE_PATH =
+	/^\/v1\/encoding\/encodings\/[^/]+\/(?:captions\/scc|scte-35-triggers|sidecars(?:\/webvtt)?|streams\/[^/]+\/(?:bifs|burn-in-subtitles\/(?:assa|dvbsub)|captions\/608-708\/(?:scc|srt)|qc\/psnr))\/?$/;
 const MANIFEST_PROBE_PATH =
 	/^\/v1\/encoding\/manifests\/(?:hls|dash|smooth)\/[^/]+\/(?:status|customData)\/?$/;
 
@@ -89,20 +94,18 @@ export function createRetryingFetch(
 
 	return async (url, init) => {
 		const request = init as RequestInit | undefined;
-		const child =
-			request?.method?.toUpperCase() === "POST"
-				? options.childCreateJournal?.()
-				: undefined;
-		const roleStorageCreate =
-			request?.method?.toUpperCase() === "POST" &&
-			ROLE_STORAGE_CREATE_PATH.test(pathOf(url));
+		const isPost = request?.method?.toUpperCase() === "POST";
+		const path = pathOf(url);
+		const child = isPost ? options.childCreateJournal?.() : undefined;
+		const roleStorageCreate = isPost && ROLE_STORAGE_CREATE_PATH.test(path);
 		const role = roleStorageCreate
 			? options.roleStorageCreateJournal?.()
 			: undefined;
 		const markNotAdmitted = child
 			? () => child.record("PREPARING")
 			: role?.release;
-		if (child || roleStorageCreate) {
+		const tracksRefusal = isPost && isRefusalTrackedCreatePath(path);
+		if (child || roleStorageCreate || tracksRefusal) {
 			// Send exactly once. Following a redirect could produce a refusal or DNS
 			// error for a later request after the original server received its POST.
 			let response: Response;
@@ -128,6 +131,19 @@ export function createRetryingFetch(
 					throw error;
 				}
 			}
+			if (
+				tracksRefusal &&
+				(response.redirected ||
+					isDefinitiveCreateRefusalStatus(response.status))
+			) {
+				// SDK 1.289.0 reads the body before classifying the HTTP status.
+				// Keep the original refusal even if the stream is interrupted.
+				void response.body?.cancel().catch(() => {});
+				if (response.redirected) {
+					throw new Error("Provider create response followed a redirect");
+				}
+				return new Response(null, { status: response.status });
+			}
 			return response;
 		}
 		const retryMutations =
@@ -137,7 +153,7 @@ export function createRetryingFetch(
 		const protectedManifestProbe =
 			options.withholdProviderDetails &&
 			request?.method?.toUpperCase() === "GET" &&
-			MANIFEST_PROBE_PATH.test(pathOf(url));
+			MANIFEST_PROBE_PATH.test(path);
 		let lastError: unknown;
 		for (let attempt = 1; attempt <= attempts; attempt++) {
 			try {
@@ -263,6 +279,7 @@ export function isRetryable(url: string, init: unknown): boolean {
 	// path check that a URL shape can slip past is not a guard.
 	const path = pathOf(url);
 	if (method === "POST" && ROLE_STORAGE_CREATE_PATH.test(path)) return false;
+	if (method === "POST" && isRefusalTrackedCreatePath(path)) return false;
 	// This PATCH mutates an active encoder through a durable effect claim.
 	// A response lost after assignment must reach that claim as AMBIGUOUS,
 	// never be sent again inside the transport layer (or logged with its key).
@@ -272,6 +289,13 @@ export function isRetryable(url: string, init: unknown): boolean {
 	if (/\/encoding\/manifests\/(hls|dash|smooth)\/[^/]+\/stop\/?$/.test(path))
 		return false;
 	return !/\/(live\/)?start\/?$/.test(path);
+}
+
+function isRefusalTrackedCreatePath(path: string): boolean {
+	return (
+		PROGRESSIVE_TS_ID3_CREATE_PATH.test(path) ||
+		ENCODING_SUPPLEMENT_CREATE_PATH.test(path)
+	);
 }
 
 function hasVerificationStamp(init: unknown): boolean {
@@ -289,7 +313,7 @@ function hasVerificationStamp(init: unknown): boolean {
 		};
 		// Presence is enough for the conservative decision. A malformed marker
 		// must not make a possibly-paid create retryable.
-		return body.customData?.["bitovp"]?.verification !== undefined;
+		return body.customData?.bitovp?.verification !== undefined;
 	} catch {
 		return false;
 	}

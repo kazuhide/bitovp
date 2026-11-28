@@ -36,6 +36,7 @@ import {
 import { createLiveStartFetch } from "./live-start-fetch";
 import { createMonitoringFetch } from "./monitoring-fetch";
 import { createOrphanStopFetch } from "./orphan-stop-fetch";
+import { ProviderCreateRefusal } from "./provider-create-refusal";
 import { createRetryingFetch } from "./retrying-fetch";
 import { type CreateStamp, createStampingFetch } from "./stamping-fetch";
 import type { StartRetryControl } from "./start-1004-retry";
@@ -538,7 +539,7 @@ export type S3RoleStorageParams = {
 	region: string;
 };
 
-export type SdkOps = {
+export type SdkOps = NativePackagingOps & {
 	createAisaLiveAnalysis(request: AisaLiveCreateRequest): Promise<string>;
 	getAisaLiveAnalysis(
 		analysisId: string,
@@ -962,6 +963,17 @@ export type SdkOps = {
 		streamId: string,
 		p: { inputId: string; inputPath: string; characterEncoding: string },
 	): Promise<string>;
+	getAzureOutputStorageKey(outputId: string): Promise<string>;
+	createEncodingSupplement(
+		encodingId: string,
+		item: import("@bitovp/core").EncodingSupplement,
+		refs: {
+			streamId?: string;
+			inputId?: string;
+			inputStreamId?: string;
+			destination?: Destination;
+		},
+	): Promise<string | undefined>;
 	createStreamFilters(
 		encodingId: string,
 		streamId: string,
@@ -1606,6 +1618,7 @@ export type SdkOps = {
 		},
 	): Promise<string>;
 	createSmoothManifest(p: {
+		encodingId?: string;
 		serverManifestName: string;
 		clientManifestName: string;
 		name: string;
@@ -1896,12 +1909,17 @@ import { createLiveOps } from "./ops/live";
 import { createManifestOps } from "./ops/manifests";
 import { createMediaOps } from "./ops/media";
 import {
+	createNativePackagingOps,
+	type NativePackagingOps,
+} from "./ops/native-packaging";
+import {
 	BitmovinCallError,
 	bitmovinErrorText,
 	isBitmovinError,
 	ProviderResponseBarrierError,
 	providerErrorWithoutDetails,
 } from "./ops/shared";
+import { createSupplementOps } from "./ops/supplements";
 
 export { BitmovinCallError, sdkEnumValue } from "./ops/shared";
 
@@ -2055,7 +2073,8 @@ export function createBitmovinSdkOps(
 			await safeRecord({
 				method,
 				path,
-				statusCode: e.httpStatusCode,
+				statusCode:
+					err instanceof ProviderCreateRefusal ? err.status : e.httpStatusCode,
 				durationMs: Date.now() - startedAt,
 				bitmovinAccountId: options.bitmovinAccountId,
 				request: requestSnapshot,
@@ -2139,6 +2158,8 @@ export function createBitmovinSdkOps(
 		...createIoOps(ctx),
 		...createConfigOps(ctx),
 		...createMediaOps(ctx),
+		...createSupplementOps(ctx),
+		...createNativePackagingOps(ctx),
 		...createDrmOps(ctx),
 		...createManifestOps(ctx),
 		...encodingOps,

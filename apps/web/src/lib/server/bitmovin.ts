@@ -39,13 +39,15 @@ export function bitmovinClientFromBinding(
 	binding: { apiKey: string; tenantOrgId?: string | null },
 	signal?: AbortSignal,
 	observeResponse?: (url: string, response: Response) => Promise<void>,
+	beforeFetch?: () => void,
 ): BitmovinApi {
 	return new BitmovinApi({
 		apiKey: binding.apiKey,
 		...(binding.tenantOrgId ? { tenantOrgId: binding.tenantOrgId } : {}),
-		...(signal || observeResponse
+		...(signal || observeResponse || beforeFetch
 			? {
 					fetch: async (url, init) => {
+						beforeFetch?.();
 						const response = await fetch(url, {
 							...init,
 							...(signal ? { signal } : {}),

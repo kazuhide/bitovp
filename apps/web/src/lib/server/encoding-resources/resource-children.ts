@@ -22,6 +22,8 @@ import {
 
 export type MuxingChildCollection = {
 	label: string;
+	fields?: ResourceChildCollection["fields"];
+	expectedDiscriminator?: ResourceChildCollection["expectedDiscriminator"];
 	// The SDK's general DRM list has no paging parameters. Show only the prefix actually returned.
 	wholeCollection?: boolean;
 	list(
@@ -116,6 +118,8 @@ function muxingCollection(
 	const { get, metadata } = collection;
 	return {
 		label: collection.label,
+		fields: collection.fields,
+		expectedDiscriminator: collection.expectedDiscriminator,
 		wholeCollection: collection.wholeCollection,
 		list: (api, address, page) =>
 			collection.list(api, ...muxingIds(address), page),

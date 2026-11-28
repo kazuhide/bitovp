@@ -72,12 +72,14 @@ export function isPerTitleResultMode(mode: string): boolean {
 export const CODEC_CONFIG_API_PATH: Readonly<
 	Record<string, readonly [string, string]>
 > = Object.freeze({
+	H262: ["video", "h262"],
 	H264: ["video", "h264"],
 	H265: ["video", "h265"],
 	H265V2: ["video", "h265v2"],
 	VP9: ["video", "vp9"],
 	AV1: ["video", "av1"],
 	AAC: ["audio", "aac"],
+	MP3: ["audio", "mp3"],
 	PCM: ["audio", "pcm"],
 	AUDIO_PASSTHROUGH: ["audio", "passthrough"],
 	HE_AAC_V1: ["audio", "heAacV1"],

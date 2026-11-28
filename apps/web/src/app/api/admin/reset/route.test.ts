@@ -162,6 +162,7 @@ const PRESERVES = [
 	"liveStopNotification",
 	"encodingResourceRemoval",
 	"nativeCodecConfiguration",
+	"nativeEncodingOperation",
 	...RESET_PROTECTED_EDITING_MODELS,
 	...EXPERIMENT_MODELS,
 	"createRequest",

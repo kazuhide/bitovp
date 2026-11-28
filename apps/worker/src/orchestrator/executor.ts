@@ -10,6 +10,7 @@ import { executeIoStep } from "./ops/exec-io";
 import { executeLiveStep } from "./ops/exec-live";
 import { executeManifestStep } from "./ops/exec-manifests";
 import { executeMediaStep } from "./ops/exec-media";
+import { executeNativePackagingStep } from "./ops/exec-native-packaging";
 import { type ExecStepContext, STARTED_STATUSES } from "./ops/exec-shared";
 import type { SdkOps, TaskStatusResult } from "./sdk-ops";
 
@@ -96,7 +97,16 @@ export async function executeStep(
 				: (ctx.ids.get(target) ?? target),
 		]),
 	);
-	const request = { ...op.payload, refs: resolvedRefs };
+	const request =
+		op.kind === "CREATE_PROGRESSIVE_TS_ID3"
+			? {
+					format: op.payload.format,
+					positionMode: op.payload.positionMode,
+					time: op.payload.time,
+					frame: op.payload.frame,
+					refs: resolvedRefs,
+				}
+			: { ...op.payload, refs: resolvedRefs };
 
 	async function startedDuringCrashWindow(
 		getStatus: () => Promise<TaskStatusResult>,
@@ -111,6 +121,16 @@ export async function executeStep(
 	const ec: ExecStepContext = { ctx, request, startedDuringCrashWindow };
 
 	switch (op.kind) {
+		case "CREATE_CODEC_MP3":
+		case "CREATE_CODEC_H262":
+		case "CREATE_MUXING_BROADCAST_TS":
+		case "CREATE_MUXING_MP3":
+		case "CREATE_MUXING_MXF":
+		case "CREATE_MUXING_PACKED_AUDIO":
+		case "CREATE_MUXING_SEGMENTED_RAW":
+		case "CREATE_DRM_TYPED":
+		case "CREATE_PROGRESSIVE_TS_ID3":
+			return executeNativePackagingStep(op, ec);
 		case "CREATE_INPUT_S3":
 		case "CREATE_INPUT_S3_ROLE_BASED":
 		case "CREATE_INPUT_AZURE":
@@ -187,6 +207,7 @@ export async function executeStep(
 		case "CREATE_FILTER_CROP":
 		case "CREATE_FILTER_SCALE":
 		case "CREATE_STREAM_FILTERS":
+		case "CREATE_ENCODING_SUPPLEMENT":
 		case "CREATE_KEYFRAME":
 		case "CREATE_THUMBNAIL":
 		case "CREATE_SPRITE":

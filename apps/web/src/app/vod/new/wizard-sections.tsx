@@ -1706,7 +1706,9 @@ export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 			partial.extra?.some((m) =>
 				m.kind === "HLS"
 					? m.hls?.generationMode === "DEFAULT"
-					: m.kind === "DASH" && m.dash?.generationMode === "DEFAULT",
+					: m.kind === "DASH"
+						? m.dash?.generationMode === "DEFAULT"
+						: m.generationMode === "DEFAULT",
 			)
 				? { timing: "POST_ENCODING" as const }
 				: {}),
@@ -1969,6 +1971,37 @@ export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 							{manifest.kind === "SMOOTH" ? (
 								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 									<Field
+										label={t("manifestDetail.generation")}
+										htmlFor={`wz-xm-${index}-generation`}
+									>
+										<SelectNative
+											id={`wz-xm-${index}-generation`}
+											value={manifest.generationMode ?? "MANUAL"}
+											onChange={(event) =>
+												patchExtra(index, {
+													...manifest,
+													generationMode:
+														event.currentTarget.value === "DEFAULT"
+															? "DEFAULT"
+															: undefined,
+												})
+											}
+										>
+											<option value="MANUAL">
+												{t("manifestDetail.manual")}
+											</option>
+											<option
+												value="DEFAULT"
+												disabled={
+													!!manifest.drmKind ||
+													(!!manifest.language && manifest.language !== "en")
+												}
+											>
+												{t("manifestDetail.default")}
+											</option>
+										</SelectNative>
+									</Field>
+									<Field
 										label={t("wizard.serverManifest")}
 										htmlFor={`wz-xm-${index}-server`}
 										help={t("uiX.defaultStreamIsm")}
@@ -2006,6 +2039,7 @@ export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 									>
 										<Input
 											id={`wz-xm-${index}-lang`}
+											disabled={manifest.generationMode === "DEFAULT"}
 											value={manifest.language ?? ""}
 											onChange={(e) =>
 												patchExtra(index, {
@@ -2021,6 +2055,7 @@ export function ManifestSection({ state, onPatch }: ManifestSectionProps) {
 									>
 										<SelectNative
 											id={`wz-xm-${index}-drm`}
+											disabled={manifest.generationMode === "DEFAULT"}
 											value={manifest.drmKind ?? ""}
 											onChange={(e) =>
 												patchExtra(index, {

@@ -1,5 +1,8 @@
 import type { CompiledOperation } from "./compiler";
-import { defaultManifestSelection } from "./default-manifest-selection";
+import {
+	defaultManifestSelection,
+	defaultSmoothManifestSelection,
+} from "./default-manifest-selection";
 import type { HlsCustomTag } from "./manifest-options";
 import { AUDIO_CODECS, type EncodingPlan } from "./schema";
 
@@ -25,9 +28,22 @@ export function applyManifestDetails(
 	operations: CompiledOperation[],
 	encodingStepFor: (renditionKey: string) => string,
 ): CompiledOperation[] {
-	if (manifest.kind === "SMOOTH") return operations;
 	const root = operations[0];
 	if (!root) return operations;
+	if (manifest.kind === "SMOOTH") {
+		if (manifest.generationMode !== "DEFAULT") return operations;
+		const encoding = defaultSmoothManifestSelection(plan).renditions[0];
+		return [
+			{
+				...root,
+				payload: { ...root.payload, generationMode: "DEFAULT" },
+				refs: {
+					...root.refs,
+					encodingId: encoding ? encodingStepFor(encoding.key) : "encoding",
+				},
+			},
+		];
+	}
 	const d = manifest.detailed;
 	if (manifest.generationMode === "DEFAULT") {
 		const encoding = defaultManifestSelection(plan).renditions[0];

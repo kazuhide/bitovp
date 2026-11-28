@@ -3,6 +3,9 @@ import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { encodingPlanSchema } from "./schema";
+import { planToEncodingTemplateYaml } from "./template";
+import { loadPlan } from "./test-support";
 
 /**
  * Every Template-YAML golden must validate against the official Bitmovin
@@ -38,6 +41,136 @@ describe("template goldens vs the official JSON schema", () => {
 
 	it("covers every template golden", () => {
 		expect(goldens.length).toBeGreaterThan(0);
+	});
+
+	it("validates native file muxings, declared DRM and timed metadata against the provider template schema", () => {
+		const sample = loadPlan("fixed-bitrate-hls-on-aws");
+		const output = (key: string) => ({
+			outputKey: "origin",
+			path: `native/${key}/`,
+		});
+		const plan = encodingPlanSchema.parse({
+			...sample,
+			renditions: [
+				...sample.renditions,
+				{
+					key: "mp3",
+					ingestKey: "audio",
+					codec: "MP3",
+					bitrate: 128000,
+					rate: 48000,
+				},
+				{ key: "mpeg2", ingestKey: "video", codec: "H262", rate: 25 },
+			],
+			muxings: [
+				{
+					key: "output-ts",
+					streamKey: "v360",
+					kind: "BROADCAST_TS",
+					filename: "clip.ts",
+					destination: output("ts"),
+				},
+				{
+					key: "output-mp3",
+					streamKey: "mp3",
+					kind: "MP3",
+					filename: "clip.mp3",
+					destination: output("mp3"),
+				},
+				{
+					key: "output-mxf",
+					streamKey: "mpeg2",
+					kind: "MXF",
+					filename: "clip.mxf",
+					destination: output("mxf"),
+				},
+				{
+					key: "output-packed",
+					streamKey: "a128",
+					kind: "PACKED_AUDIO",
+					segmentLength: 5,
+					segmentNaming: "packet_%number%.aac",
+				},
+				{
+					key: "output-raw",
+					streamKey: "a64",
+					kind: "SEGMENTED_RAW",
+					segmentLength: 5,
+					segmentNaming: "packet_%number%.aac",
+					destination: output("raw"),
+				},
+				{
+					key: "output-id3",
+					streamKey: "v540",
+					kind: "PROGRESSIVE_TS",
+					filename: "clip.ts",
+					destination: output("id3"),
+					id3Tags: [
+						{
+							key: "chapter",
+							format: "PLAIN_TEXT",
+							frameId: "TIT2",
+							time: 1,
+							positionMode: "TIME",
+							text: "Chapter",
+						},
+					],
+				},
+			],
+			drm: [
+				{
+					key: "packet-key",
+					kind: "AES",
+					muxingKey: "output-packed",
+					method: "AES_128",
+					keyFileUri: "fixture-key.bin",
+					credentialId: "00000000-0000-4000-8000-000000000007",
+					destination: output("encrypted"),
+				},
+			],
+			manifests: [],
+			generation: { timing: "POST_ENCODING" },
+		});
+		const tree = parse(planToEncodingTemplateYaml(plan));
+		validateTemplate(tree);
+		expect(validateTemplate.errors ?? []).toEqual([]);
+		expect(tree.configurations.video.h262.mpeg2.properties).toMatchObject({
+			profile: "MPEG2_422",
+			bitrate: 50000000,
+		});
+		expect(tree.configurations.audio.mp3.mp3.properties).toMatchObject({
+			bitrate: 128000,
+		});
+		const [encoding] = Object.values(
+			tree.encodings as Record<string, { muxings: object }>,
+		);
+		expect(encoding?.muxings).toMatchObject({
+			broadcastTs: { "output-ts": { properties: { filename: "clip.ts" } } },
+			mp3: { "output-mp3": { properties: { filename: "clip.mp3" } } },
+			mxf: { "output-mxf": { properties: { filename: "clip.mxf" } } },
+			packedAudio: {
+				"output-packed": {
+					drm: {
+						aes: {
+							"packet-key": {
+								properties: {
+									key: "{{DRM_PACKET_KEY_KEY}}",
+									keyFileUri: "fixture-key.bin",
+								},
+							},
+						},
+					},
+				},
+			},
+			segmentedRaw: {
+				"output-raw": { properties: { segmentNaming: "packet_%number%.aac" } },
+			},
+			progressiveTs: {
+				"output-id3": {
+					id3: { plainText: { chapter: { properties: { text: "Chapter" } } } },
+				},
+			},
+		});
 	});
 
 	for (const file of goldens) {

@@ -5009,6 +5009,13 @@ export const ja = {
 		deleteCredentialNamed:
 			"認証情報「{name}」を削除しますか? この認証情報を使う保存先プリセットも削除されます。",
 		deleteDnsMapping: "DNS マッピング {name} を削除しますか?",
+		deleteAllDnsMappings: "このエンコードから一括削除",
+		deleteEncodingDnsMappings:
+			"エンコード {id} の DNS マッピング {count} 件をすべて削除しますか？",
+		verifyDnsMappingsAfterRemoval:
+			"一覧を更新して、残っている DNS マッピングを確認してください。",
+		incompleteDnsMappings:
+			"マッピングの一覧を取得できませんでした。一覧を更新してから削除してください。",
 		deletePoolNamed: "プール「{name}」を削除しますか?",
 		deleteStreamKeyNamed: "ストリームキー「{name}」を削除しますか?",
 		releaseStaticIp: "静的 IP {name} を解放しますか?",
@@ -5330,6 +5337,8 @@ export const ja = {
 			"Per-Titleでは動画プレイリスト名を個別指定できません。この指定を消し、マニフェストのビットレートから生成される名前を使ってください。",
 		onDemandDrmTemplateUnavailable:
 			"OnDemand MP4 DRMのYAML出力は利用できません。DRMを維持するにはプランJSONを保存するか、このアプリから実行してください。",
+		supplementTemplateUnavailable:
+			"追加の字幕やサムネイル、プロバイダー計測を保存するにはプラン JSON を使ってください。",
 		dolbyLoudnessTemplateUnavailable:
 			"Dolby Loudness は Encoding Template に定義されていません。プラン JSON を使用してください。",
 		spekeTemplateUnavailable: "SPEKE設定はプランJSONで保存できます。",

@@ -226,6 +226,276 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 				});
 			});
 		}
+		const filterDeletes = [{ mode: "one" as const }, { mode: "all" as const }];
+		async function attachFilter(s: Source) {
+			const filterId = randomUUID();
+			s.steps.push(
+				{
+					step: "filter:main",
+					kind: "CREATE_FILTER_DEINTERLACE",
+					refs: {},
+					payload: {},
+					status: "DONE",
+					resourceId: filterId,
+				},
+				{
+					step: "stream-filters:main",
+					kind: "CREATE_STREAM_FILTERS",
+					refs: {
+						encodingId: "source:encodingId",
+						streamId: "selected",
+						filterIds: ["filter:main"],
+					},
+					payload: { positions: [0] },
+					status: "DONE",
+				},
+			);
+			await own.encodingJob.update({
+				where: { id: s.sourceId },
+				data: {
+					stepLog: JSON.parse(JSON.stringify(s.steps)) as Prisma.InputJsonValue,
+				},
+			});
+			return filterId;
+		}
+
+		it.each(
+			auditedOperationCases(
+				import.meta.url,
+				"recorded-stream-filter-deletes",
+				filterDeletes,
+				() => [
+					"DELETE /encoding/encodings/{encoding_id}/streams/{stream_id}/filters/{filter_id}",
+				],
+			),
+		)("detaches only recorded filters from the recorded stream through %s", async ({
+			mode,
+		}) => {
+			const contract = contracts.find(
+				(candidate) => candidate.kind === "CREATE_STREAM",
+			);
+			const s = await seed(own, a, contract);
+			const filterId = await attachFilter(s);
+			const all = mode === "all";
+			const collection = `${s.expected}/filters`;
+			const sendTo = `${collection}/${filterId}`;
+			send.mockImplementation(async (url: string, init: RequestInit) => {
+				expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+				expect(new URL(url).pathname).toBe(
+					init.method === "GET" ? collection : sendTo,
+				);
+				return Response.json({
+					status: "SUCCESS",
+					data: {
+						result:
+							init.method === "GET"
+								? { filters: [{ id: filterId, position: 0 }] }
+								: { id: filterId },
+					},
+				});
+			});
+			const command = all
+				? { mode: "all", filterIds: [filterId] }
+				: { mode: "one", filterId };
+			const result = await submit(s, "remove", { filters: command });
+			expect(result.status, await result.clone().text()).toBe(200);
+			expect(await result.json()).toEqual({
+				state: "REMOVED",
+				disposition: "removed",
+			});
+			expect(send.mock.calls.map(([, init]) => init.method)).toEqual([
+				"GET",
+				"DELETE",
+			]);
+			expect(
+				(
+					await own.encodingResourceRemoval.findFirst({
+						where: { sourceId: s.sourceId },
+					})
+				)?.step,
+			).toMatch(/^selected:filters:/);
+		});
+
+		it("rejects a malformed filter list instead of recording a removal", async () => {
+			const contract = contracts.find(
+				(candidate) => candidate.kind === "CREATE_STREAM",
+			);
+			const s = await seed(own, a, contract);
+			const filterId = await attachFilter(s);
+			send.mockResolvedValueOnce(
+				Response.json({ status: "SUCCESS", data: { result: {} } }),
+			);
+			const res = await submit(s, "remove", {
+				filters: { mode: "one", filterId },
+			});
+			expect(res.status).toBe(409);
+			expect(send).toHaveBeenCalledOnce();
+			expect(
+				(
+					await own.encodingResourceRemoval.findFirst({
+						where: { sourceId: s.sourceId },
+					})
+				)?.state,
+			).toBe("REFUSED");
+		});
+
+		it("continues beyond the first filter page before checking the confirmed collection", async () => {
+			const contract = contracts.find(
+				(candidate) => candidate.kind === "CREATE_STREAM",
+			);
+			const s = await seed(own, a, contract);
+			const filterId = await attachFilter(s);
+			const other = Array.from({ length: 99 }, (_, index) => ({
+				id: randomUUID(),
+				position: index + 1,
+			}));
+			const pages = [
+				[{ id: filterId, position: 0 }, ...other],
+				[{ id: randomUUID(), position: 100 }],
+			];
+			send.mockImplementation(async (url: string, init: RequestInit) => {
+				expect(init.method).toBe("GET");
+				const query = new URL(url).searchParams;
+				expect(query.get("limit")).toBe("100");
+				const offset = Number(query.get("offset") ?? 0);
+				return Response.json({
+					status: "SUCCESS",
+					data: { result: { filters: pages[offset / 100] } },
+				});
+			});
+			const res = await submit(s, "remove", {
+				filters: { mode: "all", filterIds: [filterId] },
+			});
+			expect(res.status).toBe(409);
+			expect(send).toHaveBeenCalledTimes(2);
+		});
+
+		it("preserves external attachments and refuses unrecorded or changed stream-filter sets", async () => {
+			const contract = contracts.find(
+				(candidate) => candidate.kind === "CREATE_STREAM",
+			);
+			const s = await seed(own, a, contract);
+			const filterId = await attachFilter(s);
+			const extra = randomUUID();
+			send.mockResolvedValueOnce(
+				Response.json({
+					status: "SUCCESS",
+					data: {
+						result: {
+							filters: [
+								{ id: filterId, position: 0 },
+								{ id: extra, position: 1 },
+							],
+						},
+					},
+				}),
+			);
+			expect(
+				(
+					await submit(s, "remove", {
+						filters: { mode: "one", filterId: extra },
+					})
+				).status,
+			).toBe(409);
+			expect(send).not.toHaveBeenCalled();
+			expect(
+				(
+					await submit(s, "remove", {
+						filters: { mode: "all", filterIds: [filterId] },
+					})
+				).status,
+			).toBe(409);
+			expect(send.mock.calls.map(([, init]) => init.method)).toEqual(["GET"]);
+		});
+
+		it.each(
+			filterDeletes,
+		)("does not confuse offset shifts with absence during $mode filter removal", async ({
+			mode,
+		}) => {
+			const s = await seed(
+				own,
+				a,
+				contracts.find((entry) => entry.kind === "CREATE_STREAM"),
+			);
+			const filterId = await attachFilter(s);
+			const filters =
+				mode === "one" ? { mode, filterId } : { mode, filterIds: [filterId] };
+			const path = `${s.expected}/filters`;
+			const withTailTarget = () => [
+				...Array.from({ length: 100 }, (_, position) => ({
+					id: randomUUID(),
+					position,
+				})),
+				{ id: filterId, position: 100 },
+			];
+			let attached =
+				mode === "one" ? withTailTarget() : [{ id: filterId, position: 0 }];
+			let loseDelete = true;
+			const reads: number[] = [];
+			const deletes: string[] = [];
+			const ok = (result: object) =>
+				Response.json({ status: "SUCCESS", data: { result } });
+			send.mockImplementation(async (url: string, init: RequestInit) => {
+				const target = new URL(url);
+				expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+				if (init.method === "GET") {
+					expect(target.pathname).toBe(path);
+					const offset = Number(target.searchParams.get("offset"));
+					expect(target.searchParams.get("limit")).toBe("100");
+					reads.push(offset);
+					// A concurrent, unrelated removal makes item 101 move into page 1.
+					if (offset === 100) attached.shift();
+					return ok({ filters: attached.slice(offset, offset + 100) });
+				}
+				expect(init.method).toBe("DELETE");
+				expect(target.pathname).toBe(`${path}/${filterId}`);
+				expect(attached.some(({ id }) => id === filterId)).toBe(true);
+				deletes.push(target.pathname);
+				if (loseDelete) throw new Error("lost delete response");
+				attached = attached.filter(({ id }) => id !== filterId);
+				return ok({ id: filterId });
+			});
+
+			const initial = await submit(s, "remove", { filters });
+			expect(initial.status).toBe(502);
+			expect(await initial.json()).toMatchObject({ state: "UNKNOWN" });
+			expect(reads).toEqual(mode === "one" ? [0, 100] : [0]);
+			expect(deletes).toHaveLength(1);
+
+			attached = withTailTarget();
+			const verify = await submit(s, "verify", { filters });
+			expect(verify.status).toBe(502);
+			expect(await verify.json()).toMatchObject({
+				state: "UNKNOWN",
+				disposition: "unknown",
+			});
+			expect(reads.slice(-2)).toEqual([0, 100]);
+			expect(deletes).toHaveLength(1);
+			expect(
+				await own.encodingResourceRemoval.findFirst({
+					where: { sourceId: s.sourceId },
+				}),
+			).toMatchObject({ state: "UNKNOWN", pendingJobId: s.sourceId });
+
+			attached = withTailTarget();
+			loseDelete = false;
+			const retry = await submit(s, "remove", { filters, retry: true });
+			expect(retry.status).toBe(200);
+			expect(await retry.json()).toEqual({
+				state: "REMOVED",
+				disposition: "removed",
+			});
+			expect(reads.slice(-2)).toEqual([0, 100]);
+			expect(deletes).toEqual([`${path}/${filterId}`, `${path}/${filterId}`]);
+			expect(attached).toHaveLength(99);
+			expect(
+				await own.encodingResourceRemoval.findFirst({
+					where: { sourceId: s.sourceId },
+				}),
+			).toMatchObject({ state: "REMOVED", pendingJobId: null });
+		});
+
 		it.each(
 			auditedOperationCases(
 				import.meta.url,

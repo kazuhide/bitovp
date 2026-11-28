@@ -789,6 +789,10 @@ export {
 	SecretEgressConfigError,
 	StorageEndpointBlockedError,
 } from "./plan/egress";
+export {
+	azureSupplementStorageKeys,
+	validateEncodingSupplements,
+} from "./plan/encoding-supplements";
 export { VOD_FIXTURES } from "./plan/fixtures";
 export {
 	hasPrivateStorageLocator,
@@ -1010,13 +1014,16 @@ export {
 	AV1_DYNAMIC_RANGE_FORMATS,
 	aacRenditionSchema,
 	aclSchema,
+	aesKeyFileUriSchema,
 	captionStreamSchema,
 	concatenationSourceSchema,
 	concatenationStreamSchema,
 	DEFAULT_VMAF_MODEL,
 	deinterlaceFilterSchema,
 	destinationSchema,
+	type EncodingSupplement,
 	encodingPlanSchema,
+	encodingSupplementSchema,
 	generationTimingSchema,
 	h264RenditionSchema,
 	h265V2PerceptualQualityModeConfigSchema,

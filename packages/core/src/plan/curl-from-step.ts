@@ -11,6 +11,7 @@ import type { OperationKind } from "./compiler";
 import { hasPrivateStorageLocator } from "./hdr-source-paths";
 import { manifestCurlSnapshot } from "./manifest-curl";
 import { externalVttUrlSchema } from "./manifest-options";
+import { nativeMuxingCurlSnapshot } from "./native-muxing-curl";
 import {
 	authoredObjectPath,
 	hasCompletedResource,
@@ -370,6 +371,34 @@ const ENDPOINTS: Partial<Record<OperationKind, EndpointDef>> = {
 		template: "/encoding/encodings/:encodingId/streams/:streamId/sprites",
 	},
 	// muxings
+	CREATE_CODEC_MP3: {
+		method: "POST",
+		template: "/encoding/configurations/audio/mp3",
+	},
+	CREATE_CODEC_H262: {
+		method: "POST",
+		template: "/encoding/configurations/video/h262",
+	},
+	CREATE_MUXING_BROADCAST_TS: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/muxings/broadcast-ts",
+	},
+	CREATE_MUXING_MP3: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/muxings/mp3",
+	},
+	CREATE_MUXING_MXF: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/muxings/mxf",
+	},
+	CREATE_MUXING_PACKED_AUDIO: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/muxings/packed-audio",
+	},
+	CREATE_MUXING_SEGMENTED_RAW: {
+		method: "POST",
+		template: "/encoding/encodings/:encodingId/muxings/segmented-raw",
+	},
 	CREATE_MUXING_CMAF: {
 		method: "POST",
 		template: "/encoding/encodings/:encodingId/muxings/cmaf",
@@ -745,6 +774,7 @@ export function curlForStep(
 		entry.kind === "CREATE_OUTPUT_S3_ROLE_BASED" ||
 		entry.kind === "CREATE_DRM_CENC" ||
 		entry.kind === "CREATE_DRM_FAIRPLAY" ||
+		entry.kind === "CREATE_DRM_TYPED" ||
 		entry.kind === "CREATE_DRM_SPEKE"
 	) {
 		return { ok: false, code: "VAULT_FIELDS_OMITTED", kind: entry.kind };
@@ -766,6 +796,14 @@ export function curlForStep(
 		endpoint = {
 			method: "POST",
 			template: `/encoding/manifests/${entry.kind === "CREATE_MANIFEST_HLS" ? "hls" : "dash"}/default`,
+		};
+	if (
+		entry.kind === "CREATE_MANIFEST_SMOOTH" &&
+		entry.payload.generationMode === "DEFAULT"
+	)
+		endpoint = {
+			method: "POST",
+			template: "/encoding/manifests/smooth/default",
 		};
 	if (
 		entry.kind === "CREATE_HLS_CUSTOM_TAG" &&
@@ -964,6 +1002,13 @@ export function curlForStep(
 			return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
 		entry = { ...entry, refs: attachment.refs };
 		filterBody = JSON.stringify(attachment.body, null, 2);
+	}
+	const muxingSnapshot = nativeMuxingCurlSnapshot(entry);
+	if (muxingSnapshot === false)
+		return { ok: false, code: "UNRESOLVED_PATH_PARAMS", kind: entry.kind };
+	if (muxingSnapshot) {
+		request = muxingSnapshot.request;
+		entry = { ...entry, refs: muxingSnapshot.refs };
 	}
 	const manifestSnapshot = manifestCurlSnapshot(entry);
 	if (manifestSnapshot === false)

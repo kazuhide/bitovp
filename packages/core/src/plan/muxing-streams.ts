@@ -41,6 +41,12 @@ export const VOD_DRM_MUXINGS: Record<PlanDrm["kind"], readonly string[]> = {
 	CENC: ["FMP4", "MP4", "WEBM", "PROGRESSIVE_WEBM"],
 	FAIRPLAY: ["FMP4", "TS", "PROGRESSIVE_TS"],
 	SPEKE: ["FMP4", "MP4", "TS", "PROGRESSIVE_TS", "WEBM", "PROGRESSIVE_WEBM"],
+	AES: ["FMP4", "TS", "PROGRESSIVE_TS", "PACKED_AUDIO"],
+	CLEARKEY: ["FMP4", "MP4"],
+	MARLIN: ["FMP4", "MP4"],
+	PLAYREADY: ["FMP4", "MP4"],
+	PRIMETIME: ["FMP4"],
+	WIDEVINE: ["FMP4", "MP4"],
 };
 
 export function physicalMuxingKind(muxing: {
@@ -81,6 +87,9 @@ export const FILE_ONLY_MUXING_KINDS = [
 	"PROGRESSIVE_MOV",
 	"PROGRESSIVE_WAV",
 	"PROGRESSIVE_WEBM",
+	"BROADCAST_TS",
+	"MP3",
+	"MXF",
 ] as const satisfies readonly PlanMuxing["kind"][];
 
 export type FileOnlyMuxingKind = (typeof FILE_ONLY_MUXING_KINDS)[number];
@@ -116,6 +125,11 @@ const CARRIES_AUDIO: Record<PlanMuxing["kind"], boolean> = {
 	PROGRESSIVE_MOV: true,
 	PROGRESSIVE_WAV: false,
 	PROGRESSIVE_WEBM: true,
+	BROADCAST_TS: true,
+	MP3: false,
+	MXF: true,
+	PACKED_AUDIO: false,
+	SEGMENTED_RAW: false,
 };
 
 export function muxingKindCarriesAudio(kind: string): boolean {

@@ -623,6 +623,9 @@ export async function executeManifestStep(
 				throw new Error(`step "${op.step}" needs an output destination`);
 			}
 			const resourceId = await ctx.sdk.createSmoothManifest({
+				...(p.generationMode === "DEFAULT"
+					? { encodingId: refId(op, ctx, "encodingId") }
+					: {}),
 				serverManifestName: str(p.serverManifestName),
 				clientManifestName: str(p.clientManifestName),
 				name: str(p.name),

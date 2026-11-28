@@ -266,6 +266,27 @@ model NativeCodecConfiguration {
   @@index([organizationId, bitmovinAccountId, createdAt], map: "NativeCodecConfiguration_recent")
 }
 
+/// Provider settings dispatch receipts. Retained across application resets.
+model NativeEncodingOperation {
+  organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  id String @db.Uuid
+  bitmovinAccountId String @db.Uuid
+  scopeVersion String @db.Uuid
+  action String
+  targetId String? @db.Uuid
+  fingerprint String @db.Char(64)
+  state String
+  providerId String? @db.Uuid
+  passed Boolean?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@id([organizationId, id])
+  @@index([organizationId, bitmovinAccountId, scopeVersion, createdAt], map: "NativeEncodingOperation_recent")
+}
+
 model EncodingJob {
   pendingResourceRemovals EncodingResourceRemoval[]
   organizationId String @default(dbgenerated("(NULLIF(current_setting('bitovp.organization_id', true), '')::uuid)")) @db.Uuid
@@ -3100,6 +3121,7 @@ model Organization {
   storageLocationPresetRows StorageLocationPreset[]
   createRequestRows CreateRequest[]
   nativeCodecConfigurationRows NativeCodecConfiguration[]
+  nativeEncodingOperationRows NativeEncodingOperation[]
   encodingJobRows EncodingJob[]
   librarySourceRows LibrarySource[]
   sceneAnalysisRevisionRows SceneAnalysisRevision[]

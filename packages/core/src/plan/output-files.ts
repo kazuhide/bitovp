@@ -43,32 +43,45 @@ export function outputFilePath(base: string, filename: string): string {
 export function outputStorageKeys(
 	plan: OutputPlan,
 	outputKey: string,
+	resolvedStorageKeys?: ReadonlyMap<string, string>,
 ): Set<string> {
 	const keys = new Set([
 		outputKey,
 		...(plan.deliveryMirrors ?? []).map((mirror) => mirror.outputKey),
 	]);
 	return new Set(
-		plan.outputs.filter((output) => keys.has(output.key)).map(storageIdentity),
+		plan.outputs
+			.filter((output) => keys.has(output.key))
+			.map(
+				(output) =>
+					resolvedStorageKeys?.get(output.key) ?? storageIdentity(output),
+			),
 	);
 }
 
-function addresses(plan: OutputPlan, file: OutputFile) {
-	return [...outputStorageKeys(plan, file.destination.outputKey)].map(
-		(storage) => ({
-			storage,
-			path: outputFilePath(file.destination.path, file.filename),
-		}),
-	);
+function addresses(
+	plan: OutputPlan,
+	file: OutputFile,
+	resolvedStorageKeys?: ReadonlyMap<string, string>,
+) {
+	return [
+		...outputStorageKeys(plan, file.destination.outputKey, resolvedStorageKeys),
+	].map((storage) => ({
+		storage,
+		path: outputFilePath(file.destination.path, file.filename),
+	}));
 }
 
 /** One writer may reach a physical file through several output aliases. */
 export function outputFileKeys(
 	plan: OutputPlan,
 	file: OutputFile,
+	resolvedStorageKeys?: ReadonlyMap<string, string>,
 ): Set<string> {
 	return new Set(
-		addresses(plan, file).map((address) => JSON.stringify(address)),
+		addresses(plan, file, resolvedStorageKeys).map((address) =>
+			JSON.stringify(address),
+		),
 	);
 }
 

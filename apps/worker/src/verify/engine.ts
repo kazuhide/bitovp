@@ -79,6 +79,7 @@ import {
 	scopedPerTitleResults,
 	scopedPerTitleVideoFamilies,
 } from "./per-title-selection";
+import { smoothClientQualityLevels, smoothServerTracks } from "./smooth-xml";
 import { MAX_SUBTITLE_XML_BYTES, validateSubtitleXml } from "./subtitle-xml";
 
 export type Verdict = "PASS" | "WARN" | "FAIL" | "SKIP";
@@ -641,6 +642,9 @@ async function verifyMuxing(
 		muxing.container === "PROGRESSIVE_TS" ||
 		muxing.container === "PROGRESSIVE_MOV" ||
 		muxing.container === "PROGRESSIVE_WAV" ||
+		muxing.container === "BROADCAST_TS" ||
+		muxing.container === "MP3" ||
+		muxing.container === "MXF" ||
 		(muxing.container === "MP4_PROGRESSIVE" &&
 			muxing.audio?.singleTrackFile === true) ||
 		muxing.container === "PROGRESSIVE_WEBM";
@@ -1567,6 +1571,7 @@ async function verifyMediaProperties(
 			const seen = probe.videoCodec.toUpperCase();
 			const matches =
 				(want === "H264" && seen === "H264") ||
+				(want === "H262" && seen === "MPEG2VIDEO") ||
 				(want === "H265" && (seen === "HEVC" || seen === "H265")) ||
 				(want === "VP9" && seen === "VP9") ||
 				(want === "AV1" && (seen === "AV1" || seen === "LIBAOM-AV1"));
@@ -3467,7 +3472,7 @@ async function verifyManifest(
 	expected: ExpectedArtefacts,
 ): Promise<void> {
 	const base = `manifest:${manifest.manifestKey}`;
-	for (const file of manifest.files) {
+	for (const [index, file] of manifest.files.entries()) {
 		// The FILE is part of the id when a manifest has more than one. A Smooth manifest
 		// writes `stream.ism` and `stream.ismc`, and both used to emit `…:exists` and
 		// `…:smooth` under identical ids — against `Check.id`'s own contract ("stable id so
@@ -4166,30 +4171,44 @@ async function verifyManifest(
 		}
 
 		if (manifest.kind === "SMOOTH") {
-			const wellFormed = /<SmoothStreamingMedia/i.test(text);
+			// The expectation stores the server name first and the client name second.
+			const server = manifest.files.length > 1 && index === 0;
+			const counts = server
+				? smoothServerTracks(text)
+				: smoothClientQualityLevels(text);
+			const perTitleVideo = manifest.perTitle && manifest.videoEntries > 0;
+			const valid =
+				counts !== undefined &&
+				(counts.video > 0 || counts.audio > 0) &&
+				(perTitleVideo
+					? counts.video > 0
+					: counts.video === manifest.videoEntries) &&
+				counts.audio === manifest.audioEntries;
+			const wanted = `${perTitleVideo ? "at least 1" : manifest.videoEntries} video, ${manifest.audioEntries} audio`;
+			const found = counts
+				? `${counts.video} video, ${counts.audio} audio`
+				: "invalid XML or manifest structure";
+			const detail = `expected ${wanted} — ${found}`;
+			if (server) {
+				report.assert(
+					`${id}:smooth`,
+					"manifest",
+					valid,
+					`${key} SMIL media references (${detail})`,
+				);
+				continue;
+			}
 			report.assert(
 				`${id}:smooth`,
 				"manifest",
-				wellFormed,
-				`${key} must be a SmoothStreamingMedia document`,
+				counts !== undefined,
+				`${key} must be a SmoothStreamingMedia client manifest`,
 			);
-			// The check must not disappear on the EMPTIEST input. `if (levels > 0)` meant a
-			// `<SmoothStreamingMedia></SmoothStreamingMedia>` with zero QualityLevels emitted
-			// no check at all and the manifest passed — the same "a parser accepted it ≠ it
-			// is a playlist" defect the HLS path already fixed, left unfixed for Smooth
-			// (review catch).
-			//
-			// Per-title is the one case where the plan's count is not the truth: the encoder
-			// chooses the rungs (C1/C4), so there the assertion is presence, not equality.
-			const levels = (text.match(/<QualityLevel/gi) ?? []).length;
-			const want = manifest.videoEntries + manifest.audioEntries;
 			report.assert(
 				`${id}:quality-levels`,
 				"manifest",
-				manifest.perTitle ? levels > 0 : levels === want,
-				manifest.perTitle
-					? `a per-title Smooth manifest must declare at least one QualityLevel (the encoder chooses how many) — ${levels}`
-					: `${want} QualityLevel element(s) — ${levels}`,
+				valid,
+				`QualityLevel elements (${detail})`,
 			);
 		}
 	}
@@ -4562,6 +4581,14 @@ async function verifyDrm(
 	drm: ExpectedDrm,
 ): Promise<void> {
 	const id = `drm:${drm.drmKey}`;
+	if (drm.kind !== "CENC" && drm.kind !== "FAIRPLAY" && drm.kind !== "SPEKE") {
+		report.skip(
+			id,
+			"drm",
+			`${drm.kind} requires a dedicated media verification method`,
+		);
+		return;
+	}
 	if (!drm.dir || !drm.outputKey) {
 		report.skip(id, "drm", "the DRM row names no destination of its own");
 		return;

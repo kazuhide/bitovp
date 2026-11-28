@@ -10,6 +10,7 @@ const producers: Record<ParentRef, readonly string[]> = {
 	muxingId: [
 		"CREATE_MUXING_FMP4",
 		"CREATE_MUXING_MP4",
+		"CREATE_MUXING_PACKED_AUDIO",
 		"CREATE_MUXING_TS",
 		"CREATE_MUXING_WEBM",
 		"CREATE_MUXING_PROGRESSIVE_TS",
@@ -27,6 +28,13 @@ const producers: Record<ParentRef, readonly string[]> = {
 		"CREATE_DASH_ADAPTATION_SET_SUBTITLE",
 		"CREATE_DASH_ADAPTATION_SET_VIDEO",
 	],
+	mediaId: [
+		"CREATE_HLS_AUDIO_MEDIA",
+		"CREATE_HLS_SUBTITLES_MEDIA",
+		"CREATE_HLS_VIDEO_MEDIA",
+		"CREATE_HLS_CLOSED_CAPTIONS_MEDIA",
+		"CREATE_HLS_VTT_MEDIA",
+	],
 	streamInfoId: ["CREATE_HLS_STREAM_INFO"],
 	drmId: ["CREATE_DRM_CENC", "CREATE_DRM_FAIRPLAY", "CREATE_DRM_SPEKE"],
 	representationId: [
@@ -41,6 +49,7 @@ const ancestors: Record<ParentRef, readonly ParentRef[]> = {
 	encodingId: [],
 	periodId: ["manifestId"],
 	adaptationSetId: ["manifestId", "periodId"],
+	mediaId: ["manifestId"],
 	streamInfoId: ["manifestId"],
 	streamId: ["encodingId"],
 	muxingId: ["encodingId"],
@@ -55,6 +64,7 @@ const ancestors: Record<ParentRef, readonly ParentRef[]> = {
 };
 function expectedMuxing(entry: StepLogEntry) {
 	if (entry.kind.startsWith("CREATE_DRM_")) return entry.payload.muxingKind;
+	if (entry.kind === "CREATE_PROGRESSIVE_TS_ID3") return "PROGRESSIVE_TS";
 	if (
 		entry.kind === "CREATE_DASH_REPRESENTATION_MP4" ||
 		entry.kind === "CREATE_SMOOTH_CONTENT_PROTECTION"

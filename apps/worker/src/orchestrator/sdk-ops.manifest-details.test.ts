@@ -56,6 +56,25 @@ type WireCase = {
 	expected: Record<string, unknown>;
 };
 const cases: WireCase[] = [
+	{
+		kind: "CREATE_MANIFEST_SMOOTH",
+		suffix: "/smooth/default",
+		payload: {
+			generationMode: "DEFAULT",
+			serverManifestName: "test.ism",
+			clientManifestName: "test.ismc",
+			name: "Smooth",
+			outputPath: "test/",
+		},
+		refs: { encodingId: "enc", outputId: "origin" },
+		expected: {
+			encodingId: "enc-id",
+			serverManifestName: "test.ism",
+			clientManifestName: "test.ismc",
+			version: "V1",
+			outputs: [{ outputId: "origin-id", outputPath: "test/" }],
+		},
+	},
 	...(["HLS", "DASH"] as const).map((kind) => ({
 		kind: `CREATE_MANIFEST_${kind}` as CompiledOperation["kind"],
 		suffix: `/${kind.toLowerCase()}`,
@@ -378,22 +397,20 @@ const cases: WireCase[] = [
 			streamId: "stream-id",
 		},
 	},
-	...(["FMP4", "WEBM", "CMAF", "FMP4_DRM", "ADAPTATION_SET"] as const).map(
-		(type) => ({
-			kind: "CREATE_DASH_CONTENT_PROTECTION" as const,
-			suffix: `/dash/manifest-id/periods/period-id/adaptationsets/aset-id/${type === "ADAPTATION_SET" ? "" : `representations/${type === "FMP4_DRM" ? "fmp4/drm" : type.toLowerCase()}/rep-id/`}contentprotection`,
-			payload: { representationKind: type },
-			refs: {
-				...pathRefs,
-				...(type === "ADAPTATION_SET" ? {} : { representationId: "rep" }),
-				encodingId: "enc",
-				muxingId: "muxing",
-				drmId: "drm",
-				dependencyId: "dependency",
-			},
-			expected: { drmId: "drm-id", dependencyId: "dependency-id" },
-		}),
-	),
+	...(["FMP4", "WEBM", "FMP4_DRM", "ADAPTATION_SET"] as const).map((type) => ({
+		kind: "CREATE_DASH_CONTENT_PROTECTION" as const,
+		suffix: `/dash/manifest-id/periods/period-id/adaptationsets/aset-id/${type === "ADAPTATION_SET" ? "" : `representations/${type === "FMP4_DRM" ? "fmp4/drm" : type.toLowerCase()}/rep-id/`}contentprotection`,
+		payload: { representationKind: type },
+		refs: {
+			...pathRefs,
+			...(type === "ADAPTATION_SET" ? {} : { representationId: "rep" }),
+			encodingId: "enc",
+			muxingId: "muxing",
+			drmId: "drm",
+			dependencyId: "dependency",
+		},
+		expected: { drmId: "drm-id", dependencyId: "dependency-id" },
+	})),
 	...(["VIDEO", "CLOSED_CAPTIONS", "VTT"] as const).map((type) => ({
 		kind: `CREATE_HLS_${type}_MEDIA` as CompiledOperation["kind"],
 		suffix: `/hls/manifest-id/media/${type === "CLOSED_CAPTIONS" ? "closed-captions" : type.toLowerCase()}`,
@@ -467,43 +484,85 @@ const cases: WireCase[] = [
 	})),
 ];
 
+async function assertWireCase(test: WireCase) {
+	const { calls, sdk } = setup();
+	const op: CompiledOperation = {
+		step: "test",
+		kind: test.kind,
+		payload: test.payload,
+		refs: test.refs,
+	};
+	const ids = new Map(
+		Object.values(test.refs)
+			.flat()
+			.map((key) => [key, `${key}-id`]),
+	);
+	const result = await executeStep(op, {
+		sdk,
+		ids,
+		resolveCredential: vi.fn(),
+		poll: { intervalMs: 1, timeoutMs: 10, sleep: async () => {} },
+	});
+	expect(calls).toHaveLength(1);
+	expect(calls[0]?.path).toBe(`/v1/encoding/manifests${test.suffix}`);
+	expect(calls[0]?.body).toMatchObject(test.expected);
+	const snapshot = structuredClone(result.request);
+	const entry: StepLogEntry = {
+		...op,
+		status: "DONE",
+		request: result.request,
+	};
+	const curl = curlForStep(entry);
+	expect(curl.ok).toBe(true);
+	if (!curl.ok) throw new Error(curl.code);
+	expect(curl.command).toContain(`https://api.bitmovin.com${calls[0]?.path}`);
+	const body = curl.command.match(/--data '([\s\S]*)'$/)?.[1];
+	expect(body).toBeDefined();
+	expect(JSON.parse(body ?? "{}")).toEqual(calls[0]?.body);
+	expect(result.request).toEqual(snapshot);
+}
+
+const auditedManifestPaths = [
+	"/smooth/default",
+	"/hls/manifest-id/media/media-id/custom-tags",
+	"/hls/manifest-id/streams/stream-info-id/custom-tags",
+	"/dash/manifest-id/periods/period-id/adaptationsets/aset-id/representations/fmp4/drm",
+	"/dash/manifest-id/periods/period-id/adaptationsets/aset-id/representations/fmp4/rep-id/contentprotection",
+	"/dash/manifest-id/periods/period-id/adaptationsets/aset-id/representations/fmp4/drm/rep-id/contentprotection",
+	"/dash/manifest-id/periods/period-id/adaptationsets/aset-id/representations/webm/rep-id/contentprotection",
+];
+const auditedCases = auditedManifestPaths.map((suffix) => {
+	const test = cases.find((row) => row.suffix === suffix);
+	if (!test) throw new Error(`Missing manifest case: ${suffix}`);
+	return test;
+});
+
 describe("manifest detail installed SDK wire paths", () => {
-	it.each(cases)("$kind $suffix preserves API fields", async (test) => {
+	it("dispatches supported manifest writes through their exact installed SDK paths", async () => {
+		for (const test of auditedCases) await assertWireCase(test);
+	});
+	it.each(cases.filter((test) => !auditedCases.includes(test)))(
+		"$kind $suffix preserves API fields",
+		assertWireCase,
+	);
+
+	it("refuses CMAF content protection without a supported local DRM association", async () => {
 		const { calls, sdk } = setup();
-		const op: CompiledOperation = {
-			step: "test",
-			kind: test.kind,
-			payload: test.payload,
-			refs: test.refs,
-		};
-		const ids = new Map(
-			Object.values(test.refs)
-				.flat()
-				.map((key) => [key, `${key}-id`]),
+		await expect(
+			sdk.createDashContentProtection(
+				{
+					manifestId: "manifest",
+					periodId: "period",
+					adaptationSetId: "adaptation",
+					representationId: "representation",
+					representationKind: "CMAF",
+				},
+				{ encodingId: "encoding", muxingId: "muxing", drmId: "drm" },
+			),
+		).rejects.toThrow(
+			"Local CMAF muxings have no supported DRM configuration to attach",
 		);
-		const result = await executeStep(op, {
-			sdk,
-			ids,
-			resolveCredential: vi.fn(),
-			poll: { intervalMs: 1, timeoutMs: 10, sleep: async () => {} },
-		});
-		expect(calls).toHaveLength(1);
-		expect(calls[0]?.path).toBe(`/v1/encoding/manifests${test.suffix}`);
-		expect(calls[0]?.body).toMatchObject(test.expected);
-		const snapshot = structuredClone(result.request);
-		const entry: StepLogEntry = {
-			...op,
-			status: "DONE",
-			request: result.request,
-		};
-		const curl = curlForStep(entry);
-		expect(curl.ok).toBe(true);
-		if (!curl.ok) throw new Error(curl.code);
-		expect(curl.command).toContain(`https://api.bitmovin.com${calls[0]?.path}`);
-		const body = curl.command.match(/--data '([\s\S]*)'$/)?.[1];
-		expect(body).toBeDefined();
-		expect(JSON.parse(body ?? "{}")).toEqual(calls[0]?.body);
-		expect(result.request).toEqual(snapshot);
+		expect(calls).toHaveLength(0);
 	});
 
 	it("serializes Default DASH condition discriminators and encoding IDs", async () => {

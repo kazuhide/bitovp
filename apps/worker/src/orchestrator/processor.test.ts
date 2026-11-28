@@ -19,6 +19,7 @@ import {
 	createOrchestratorProcessor,
 	type OrchestratorDeps,
 } from "./processor";
+import { ProviderCreateRefusal } from "./provider-create-refusal";
 import { createBitmovinSdkOps, type SdkOps } from "./sdk-ops";
 import {
 	type CreateStamp,
@@ -220,6 +221,7 @@ describe("orchestrator processor", () => {
 		["SMOOTH", "user-cancel"],
 		["SMOOTH", "cancel-during-start"],
 		["SMOOTH", "cancel-at-error-write"],
+		["SMOOTH", "cancel-opening-journal"],
 		["SMOOTH", "status-503"],
 		["SMOOTH", "owner-503"],
 		["SMOOTH", "owner-forbidden"],
@@ -373,6 +375,20 @@ describe("orchestrator processor", () => {
 				return persist(args);
 			});
 		}
+		if (scenario === "cancel-opening-journal") {
+			const persist = h.updateMany.getMockImplementation();
+			if (!persist) throw new Error("Missing fixture persistence");
+			h.updateMany.mockImplementation(async (args) => {
+				const startReceipt = (
+					args.data.stepLog as StepLogEntry[] | undefined
+				)?.find(({ kind }) => kind === startKind);
+				if (!h.row.cancelRequested && startReceipt?.status === "RUNNING") {
+					h.row.cancelRequested = true;
+					throw new Error("Opening manifest journal failed");
+				}
+				return persist(args);
+			});
+		}
 		const revealAccount = vi.mocked(h.deps.revealBitmovinAccount);
 		revealAccount.mockResolvedValue({
 			apiKey: "synthetic-only",
@@ -456,7 +472,9 @@ describe("orchestrator processor", () => {
 								acl: [
 									{
 										permission:
-											scenario === "upstream-safe" || lostStart
+											scenario === "upstream-safe" ||
+											scenario === "cancel-opening-journal" ||
+											lostStart
 												? "PRIVATE"
 												: "PUBLIC_READ",
 									},
@@ -480,7 +498,11 @@ describe("orchestrator processor", () => {
 					});
 				}
 				if (decoded.endsWith("/status")) {
-					if (scenario === "status-503") return unavailable(503);
+					if (
+						scenario === "status-503" ||
+						(scenario === "cancel-opening-journal" && h.row.cancelRequested)
+					)
+						return unavailable(503);
 					return result({
 						status:
 							scenario === "upstream-safe"
@@ -549,6 +571,16 @@ describe("orchestrator processor", () => {
 				if (displaced) return;
 			}
 			const outcome = await h.processor({ encodingJobId: JOB_ID });
+			if (scenario === "cancel-opening-journal") {
+				expect(outcome.status).toBe("MANIFEST_STOP_PENDING");
+				expect(h.row).toMatchObject({
+					status: "RUNNING",
+					cancelRequested: true,
+					attemptClaimedAt: null,
+				});
+				expect(reads).not.toContain(`POST ${path}/start`);
+				return;
+			}
 			if (scenario === "scope-changed") expect(reads).toHaveLength(0);
 			else if (!userCancel && !preparationChanged)
 				expect(reads).toContain(`GET ${path}`);
@@ -1429,6 +1461,228 @@ describe("orchestrator processor", () => {
 		expect(row.status).toBe("CANCELED");
 		expect(sdk.createEncoding).not.toHaveBeenCalled();
 		expect(updates).toHaveLength(0);
+	});
+
+	it.each([
+		true,
+		false,
+	])("only replays a rejected PSNR create after a proven refusal (%s)", async (definitive) => {
+		const video = basePlan.renditions.find(({ codec }) => codec === "H264");
+		if (!video) throw new Error("Fixture has no video");
+		const plan = encodingPlanSchema.parse({
+			...basePlan,
+			bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
+			supplements: [{ kind: "PSNR", key: "psnr", renditionKey: video.key }],
+		});
+		let stamp: CreateStamp | undefined;
+		const send = vi.fn(async () => {});
+		const sdk = fakeSdk({
+			createEncodingSupplement: vi.fn(async () => {
+				if (stamp?.adoptWindow?.())
+					throw new Error("Could not verify interrupted registration");
+				await send();
+				if (send.mock.calls.length === 1)
+					throw definitive
+						? new ProviderCreateRefusal(403)
+						: new Error("Disconnected");
+				return undefined;
+			}),
+		});
+		const { processor, row } = setup(
+			{ plan, stepLog: initStepLog(compilePlan(plan)) },
+			{},
+			undefined,
+			(options) => {
+				stamp = options.stamp;
+				return sdk;
+			},
+		);
+		await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow();
+		const history = row.stepLog as StepLogEntry[];
+		const failed = history.find(
+			(entry) => entry.kind === "CREATE_ENCODING_SUPPLEMENT",
+		);
+		expect(failed?.response).toEqual(
+			definitive
+				? { providerCreateRefused: true, httpStatusCode: 403 }
+				: undefined,
+		);
+		row.stepLog = reseedFailedSteps(history);
+		row.status = "QUEUED";
+		const retry = processor({ encodingJobId: JOB_ID });
+		if (definitive) await retry;
+		else await expect(retry).rejects.toThrow(/verify interrupted/);
+		expect(send).toHaveBeenCalledTimes(definitive ? 2 : 1);
+	});
+
+	it.each([
+		"retry",
+		"collision",
+		"unused",
+	] as const)("checks only planned Azure supplement storage before dispatch (%s)", async (scenario) => {
+		const video = basePlan.renditions.find(({ codec }) => codec === "H264");
+		const origin = basePlan.outputs[0];
+		if (!video || !origin) throw new Error("Missing supplement fixture");
+		const destinations =
+			scenario === "collision"
+				? ["azure", "mirror"]
+				: [scenario === "unused" ? origin.key : "azure"];
+		const plan = encodingPlanSchema.parse({
+			...basePlan,
+			bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
+			outputs: [
+				...basePlan.outputs,
+				...["azure", "mirror"].map((key) => ({
+					key,
+					kind: "AZURE",
+					credentialId: ACCOUNT_ID,
+					container: key,
+				})),
+			],
+			deliveryMirrors:
+				scenario === "retry" ? [{ outputKey: "mirror" }] : undefined,
+			supplements: [
+				{ kind: "PSNR", key: "qc", renditionKey: video.key },
+				...destinations.map((key) => ({
+					kind: "BIF",
+					key,
+					renditionKey: video.key,
+					destination: { outputKey: key, path: "extras/" },
+					filename: "preview.bif",
+					distance: 10,
+					width: 320,
+				})),
+			],
+		});
+		const stepLog = initStepLog(compilePlan(plan));
+		for (const step of stepLog) {
+			if (step.kind === "CREATE_OUTPUT_AZURE") {
+				step.status = "DONE";
+				step.resourceId = step.step;
+			}
+		}
+		let stamp: CreateStamp | undefined;
+		const create = vi.fn(async () => "preview-id");
+		const preflight = vi.fn(async (outputId: string) => {
+			const saved = (row.stepLog as StepLogEntry[]).find(
+				(entry) => entry.kind === "CREATE_ENCODING_SUPPLEMENT",
+			);
+			expect(saved?.startedAt).toBeUndefined();
+			expect(saved?.status).toBe("PENDING");
+			expect(create).not.toHaveBeenCalled();
+			if (
+				scenario === "unused" ||
+				(scenario === "retry" && preflight.mock.calls.length === 1)
+			)
+				throw new Error("Azure output details unavailable");
+			return scenario === "collision" ? "same-azure-container" : outputId;
+		});
+		const { processor, row } = setup(
+			{ plan, stepLog },
+			{},
+			undefined,
+			(options) => {
+				stamp = options.stamp;
+				return fakeSdk({
+					getAzureOutputStorageKey: preflight,
+					createEncodingSupplement: async () => {
+						if (stamp?.adoptWindow?.())
+							throw new Error("Unexpected reconciliation");
+						return create();
+					},
+				});
+			},
+		);
+		const result = processor({ encodingJobId: JOB_ID });
+		if (scenario === "unused") {
+			await result;
+			expect(preflight).not.toHaveBeenCalled();
+			expect(create).toHaveBeenCalledTimes(2);
+			return;
+		}
+		if (scenario === "collision") {
+			await expect(result).rejects.toThrow(/file is already written/);
+			expect(preflight).toHaveBeenCalledTimes(2);
+			expect(create).not.toHaveBeenCalled();
+			return;
+		}
+		await expect(result).rejects.toThrow("Azure output details unavailable");
+		const history = row.stepLog as StepLogEntry[];
+		expect(
+			history.find(({ kind }) => kind === "CREATE_ENCODING_SUPPLEMENT")
+				?.startedAt,
+		).toBeUndefined();
+		row.stepLog = reseedFailedSteps(history);
+		row.status = "QUEUED";
+		await processor({ encodingJobId: JOB_ID });
+		expect(preflight.mock.calls).toEqual([
+			["output:azure"],
+			["output:mirror"],
+			["output:azure"],
+			["output:mirror"],
+		]);
+		expect(create).toHaveBeenCalledTimes(2);
+	});
+
+	it.each([
+		false,
+		true,
+	])("keeps an unsent supplement retryable after a failed dispatch journal write (prior refusal %s)", async (priorRefusal) => {
+		const video = basePlan.renditions.find(({ codec }) => codec === "H264");
+		if (!video) throw new Error("Missing video fixture");
+		const plan = encodingPlanSchema.parse({
+			...basePlan,
+			bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
+			supplements: [{ kind: "PSNR", key: "quality", renditionKey: video.key }],
+		});
+		const stepLog = initStepLog(compilePlan(plan));
+		const step = stepLog.find(
+			({ kind }) => kind === "CREATE_ENCODING_SUPPLEMENT",
+		);
+		if (!step) throw new Error("Missing supplement step");
+		if (priorRefusal) {
+			step.startedAt = "2026-06-10T00:00:00.000Z";
+			step.response = { providerCreateRefused: true, httpStatusCode: 403 };
+		}
+		const send = vi.fn(async () => undefined);
+		const { processor, row, updateMany } = setup(
+			{ plan, stepLog },
+			{},
+			undefined,
+			({ stamp }) =>
+				fakeSdk({
+					createEncodingSupplement: async () => {
+						if (stamp?.adoptWindow?.())
+							throw new Error("Unexpected reconciliation");
+						return send();
+					},
+				}),
+		);
+		const write = updateMany.getMockImplementation();
+		if (!write) throw new Error("Missing fixture persistence");
+		let fail = true;
+		updateMany.mockImplementation(async (args) => {
+			const receipt = (args.data.stepLog as StepLogEntry[] | undefined)?.find(
+				({ kind }) => kind === "CREATE_ENCODING_SUPPLEMENT",
+			);
+			if (fail && receipt?.status === "RUNNING") {
+				fail = false;
+				throw new Error("Opening dispatch journal failed");
+			}
+			return write(args);
+		});
+		await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow(
+			"Opening dispatch journal failed",
+		);
+		expect(send).not.toHaveBeenCalled();
+		const history = row.stepLog as StepLogEntry[];
+		const saved = history.find((entry) => entry.step === step.step);
+		expect(saved?.startedAt).toBe(step.startedAt);
+		expect(saved?.response).toEqual(step.response);
+		row.stepLog = reseedFailedSteps(history);
+		row.status = "QUEUED";
+		await processor({ encodingJobId: JOB_ID });
+		expect(send).toHaveBeenCalledOnce();
 	});
 
 	it("resumes by skipping DONE steps and reusing their resource ids", async () => {

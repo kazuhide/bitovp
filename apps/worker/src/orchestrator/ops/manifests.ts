@@ -46,6 +46,8 @@ import {
 	Period,
 	PositionMode,
 	SmoothManifestContentProtection,
+	SmoothManifestDefault,
+	SmoothManifestDefaultVersion,
 	SmoothStreamingManifest,
 	SmoothStreamingRepresentation,
 	SpriteRepresentation,
@@ -75,6 +77,7 @@ import type { OpsContext } from "./context";
 import { createOwnedDefaultDashManifest } from "./default-dash-manifest";
 import { createOwnedDefaultHlsManifest } from "./default-hls-manifest";
 import { roleOutputAclsMatch } from "./manifest-output-acl";
+import { createOwnedDefaultManifest } from "./owned-default-manifest";
 import {
 	adoptOrCreateManifest,
 	BitmovinCallError,
@@ -268,22 +271,27 @@ export function createManifestOps(
 				"POST",
 				`/encoding/manifests/hls/${manifestId}/${target === "MEDIA" ? "media" : "streams"}/${parentId}/custom-tags`,
 				p,
-				() =>
-					(target === "MEDIA"
-						? api.encoding.manifests.hls.media.customTags
-						: api.encoding.manifests.hls.streams.customTags
-					).create(
-						manifestId,
-						parentId,
-						new CustomTag({
-							...p,
-							positionMode: sdkEnumValue(
-								PositionMode,
-								p.positionMode,
-								"PositionMode",
-							),
-						}),
-					),
+				() => {
+					const tag = new CustomTag({
+						...p,
+						positionMode: sdkEnumValue(
+							PositionMode,
+							p.positionMode,
+							"PositionMode",
+						),
+					});
+					return target === "MEDIA"
+						? api.encoding.manifests.hls.media.customTags.create(
+								manifestId,
+								parentId,
+								tag,
+							)
+						: api.encoding.manifests.hls.streams.customTags.create(
+								manifestId,
+								parentId,
+								tag,
+							);
+				},
 				(r) => ({ id: r.id }),
 			).then(id),
 		createDashPeriodXml: (manifestId, periodId, data) =>
@@ -762,36 +770,34 @@ export function createManifestOps(
 				"POST",
 				`/encoding/manifests/dash/${manifestId}/periods/${periodId}/adaptationsets/${adaptationSetId}/representations/fmp4${p.drmId ? "/drm" : ""}`,
 				{ segmentPath: p.segmentPath, type: p.type },
-				() =>
-					(p.drmId
-						? api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.drm.create.bind(
-								api.encoding.manifests.dash.periods.adaptationsets
-									.representations.fmp4.drm,
+				() => {
+					const request = {
+						...p,
+						mode: optEnum(
+							DashRepresentationTypeMode,
+							p.mode,
+							"DashRepresentationTypeMode",
+						),
+						type: sdkEnumValue(
+							DashRepresentationType,
+							p.type,
+							"DashRepresentationType",
+						),
+					};
+					return p.drmId
+						? api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.drm.create(
+								manifestId,
+								periodId,
+								adaptationSetId,
+								new DashFmp4DrmRepresentation(request),
 							)
-						: api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.create.bind(
-								api.encoding.manifests.dash.periods.adaptationsets
-									.representations.fmp4,
-							))(
-						manifestId,
-						periodId,
-						adaptationSetId,
-						new (p.drmId ? DashFmp4DrmRepresentation : DashFmp4Representation)({
-							...p,
-							mode: optEnum(
-								DashRepresentationTypeMode,
-								p.mode,
-								"DashRepresentationTypeMode",
-							),
-							type: sdkEnumValue(
-								DashRepresentationType,
-								p.type,
-								"DashRepresentationType",
-							),
-							encodingId: p.encodingId,
-							muxingId: p.muxingId,
-							segmentPath: p.segmentPath,
-						}),
-					),
+						: api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.create(
+								manifestId,
+								periodId,
+								adaptationSetId,
+								new DashFmp4Representation(request),
+							);
+				},
 				(r) => ({ id: r.id }),
 			).then(id),
 
@@ -874,36 +880,47 @@ export function createManifestOps(
 		},
 
 		createDashContentProtection: (path, p) => {
-			const sets = api.encoding.manifests.dash.periods.adaptationsets;
-			const reps = sets.representations;
 			const args = [
 				path.manifestId,
 				path.periodId,
 				path.adaptationSetId,
 			] as const;
 			const create = () => {
+				const protection = new ContentProtection(p);
 				if (path.representationKind === "ADAPTATION_SET")
-					return sets.contentprotection.create(
+					return api.encoding.manifests.dash.periods.adaptationsets.contentprotection.create(
 						...args,
-						new ContentProtection(p),
+						protection,
 					);
 				if (!path.representationId)
 					throw new Error(
 						"Representation content protection needs a representation",
 					);
-				const child =
-					path.representationKind === "WEBM"
-						? reps.webm.contentprotection
-						: path.representationKind === "CMAF"
-							? reps.cmaf.contentprotection
-							: path.representationKind === "FMP4_DRM"
-								? reps.fmp4.drm.contentprotection
-								: reps.fmp4.contentprotection;
-				return child.create(
+				const representation = [
 					...args,
 					path.representationId,
-					new ContentProtection(p),
-				);
+					protection,
+				] as const;
+				switch (path.representationKind) {
+					case "WEBM":
+						return api.encoding.manifests.dash.periods.adaptationsets.representations.webm.contentprotection.create(
+							...representation,
+						);
+					case "CMAF":
+						throw new Error(
+							"Local CMAF muxings have no supported DRM configuration to attach",
+						);
+					case "FMP4_DRM":
+						return api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.drm.contentprotection.create(
+							...representation,
+						);
+					case "FMP4":
+						return api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.contentprotection.create(
+							...representation,
+						);
+					default:
+						throw new Error("Unsupported DASH content protection scope");
+				}
 			};
 			const segment =
 				path.representationKind === "FMP4_DRM"
@@ -920,6 +937,34 @@ export function createManifestOps(
 
 		createSmoothManifest: async (p) => {
 			const requestedOutputs = outputs(p.destination);
+			if (p.encodingId) {
+				const request = new SmoothManifestDefault({
+					encodingId: p.encodingId,
+					serverManifestName: p.serverManifestName,
+					clientManifestName: p.clientManifestName,
+					version: SmoothManifestDefaultVersion.V1,
+					name: p.name,
+					outputs: requestedOutputs,
+				});
+				return createOwnedDefaultManifest(ctx, p, request, {
+					label: "default Smooth",
+					path: "/encoding/manifests/smooth",
+					encodingId: p.encodingId,
+					request: (value) => new SmoothManifestDefault(value),
+					list: (query) => api.encoding.manifests.smooth.list(query),
+					customData: (id) => api.encoding.manifests.smooth.customdata.get(id),
+					create: (value) =>
+						api.encoding.manifests.smooth.default.create(value),
+					matchesName: (manifest, wire) =>
+						manifest.serverManifestName === wire.serverManifestName &&
+						manifest.clientManifestName === wire.clientManifestName,
+					auditSelection: (wire) => ({
+						encodingId: wire.encodingId,
+						serverManifestName: wire.serverManifestName,
+						clientManifestName: wire.clientManifestName,
+					}),
+				});
+			}
 			const lookup = () =>
 				findManifestByOutput(
 					(q) => api.encoding.manifests.smooth.list(q),

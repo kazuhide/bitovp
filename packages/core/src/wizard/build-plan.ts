@@ -851,6 +851,7 @@ export type WizardExtraManifest =
 			key: string;
 			serverManifestName?: string;
 			clientManifestName?: string;
+			generationMode?: "MANUAL" | "DEFAULT";
 			name?: string;
 			language?: string;
 			drmKind?: "CENC";
@@ -2784,6 +2785,7 @@ export function buildPlan(state: WizardState): EncodingPlanInput {
 				kind: "SMOOTH" as const,
 				serverManifestName: str(manifest.serverManifestName),
 				clientManifestName: str(manifest.clientManifestName),
+				generationMode: manifest.generationMode,
 				name: str(manifest.name),
 				destination: destination(base, manifest.acl),
 				language: str(manifest.language),

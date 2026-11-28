@@ -5,6 +5,8 @@ on:
     paths:
       - .github/workflows/encoding-resource-proofs.yml
       - apps/web/src/lib/server/encoding-resources/**
+      - apps/web/src/lib/server/confirmed-resource-ids.ts
+      - apps/web/src/app/api/live/dns-mappings/**
       - apps/web/src/lib/encoding-metadata.ts
       - apps/web/src/lib/encoding-statistics.ts
       - apps/web/src/app/api/encoding-native/**
@@ -14,6 +16,8 @@ on:
     paths:
       - .github/workflows/encoding-resource-proofs.yml
       - apps/web/src/lib/server/encoding-resources/**
+      - apps/web/src/lib/server/confirmed-resource-ids.ts
+      - apps/web/src/app/api/live/dns-mappings/**
       - apps/web/src/lib/encoding-metadata.ts
       - apps/web/src/lib/encoding-statistics.ts
       - apps/web/src/app/api/encoding-native/**

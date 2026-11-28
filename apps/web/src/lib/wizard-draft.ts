@@ -640,7 +640,7 @@ const vod = fields(
 				dashOptions: group(dashOptions),
 				extra: rows(
 					fields(
-						"kind key manifestName name acl serverManifestName clientManifestName language drmKind",
+						"kind key manifestName name acl serverManifestName clientManifestName generationMode language drmKind",
 						"",
 						"",
 						{ hls: group(hlsOptions), dash: group(dashOptions) },

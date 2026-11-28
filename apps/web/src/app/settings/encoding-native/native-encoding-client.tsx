@@ -61,7 +61,7 @@ const defaultProtocol: Partial<Record<EncodingCatalogueKind, string>> = {
 };
 
 export function NativeEncodingClient() {
-	const { t } = useT();
+	const { t, locale } = useT();
 	const fieldId = useId();
 	const [accountId, setAccountId] = useState<string>();
 	const [kind, setKind] = useState<EncodingCatalogueKind>("templates");
@@ -116,6 +116,14 @@ export function NativeEncodingClient() {
 			</h1>
 			<nav className="flex flex-wrap gap-x-4 gap-y-2 text-emerald-400 text-sm">
 				<Link
+					href="/settings/encoding-native/operations"
+					className="underline underline-offset-4"
+				>
+					{locale === "ja"
+						? "エンコーディングリソースを管理"
+						: "Manage encoding resources"}
+				</Link>
+				<Link
 					href="/settings/encoding-native/statistics"
 					className="underline underline-offset-4"
 				>
@@ -126,6 +134,12 @@ export function NativeEncodingClient() {
 					className="underline underline-offset-4"
 				>
 					{t("encodingNative.manageCodecs")}
+				</Link>
+				<Link
+					href="/settings/encoding-native/manifests"
+					className="underline underline-offset-4"
+				>
+					{t("jobDetail.manifests")}
 				</Link>
 			</nav>
 			{accounts.isError ? (

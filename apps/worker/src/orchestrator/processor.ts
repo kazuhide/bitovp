@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
 	applyRoleOutputAcl,
+	azureSupplementStorageKeys,
 	type CompiledOperation,
 	checkHdr10PlusPlan,
 	checkInternalHevcV2Plan,
@@ -15,6 +16,7 @@ import {
 	type StepLogEntry,
 	soleEncodingStepId,
 	stepLogSchema,
+	validateEncodingSupplements,
 	vodOutputKinds,
 } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
@@ -50,6 +52,7 @@ import { VerificationProviderIdPersistenceError } from "./ops/encoding";
 import { destinationOf } from "./ops/exec-shared";
 import { BitmovinCallError } from "./ops/shared";
 import { pollSleepFor } from "./poll-sleep";
+import { ProviderCreateRefusal } from "./provider-create-refusal";
 import type { SdkOps } from "./sdk-ops";
 import {
 	type CreateStamp,
@@ -846,6 +849,8 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		// finalize without flipping the job to RUNNING first.
 		const ids = new Map<string, string>();
 		const outputKinds = vodOutputKinds(plan.outputs);
+		const azureOutputs = azureSupplementStorageKeys(plan);
+		let checkedSupplementStorage = false;
 		// Hoisted: the answer cannot change during the run, and computing it per
 		// step made this O(n^2) over the step log (review nit).
 		const soleStep = soleEncodingStepId(entries);
@@ -1321,26 +1326,81 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				// account (dedup via customData is a P2 follow-up).
 				const wasRunning = entry.status === "RUNNING";
 				let hasStartAttempt = entry.startedAt !== undefined;
+				const recoverableCreate =
+					entry.kind === "CREATE_ENCODING_SUPPLEMENT" ||
+					entry.kind === "CREATE_PROGRESSIVE_TS_ID3";
+				const previousResponse = entry.response;
+				const refused =
+					previousResponse &&
+					typeof previousResponse === "object" &&
+					"providerCreateRefused" in previousResponse &&
+					previousResponse.providerCreateRefused === true;
+				const reconcileCreate =
+					recoverableCreate && hasStartAttempt && !refused;
 				const wasVerificationCreateAttempt =
 					isVerificationRun &&
 					entry.kind === "CREATE_ENCODING" &&
 					(entry.startedAt !== undefined || entry.finishedAt !== undefined);
-				// Persist the safe dispatch payload before the provider call. If
-				// its response is lost, a resume can still prove what went out.
-				entry.payload = applyRoleOutputAcl(entry, outputKinds).payload;
-				entry.status = "RUNNING";
-				entry.startedAt = deps.now();
-				entry.error = undefined;
-				await persist(encodingJobId, entries);
-
 				try {
+					if (
+						entry.kind === "CREATE_ENCODING_SUPPLEMENT" &&
+						!wasRunning &&
+						!reconcileCreate &&
+						!checkedSupplementStorage &&
+						azureOutputs.length > 1
+					) {
+						// Distinct credentials can point at the same container. Check all
+						// planned writes before recording a new supplement dispatch.
+						const storage = await Promise.all(
+							azureOutputs.map(async (key) => {
+								const id = ids.get(`output:${key}`);
+								if (!id)
+									throw new Error(
+										"Missing Azure output for supplement verification",
+									);
+								return [key, await sdk.getAzureOutputStorageKey(id)] as const;
+							}),
+						);
+						const conflict = validateEncodingSupplements(
+							plan,
+							new Map(storage),
+						).find(
+							(issue) =>
+								issue.code === "PLAN_SUPPLEMENT_DESTINATION_MIRROR" ||
+								issue.code === "PLAN_SUPPLEMENT_OUTPUT_COLLISION",
+						);
+						if (conflict) throw new Error(conflict.message);
+						checkedSupplementStorage = true;
+						if (await checkCancel()) return await finalizeCancel();
+					}
+					// A resume can reconcile the exact payload if the reply is lost.
+					const dispatchEntry: StepLogEntry = {
+						...entry,
+						payload: applyRoleOutputAcl(entry, outputKinds).payload,
+						status: "RUNNING",
+						startedAt: deps.now(),
+						error: undefined,
+						...(recoverableCreate && { response: undefined }),
+					};
+					if (recoverableCreate) {
+						// A failed journal write proves this attempt never reached the SDK.
+						await persist(
+							encodingJobId,
+							entries.map((step) => (step === entry ? dispatchEntry : step)),
+						);
+						Object.assign(entry, dispatchEntry);
+					} else {
+						Object.assign(entry, dispatchEntry);
+						await persist(encodingJobId, entries);
+					}
 					activeEntry = entry;
 					stampStep = entry.step;
 					// `/retry` reseeds FAILED/RUNNING to PENDING but deliberately
 					// preserves its timing. For a verification provider CREATE, that
 					// still means the request may have committed before its response
 					// was lost. Reconcile the exact marker; never POST beside it.
-					stampAdopt = wasRunning || wasVerificationCreateAttempt;
+					stampAdopt =
+						wasRunning || wasVerificationCreateAttempt || reconcileCreate;
 					/**
 					 * the ONE recovery that is not a retry. When a start
 					 * dies of the measured 500/1004 signature AFTER the ladder has
@@ -1523,6 +1583,13 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 							durability: err.durability,
 							compensation: err.compensation,
 						});
+					}
+					if (recoverableCreate && !wasRunning && !reconcileCreate) {
+						if (err instanceof ProviderCreateRefusal)
+							entry.response = {
+								providerCreateRefused: true,
+								httpStatusCode: err.status,
+							};
 					}
 					entry.status = "FAILED";
 					entry.finishedAt = deps.now();

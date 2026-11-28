@@ -31,6 +31,7 @@ import {
 	type VerificationEncodingIdentity,
 	verificationKeyLabel,
 } from "@bitovp/core";
+import { ProviderCreateRefusal } from "../provider-create-refusal";
 import type {
 	ColorConfigParams,
 	Destination,
@@ -600,8 +601,8 @@ export class VerificationProviderLookupError extends Error {
  * subresource. Newest-first where the endpoint sorts; per-candidate GETs are
  * acceptable because this only ever runs on the rare resume path.
  *
- * Every failure returns undefined: a failed lookup must CREATE, never fail
- * the step (discipline part 2).
+ * Ordinary callers can fall back to creating. Callers recovering an uncertain
+ * mutation can require an exhaustive lookup with exactly one owned match.
  */
 export async function findStampedResource(opts: {
 	label: string;
@@ -610,10 +611,13 @@ export async function findStampedResource(opts: {
 		step: string;
 		verification?: { key: string; requestSha256: string };
 	};
+	/** Recovering an uncertain mutation requires a single exact stamp across the collection. */
+	requireUniqueMatch?: boolean;
 	/** Encoding-only provider fields that must agree with the verification marker. */
 	verificationResource?: { name: string; label: string };
 	list: (q: { limit: number; offset: number }) => Promise<{
 		items?: Array<{ id?: string; name?: string; labels?: string[] }>;
+		totalCount?: number;
 	}>;
 	customData: (id: string) => Promise<{ customData?: unknown } | undefined>;
 }): Promise<string | undefined> {
@@ -633,6 +637,16 @@ export async function findStampedResource(opts: {
 			throw err;
 		}
 		const rawItems = result.items ?? [];
+		if (
+			opts.requireUniqueMatch &&
+			(!Array.isArray(result.items) ||
+				rawItems.some(
+					(item) =>
+						!item?.id ||
+						!/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(item.id),
+				))
+		)
+			throw new Error("Could not establish the existing resource identity");
 		if (strict && rawItems.some((item) => !item.id)) {
 			throw new VerificationProviderLookupError(
 				"VERIFICATION_PROVIDER_LOOKUP_UNKNOWN",
@@ -651,6 +665,8 @@ export async function findStampedResource(opts: {
 						opts.label,
 					);
 				}
+				if (opts.requireUniqueMatch)
+					throw new Error("Could not establish the existing resource identity");
 				// Ordinary jobs preserve the historical fail-open behavior: a
 				// broken candidate does not prevent a later candidate from matching.
 				continue;
@@ -669,8 +685,11 @@ export async function findStampedResource(opts: {
 			const jobStepMatch =
 				stamped?.job === opts.expect.job && stamped?.step === opts.expect.step;
 			if (!strict) {
-				if (jobStepMatch) {
-					return item.id;
+				if (jobStepMatch && item.id) {
+					if (!opts.requireUniqueMatch) return item.id;
+					if (exact.length > 0)
+						throw new Error("More than one resource matches the job step");
+					exact.push(item.id);
 				}
 				continue;
 			}
@@ -734,7 +753,13 @@ export async function findStampedResource(opts: {
 				);
 			}
 		}
-		if ((result.items ?? []).length < 100) {
+		if (rawItems.length < 100) {
+			if (
+				opts.requireUniqueMatch &&
+				result.totalCount !== undefined &&
+				result.totalCount > page * 100 + rawItems.length
+			)
+				throw new Error("The provider returned an incomplete resource list");
 			return exact[0];
 		}
 	}
@@ -744,6 +769,8 @@ export async function findStampedResource(opts: {
 			opts.label,
 		);
 	}
+	if (opts.requireUniqueMatch)
+		throw new Error("Could not scan all resources for the existing job step");
 	console.warn(
 		`[sdk-ops] stopped scanning ${opts.label} for the stamp after ${STAMP_SCAN_PAGES * 100} candidates; ` +
 			"a match may exist beyond the horizon — creating rather than hanging the step",
@@ -1018,9 +1045,9 @@ export async function adoptOrCreateStamped(args: {
 			// reinterpret it as a lost response and run lookup/adoption again.
 			throw err.cause;
 		}
-		// The native POST transport can establish non-admission before the SDK
-		// parses a response body or normalizes a network error to HTTP status 0.
-		if (childJournal?.isPreparing()) throw err;
+		// Preserve confirmed non-admission for the processor's replay gate.
+		if (err instanceof ProviderCreateRefusal || childJournal?.isPreparing())
+			throw err;
 		if (!expect) {
 			throw err;
 		}

@@ -86,6 +86,8 @@ export const RESET_PRESERVES = [
 	"encodingResourceRemoval",
 	// Provider codec configurations outlive the application data reset.
 	"nativeCodecConfiguration",
+	// Native operation receipts retain dispatch identity and provider ownership.
+	"nativeEncodingOperation",
 	...RESET_RETAINED_EXPERIMENT_MODELS,
 	"librarySource",
 	"sceneAnalysisRevision",

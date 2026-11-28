@@ -199,7 +199,7 @@ export function verificationCreateIdentity(
  * stay identifiable — that value does not survive breaking JIT delivery.
  */
 const DENIED_PATH =
-	/\/(start|stop|customData)(\/|\?|$)|\/encoding\/outputs\/|\/manifests\/dash\/[^/]+\/periods|\/manifests\/hls\/[^/]+\/media\/|\/kantar-watermark(\/|\?|$)|\/live\//;
+	/\/(start|stop|customData)(\/|\?|$)|\/encoding\/outputs\/|\/manifests\/dash\/[^/]+\/periods|\/manifests\/hls\/[^/]+\/media\/|\/(kantar-watermark|scte-35-triggers)(\/|\?|$)|\/live\//;
 
 export function createStampingFetch(
 	inner: SdkFetch,

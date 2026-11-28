@@ -1,5 +1,8 @@
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
-import { defaultHlsManualSelectors } from "./default-manifest-selection";
+import {
+	defaultHlsManualSelectors,
+	defaultSmoothManifestSelection,
+} from "./default-manifest-selection";
 import { hlsLegSelected } from "./hls-legs";
 import {
 	hlsAudioLegsByRendition,
@@ -123,8 +126,46 @@ export function validateManifestDetails(plan: EncodingPlan): PlanIssue[] {
 				);
 		}
 	for (const [index, manifest] of plan.manifests.entries()) {
-		if (manifest.kind === "SMOOTH") continue;
 		const path = `manifests[${index}]`;
+		if (manifest.kind === "SMOOTH") {
+			if (manifest.generationMode !== "DEFAULT") continue;
+			if (plan.generation.timing !== "POST_ENCODING")
+				error(
+					`${path}.generationMode`,
+					"Default Smooth manifests must be generated after encoding (POST_ENCODING)",
+				);
+			if (manifest.drmKind || manifest.language !== "en")
+				error(
+					path,
+					"Default Smooth selects its tracks; use manual generation for language and DRM selection",
+				);
+			const { muxings, renditions } = defaultSmoothManifestSelection(plan);
+			const selected = new Set(renditions.map(({ key }) => key));
+			if (!selected.size)
+				error(
+					path,
+					"Default Smooth requires fragmented MP4 muxings configured for Smooth Streaming",
+				);
+			if (muxings.some(({ streamKey }) => !selected.has(streamKey)))
+				error(
+					path,
+					"Default Smooth requires its fragmented MP4 muxings to belong to one encoding",
+				);
+			for (const muxing of muxings)
+				if (
+					!manifestMediaReachable(
+						plan,
+						plan.drm.find(({ muxingKey }) => muxingKey === muxing.key)
+							?.destination ?? muxing.destination,
+						manifest.destination,
+					)
+				)
+					error(
+						path,
+						`Smooth muxing "${muxing.key}" must be reachable from every manifest output`,
+					);
+			continue;
+		}
 		if (manifest.generationMode === "DEFAULT") {
 			if (manifest.kind === "HLS")
 				for (const selector of defaultHlsManualSelectors(plan)) {

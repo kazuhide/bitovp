@@ -165,6 +165,10 @@ the analysis cannot resolve.
 
 The workflow ledger records app entry points, SDK transport tests, and provider
 execution status for each operation. It includes full filtered CSV exports.
+SDK 1.289.0 source coverage is 1,094 of 1,098. The four open operations cover
+DASH CMAF Content Protection creation and removal, and bulk deletion of DNS
+mappings and stream filter attachments. BitOVP removes confirmed IDs individually.
+
 See [coverage queries and evidence](API-USAGE.md#encoding-api-coverage).
 
 The current SDK body-model inventory lists top-level properties for each

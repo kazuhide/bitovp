@@ -1,7 +1,12 @@
 import { DnsMappingRequest } from "@bitmovin/api-sdk";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { listQuerySchema, sanitizePage } from "@/lib/infrastructure/schemas";
+import { roleAtLeast } from "@/lib/auth/roles";
+import {
+	LIST_LIMIT_MAX,
+	listQuerySchema,
+	sanitizePage,
+} from "@/lib/infrastructure/schemas";
 import {
 	dnsMappingCreateSchema,
 	sanitizeDnsMapping,
@@ -11,6 +16,7 @@ import {
 	bitmovinClientForAccount,
 	bitmovinProxyError,
 } from "@/lib/server/bitmovin";
+import { sameConfirmedResourceIds } from "@/lib/server/confirmed-resource-ids";
 import { getServerContext } from "@/lib/server/context";
 import {
 	jsonError,
@@ -31,7 +37,8 @@ import {
  * mapping only means something while it points at an encoding. So:
  *   GET  — account-wide list, or this-encoding list when `encodingId` is given
  *   POST — REQUIRES `encodingId` in the body
- *   DELETE (./[id]) — REQUIRES `encodingId` in the query
+ *   DELETE — removes the confirmed mappings for one encoding by ID
+ *   DELETE (./[id]) — removes a single mapping
  */
 export async function GET(req: Request) {
 	const url = new URL(req.url);
@@ -119,5 +126,103 @@ export async function POST(req: Request) {
 		});
 	} catch (err) {
 		return routeError(err);
+	}
+}
+
+const bulkDeleteSchema = z.strictObject({
+	bitmovinAccountId: z.uuid(),
+	encodingId: z.uuid(),
+	confirmMappingIds: z
+		.array(z.uuid())
+		.min(1)
+		.max(LIST_LIMIT_MAX)
+		.refine(
+			(ids) => new Set(ids).size === ids.length,
+			"Mapping ids must be distinct",
+		),
+});
+
+export async function DELETE(req: Request) {
+	const parsed = bulkDeleteSchema.safeParse(await readJson(req));
+	if (!parsed.success) return validationError(parsed.error);
+	const { bitmovinAccountId, encodingId, confirmMappingIds } = parsed.data;
+	try {
+		const ctx = await getServerContext();
+		if (
+			!ctx.tenant ||
+			ctx.tenant.isImpersonating ||
+			!roleAtLeast(ctx.tenant.role, "OPERATOR")
+		)
+			return jsonError(403, "Operator access required.");
+		const api = await bitmovinClientForAccount(
+			ctx,
+			bitmovinAccountId,
+			AbortSignal.timeout(15_000),
+		);
+		if (!api) return jsonError(404, "Bitmovin account not found");
+
+		let page: Awaited<
+			ReturnType<typeof api.encoding.live.encodings.dnsMappings.list>
+		>;
+		try {
+			page = await api.encoding.live.encodings.dnsMappings.list(encodingId, {
+				limit: LIST_LIMIT_MAX,
+				offset: 0,
+			});
+		} catch (error) {
+			return bitmovinProxyError(error);
+		}
+		if (
+			!Array.isArray(page.items) ||
+			page.totalCount !== page.items.length ||
+			(page.offset !== undefined && page.offset !== 0) ||
+			page.items.some(
+				(mapping) =>
+					mapping.encodingId !== undefined && mapping.encodingId !== encodingId,
+			) ||
+			!sameConfirmedResourceIds(
+				page.items.map((mapping) => mapping.id),
+				confirmMappingIds,
+			)
+		)
+			return jsonError(
+				409,
+				"The DNS mappings changed. Refresh the list before removing them.",
+			);
+		const ids: string[] = [];
+		const unresolvedIds: string[] = [];
+		for (const id of confirmMappingIds) {
+			const outcome = await auditedBitmovinCall({
+				req,
+				ctx,
+				bitmovinAccountId,
+				method: "DELETE",
+				path: `/encoding/live/encodings/${encodingId}/dns-mappings/${id}`,
+				call: async () => {
+					const result = await api.encoding.live.encodings.dnsMappings.delete(
+						encodingId,
+						id,
+					);
+					if (result.id !== id)
+						throw Object.assign(
+							new Error("Unexpected DNS mapping response ID"),
+							{
+								httpStatusCode: 502,
+								shortMessage: "Unexpected DNS mapping response ID",
+							},
+						);
+					return result;
+				},
+			});
+			(outcome.ok ? ids : unresolvedIds).push(id);
+		}
+		return NextResponse.json(
+			{ ids, unresolvedIds },
+			{
+				status: unresolvedIds.length ? 207 : 200,
+			},
+		);
+	} catch (error) {
+		return routeError(error);
 	}
 }

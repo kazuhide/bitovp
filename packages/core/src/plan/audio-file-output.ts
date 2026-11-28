@@ -10,7 +10,7 @@ type AudioFileRendition = Extract<
 
 function minimumEncoderMinor(rendition: AudioFileRendition, row: Muxing) {
 	if (rendition.codec === "PCM")
-		return row.kind === "PROGRESSIVE_WAV" ? 203 : null;
+		return row.kind === "PROGRESSIVE_WAV" ? 203 : row.kind === "MXF" ? 0 : null;
 	switch (row.kind) {
 		case "PROGRESSIVE_WAV":
 			return rendition.sourceCodec === "PCM" ? 202 : null;
@@ -106,7 +106,7 @@ export function checkAudioFileOutputs(plan: EncodingPlan): PlanIssue[] {
 			const minor = minimumEncoderMinor(rendition, row);
 			if (
 				minor === null ||
-				muxingStreamKeys(row).length !== 1 ||
+				(row.kind !== "MXF" && muxingStreamKeys(row).length !== 1) ||
 				!row.destination ||
 				plan.drm.some((d) => d.muxingKey === row.key)
 			) {

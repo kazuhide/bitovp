@@ -1,8 +1,11 @@
 name = "bitovp-encoding-resource-proofs"
-defaultTargets = ["ChildWindow", "StatisticsProjection"]
+defaultTargets = ["ChildWindow", "StatisticsProjection", "ConfirmedResourceIds"]
 
 [[lean_lib]]
 name = "ChildWindow"
 
 [[lean_lib]]
 name = "StatisticsProjection"
+
+[[lean_lib]]
+name = "ConfirmedResourceIds"

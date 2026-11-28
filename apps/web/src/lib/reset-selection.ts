@@ -11,6 +11,7 @@ export const RESET_GLOBAL_MODELS = [
 export const RESET_INTERNAL_MODELS = [
 	"encodingResourceRemoval",
 	"nativeCodecConfiguration",
+	"nativeEncodingOperation",
 	"createRequest",
 	"liveStopNotification",
 	"resetCleanupTask",

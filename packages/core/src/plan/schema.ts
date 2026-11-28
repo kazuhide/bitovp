@@ -55,6 +55,7 @@ export const AUDIO_CODECS = new Set([
 	"AAC",
 	...HE_AAC_CODECS,
 	"OPUS",
+	"MP3",
 	"PCM",
 	"AUDIO_PASSTHROUGH",
 	"DOLBY_ATMOS",
@@ -385,7 +386,10 @@ export const ingestStreamSchema = z.strictObject({
 	key: refKey,
 	inputKey: refKey,
 	inputPath: z.string().min(1),
-	selectionMode: streamSelectionModeSchema,
+	selectionMode: z.enum([
+		...streamSelectionModeSchema.options,
+		"SUBTITLE_RELATIVE",
+	]),
 	position: z.number().int().min(0).default(0),
 	/** Multi-encoding plans (Dolby ladders): absent = the implicit encoding. */
 	encodingKey: refKey.optional(),
@@ -1076,6 +1080,24 @@ export const opusRenditionSchema = z.strictObject({
 	rate: z.number().positive(),
 	channelLayout: z.enum(OPUS_CHANNEL_LAYOUTS).default("CL_STEREO"),
 });
+const mp3RenditionSchema = z.strictObject({
+	...renditionBase,
+	codec: z.literal("MP3"),
+	name: z.string().optional(),
+	bitrate: z.number().int().positive().max(320000),
+	rate: z.literal([32000, 44100, 48000]).optional(),
+});
+const h262RenditionSchema = z.strictObject({
+	...renditionBase,
+	codec: z.literal("H262"),
+	name: z.string().optional(),
+	width: z.literal(1920).default(1920),
+	height: z.literal(1080).default(1080),
+	bitrate: z.literal(50000000).default(50000000),
+	rate: z.literal([25, 29.97]),
+	profile: z.literal("MPEG2_422").default("MPEG2_422"),
+	mode: z.literal("STANDARD").default("STANDARD"),
+});
 export const imscRenditionSchema = z.strictObject({
 	...renditionBase,
 	codec: z.literal("IMSC"),
@@ -1114,6 +1136,7 @@ export const renditionSchema = z.discriminatedUnion("codec", [
 	ac3RenditionSchema,
 	eac3RenditionSchema,
 	h264RenditionSchema,
+	h262RenditionSchema,
 	h265RenditionSchema,
 	vp9RenditionSchema,
 	av1RenditionSchema,
@@ -1121,6 +1144,7 @@ export const renditionSchema = z.discriminatedUnion("codec", [
 	z.strictObject({ ...renditionBase, ...heAacV1Fields }),
 	z.strictObject({ ...renditionBase, ...heAacV2Fields }),
 	opusRenditionSchema,
+	mp3RenditionSchema,
 	pcmRenditionSchema,
 	passthroughAudioRenditionSchema,
 	imscRenditionSchema,
@@ -1133,7 +1157,7 @@ export type PlanRendition = z.infer<typeof renditionSchema>;
 /** Muxing / manifest / DRM members, exported for the verification compiler. */
 export type PlanMuxing = z.infer<typeof planMuxingSchema>;
 export type PlanManifest = z.infer<typeof planManifestSchema>;
-export type PlanDrm = z.infer<typeof planDrmSchema>;
+export type PlanDrm = z.infer<typeof vodDrmSchema>;
 
 export const aclSchema = z.enum(["PUBLIC_READ", "PRIVATE"]);
 export type Acl = z.infer<typeof aclSchema>;
@@ -1257,6 +1281,42 @@ const outputFilenameSchema = z
 	.regex(/^[^/\\?#]+$/, "Use a filename without directories or URL suffixes")
 	.refine((n) => n !== "." && n !== "..", "Use a file name");
 
+const id3Position = {
+	key: refKey,
+	positionMode: z.enum(["TIME", "FRAME"]),
+	time: z.number().nonnegative().optional(),
+	frame: z.int().nonnegative().optional(),
+};
+const id3FrameId = z.string().regex(/^[A-Z0-9]{4}$/);
+const nativeBase64 = z.base64().min(4).max(64_000);
+const progressiveTsId3TagSchema = z
+	.discriminatedUnion("format", [
+		z.strictObject({
+			...id3Position,
+			format: z.literal("FRAME_ID"),
+			frameId: id3FrameId,
+			bytes: nativeBase64,
+		}),
+		z.strictObject({
+			...id3Position,
+			format: z.literal("PLAIN_TEXT"),
+			frameId: id3FrameId,
+			text: z.string().min(1).max(1_024),
+		}),
+		z.strictObject({
+			...id3Position,
+			format: z.literal("RAW"),
+			bytes: nativeBase64,
+		}),
+	])
+	.refine(
+		(tag) =>
+			tag.positionMode === "TIME"
+				? tag.time !== undefined && tag.frame === undefined
+				: tag.frame !== undefined && tag.time === undefined,
+		"Specify the position matching the ID3 position mode",
+	);
+
 export const textMuxingSchema = z.strictObject({
 	key: refKey,
 	kind: z.literal("TEXT"),
@@ -1360,6 +1420,15 @@ export const progressiveTsMuxingSchema = z.strictObject({
 	 * against that schema.
 	 */
 	startOffset: z.number().int().min(0).optional(),
+	id3Tags: z
+		.array(progressiveTsId3TagSchema)
+		.min(1)
+		.max(40)
+		.refine(
+			(tags) => new Set(tags.map((tag) => tag.key)).size === tags.length,
+			"ID3 tag keys must be unique",
+		)
+		.optional(),
 	destination: destinationSchema.optional(),
 	name: z.string().optional(),
 });
@@ -1408,6 +1477,50 @@ export const progressiveWebmMuxingSchema = z.strictObject({
 	name: z.string().optional(),
 });
 
+const nativeMuxingBase = {
+	key: refKey,
+	streamKey: refKey,
+	name: z.string().optional(),
+};
+const nativeSegmentName = outputFilenameSchema.refine(
+	(value) => value.includes("%number%"),
+	"Include %number% in the segment name",
+);
+const nativeFile = { ...nativeMuxingBase, destination: destinationSchema };
+const nativeSegment = {
+	...nativeMuxingBase,
+	segmentLength: z.number().positive(),
+	segmentNaming: nativeSegmentName,
+};
+const broadcastTsMuxingSchema = z.strictObject({
+	...nativeFile,
+	kind: z.literal("BROADCAST_TS"),
+	filename: outputFilenameSchema.refine((value) => /\.ts$/i.test(value)),
+	additionalStreamKeys: additionalStreamKeysSchema,
+});
+const mp3MuxingSchema = z.strictObject({
+	...nativeFile,
+	kind: z.literal("MP3"),
+	filename: outputFilenameSchema.refine((value) => /\.mp3$/i.test(value)),
+});
+const mxfMuxingSchema = z.strictObject({
+	...nativeFile,
+	kind: z.literal("MXF"),
+	filename: outputFilenameSchema.refine((value) => /\.mxf$/i.test(value)),
+	additionalStreamKeys: additionalStreamKeysSchema,
+});
+const packedAudioMuxingSchema = z.strictObject({
+	...nativeSegment,
+	kind: z.literal("PACKED_AUDIO"),
+	destination: destinationSchema.optional(),
+	segmentNaming: nativeSegmentName.refine((value) => /\.aac$/i.test(value)),
+});
+const segmentedRawMuxingSchema = z.strictObject({
+	...nativeSegment,
+	kind: z.literal("SEGMENTED_RAW"),
+	destination: destinationSchema,
+});
+
 export const planMuxingSchema = z.discriminatedUnion("kind", [
 	fmp4MuxingSchema,
 	cmafMuxingSchema,
@@ -1422,6 +1535,11 @@ export const planMuxingSchema = z.discriminatedUnion("kind", [
 		.omit({ additionalStreamKeys: true })
 		.extend({ kind: z.literal("PROGRESSIVE_WAV") }),
 	progressiveWebmMuxingSchema,
+	broadcastTsMuxingSchema,
+	mp3MuxingSchema,
+	mxfMuxingSchema,
+	packedAudioMuxingSchema,
+	segmentedRawMuxingSchema,
 ]);
 
 /**
@@ -1537,10 +1655,69 @@ export const spekeDrmSchema = z.strictObject({
 	name: z.string().optional(),
 });
 
+const typedDrmBase = {
+	key: refKey,
+	muxingKey: refKey,
+	credentialId: z.uuid(),
+	destination: destinationSchema,
+	name: z.string().optional(),
+};
+const typedDrmKeyId = z.string().regex(/^[a-fA-F0-9]{32}$/);
+/** Explicit manifest reference to an existing key. The provider writes a key file if omitted. */
+export const aesKeyFileUriSchema = z
+	.string({ error: "Provide a relative key filename for the existing AES key" })
+	.max(255)
+	.regex(
+		/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/,
+		"Provide a relative key filename for the existing AES key",
+	);
+const typedDrm = [
+	z.strictObject({
+		...typedDrmBase,
+		kind: z.literal("AES"),
+		method: z.enum(["SAMPLE_AES", "AES_128"]),
+		iv: typedDrmKeyId.optional(),
+		keyFileUri: aesKeyFileUriSchema,
+	}),
+	z.strictObject({
+		...typedDrmBase,
+		kind: z.literal("CLEARKEY"),
+		kid: typedDrmKeyId,
+	}),
+	z.strictObject({
+		...typedDrmBase,
+		kind: z.literal("MARLIN"),
+		kid: typedDrmKeyId,
+	}),
+	z.strictObject({
+		...typedDrmBase,
+		kind: z.literal("PLAYREADY"),
+		kid: typedDrmKeyId,
+		method: z.enum(["MPEG_CENC", "PIFF_CTR"]).optional(),
+		pssh: nativeBase64.optional(),
+	}),
+	z.strictObject({
+		...typedDrmBase,
+		kind: z.literal("PRIMETIME"),
+		kid: typedDrmKeyId,
+		pssh: nativeBase64,
+	}),
+	z.strictObject({
+		...typedDrmBase,
+		kind: z.literal("WIDEVINE"),
+		kid: typedDrmKeyId,
+		pssh: nativeBase64,
+	}),
+] as const;
+
 export const planDrmSchema = z.discriminatedUnion("kind", [
 	cencDrmSchema,
 	fairPlayDrmSchema,
 	spekeDrmSchema,
+]);
+const vodDrmSchema = z.discriminatedUnion("kind", [
+	...planDrmSchema.options,
+	...typedDrm,
 ]);
 
 /** Per-stream JPEG thumbnails (encodings.streams.thumbnails). */
@@ -1714,6 +1891,7 @@ export const dashManifestPlanSchema = z.strictObject({
 export const smoothManifestPlanSchema = z.strictObject({
 	key: refKey,
 	kind: z.literal("SMOOTH"),
+	generationMode: z.enum(["MANUAL", "DEFAULT"]).optional(),
 	serverManifestName: z.string().default("stream.ism"),
 	clientManifestName: z.string().default("stream.ismc"),
 	name: z.string().default("Smooth Manifest"),
@@ -1967,6 +2145,105 @@ export const kantarWatermarkSchema = z.strictObject({
 	reportDestination: destinationSchema,
 });
 
+const supplementPath = z
+	.string()
+	.min(1)
+	.max(1024)
+	.regex(/^[^\\\p{Cc}?#:]+$/u)
+	.refine(
+		(path) => path.split("/").every((part) => part !== ".." && part !== "."),
+		"No dot segments are allowed",
+	);
+const supplementFilename = z
+	.string()
+	.min(1)
+	.max(255)
+	.regex(/^[A-Za-z0-9_-][A-Za-z0-9_.-]*$/);
+const supplementDestination = destinationSchema.extend({
+	path: z.union([z.literal(""), supplementPath]),
+});
+const supplementInput = { inputKey: refKey, inputPath: supplementPath };
+const supplementStream = { renditionKey: refKey };
+const supplementEncoding = { encodingKey: refKey.optional() };
+const supplementOutput = { destination: supplementDestination };
+export const encodingSupplementSchema = z.discriminatedUnion("kind", [
+	z.strictObject({
+		kind: z.literal("SCC_CONVERSION"),
+		key: refKey,
+		...supplementEncoding,
+		...supplementInput,
+		...supplementOutput,
+		filename: supplementFilename,
+	}),
+	z.strictObject({
+		kind: z.literal("SIDECAR"),
+		key: refKey,
+		...supplementEncoding,
+		...supplementInput,
+		...supplementOutput,
+	}),
+	z.strictObject({
+		kind: z.literal("WEBVTT_SIDECAR"),
+		key: refKey,
+		...supplementEncoding,
+		...supplementInput,
+		...supplementOutput,
+	}),
+	z.strictObject({
+		kind: z.literal("SCTE35_TRIGGER"),
+		key: refKey,
+		...supplementEncoding,
+		base64EncodedMetadata: z.base64().min(4).max(5464),
+	}),
+	z
+		.strictObject({
+			kind: z.literal("BIF"),
+			key: refKey,
+			...supplementStream,
+			...supplementOutput,
+			filename: supplementFilename,
+			distance: z.number().positive(),
+			width: z.number().int().positive().optional(),
+			height: z.number().int().positive().optional(),
+		})
+		.refine(
+			(value) => value.width !== undefined || value.height !== undefined,
+			"BIF needs a width or a height",
+		),
+	z.strictObject({
+		kind: z.literal("BURN_IN_ASSA"),
+		key: refKey,
+		...supplementStream,
+		...supplementInput,
+		characterEncoding: z.enum(SRT_CHARACTER_ENCODINGS),
+	}),
+	z.strictObject({
+		kind: z.literal("BURN_IN_DVBSUB"),
+		key: refKey,
+		...supplementStream,
+		ingestKey: refKey,
+	}),
+	z.strictObject({
+		kind: z.literal("CEA_SCC"),
+		key: refKey,
+		...supplementStream,
+		...supplementInput,
+		smpteTimecodeFlavor: z
+			.enum(["AUTO", "NON_DROP_FRAME", "DROP_FRAME"])
+			.optional(),
+	}),
+	z.strictObject({
+		kind: z.literal("CEA_SRT"),
+		key: refKey,
+		...supplementStream,
+		...supplementInput,
+		characterEncoding: z.enum(SRT_CHARACTER_ENCODINGS),
+		ccChannel: z.enum(["CC1", "CC3"]),
+	}),
+	z.strictObject({ kind: z.literal("PSNR"), key: refKey, ...supplementStream }),
+]);
+export type EncodingSupplement = z.infer<typeof encodingSupplementSchema>;
+
 export const encodingPlanSchema = z.strictObject({
 	planVersion: z.literal(PLAN_VERSION),
 	name: z.string().min(1).max(200),
@@ -2036,6 +2313,7 @@ export const encodingPlanSchema = z.strictObject({
 		.min(1)
 		.optional(),
 	encodings: z.array(planEncodingSchema).optional(),
+	supplements: z.array(encodingSupplementSchema).min(1).max(100).optional(),
 	ingest: z.array(ingestStreamSchema).default([]),
 	fileStreams: z.array(fileStreamSchema).default([]),
 	captionStreams: z.array(captionStreamSchema).default([]),
@@ -2053,7 +2331,7 @@ export const encodingPlanSchema = z.strictObject({
 	filters: z.array(planFilterSchema).default([]),
 	renditions: z.array(renditionSchema).min(1),
 	muxings: z.array(planMuxingSchema).min(1),
-	drm: z.array(planDrmSchema).default([]),
+	drm: z.array(vodDrmSchema).default([]),
 	thumbnails: z.array(thumbnailSchema).default([]),
 	/**
 	 * Per-stream trick-play sprites. `.default([])` ⇒ plans without sprites

@@ -18,6 +18,7 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { RoleAccess } from "@/lib/auth/use-role-access";
 import { useT } from "@/lib/i18n/context";
 import { zodIssueMessage } from "@/lib/i18n/zod-issue-message";
+import { LIST_LIMIT_MAX, type PageDto } from "@/lib/infrastructure/schemas";
 import {
 	type DnsMappingDto,
 	dnsMappingCreateSchema,
@@ -72,6 +73,49 @@ export function DnsMappingsSettingsPanel({
 		onSuccess: invalidate,
 	});
 
+	const removeAll = useMutation({
+		mutationFn: async (encodingId: string) => {
+			const query = new URLSearchParams({
+				bitmovinAccountId,
+				encodingId,
+				limit: String(LIST_LIMIT_MAX),
+			});
+			const { items, totalCount } = await apiFetch<PageDto<DnsMappingDto>>(
+				`${base}?${query}`,
+			);
+			if (!items.length || items.length !== totalCount)
+				throw new ApiError(409, t("settingsX.incompleteDnsMappings"));
+			if (
+				!window.confirm(
+					t("settingsX.deleteEncodingDnsMappings", {
+						count: items.length,
+						id: encodingId,
+					}),
+				)
+			)
+				return false;
+			const response = await apiFetch<{
+				ids: string[];
+				unresolvedIds: string[];
+			}>(base, {
+				method: "DELETE",
+				body: JSON.stringify({
+					bitmovinAccountId,
+					encodingId,
+					confirmMappingIds: items.map((item) => item.id),
+				}),
+			});
+			if (response.unresolvedIds.length) {
+				await invalidate();
+				throw new ApiError(409, t("settingsX.verifyDnsMappingsAfterRemoval"));
+			}
+			return true;
+		},
+		onSuccess: (removed) => {
+			if (removed) invalidate();
+		},
+	});
+
 	const {
 		register,
 		handleSubmit,
@@ -102,7 +146,11 @@ export function DnsMappingsSettingsPanel({
 		create.mutate(parsed.data);
 	});
 
-	const mutationError = remove.error;
+	const mutationError = remove.error ?? removeAll.error;
+	const firstMappingByEncoding = new Map<string, string>();
+	for (const item of list.items)
+		if (item.encodingId && !firstMappingByEncoding.has(item.encodingId))
+			firstMappingByEncoding.set(item.encodingId, item.id);
 
 	return (
 		<div>
@@ -190,7 +238,11 @@ export function DnsMappingsSettingsPanel({
 									<Button
 										variant="destructive"
 										size="sm"
-										disabled={remove.isPending || !mapping.encodingId}
+										disabled={
+											remove.isPending ||
+											removeAll.isPending ||
+											!mapping.encodingId
+										}
 										onClick={() => {
 											if (
 												mapping.encodingId &&
@@ -209,6 +261,21 @@ export function DnsMappingsSettingsPanel({
 									>
 										{t("settingsForms.delete")}
 									</Button>
+									{mapping.encodingId &&
+										firstMappingByEncoding.get(mapping.encodingId) ===
+											mapping.id && (
+											<Button
+												variant="secondary"
+												size="sm"
+												disabled={remove.isPending || removeAll.isPending}
+												onClick={() => {
+													if (mapping.encodingId)
+														removeAll.mutate(mapping.encodingId);
+												}}
+											>
+												{t("settingsX.deleteAllDnsMappings")}
+											</Button>
+										)}
 								</RoleAccess>
 							</li>
 						))}

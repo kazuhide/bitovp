@@ -1,6 +1,31 @@
 import type { MuxingChildren } from "../resource-children";
 
 export const muxingChildren: MuxingChildren = {
+	CREATE_MUXING_PACKED_AUDIO: {
+		"drm.aes": {
+			label: "AES",
+			fields: { method: ["SAMPLE_AES", "AES_128"] },
+			expectedDiscriminator: { field: "type", value: "AES" },
+			list: (api, encodingId, muxingId, page) =>
+				api.encoding.encodings.muxings.packedAudio.drm.aes.list(
+					encodingId,
+					muxingId,
+					page,
+				),
+			get: (api, encodingId, muxingId, id) =>
+				api.encoding.encodings.muxings.packedAudio.drm.aes.get(
+					encodingId,
+					muxingId,
+					id,
+				),
+			metadata: (api, encodingId, muxingId, id) =>
+				api.encoding.encodings.muxings.packedAudio.drm.aes.customdata.get(
+					encodingId,
+					muxingId,
+					id,
+				),
+		},
+	},
 	CREATE_MUXING_FMP4: {
 		drm: {
 			label: "DRM",

@@ -5,6 +5,7 @@ import {
 } from "./codec-detail-controls";
 import { filterParametersForPlan } from "./conform-rate";
 import { dashAudioLegSelected, dashVideoLegSelected } from "./dash-legs";
+import { manualSmoothManifestSelection } from "./default-manifest-selection";
 import { heAacConfiguration, isHeAac } from "./he-aac";
 import {
 	type HlsAudioMediaDefaults,
@@ -97,6 +98,15 @@ export type OperationKind =
 	| "CREATE_CONCATENATION_INPUT_STREAM"
 	| "CREATE_AUDIO_MIX_INPUT_STREAM"
 	| "CREATE_CODEC_H264"
+	| "CREATE_CODEC_MP3"
+	| "CREATE_CODEC_H262"
+	| "CREATE_MUXING_BROADCAST_TS"
+	| "CREATE_MUXING_MP3"
+	| "CREATE_MUXING_MXF"
+	| "CREATE_MUXING_PACKED_AUDIO"
+	| "CREATE_MUXING_SEGMENTED_RAW"
+	| "CREATE_DRM_TYPED"
+	| "CREATE_PROGRESSIVE_TS_ID3"
 	| "CREATE_CODEC_H265"
 	| "CREATE_CODEC_VP9"
 	| "CREATE_CODEC_AV1"
@@ -137,6 +147,7 @@ export type OperationKind =
 	| "CREATE_FILTER_EBU_R128_SINGLE_PASS"
 	| "CREATE_STREAM_FILTERS"
 	| "CREATE_KEYFRAME"
+	| "CREATE_ENCODING_SUPPLEMENT"
 	| "CREATE_MUXING_FMP4"
 	| "CREATE_MUXING_CMAF"
 	| "CREATE_MUXING_MP4"
@@ -498,6 +509,7 @@ function streamName(rendition: PlanRendition): string {
 	switch (rendition.codec) {
 		case "H264":
 		case "H265":
+		case "H262":
 		case "VP9":
 		case "AV1":
 			return rendition.height === null
@@ -510,6 +522,7 @@ function streamName(rendition: PlanRendition): string {
 		case "AAC":
 		case "PCM":
 		case "OPUS":
+		case "MP3":
 			return `Stream ${rendition.codec} ${kbps(rendition.bitrate)}`;
 		case "DOLBY_ATMOS":
 			return `Stream Atmos ${rendition.bitrate}bps`;
@@ -540,6 +553,11 @@ const MUXING_LABEL = {
 	PROGRESSIVE_WAV: "WAV",
 	// The same grammar again; whether a vendor sample names it was not looked up.
 	PROGRESSIVE_WEBM: "Progressive WebM",
+	BROADCAST_TS: "Broadcast TS",
+	MP3: "MP3",
+	MXF: "MXF",
+	PACKED_AUDIO: "Packed Audio",
+	SEGMENTED_RAW: "Segmented RAW",
 } as const;
 
 /** Sample naming: "<Video|Audio> <FMP4|MP4|TS|WebM> Muxing <identity>". */
@@ -550,7 +568,7 @@ function muxingName(
 	if (rendition.codec === "WEBVTT" || rendition.codec === "IMSC") {
 		return undefined; // chunked-text muxings are unnamed in the samples
 	}
-	if (isVideoCodec(rendition)) {
+	if (isVideoCodec(rendition) || rendition.codec === "H262") {
 		const identity = rendition.height === null ? "" : ` ${rendition.height}p`;
 		return `Video ${MUXING_LABEL[kind]} Muxing${identity}`;
 	}
@@ -1622,6 +1640,25 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							: { name: rendition.name },
 					refs: {},
 				});
+			} else if (rendition.codec === "MP3" || rendition.codec === "H262") {
+				ops.push({
+					step: `codec:${rendition.key}`,
+					kind:
+						rendition.codec === "MP3"
+							? "CREATE_CODEC_MP3"
+							: "CREATE_CODEC_H262",
+					payload: {
+						name: rendition.name,
+						bitrate: rendition.bitrate,
+						rate: rendition.rate,
+						...(rendition.codec === "H262" && {
+							width: rendition.width,
+							height: rendition.height,
+							profile: rendition.profile,
+						}),
+					},
+					refs: {},
+				});
 			} else if (rendition.codec === "AAC" || rendition.codec === "OPUS") {
 				ops.push({
 					step: `codec:${rendition.key}`,
@@ -2018,6 +2055,14 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						},
 						refs: muxingRefs,
 					});
+					for (const { key, ...tag } of muxing.id3Tags ?? []) {
+						ops.push({
+							step: `id3:${muxing.key}:${key}`,
+							kind: "CREATE_PROGRESSIVE_TS_ID3",
+							payload: tag,
+							refs: { encodingId: enc.step, muxingId: `muxing:${muxing.key}` },
+						});
+					}
 				} else if (
 					muxing.kind === "PROGRESSIVE_MOV" ||
 					muxing.kind === "PROGRESSIVE_WAV"
@@ -2050,7 +2095,21 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 						refs: muxingRefs,
 					});
 				} else {
-					unreachable(muxing);
+					ops.push({
+						step: `muxing:${muxing.key}`,
+						kind: `CREATE_MUXING_${muxing.kind}`,
+						payload: {
+							...("filename" in muxing
+								? { filename: muxing.filename }
+								: {
+										segmentLength: muxing.segmentLength,
+										segmentNaming: muxing.segmentNaming,
+									}),
+							...destinationFields,
+							name: muxing.name ?? muxingName(muxing.kind, primary),
+						},
+						refs: muxingRefs,
+					});
 				}
 
 				// DRM resources directly follow their muxing (sample order);
@@ -2120,7 +2179,29 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 							refs: drmRefs,
 						});
 					} else {
-						unreachable(drm);
+						const {
+							key,
+							kind,
+							muxingKey: _,
+							credentialId,
+							destination,
+							name,
+							...fields
+						} = drm;
+						ops.push({
+							step: `drm:${key}`,
+							kind: "CREATE_DRM_TYPED",
+							payload: {
+								drmKind: kind,
+								muxingKind: physicalMuxingKind(muxing),
+								credentialId,
+								outputPath: destination.path,
+								acl: destination.acl,
+								name,
+								...fields,
+							},
+							refs: drmRefs,
+						});
 					}
 				}
 			}
@@ -2269,6 +2350,39 @@ export function compilePlan(plan: EncodingPlan): CompiledOperation[] {
 				refs: { encodingId: encOf(keyframe.encodingKey).step },
 			});
 		}
+	}
+
+	for (const item of plan.supplements ?? []) {
+		const { key } = item;
+		const encodingId =
+			"renditionKey" in item
+				? encStepFor(item.renditionKey)
+				: encOf("encodingKey" in item ? item.encodingKey : undefined).step;
+		ops.push({
+			step: `supplement:${key}`,
+			kind: "CREATE_ENCODING_SUPPLEMENT",
+			refs: {
+				encodingId,
+				...("renditionKey" in item && {
+					streamId: `stream:${item.renditionKey}`,
+				}),
+				...("inputKey" in item && { inputId: `input:${item.inputKey}` }),
+				...("ingestKey" in item && {
+					inputStreamId: `ingest:${item.ingestKey}`,
+				}),
+				...("destination" in item && {
+					outputId: `output:${item.destination.outputKey}`,
+					...mirrorOutputRefs(plan),
+				}),
+			},
+			payload: {
+				supplement: item,
+				...("destination" in item && {
+					outputPath: item.destination.path,
+					...(item.destination.acl ? { acl: item.destination.acl } : {}),
+				}),
+			},
+		});
 	}
 
 	// 5. Manifest resource trees (JIT: before start; POST: after encoding).
@@ -3355,17 +3469,8 @@ function compileSmoothManifest(
 		},
 	];
 
-	for (const muxing of plan.muxings) {
-		const rendition = renditions.get(muxing.streamKey);
-		if (
-			!rendition ||
-			muxing.kind !== "MP4" ||
-			rendition.codec === "WEBVTT" ||
-			rendition.codec === "IMSC" ||
-			isPerTitle(rendition)
-		) {
-			continue;
-		}
+	const tracks = manualSmoothManifestSelection(plan.muxings, renditions);
+	for (const { muxing, rendition, trackName } of tracks.fixed) {
 		const drm = manifest.drmKind
 			? plan.drm.find(
 					(d) => d.muxingKey === muxing.key && d.kind === manifest.drmKind,
@@ -3381,7 +3486,7 @@ function compileSmoothManifest(
 			payload: {
 				mediaFile: joinFilePath(base, muxing.filename),
 				language: manifest.language,
-				trackName: isVideoCodec(rendition) ? "video" : "audio",
+				trackName,
 			},
 			refs: {
 				manifestId: manifestStep,
@@ -3406,7 +3511,8 @@ function compileSmoothManifest(
 
 	// Run-time expansion: per-title MP4 result muxings become mp4
 	// representations (+ ContentProtection when drm is pinned).
-	if (plan.renditions.some(isPerTitle)) {
+	const perTitleTrack = tracks.perTitle[0];
+	if (perTitleTrack) {
 		ops.push({
 			step: `${manifestStep}:pertitle`,
 			kind: "CREATE_SMOOTH_PER_TITLE_ENTRIES",
@@ -3420,7 +3526,7 @@ function compileSmoothManifest(
 			},
 			refs: {
 				manifestId: manifestStep,
-				encodingId: perTitleEncStep(plan, encStepFor),
+				encodingId: encStepFor(perTitleTrack.rendition.key),
 			},
 		});
 	}

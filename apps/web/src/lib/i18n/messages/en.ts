@@ -5073,6 +5073,13 @@ export const en = {
 		deleteCredentialNamed:
 			'Delete credential "{name}"? Storage location presets using it are removed too.',
 		deleteDnsMapping: "Delete DNS mapping {name}?",
+		deleteAllDnsMappings: "Remove all for this encoding",
+		deleteEncodingDnsMappings:
+			"Remove all {count} DNS mappings for encoding {id}?",
+		verifyDnsMappingsAfterRemoval:
+			"Refresh the list to check the remaining DNS mappings.",
+		incompleteDnsMappings:
+			"The complete mapping list could not be loaded. Refresh the list before removing mappings.",
 		deletePoolNamed: 'Delete pool "{name}"?',
 		deleteStreamKeyNamed: 'Delete stream key "{name}"?',
 		releaseStaticIp: "Release static IP {name}?",
@@ -5393,6 +5400,8 @@ export const en = {
 			"Individual video playlist filenames are unavailable for Per-Title. Clear this override and use the manifest's bitrate-derived names.",
 		onDemandDrmTemplateUnavailable:
 			"YAML export is unavailable for OnDemand MP4 DRM. Use Plan JSON or run this plan in the app to preserve DRM.",
+		supplementTemplateUnavailable:
+			"Use Plan JSON to keep supplementary captions, thumbnails, and provider metrics.",
 		dolbyLoudnessTemplateUnavailable:
 			"Use Plan JSON for Dolby Loudness. The Encoding Template schema does not include this filter.",
 		spekeTemplateUnavailable: "SPEKE settings are available as Plan JSON.",

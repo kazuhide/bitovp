@@ -3,6 +3,25 @@ import { describe, expect, it, vi } from "vitest";
 import { createRetryingFetch, isRetryable } from "./retrying-fetch";
 import { createBitmovinSdkOps } from "./sdk-ops";
 
+it.each([
+	"frame-id",
+	"plain-text",
+	"raw",
+])("never resends or redirects an ambiguous Progressive TS ID3 %s POST", async (format) => {
+	const path = `https://api.bitmovin.com/v1/encoding/encodings/enc/muxings/progressive-ts/mux/id3/${format}/?a=b`;
+	const fetchImpl = vi.fn(async () => {
+		throw new Error("lost response");
+	});
+	const send = createRetryingFetch({ fetchImpl, sleep: async () => {} });
+	await expect(send(path, { method: "POST" })).rejects.toThrow("lost response");
+	expect(fetchImpl).toHaveBeenCalledExactlyOnceWith(path, {
+		method: "POST",
+		redirect: "manual",
+	});
+	expect(isRetryable(path, { method: "POST" })).toBe(false);
+	expect(isRetryable(path, { method: "GET" })).toBe(true);
+});
+
 it("journals a real child POST refusal before its response body breaks and never follows a redirect", async () => {
 	const requests: string[] = [];
 	let breakBody: (() => void) | undefined;

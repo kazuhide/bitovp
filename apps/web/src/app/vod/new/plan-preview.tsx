@@ -185,7 +185,9 @@ export function PlanPreview({ evaluation }: { evaluation: PlanEvaluation }) {
 						? t("wizard.onDemandDrmTemplateUnavailable")
 						: templateUnavailable === "MANIFEST_DETAILS"
 							? t("manifestDetail.templateUnavailable")
-							: undefined;
+							: templateUnavailable === "ENCODING_SUPPLEMENTS"
+								? t("wizard.supplementTemplateUnavailable")
+								: undefined;
 	const currentTab = templateUnavailable && tab === "yaml" ? "json" : tab;
 	const blocked =
 		evaluation.ok && evaluation.issues.some((i) => i.level === "error");

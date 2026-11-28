@@ -7,6 +7,7 @@
  */
 import type { CompiledOperation } from "@bitovp/core";
 import {
+	encodingSupplementSchema,
 	filterParameters,
 	mediaFilterSchema,
 	streamConditionSchema,
@@ -416,6 +417,28 @@ export async function executeMediaStep(
 				filters,
 			);
 			return { request, response: { attached: filters.length } };
+		}
+
+		case "CREATE_ENCODING_SUPPLEMENT": {
+			const item = encodingSupplementSchema.parse(p.supplement);
+			const resourceId = await ctx.sdk.createEncodingSupplement(
+				refId(op, ctx, "encodingId"),
+				item,
+				{
+					streamId: optRefId(op, ctx, "streamId"),
+					inputId: optRefId(op, ctx, "inputId"),
+					inputStreamId: optRefId(op, ctx, "inputStreamId"),
+					destination: destinationOf(op, ctx),
+				},
+			);
+			return {
+				...(resourceId ? { resourceId } : {}),
+				request:
+					item.kind === "SCTE35_TRIGGER"
+						? { encodingId: refId(op, ctx, "encodingId") }
+						: request,
+				response: resourceId ? { id: resourceId } : { accepted: true },
+			};
 		}
 
 		case "CREATE_KEYFRAME": {

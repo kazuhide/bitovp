@@ -853,6 +853,8 @@ function toExtraManifest(
 	}
 	if (kind === "SMOOTH") {
 		const entry: WizardExtraManifest = { kind: "SMOOTH", key };
+		if (m.generationMode === "DEFAULT" || m.generationMode === "MANUAL")
+			entry.generationMode = m.generationMode;
 		entry.acl = readDestinationAcl(m);
 		const serverManifestName = nonDefault(
 			asString(m.serverManifestName),

@@ -46,6 +46,7 @@ it("lists all account manifests through the SDK and only returns inventory field
 		expect(upstream.pathname).toBe("/v1/encoding/manifests");
 		expect(upstream.searchParams.get("offset")).toBe("25");
 		expect(upstream.searchParams.get("limit")).toBe("25");
+		expect(upstream.searchParams.get("sort")).toBe("createdAt:desc");
 		expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(organization);
 		expect(new Headers(init.headers).get("X-Api-Key")).toBe("fixture");
 		return result({ offset: 25, totalCount: 29, items: [row] });

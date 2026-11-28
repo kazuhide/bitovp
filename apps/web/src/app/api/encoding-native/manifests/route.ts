@@ -80,7 +80,7 @@ async function readManifests(req: Request) {
 			await api.encoding.manifests.list({
 				offset,
 				limit: STATISTICS_PAGE_SIZE,
-				sort: "-createdAt",
+				sort: "createdAt:desc",
 			});
 			const result = wire?.data.result;
 			const paging =

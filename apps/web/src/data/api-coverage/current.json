@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-28T02:08:13.828Z",
-		"sourceCommit": "76f8161d3a5c7a1ba516393fb7adef56d581f782",
-		"sourceFingerprint": "163db7c5e074df987b4786cca049e70752456c7ce4e30d931c32d7fb8cf48197",
+		"generatedAt": "2026-11-28T02:13:16.982Z",
+		"sourceCommit": "729b5980f62e3ebb70d4c84ca9d807b7fe960b1a",
+		"sourceFingerprint": "2b9bd431ce3e44963c42df887e35d01884df663f9fc018e549d3f88be449b05b",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -12834,7 +12834,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 610
+					"line": 611
 				}
 			]
 		},
@@ -12852,7 +12852,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 1123
+					"line": 1125
 				}
 			]
 		},
@@ -12870,7 +12870,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 162
+					"line": 163
 				}
 			]
 		},
@@ -12902,7 +12902,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 571
+					"line": 572
 				}
 			]
 		},
@@ -12916,7 +12916,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 1100
+					"line": 1102
 				}
 			]
 		},
@@ -12930,7 +12930,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 1115
+					"line": 1117
 				}
 			]
 		},
@@ -12944,7 +12944,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 213
+					"line": 214
 				}
 			]
 		},
@@ -12962,7 +12962,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 178
+					"line": 179
 				}
 			]
 		},
@@ -12990,7 +12990,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 634
+					"line": 635
 				}
 			]
 		},
@@ -13060,7 +13060,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 662
+					"line": 663
 				}
 			]
 		},
@@ -13116,7 +13116,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 890
+					"line": 891
 				}
 			]
 		},
@@ -13172,7 +13172,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 315
+					"line": 316
 				}
 			]
 		},
@@ -13242,7 +13242,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 714
+					"line": 715
 				}
 			]
 		},
@@ -13298,7 +13298,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 743
+					"line": 744
 				}
 			]
 		},
@@ -13400,7 +13400,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 793
+					"line": 794
 				}
 			]
 		},
@@ -13456,7 +13456,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 917
+					"line": 918
 				}
 			]
 		},
@@ -13512,7 +13512,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 787
+					"line": 788
 				}
 			]
 		},
@@ -13568,7 +13568,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 913
+					"line": 914
 				}
 			]
 		},
@@ -13624,7 +13624,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 695
+					"line": 696
 				}
 			]
 		},
@@ -13680,7 +13680,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 861
+					"line": 862
 				}
 			]
 		},
@@ -13736,7 +13736,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 844
+					"line": 845
 				}
 			]
 		},
@@ -13792,7 +13792,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 328
+					"line": 329
 				}
 			]
 		},
@@ -13848,7 +13848,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 358
+					"line": 359
 				}
 			]
 		},
@@ -13918,7 +13918,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 343
+					"line": 344
 				}
 			]
 		},
@@ -13974,7 +13974,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 809
+					"line": 810
 				}
 			]
 		},
@@ -14030,7 +14030,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 905
+					"line": 906
 				}
 			]
 		},
@@ -14086,7 +14086,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 679
+					"line": 680
 				}
 			]
 		},
@@ -14156,7 +14156,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 648
+					"line": 649
 				}
 			]
 		},
@@ -14212,7 +14212,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 302
+					"line": 303
 				}
 			]
 		},
@@ -14268,7 +14268,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 491
+					"line": 492
 				}
 			]
 		},
@@ -14286,7 +14286,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 1082
+					"line": 1084
 				}
 			]
 		},
@@ -14304,7 +14304,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 160
+					"line": 161
 				}
 			]
 		},
@@ -14336,7 +14336,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 452
+					"line": 453
 				}
 			]
 		},
@@ -14350,7 +14350,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 1054
+					"line": 1056
 				}
 			]
 		},
@@ -14364,7 +14364,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 1069
+					"line": 1071
 				}
 			]
 		},
@@ -14378,7 +14378,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 211
+					"line": 212
 				}
 			]
 		},
@@ -14396,7 +14396,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 176
+					"line": 177
 				}
 			]
 		},
@@ -14424,7 +14424,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 520
+					"line": 521
 				}
 			]
 		},
@@ -14480,7 +14480,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 248
+					"line": 249
 				}
 			]
 		},
@@ -14536,7 +14536,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 283
+					"line": 284
 				}
 			]
 		},
@@ -14596,7 +14596,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 546
+					"line": 547
 				}
 			]
 		},
@@ -14666,7 +14666,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 236
+					"line": 237
 				}
 			]
 		},
@@ -14722,7 +14722,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 261
+					"line": 262
 				}
 			]
 		},
@@ -14778,7 +14778,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 533
+					"line": 534
 				}
 			]
 		},
@@ -14834,7 +14834,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 288
+					"line": 289
 				}
 			]
 		},
@@ -14894,7 +14894,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 559
+					"line": 560
 				}
 			]
 		},
@@ -14950,7 +14950,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 1009
+					"line": 1011
 				}
 			]
 		},
@@ -14982,7 +14982,7 @@
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 163
+					"line": 164
 				}
 			]
 		},
@@ -15010,11 +15010,11 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 952
+					"line": 954
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 968
+					"line": 970
 				}
 			]
 		},
@@ -15028,7 +15028,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 1141
+					"line": 1143
 				}
 			]
 		},
@@ -15042,7 +15042,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 1156
+					"line": 1158
 				}
 			]
 		},
@@ -15056,7 +15056,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 214
+					"line": 215
 				}
 			]
 		},
@@ -15070,7 +15070,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 1041
+					"line": 1043
 				}
 			]
 		},
@@ -15126,11 +15126,11 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 179
+					"line": 180
 				},
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 953
+					"line": 955
 				}
 			]
 		},
@@ -15144,7 +15144,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 955
+					"line": 957
 				}
 			]
 		},
@@ -15158,7 +15158,7 @@
 			"evidence": [
 				{
 					"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-					"line": 1028
+					"line": 1030
 				}
 			]
 		},
@@ -40602,8 +40602,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 1103,
-								"callLine": 1100
+								"line": 1105,
+								"callLine": 1102
 							}
 						]
 					}
@@ -41758,8 +41758,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 866,
-								"callLine": 861
+								"line": 867,
+								"callLine": 862
 							}
 						]
 					},
@@ -41774,8 +41774,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 873,
-								"callLine": 861
+								"line": 874,
+								"callLine": 862
 							}
 						]
 					},
@@ -41790,8 +41790,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 872,
-								"callLine": 861
+								"line": 873,
+								"callLine": 862
 							}
 						]
 					},
@@ -41816,8 +41816,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 874,
-								"callLine": 861
+								"line": 875,
+								"callLine": 862
 							}
 						]
 					},
@@ -41832,8 +41832,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 867,
-								"callLine": 861
+								"line": 868,
+								"callLine": 862
 							}
 						]
 					}
@@ -41858,8 +41858,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 849,
-								"callLine": 844
+								"line": 850,
+								"callLine": 845
 							}
 						]
 					},
@@ -41874,8 +41874,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 858,
-								"callLine": 844
+								"line": 859,
+								"callLine": 845
 							}
 						]
 					},
@@ -41890,8 +41890,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 856,
-								"callLine": 844
+								"line": 857,
+								"callLine": 845
 							}
 						]
 					},
@@ -41906,8 +41906,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 855,
-								"callLine": 844
+								"line": 856,
+								"callLine": 845
 							}
 						]
 					},
@@ -41932,8 +41932,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 857,
-								"callLine": 844
+								"line": 858,
+								"callLine": 845
 							}
 						]
 					},
@@ -41948,8 +41948,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 850,
-								"callLine": 844
+								"line": 851,
+								"callLine": 845
 							}
 						]
 					}
@@ -42434,8 +42434,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 305,
-								"callLine": 302
+								"line": 306,
+								"callLine": 303
 							}
 						]
 					},
@@ -42620,8 +42620,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 1057,
-								"callLine": 1054
+								"line": 1059,
+								"callLine": 1056
 							}
 						]
 					}
@@ -44136,8 +44136,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 562,
-								"callLine": 559
+								"line": 563,
+								"callLine": 560
 							}
 						]
 					},
@@ -44192,8 +44192,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 1012,
-								"callLine": 1009
+								"line": 1014,
+								"callLine": 1011
 							}
 						]
 					},
@@ -44258,8 +44258,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 1013,
-								"callLine": 1009
+								"line": 1015,
+								"callLine": 1011
 							}
 						]
 					},
@@ -44274,8 +44274,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 1014,
-								"callLine": 1009
+								"line": 1016,
+								"callLine": 1011
 							}
 						]
 					},
@@ -44290,8 +44290,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 1011,
-								"callLine": 1009
+								"line": 1013,
+								"callLine": 1011
 							}
 						]
 					},
@@ -44336,8 +44336,8 @@
 						"evidence": [
 							{
 								"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-								"line": 1144,
-								"callLine": 1141
+								"line": 1146,
+								"callLine": 1143
 							}
 						]
 					}

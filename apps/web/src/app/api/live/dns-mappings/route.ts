@@ -18,6 +18,7 @@ import {
 } from "@/lib/server/bitmovin";
 import { sameConfirmedResourceIds } from "@/lib/server/confirmed-resource-ids";
 import { getServerContext } from "@/lib/server/context";
+import { deleteDnsMappingCollection } from "@/lib/server/dns-mapping-collection-removal";
 import {
 	jsonError,
 	readJson,
@@ -37,7 +38,7 @@ import {
  * mapping only means something while it points at an encoding. So:
  *   GET  — account-wide list, or this-encoding list when `encodingId` is given
  *   POST — REQUIRES `encodingId` in the body
- *   DELETE — removes the confirmed mappings for one encoding by ID
+ *   DELETE — removes the confirmed mappings by ID, or the entire collection in explicit collection mode
  *   DELETE (./[id]) — removes a single mapping
  */
 export async function GET(req: Request) {
@@ -141,9 +142,14 @@ const bulkDeleteSchema = z.strictObject({
 			"Mapping ids must be distinct",
 		),
 });
+const collectionDeleteSchema = bulkDeleteSchema.extend({
+	mode: z.literal("collection"),
+	confirmEncodingId: z.uuid(),
+});
+const deleteSchema = z.union([bulkDeleteSchema, collectionDeleteSchema]);
 
 export async function DELETE(req: Request) {
-	const parsed = bulkDeleteSchema.safeParse(await readJson(req));
+	const parsed = deleteSchema.safeParse(await readJson(req));
 	if (!parsed.success) return validationError(parsed.error);
 	const { bitmovinAccountId, encodingId, confirmMappingIds } = parsed.data;
 	try {
@@ -154,6 +160,8 @@ export async function DELETE(req: Request) {
 			!roleAtLeast(ctx.tenant.role, "OPERATOR")
 		)
 			return jsonError(403, "Operator access required.");
+		if ("mode" in parsed.data)
+			return await deleteDnsMappingCollection(req, ctx, parsed.data);
 		const api = await bitmovinClientForAccount(
 			ctx,
 			bitmovinAccountId,

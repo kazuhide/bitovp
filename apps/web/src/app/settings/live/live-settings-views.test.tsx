@@ -46,6 +46,7 @@ function mockApi(overrides: Record<string, unknown> = {}) {
 					items: [
 						{
 							id: "chan-1",
+							origin: "MANAGED",
 							name: "studio-a-channel",
 							status: "RUNNING",
 							error: null,
@@ -422,6 +423,42 @@ describe("Settings → Live: stream keys (default tab)", () => {
 });
 
 describe("Settings → Live: DNS mappings tab", () => {
+	it("requires the encoding ID before clearing the managed DNS mapping collection", async () => {
+		mockApi();
+		const user = userEvent.setup();
+		wrap(<LiveSettingsClient />);
+		await user.click(await screen.findByRole("tab", { name: "DNS mappings" }));
+		await user.click(
+			await screen.findByRole("button", {
+				name: "Clear DNS mapping collection",
+			}),
+		);
+		const dialog = await screen.findByRole("dialog");
+		const remove = within(dialog).getByRole("button", {
+			name: "Clear mappings",
+		});
+		expect(remove).toBeDisabled();
+		await user.type(
+			within(dialog).getByRole("textbox", { name: "Encoding ID" }),
+			ENCODING_ID,
+		);
+		await user.click(remove);
+		await waitFor(() =>
+			expect(apiFetch).toHaveBeenCalledWith(
+				"/api/live/dns-mappings",
+				expect.objectContaining({
+					method: "DELETE",
+					body: JSON.stringify({
+						mode: "collection",
+						bitmovinAccountId: ACCOUNT_ID,
+						encodingId: ENCODING_ID,
+						confirmEncodingId: ENCODING_ID,
+						confirmMappingIds: ["dns-1"],
+					}),
+				}),
+			),
+		);
+	});
 	it("lists hostnames and requires an encoding id to create one", async () => {
 		mockApi();
 		const user = userEvent.setup();

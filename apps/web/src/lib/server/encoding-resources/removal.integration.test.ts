@@ -24,6 +24,7 @@ import {
 	DELETE as removeVod,
 	POST as verifyVod,
 } from "@/app/api/encoding-jobs/[id]/resources/route";
+import { DELETE as removeDns } from "@/app/api/live/dns-mappings/route";
 import {
 	GET as listLive,
 	DELETE as removeLive,
@@ -337,6 +338,197 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 					})
 				)?.state,
 			).toBe("REFUSED");
+		});
+
+		it("deletes the confirmed VOD stream-filter collection through the SDK", async () => {
+			const contract = contracts.find(({ kind }) => kind === "CREATE_STREAM");
+			const s = await seed(own, a, contract);
+			const filterId = await attachFilter(s);
+			const collection = `${s.expected}/filters`;
+			let remaining = [{ id: filterId, position: 0 }];
+			send.mockImplementation(async (url: string, init: RequestInit) => {
+				const target = new URL(url);
+				expect(target.pathname).toBe(collection);
+				expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+				if (init.method === "GET")
+					return Response.json({
+						status: "SUCCESS",
+						data: { result: { filters: remaining } },
+					});
+				expect(init.method).toBe("DELETE");
+				expect(init.body).toBeUndefined();
+				remaining = [];
+				return Response.json({
+					status: "SUCCESS",
+					data: { result: [{ id: filterId }] },
+				});
+			});
+			const res = await submit(s, "remove", {
+				filters: { mode: "collection", filterIds: [filterId] },
+			});
+			expect(res.status, await res.clone().text()).toBe(200);
+			expect(await res.json()).toEqual({
+				state: "REMOVED",
+				disposition: "removed",
+			});
+			expect(send.mock.calls.map(([, init]) => init.method)).toEqual([
+				"GET",
+				"DELETE",
+				"GET",
+			]);
+		});
+
+		it("does not dispatch a collection delete after unrecorded attachments appear", async () => {
+			const contract = contracts.find(({ kind }) => kind === "CREATE_STREAM");
+			const s = await seed(own, a, contract);
+			const filterId = await attachFilter(s);
+			send.mockResolvedValueOnce(
+				Response.json({
+					status: "SUCCESS",
+					data: {
+						result: { filters: [{ id: filterId }, { id: randomUUID() }] },
+					},
+				}),
+			);
+			const res = await submit(s, "remove", {
+				filters: { mode: "collection", filterIds: [filterId] },
+			});
+			expect(res.status).toBe(409);
+			expect(send.mock.calls.map(([, init]) => init.method)).toEqual(["GET"]);
+		});
+
+		it("keeps an uncertain collection delete pending and verifies it without resending", async () => {
+			const contract = contracts.find(({ kind }) => kind === "CREATE_STREAM");
+			const s = await seed(own, a, contract);
+			const filterId = await attachFilter(s);
+			const filters = { mode: "collection", filterIds: [filterId] };
+			send.mockResolvedValueOnce(
+				Response.json({
+					status: "SUCCESS",
+					data: { result: { filters: [{ id: filterId }] } },
+				}),
+			);
+			send.mockRejectedValueOnce(new Error("Response was lost"));
+			const pending = await submit(s, "remove", { filters });
+			expect(pending.status).toBe(502);
+			expect(await pending.json()).toMatchObject({ state: "UNKNOWN" });
+			send.mockResolvedValueOnce(
+				Response.json({
+					status: "SUCCESS",
+					data: { result: { filters: [] } },
+				}),
+			);
+			const checked = await submit(s, "verify", {
+				filters: { mode: "collection" },
+			});
+			expect(checked.status).toBe(200);
+			expect(await checked.json()).toEqual({
+				state: "REMOVED",
+				disposition: "absent",
+			});
+			expect(send.mock.calls.map(([, init]) => init.method)).toEqual([
+				"GET",
+				"DELETE",
+				"GET",
+			]);
+		});
+
+		async function dnsFixture(running = false) {
+			const contract = contracts.find(({ kind }) => kind === "CREATE_STREAM");
+			const seedRun = await seed(own, a, contract, undefined, true);
+			const root = seedRun.steps.find(({ kind }) => kind === "CREATE_ENCODING");
+			if (!root?.resourceId || !seedRun.channelId)
+				throw new Error("Missing fixture encoding");
+			root.resourceAccount = { id: a.id, version: a.resourceScopeVersion };
+			await own.liveChannelRun.update({
+				where: { id: seedRun.sourceId },
+				data: {
+					stepLog: JSON.parse(
+						JSON.stringify(seedRun.steps),
+					) as Prisma.InputJsonValue,
+					...(running && { status: "RUNNING" }),
+				},
+			});
+			if (running)
+				await own.liveChannel.update({
+					where: { id: seedRun.channelId },
+					data: { status: "RUNNING" },
+				});
+			const live = { ...seedRun, id: root.resourceId };
+			const mappingId = randomUUID();
+			const submit = (overrides = {}) =>
+				removeDns(
+					new Request("http://local.test/api/live/dns-mappings", {
+						method: "DELETE",
+						headers: {
+							"Content-Type": "application/json",
+							"x-bitovp-actor": "session",
+						},
+						body: JSON.stringify({
+							mode: "collection",
+							bitmovinAccountId: a.id,
+							encodingId: live.id,
+							confirmEncodingId: live.id,
+							confirmMappingIds: [mappingId],
+							...overrides,
+						}),
+					}),
+				);
+			return { ...live, mappingId, submit };
+		}
+
+		it("dispatches the DNS collection delete on the exact owned running encoding", async () => {
+			const live = await dnsFixture(true);
+			const path = `/v1/encoding/live/encodings/${live.id}/dns-mappings`;
+			let items = [{ id: live.mappingId, encodingId: live.id }];
+			send.mockImplementation(async (url: string, init: RequestInit) => {
+				const target = new URL(url);
+				expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+				if (target.pathname === `/v1/encoding/encodings/${live.id}/status`) {
+					expect(init.method).toBe("GET");
+					return Response.json({
+						status: "SUCCESS",
+						data: { result: { status: "RUNNING" } },
+					});
+				}
+				expect(target.pathname).toBe(path);
+				let result: unknown;
+				if (init.method === "GET") {
+					expect(target.searchParams.get("offset")).toBe("0");
+					result = { items, totalCount: items.length, offset: 0, limit: 100 };
+				} else {
+					expect(init.method).toBe("DELETE");
+					expect(init.body).toBeUndefined();
+					result = [{ id: live.mappingId }];
+					items = [];
+				}
+				return Response.json({ status: "SUCCESS", data: { result } });
+			});
+			const response = await live.submit();
+			expect(response.status, await response.clone().text()).toBe(200);
+			expect(await response.json()).toEqual({
+				ids: [live.mappingId],
+				unresolvedIds: [],
+			});
+			expect(send.mock.calls.map(([, init]) => init.method)).toEqual([
+				"GET",
+				"GET",
+				"DELETE",
+				"GET",
+			]);
+		});
+
+		it("refuses the DNS collection delete of a stopping or cross-tenant encoding", async () => {
+			const live = await dnsFixture();
+			useTenant(foreign, otherOrg);
+			expect((await live.submit({ bitmovinAccountId: b.id })).status).toBe(404);
+			useTenant(own, ownOrg);
+			await own.liveChannelRun.update({
+				where: { id: live.sourceId },
+				data: { status: "STOPPING" },
+			});
+			expect((await live.submit()).status).toBe(409);
+			expect(send).not.toHaveBeenCalled();
 		});
 
 		it("continues beyond the first filter page before checking the confirmed collection", async () => {

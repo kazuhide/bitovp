@@ -10,6 +10,7 @@ import {
 	type ProviderDiagnostic,
 	ResourceDiagnostics,
 } from "./resource-diagnostics";
+import { StreamFilterCollectionControl } from "./stream-filter-collection-control";
 
 type Selection = {
 	step: string;
@@ -20,6 +21,7 @@ type Selection = {
 	listScope?: "linked";
 	hasCustomData?: boolean;
 	hasInformation?: boolean;
+	hasFilterCollection?: boolean;
 	diagnostics?: ProviderDiagnostic[];
 	childCollections?: ChildChoice[];
 	removalState?: string | null;
@@ -377,6 +379,14 @@ function ResourceInspector({
 					canRemove={canRemove}
 				/>
 			)}
+			{canRemove &&
+				selected.hasFilterCollection &&
+				selected.removalState !== "REMOVED" && (
+					<StreamFilterCollectionControl
+						endpoint={endpoint}
+						stream={selected}
+					/>
+				)}
 		</div>
 	);
 }

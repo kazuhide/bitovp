@@ -18,13 +18,14 @@ vi.mock("@/lib/server/audit", () => ({
 	writeAuditLog: (...args: unknown[]) => writeAuditLog(...args),
 }));
 
-vi.mock("@bitmovin/api-sdk", () => {
+vi.mock("@bitmovin/api-sdk", async (original) => {
 	class Resource {
 		constructor(obj?: Record<string, unknown>) {
 			Object.assign(this, obj);
 		}
 	}
 	return {
+		...(await original<typeof import("@bitmovin/api-sdk")>()),
 		default: class MockBitmovinApi {
 			encoding = {
 				live: {

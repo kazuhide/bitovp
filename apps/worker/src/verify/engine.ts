@@ -79,6 +79,7 @@ import {
 	scopedPerTitleResults,
 	scopedPerTitleVideoFamilies,
 } from "./per-title-selection";
+import { smoothClientQualityLevels, smoothServerHasMedia } from "./smooth-xml";
 import { MAX_SUBTITLE_XML_BYTES, validateSubtitleXml } from "./subtitle-xml";
 
 export type Verdict = "PASS" | "WARN" | "FAIL" | "SKIP";
@@ -3471,7 +3472,7 @@ async function verifyManifest(
 	expected: ExpectedArtefacts,
 ): Promise<void> {
 	const base = `manifest:${manifest.manifestKey}`;
-	for (const file of manifest.files) {
+	for (const [index, file] of manifest.files.entries()) {
 		// The FILE is part of the id when a manifest has more than one. A Smooth manifest
 		// writes `stream.ism` and `stream.ismc`, and both used to emit `…:exists` and
 		// `…:smooth` under identical ids — against `Check.id`'s own contract ("stable id so
@@ -4170,30 +4171,32 @@ async function verifyManifest(
 		}
 
 		if (manifest.kind === "SMOOTH") {
-			const wellFormed = /<SmoothStreamingMedia/i.test(text);
+			// The expectation stores the server name first and the client name second.
+			if (manifest.files.length > 1 && index === 0) {
+				report.assert(
+					`${id}:smooth`,
+					"manifest",
+					smoothServerHasMedia(text),
+					`${key} must be a SMIL server manifest with media references`,
+				);
+				continue;
+			}
+			const levels = smoothClientQualityLevels(text);
 			report.assert(
 				`${id}:smooth`,
 				"manifest",
-				wellFormed,
-				`${key} must be a SmoothStreamingMedia document`,
+				levels !== undefined,
+				`${key} must be a SmoothStreamingMedia client manifest`,
 			);
-			// The check must not disappear on the EMPTIEST input. `if (levels > 0)` meant a
-			// `<SmoothStreamingMedia></SmoothStreamingMedia>` with zero QualityLevels emitted
-			// no check at all and the manifest passed — the same "a parser accepted it ≠ it
-			// is a playlist" defect the HLS path already fixed, left unfixed for Smooth
-			// (review catch).
-			//
-			// Per-title is the one case where the plan's count is not the truth: the encoder
-			// chooses the rungs (C1/C4), so there the assertion is presence, not equality.
-			const levels = (text.match(/<QualityLevel/gi) ?? []).length;
 			const want = manifest.videoEntries + manifest.audioEntries;
 			report.assert(
 				`${id}:quality-levels`,
 				"manifest",
-				manifest.perTitle ? levels > 0 : levels === want,
+				levels !== undefined &&
+					(manifest.perTitle ? levels > 0 : levels === want),
 				manifest.perTitle
-					? `a per-title Smooth manifest must declare at least one QualityLevel (the encoder chooses how many) — ${levels}`
-					: `${want} QualityLevel element(s) — ${levels}`,
+					? `a per-title Smooth manifest must declare at least one QualityLevel — ${levels ?? "invalid XML"}`
+					: `${want} QualityLevel element(s) — ${levels ?? "invalid XML"}`,
 			);
 		}
 	}

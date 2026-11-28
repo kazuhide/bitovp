@@ -8,12 +8,11 @@ const F = join(
 	import.meta.dirname,
 	"../../../../packages/core/src/plan/__fixtures__",
 );
-const load = (n: string) =>
-	compileExpectedArtefacts(
-		encodingPlanSchema.parse(
-			JSON.parse(readFileSync(join(F, `${n}.plan.json`), "utf8")),
-		),
+const loadPlan = (n: string) =>
+	encodingPlanSchema.parse(
+		JSON.parse(readFileSync(join(F, `${n}.plan.json`), "utf8")),
 	);
+const load = (n: string) => compileExpectedArtefacts(loadPlan(n));
 
 /**
  * The four false verdicts a review found, each pinned by the case that exposed it.
@@ -474,6 +473,166 @@ describe("a non-per-title postEncoding manifest keeps its exact count", () => {
  * constructed: the real Smooth fixture with `perTitle` flipped off, which is exactly the
  * plan shape that has no representative on disk.
  */
+const validSmoothServer = `<?xml version="1.0" encoding="UTF-8"?>
+<smil xmlns="http://www.w3.org/2001/SMIL20/Language">
+  <head><meta name="clientManifestRelativePath" content="stream.ismc"/></head>
+  <body><switch>
+    <video src="media/media.ismv" systemBitrate="400000">
+      <param name="trackID" value="1" valuetype="data"/>
+    </video>
+    <audio src="media/media.ismv" systemBitrate="128000">
+      <param name="trackID" value="2" valuetype="data"/>
+    </audio>
+  </switch></body>
+</smil>`;
+
+function smoothClient(videoLevels: number, audioLevels = 0) {
+	const video = Array.from(
+		{ length: videoLevels },
+		(_, index) =>
+			`<QualityLevel Index="${index}" Bitrate="${(index + 1) * 400000}" FourCC="H264" MaxWidth="640" MaxHeight="360" CodecPrivateData="000000016742E01E0000000168CE3C80"/>`,
+	).join("");
+	const audio = Array.from(
+		{ length: audioLevels },
+		(_, index) =>
+			`<QualityLevel Index="${index}" Bitrate="${(index + 1) * 128000}" FourCC="AACL" SamplingRate="48000" Channels="2" BitsPerSample="16" PacketSize="4" AudioTag="255" CodecPrivateData="1190"/>`,
+	).join("");
+	return `<?xml version="1.0" encoding="UTF-8"?>
+<SmoothStreamingMedia MajorVersion="2" MinorVersion="1" Duration="60000000">
+  <StreamIndex Type="video" Chunks="1" QualityLevels="${videoLevels}" MaxWidth="640" MaxHeight="360" Url="QualityLevels({bitrate})/Fragments(video={start time})">
+    ${video}<c t="0" d="60000000"/>
+  </StreamIndex>
+  ${audioLevels ? `<StreamIndex Type="audio" Chunks="1" QualityLevels="${audioLevels}" Url="QualityLevels({bitrate})/Fragments(audio={start time})">${audio}<c t="0" d="60000000"/></StreamIndex>` : ""}
+</SmoothStreamingMedia>`;
+}
+
+function defaultSmoothExpectation() {
+	const plan = loadPlan("pertitle-h264-mp4-smooth-drm-on-aws");
+	const video = plan.renditions.find((r) => r.codec === "H264");
+	const audio = plan.renditions.find((r) => r.codec === "AAC");
+	const manifest = plan.manifests[0];
+	if (!video || !audio || manifest?.kind !== "SMOOTH")
+		throw new Error("Missing Smooth fixture");
+	plan.renditions = [
+		{ ...video, key: "download-video", mode: "STANDARD", bitrate: 300_000 },
+		{ ...video, mode: "STANDARD", bitrate: 400_000 },
+		audio,
+	];
+	delete plan.perTitle;
+	plan.drm = [];
+	plan.muxings = [
+		{
+			kind: "MP4",
+			key: "download",
+			streamKey: "download-video",
+			filename: "download.mp4",
+			destination: { outputKey: "origin", path: "download/" },
+		},
+		{
+			kind: "MP4",
+			key: "smooth-media",
+			streamKey: video.key,
+			additionalStreamKeys: [audio.key],
+			filename: "media.ismv",
+			fragmentDuration: 6000,
+			manifestType: "SMOOTH",
+			destination: {
+				outputKey: "origin",
+				path: `${manifest.destination.path}media/`,
+			},
+		},
+	];
+	plan.manifests = [
+		{ ...manifest, generationMode: "DEFAULT", drmKind: undefined },
+	];
+	return compileExpectedArtefacts(plan);
+}
+
+describe("Smooth server and client files", () => {
+	it.each([
+		{
+			case: "valid pair",
+			server: validSmoothServer,
+			client: smoothClient(1, 1),
+			serverVerdict: "PASS",
+			clientVerdict: "PASS",
+			quality: "PASS",
+		},
+		{
+			case: "client XML in the server file",
+			server: smoothClient(1, 1),
+			client: smoothClient(1, 1),
+			serverVerdict: "FAIL",
+			clientVerdict: "PASS",
+			quality: "PASS",
+		},
+		{
+			case: "empty SMIL switch",
+			server: "<smil><head/><body><switch/></body></smil>",
+			client: smoothClient(1, 1),
+			serverVerdict: "FAIL",
+			clientVerdict: "PASS",
+			quality: "PASS",
+		},
+		{
+			case: "server XML in the client file",
+			server: validSmoothServer,
+			client: validSmoothServer,
+			serverVerdict: "PASS",
+			clientVerdict: "FAIL",
+			quality: "FAIL",
+		},
+		{
+			case: "comment hides a missing quality level",
+			server: validSmoothServer,
+			client: smoothClient(1).replace(
+				"</StreamIndex>",
+				"<!-- <QualityLevel/> --></StreamIndex>",
+			),
+			serverVerdict: "PASS",
+			clientVerdict: "PASS",
+			quality: "FAIL",
+		},
+		{
+			case: "truncated client XML",
+			server: validSmoothServer,
+			client: smoothClient(1, 1).replace("</SmoothStreamingMedia>", ""),
+			serverVerdict: "PASS",
+			clientVerdict: "FAIL",
+			quality: "FAIL",
+		},
+	])("verifies both declared Smooth roles for $case", async ({
+		server,
+		client,
+		serverVerdict,
+		clientVerdict,
+		quality,
+	}) => {
+		const expected = defaultSmoothExpectation();
+		const manifest = expected.manifests[0];
+		expect(manifest).toMatchObject({
+			videoEntries: 1,
+			audioEntries: 1,
+			perTitle: false,
+		});
+		const report = await verifyArtefacts(
+			expected,
+			deps({
+				readText: async (_output: string, key: string) =>
+					key.endsWith(".ismc") ? client : server,
+			}) as never,
+		);
+		const checks = new Map(
+			report.checks.map(({ id, verdict }) => [id, verdict]),
+		);
+		const base = `manifest:${manifest?.manifestKey}`;
+		expect(checks.get(`${base}:stream-ism:smooth`)).toBe(serverVerdict);
+		expect(checks.get(`${base}:stream-ismc:smooth`)).toBe(clientVerdict);
+		expect(checks.get(`${base}:stream-ismc:quality-levels`)).toBe(quality);
+		expect(checks.has(`${base}:stream-ism:quality-levels`)).toBe(false);
+	});
+});
+
 describe("the Smooth quality-levels arm", () => {
 	function smoothExpectation(perTitle: boolean) {
 		const e = load("pertitle-h264-mp4-smooth-drm-on-aws");
@@ -489,8 +648,8 @@ describe("the Smooth quality-levels arm", () => {
 	function withLevels(levels: number) {
 		return {
 			...(deps() as object),
-			readText: async () =>
-				`<SmoothStreamingMedia>${"<QualityLevel/>".repeat(levels)}</SmoothStreamingMedia>`,
+			readText: async (_output: string, key: string) =>
+				key.endsWith(".ismc") ? smoothClient(levels) : validSmoothServer,
 		} as never;
 	}
 

@@ -34,6 +34,11 @@ type MappingCollection = {
 	encodingId: string;
 	items: DnsMappingDto[];
 };
+type DeleteMappings = {
+	bitmovinAccountId: string;
+	encodingId: string;
+	confirmMappingIds: string[];
+} & ({ mode: "collection"; confirmEncodingId: string } | { mode?: undefined });
 const collectionLabels = {
 	en: {
 		open: "Clear DNS mapping collection",
@@ -132,6 +137,12 @@ export function DnsMappingsSettingsPanel({
 			throw new ApiError(409, t("settingsX.incompleteDnsMappings"));
 		return items;
 	};
+	const submitRemoval = (command: DeleteMappings) =>
+		apiFetch<{ ids: string[]; unresolvedIds: string[] }>(base, {
+			method: "DELETE",
+			body: JSON.stringify(command),
+		});
+
 	const removeAll = useMutation({
 		mutationFn: async (encodingId: string) => {
 			const items = await loadMappings(encodingId);
@@ -144,16 +155,10 @@ export function DnsMappingsSettingsPanel({
 				)
 			)
 				return false;
-			const response = await apiFetch<{
-				ids: string[];
-				unresolvedIds: string[];
-			}>(base, {
-				method: "DELETE",
-				body: JSON.stringify({
-					bitmovinAccountId,
-					encodingId,
-					confirmMappingIds: items.map((item) => item.id),
-				}),
+			const response = await submitRemoval({
+				bitmovinAccountId,
+				encodingId,
+				confirmMappingIds: items.map((item) => item.id),
 			});
 			if (response.unresolvedIds.length) {
 				await invalidate();
@@ -177,16 +182,13 @@ export function DnsMappingsSettingsPanel({
 		},
 	});
 	const clearCollection = useMutation({
-		mutationFn: (snapshot: MappingCollection) =>
-			apiFetch<{ ids: string[]; unresolvedIds: string[] }>(base, {
-				method: "DELETE",
-				body: JSON.stringify({
-					mode: "collection",
-					bitmovinAccountId: snapshot.accountId,
-					encodingId: snapshot.encodingId,
-					confirmEncodingId: typed,
-					confirmMappingIds: snapshot.items.map((item) => item.id),
-				}),
+		mutationFn: (snapshot: MappingCollection & { confirmEncodingId: string }) =>
+			submitRemoval({
+				mode: "collection",
+				bitmovinAccountId: snapshot.accountId,
+				encodingId: snapshot.encodingId,
+				confirmEncodingId: snapshot.confirmEncodingId,
+				confirmMappingIds: snapshot.items.map((item) => item.id),
 			}),
 		onSettled: () => {
 			setCollection(null);
@@ -444,16 +446,18 @@ export function DnsMappingsSettingsPanel({
 								type="button"
 								variant="destructive"
 								disabled={typed !== selected.encodingId || removalBusy}
-								onClick={() => clearCollection.mutate(selected)}
+								onClick={() =>
+									clearCollection.mutate({
+										...selected,
+										confirmEncodingId: typed,
+									})
+								}
 							>
 								{labels.confirm}
 							</Button>
 						</div>
 					)}
 				</Dialog>
-			</RoleAccess>
-
-			<RoleAccess control="settings.live.dns">
 				<Dialog
 					open={createOpen}
 					onOpenChange={(open) => {

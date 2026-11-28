@@ -71,6 +71,7 @@ const cases: WireCase[] = [
 			encodingId: "enc-id",
 			serverManifestName: "test.ism",
 			clientManifestName: "test.ismc",
+			version: "V1",
 			outputs: [{ outputId: "origin-id", outputPath: "test/" }],
 		},
 	},

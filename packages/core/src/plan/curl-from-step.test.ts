@@ -30,6 +30,30 @@ function step(
 }
 
 describe("curlForStep — endpoint mapping", () => {
+	it("includes the provider-required V1 on default Smooth manifest commands", () => {
+		const payload = {
+			generationMode: "DEFAULT",
+			name: "Test Smooth manifest",
+			serverManifestName: "main.ism",
+			clientManifestName: "main.ismc",
+			outputPath: "smooth/",
+		};
+		const result = curlForStep(
+			step({
+				kind: "CREATE_MANIFEST_SMOOTH",
+				payload,
+				refs: { encodingId: "encode", outputId: "output" },
+				request: {
+					...payload,
+					refs: { encodingId: "encode-id", outputId: "output-id" },
+				},
+			}),
+		);
+		if (!result.ok) throw Error(result.code);
+		expect(result.command).toContain("/encoding/manifests/smooth/default");
+		expect(result.command).toContain('"version": "V1"');
+	});
+
 	it("refuses to reconstruct masked caption paths without matching successful object-input and caption receipts", () => {
 		const entry = step({
 			kind: "CREATE_CEA608_INPUT_STREAM",

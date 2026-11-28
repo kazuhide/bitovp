@@ -47,6 +47,7 @@ import {
 	PositionMode,
 	SmoothManifestContentProtection,
 	SmoothManifestDefault,
+	SmoothManifestDefaultVersion,
 	SmoothStreamingManifest,
 	SmoothStreamingRepresentation,
 	SpriteRepresentation,
@@ -941,6 +942,7 @@ export function createManifestOps(
 					encodingId: p.encodingId,
 					serverManifestName: p.serverManifestName,
 					clientManifestName: p.clientManifestName,
+					version: SmoothManifestDefaultVersion.V1,
 					name: p.name,
 					outputs: requestedOutputs,
 				});

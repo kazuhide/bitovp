@@ -58,6 +58,7 @@ export function manifestCurlSnapshot(
 					: globalDash,
 		);
 		body.name = String(snapshot.name ?? "");
+		if (defaultSmooth) body.version = "V1";
 		for (const field of ["hlsMasterPlaylistVersion", "hlsMediaPlaylistVersion"])
 			if (typeof body[field] === "string")
 				body[field] = body[field].replace(/^HLS_V/, "");

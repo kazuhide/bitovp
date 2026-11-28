@@ -397,6 +397,30 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 			expect(send.mock.calls.map(([, init]) => init.method)).toEqual(["GET"]);
 		});
 
+		it("does not dispatch after the stream collection claim expires during preflight", async () => {
+			const contract = contracts.find(({ kind }) => kind === "CREATE_STREAM");
+			const s = await seed(own, a, contract);
+			const filterId = await attachFilter(s);
+			send.mockImplementationOnce(async () => {
+				const receipt = await own.encodingResourceRemoval.findFirstOrThrow({
+					where: { sourceId: s.sourceId },
+				});
+				vi.spyOn(Date, "now").mockReturnValue(
+					receipt.updatedAt.getTime() + 60_000,
+				);
+				return Response.json({
+					status: "SUCCESS",
+					data: { result: { filters: [{ id: filterId }] } },
+				});
+			});
+			const res = await submit(s, "remove", {
+				filters: { mode: "collection", filterIds: [filterId] },
+			});
+			expect(res.status).toBe(409);
+			expect(await res.json()).toMatchObject({ state: "REFUSED" });
+			expect(send.mock.calls.map(([, init]) => init.method)).toEqual(["GET"]);
+		});
+
 		it("keeps an uncertain collection delete pending and verifies it without resending", async () => {
 			const contract = contracts.find(({ kind }) => kind === "CREATE_STREAM");
 			const s = await seed(own, a, contract);

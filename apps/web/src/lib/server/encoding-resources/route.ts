@@ -257,6 +257,7 @@ export function resourceSdk(
 		fixedDetailPath?: string;
 		streamFilterPath?: string;
 		streamFilterDeleteIds?: readonly string[];
+		beforeStreamFilterDelete?: () => void;
 	} = {},
 ) {
 	// Typed endpoints can omit their discriminator. Check a supplied value before
@@ -279,6 +280,9 @@ export function resourceSdk(
 		apiKey: access.apiKey,
 		...(access.tenantOrgId ? { tenantOrgId: access.tenantOrgId } : {}),
 		fetch: async (url, init) => {
+			const path = new URL(String(url)).pathname.replace(/\/$/, "");
+			if (init?.method === "DELETE" && path === expected.streamFilterPath)
+				expected.beforeStreamFilterDelete?.();
 			const response = await fetch(url, { ...init, signal });
 			if (!response.ok) return response;
 			let body: unknown;
@@ -289,7 +293,6 @@ export function resourceSdk(
 			}
 			const envelope = object(body);
 			const rawResult = object(envelope?.data)?.result;
-			const path = new URL(String(url)).pathname.replace(/\/$/, "");
 			if (
 				expected.streamFilterPath &&
 				(path === expected.streamFilterPath ||

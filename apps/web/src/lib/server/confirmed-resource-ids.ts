@@ -10,3 +10,20 @@ export function sameConfirmedResourceIds(
 	}
 	return pending.size === 0;
 }
+
+/** The pinned SDK wraps collection responses. Check the raw result instead. */
+export function acknowledgedCollectionIds(
+	value: unknown,
+	confirmed: readonly string[],
+) {
+	return (
+		Array.isArray(value) &&
+		sameConfirmedResourceIds(
+			value.map((row) => {
+				const id: unknown = row?.id;
+				return typeof id === "string" ? id : undefined;
+			}),
+			confirmed,
+		)
+	);
+}

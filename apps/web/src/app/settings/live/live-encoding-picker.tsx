@@ -14,6 +14,17 @@ import { useT } from "@/lib/i18n/context";
 
 const CHANNEL_PAGE = 100;
 
+export function useLiveEncodingChannels(enabled = true) {
+	return useQuery({
+		queryKey: ["live-channels-picker"],
+		queryFn: () =>
+			apiFetch<{ items: LiveChannelListItem[]; nextCursor?: string }>(
+				`/api/live-channels?limit=${CHANNEL_PAGE}`,
+			),
+		enabled,
+	});
+}
+
 /**
  * Candidate source: this app's OWN `LiveChannel` rows (`GET /api/live-channels`),
  * not a Bitmovin list call.
@@ -51,13 +62,7 @@ export function LiveEncodingPicker({
 	const { t } = useT();
 	const list = listLabel ?? t("settingsX.liveChannelsInThisApp");
 	const inputPlaceholder = placeholder ?? t("settingsX.encodingIdOrPasteOne");
-	const channels = useQuery({
-		queryKey: ["live-channels-picker"],
-		queryFn: () =>
-			apiFetch<{ items: LiveChannelListItem[]; nextCursor?: string }>(
-				`/api/live-channels?limit=${CHANNEL_PAGE}`,
-			),
-	});
+	const channels = useLiveEncodingChannels();
 
 	const rows = channels.data?.items ?? [];
 	const local: ResourceIdCandidate[] = rows

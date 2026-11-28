@@ -10,7 +10,60 @@ vi.mock("@/lib/api", async (original) => ({
 	apiFetch,
 }));
 
+it("requires the selected stream ID before deleting the displayed filter collection", async () => {
+	apiFetch.mockReset();
+	const endpoint = "/api/encoding-jobs/job/resources";
+	const id = "11111111-1111-4111-8111-111111111111";
+	const filterId = "22222222-2222-4222-8222-222222222222";
+	apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+		if (init?.method === "DELETE")
+			return { state: "REMOVED", disposition: "removed" };
+		const search = new URL(url, "http://fixture.invalid").searchParams;
+		if (search.get("view") === "filterCollection")
+			return { filterIds: [filterId], pending: false };
+		if (search.size) return { fields: { id } };
+		return {
+			canManage: true,
+			canRemove: true,
+			resources: [
+				{ id, step: "stream:video", attempt: 1, hasFilterCollection: true },
+			],
+		};
+	});
+	const user = userEvent.setup();
+	renderWithQuery(<ProviderResources endpoint={endpoint} />);
+	await user.click(screen.getByText("Inspect provider resources"));
+	await user.selectOptions(
+		await screen.findByRole("combobox", { name: "Resource" }),
+		screen.getByRole("option", { name: `stream:video · ${id}` }),
+	);
+	await user.click(
+		screen.getByRole("button", { name: "Remove all filter attachments" }),
+	);
+	const confirm = await screen.findByRole("button", {
+		name: "Remove all attachments",
+	});
+	expect(await screen.findByText(filterId)).toBeVisible();
+	expect(confirm).toBeDisabled();
+	await user.type(screen.getByRole("textbox", { name: "Stream ID" }), id);
+	await user.click(confirm);
+	expect(apiFetch).toHaveBeenCalledWith(
+		endpoint,
+		expect.objectContaining({
+			method: "DELETE",
+			body: JSON.stringify({
+				step: "stream:video",
+				attempt: 1,
+				confirmResourceId: id,
+				filters: { mode: "collection", filterIds: [filterId] },
+				retry: true,
+			}),
+		}),
+	);
+});
+
 it("reads measurements only after selecting Output information and resets to details for another muxing", async () => {
+	apiFetch.mockReset();
 	const endpoint = "/api/encoding-jobs/job/resources";
 	apiFetch.mockImplementation(async (url: string) => {
 		const query = new URL(url, "http://fixture.invalid").searchParams;

@@ -23,9 +23,10 @@ import {
 } from "./route";
 import { object, parseResourceLog, selectResource } from "./selection";
 import {
-	recordedFilterScopes,
+	recordedStreamFilters,
 	streamFilterChange,
 	streamFilterRemovalSchema,
+	streamFilterTargets,
 } from "./stream-filter-removal";
 
 const commandSchema = z.strictObject({
@@ -38,6 +39,7 @@ const commandSchema = z.strictObject({
 type Command = z.infer<typeof commandSchema>;
 type Access = NonNullable<Awaited<ReturnType<typeof originalAccess>>>;
 type Action = "remove" | "verify";
+const sendingLeaseMs = 60_000;
 class Refusal extends Error {
 	constructor(
 		readonly status: number,
@@ -63,13 +65,18 @@ async function lookup(
 	const change =
 		cmd.filters && history && "jobId" in owner
 			? (() => {
-					const scopes = recordedFilterScopes(history, selected, cmd.filters);
-					if (!scopes)
+					const proof = recordedStreamFilters(history, selected);
+					if (
+						!proof ||
+						streamFilterTargets(cmd.filters).some(
+							(id) => !proof.ids.includes(id),
+						)
+					)
 						throw new Refusal(
 							409,
 							"The filter attachments cannot be verified from this execution.",
 						);
-					selected.parentScopes.push(...scopes);
+					selected.parentScopes.push(...proof.scopes);
 					return streamFilterChange(cmd.filters, selected.address);
 				})()
 			: undefined;
@@ -120,14 +127,31 @@ async function reserve(
 		if (!recordedScopeMatches(source, selected, access))
 			throw new Refusal(409, "The recorded provider account changed.");
 		const providerId = selected.address.id;
-		const key = {
+		const sourceKey = {
 			sourceKind,
 			sourceId,
-			step: change ? `${cmd.step}:filters:${change.receiptSuffix}` : cmd.step,
 			attempt: cmd.attempt,
 			providerId,
 		};
-		const prior = await tx.encodingResourceRemoval.findFirst({ where: key });
+		const pendingCollection =
+			change?.collection && action === "verify"
+				? await tx.encodingResourceRemoval.findFirst({
+						where: {
+							...sourceKey,
+							step: { startsWith: `${cmd.step}:filters:collection:` },
+							state: { in: ["SENDING", "UNKNOWN"] },
+						},
+					})
+				: null;
+		const key = {
+			...sourceKey,
+			step:
+				pendingCollection?.step ??
+				(change ? `${cmd.step}:filters:${change.receiptSuffix}` : cmd.step),
+		};
+		const prior =
+			pendingCollection ??
+			(await tx.encodingResourceRemoval.findFirst({ where: key }));
 		if (
 			prior &&
 			(prior.accountId !== access.id ||
@@ -165,7 +189,7 @@ async function reserve(
 			throw new Refusal(409, "There is no pending removal to verify.");
 		if (
 			prior?.state === "SENDING" &&
-			Date.now() - prior.updatedAt.getTime() < 60_000
+			Date.now() - prior.updatedAt.getTime() < sendingLeaseMs
 		)
 			throw new Refusal(409, "The removal is still in progress.");
 		if (action === "remove" && prior && !cmd.retry)
@@ -202,7 +226,7 @@ async function reserve(
 			? await tx.encodingResourceRemoval.update({
 					where: { id: prior.id, token: prior.token },
 					data: state,
-					select: { id: true },
+					select: { id: true, updatedAt: true },
 				})
 			: await tx.encodingResourceRemoval.create({
 					data: {
@@ -212,11 +236,12 @@ async function reserve(
 						accountId: access.id,
 						scopeVersion: access.resourceScopeVersion,
 					},
-					select: { id: true },
+					select: { id: true, updatedAt: true },
 				});
 		return {
 			done: false as const,
 			id: claim.id,
+			leaseExpiresAt: claim.updatedAt.getTime() + sendingLeaseMs,
 			token,
 			selected,
 			remove,
@@ -237,6 +262,13 @@ export async function removeResource(
 	}
 	const parsed = commandSchema.safeParse(await readJson(req));
 	if (!parsed.success) return validationError(parsed.error);
+	const filters = parsed.data.filters;
+	if (
+		action === "remove" &&
+		filters?.mode === "collection" &&
+		!filters.filterIds
+	)
+		return jsonError(400, "Confirm the filter collection before removing it.");
 	try {
 		const ctx = await getServerContext();
 		if (!mayRemove(ctx)) return jsonError(403, "Operator access required.");
@@ -252,20 +284,30 @@ export async function removeResource(
 		if (claim.done)
 			return NextResponse.json({ state: "REMOVED", disposition: "recorded" });
 		const { family, address } = claim.selected;
+		let sent = false;
 		const api = resourceSdk(access, AbortSignal.timeout(15_000), address.id, {
 			fixedDetailPath: family.fixedDetailPath?.(address),
 			streamFilterPath: claim.change?.path,
+			streamFilterDeleteIds: claim.change?.collection
+				? claim.change.confirmedIds
+				: undefined,
+			beforeStreamFilterDelete: claim.change?.collection
+				? () => {
+						if (Date.now() >= claim.leaseExpiresAt)
+							throw new Refusal(409, "The filter collection claim expired.");
+						sent = true;
+					}
+				: undefined,
 			discriminator: family.expectedDiscriminator,
 		});
 		let state: "REFUSED" | "UNKNOWN" | "REMOVED" = "UNKNOWN";
 		let disposition: "removed" | "absent" | "present" | "unknown" | "refused" =
 			"unknown";
-		let sent = false;
 		try {
 			if (!claim.change) await family.detail(api, address);
 			const inspection = await claim.change?.inspect(
 				api,
-				action === "remove" && !claim.uncertain,
+				action === "remove" && (claim.change?.collection || !claim.uncertain),
 			);
 			if (inspection?.complete && inspection.present.length === 0) {
 				state = "REMOVED";
@@ -274,7 +316,7 @@ export async function removeResource(
 				if (!inspection || inspection.present.length > 0)
 					disposition = "present";
 			} else {
-				sent = true;
+				if (!claim.change?.collection) sent = true;
 				if (claim.change && inspection)
 					await claim.change.remove(api, inspection);
 				else if (claim.remove) await claim.remove(api, address);

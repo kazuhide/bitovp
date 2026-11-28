@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { roleAtLeast } from "@/lib/auth/roles";
 import { aisaLiveAccessAllowed } from "../aisa-live-access";
+import { acknowledgedCollectionIds } from "../confirmed-resource-ids";
 import { getServerContext, type ServerContext } from "../context";
 import {
 	invalidIdResponse,
@@ -30,6 +31,11 @@ import {
 } from "./resource-children";
 import { removalAllowed } from "./retirement";
 import { object, parseResourceLog, selectResource } from "./selection";
+import {
+	readEntireStreamFilterIds,
+	recordedStreamFilters,
+	streamFilterPath,
+} from "./stream-filter-removal";
 
 export type ResourceOwner =
 	| { jobId: string }
@@ -49,6 +55,7 @@ const query = z
 				"childMetadata",
 				"diagnostic",
 				"childDiagnostic",
+				"filterCollection",
 			])
 			.default("detail"),
 		collection: z.string().min(1).max(48).optional(),
@@ -249,6 +256,8 @@ export function resourceSdk(
 		encodingId?: string;
 		fixedDetailPath?: string;
 		streamFilterPath?: string;
+		streamFilterDeleteIds?: readonly string[];
+		beforeStreamFilterDelete?: () => void;
 	} = {},
 ) {
 	// Typed endpoints can omit their discriminator. Check a supplied value before
@@ -271,6 +280,9 @@ export function resourceSdk(
 		apiKey: access.apiKey,
 		...(access.tenantOrgId ? { tenantOrgId: access.tenantOrgId } : {}),
 		fetch: async (url, init) => {
+			const path = new URL(String(url)).pathname.replace(/\/$/, "");
+			if (init?.method === "DELETE" && path === expected.streamFilterPath)
+				expected.beforeStreamFilterDelete?.();
 			const response = await fetch(url, { ...init, signal });
 			if (!response.ok) return response;
 			let body: unknown;
@@ -281,7 +293,6 @@ export function resourceSdk(
 			}
 			const envelope = object(body);
 			const rawResult = object(envelope?.data)?.result;
-			const path = new URL(String(url)).pathname.replace(/\/$/, "");
 			if (
 				expected.streamFilterPath &&
 				(path === expected.streamFilterPath ||
@@ -294,9 +305,16 @@ export function resourceSdk(
 					init?.method === "DELETE" &&
 					path === `${expected.streamFilterPath}/${String(result?.id ?? "")}` &&
 					isResourceId(result?.id);
+				const isCollectionRemoval =
+					init?.method === "DELETE" &&
+					path === expected.streamFilterPath &&
+					expected.streamFilterDeleteIds !== undefined &&
+					acknowledgedCollectionIds(rawResult, expected.streamFilterDeleteIds);
 				if (
 					envelope?.status !== "SUCCESS" ||
-					!(isCollectionRead ? Array.isArray(result?.filters) : isOneRemoval)
+					!(isCollectionRead
+						? Array.isArray(result?.filters)
+						: isOneRemoval || isCollectionRemoval)
 				)
 					throw new InvalidResourceResponse();
 				return response;
@@ -378,6 +396,14 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 								{
 									...s,
 									retainedForPublication: row.retainedOutputIds.has(s.id),
+									...(!live &&
+										s.kind === "CREATE_STREAM" &&
+										[...log.steps.values()].some(
+											(entry) =>
+												entry.kind === "CREATE_STREAM_FILTERS" &&
+												entry.status === "DONE" &&
+												entry.refs.streamId === s.step,
+										) && { hasFilterCollection: true }),
 									removalState:
 										states.get(JSON.stringify([s.step, s.attempt, s.id])) ??
 										null,
@@ -397,6 +423,17 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 				409,
 				"This resource was replaced. Refresh the execution.",
 			);
+		const filterCollection =
+			view === "filterCollection" ? recordedStreamFilters(log, selected) : null;
+		if (view === "filterCollection") {
+			if (!mayRemove(ctx)) return jsonError(403, "Operator access required.");
+			if (!("jobId" in owner) || !row.removable || !filterCollection)
+				return jsonError(
+					409,
+					"This stream's filter attachments cannot be verified.",
+				);
+			selected.parentScopes.push(...filterCollection.scopes);
+		}
 		const access = await originalAccess(ctx, row, selected);
 		if (!access)
 			return jsonError(
@@ -433,6 +470,30 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 		const page = { offset, limit: pageSize };
 		const childId = parsed.data.childId;
 		try {
+			if ("jobId" in owner && filterCollection) {
+				const pending = await ctx.prisma.encodingResourceRemoval.findFirst({
+					where: {
+						pendingJobId: owner.jobId,
+						providerId: address.id,
+						attempt,
+						step: { startsWith: `${step}:filters:collection:` },
+						state: { in: ["SENDING", "UNKNOWN"] },
+					},
+					select: { id: true },
+				});
+				const api = resourceSdk(access, signal, address.id, {
+					streamFilterPath: streamFilterPath(address),
+				});
+				const filterIds = await readEntireStreamFilterIds(api, address);
+				const blocked = filterIds.some(
+					(id) => !filterCollection.ids.includes(id),
+				);
+				return respond({
+					filterIds: blocked ? [] : filterIds,
+					blocked,
+					pending: !!pending,
+				});
+			}
 			if (view === "diagnostic" && diagnostic)
 				return respond(
 					await inspectDiagnostic(

@@ -2,7 +2,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
 	shownOfTotal,
@@ -23,9 +23,40 @@ import {
 	type DnsMappingDto,
 	dnsMappingCreateSchema,
 } from "@/lib/live-runtime/schemas";
-import { LiveEncodingPicker } from "./live-encoding-picker";
+import {
+	LiveEncodingPicker,
+	useLiveEncodingChannels,
+} from "./live-encoding-picker";
 
 type FormValues = { encodingId: string; subdomain: string; name: string };
+type MappingCollection = {
+	accountId: string;
+	encodingId: string;
+	items: DnsMappingDto[];
+};
+type DeleteMappings = {
+	bitmovinAccountId: string;
+	encodingId: string;
+	confirmMappingIds: string[];
+} & ({ mode: "collection"; confirmEncodingId: string } | { mode?: undefined });
+const collectionLabels = {
+	en: {
+		open: "Clear DNS mapping collection",
+		listed: "Remove listed mappings",
+		confirm: "Clear mappings",
+		id: "Encoding ID",
+		effect:
+			"This removes every ingest hostname for the selected encoding when Bitmovin processes the deletion. This can disrupt reconnection during a broadcast. Enter the encoding ID to confirm.",
+	},
+	ja: {
+		open: "DNS マッピングを一括削除",
+		listed: "一覧のマッピングを削除",
+		confirm: "すべて削除",
+		id: "エンコーディングID",
+		effect:
+			"Bitmovin が処理する時点で、選択したエンコードのすべての入力用ホスト名が削除されます。配信中は再接続できなくなる場合があります。エンコーディングIDを入力して確定してください。",
+	},
+};
 
 /**
  * DNS ingest mappings, deliberately thin: a stable hostname pointing at one live
@@ -38,9 +69,13 @@ export function DnsMappingsSettingsPanel({
 }: {
 	bitmovinAccountId: string;
 }) {
-	const { t } = useT();
+	const { locale, t } = useT();
+	const labels = collectionLabels[locale];
 	const queryClient = useQueryClient();
 	const [createOpen, setCreateOpen] = useState(false);
+	const [collection, setCollection] = useState<MappingCollection | null>(null);
+	const [typed, setTyped] = useState("");
+	const confirmId = useId();
 
 	const base = "/api/live/dns-mappings";
 	const queryKey = ["live-dns-mappings", bitmovinAccountId];
@@ -49,6 +84,22 @@ export function DnsMappingsSettingsPanel({
 		queryKey,
 		`${base}?bitmovinAccountId=${bitmovinAccountId}`,
 	);
+	const channels = useLiveEncodingChannels(list.items.length > 0);
+	const managed = new Set(
+		channels.data?.items.flatMap((channel) =>
+			channel.origin === "MANAGED" &&
+			channel.bitmovinEncodingId &&
+			channel.bitmovinAccountId === bitmovinAccountId &&
+			(channel.status === "RUNNING" || channel.status === "STOPPED")
+				? [channel.bitmovinEncodingId]
+				: [],
+		),
+	);
+	const selected =
+		collection?.accountId === bitmovinAccountId &&
+		managed.has(collection.encodingId)
+			? collection
+			: null;
 
 	const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
@@ -73,18 +124,28 @@ export function DnsMappingsSettingsPanel({
 		onSuccess: invalidate,
 	});
 
+	const loadMappings = async (encodingId: string) => {
+		const query = new URLSearchParams({
+			bitmovinAccountId,
+			encodingId,
+			limit: String(LIST_LIMIT_MAX),
+		});
+		const { items, totalCount } = await apiFetch<PageDto<DnsMappingDto>>(
+			`${base}?${query}`,
+		);
+		if (!items.length || items.length !== totalCount)
+			throw new ApiError(409, t("settingsX.incompleteDnsMappings"));
+		return items;
+	};
+	const submitRemoval = (command: DeleteMappings) =>
+		apiFetch<{ ids: string[]; unresolvedIds: string[] }>(base, {
+			method: "DELETE",
+			body: JSON.stringify(command),
+		});
+
 	const removeAll = useMutation({
 		mutationFn: async (encodingId: string) => {
-			const query = new URLSearchParams({
-				bitmovinAccountId,
-				encodingId,
-				limit: String(LIST_LIMIT_MAX),
-			});
-			const { items, totalCount } = await apiFetch<PageDto<DnsMappingDto>>(
-				`${base}?${query}`,
-			);
-			if (!items.length || items.length !== totalCount)
-				throw new ApiError(409, t("settingsX.incompleteDnsMappings"));
+			const items = await loadMappings(encodingId);
 			if (
 				!window.confirm(
 					t("settingsX.deleteEncodingDnsMappings", {
@@ -94,16 +155,10 @@ export function DnsMappingsSettingsPanel({
 				)
 			)
 				return false;
-			const response = await apiFetch<{
-				ids: string[];
-				unresolvedIds: string[];
-			}>(base, {
-				method: "DELETE",
-				body: JSON.stringify({
-					bitmovinAccountId,
-					encodingId,
-					confirmMappingIds: items.map((item) => item.id),
-				}),
+			const response = await submitRemoval({
+				bitmovinAccountId,
+				encodingId,
+				confirmMappingIds: items.map((item) => item.id),
 			});
 			if (response.unresolvedIds.length) {
 				await invalidate();
@@ -113,6 +168,37 @@ export function DnsMappingsSettingsPanel({
 		},
 		onSuccess: (removed) => {
 			if (removed) invalidate();
+		},
+	});
+	const previewCollection = useMutation({
+		mutationFn: async (encodingId: string) => ({
+			accountId: bitmovinAccountId,
+			encodingId,
+			items: await loadMappings(encodingId),
+		}),
+		onSuccess: (snapshot) => {
+			setTyped("");
+			setCollection(snapshot);
+		},
+	});
+	const clearCollection = useMutation({
+		mutationFn: (snapshot: MappingCollection & { confirmEncodingId: string }) =>
+			submitRemoval({
+				mode: "collection",
+				bitmovinAccountId: snapshot.accountId,
+				encodingId: snapshot.encodingId,
+				confirmEncodingId: snapshot.confirmEncodingId,
+				confirmMappingIds: snapshot.items.map((item) => item.id),
+			}),
+		onSettled: () => {
+			setCollection(null);
+			setTyped("");
+			return Promise.all([
+				invalidate(),
+				queryClient.invalidateQueries({
+					queryKey: ["live-channel-dns-mappings"],
+				}),
+			]);
 		},
 	});
 
@@ -146,7 +232,16 @@ export function DnsMappingsSettingsPanel({
 		create.mutate(parsed.data);
 	});
 
-	const mutationError = remove.error ?? removeAll.error;
+	const mutationError =
+		remove.error ??
+		removeAll.error ??
+		previewCollection.error ??
+		clearCollection.error;
+	const removalBusy =
+		remove.isPending ||
+		removeAll.isPending ||
+		previewCollection.isPending ||
+		clearCollection.isPending;
 	const firstMappingByEncoding = new Map<string, string>();
 	for (const item of list.items)
 		if (item.encodingId && !firstMappingByEncoding.has(item.encodingId))
@@ -210,9 +305,9 @@ export function DnsMappingsSettingsPanel({
 						{list.items.map((mapping) => (
 							<li
 								key={mapping.id}
-								className="flex items-center gap-4 px-4 py-3"
+								className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"
 							>
-								<div className="min-w-0 flex-1">
+								<div className="min-w-0 grow basis-40">
 									{/* block, not bare inline: overflow/text-overflow do not
 									    apply to non-replaced inlines, so this truncate
 									    was a NO-OP — found independently by two
@@ -238,11 +333,7 @@ export function DnsMappingsSettingsPanel({
 									<Button
 										variant="destructive"
 										size="sm"
-										disabled={
-											remove.isPending ||
-											removeAll.isPending ||
-											!mapping.encodingId
-										}
+										disabled={removalBusy || !mapping.encodingId}
 										onClick={() => {
 											if (
 												mapping.encodingId &&
@@ -267,13 +358,33 @@ export function DnsMappingsSettingsPanel({
 											<Button
 												variant="secondary"
 												size="sm"
-												disabled={remove.isPending || removeAll.isPending}
+												disabled={removalBusy}
 												onClick={() => {
 													if (mapping.encodingId)
 														removeAll.mutate(mapping.encodingId);
 												}}
 											>
-												{t("settingsX.deleteAllDnsMappings")}
+												{managed.has(mapping.encodingId)
+													? labels.listed
+													: t("settingsX.deleteAllDnsMappings")}
+											</Button>
+										)}
+									{mapping.encodingId &&
+										managed.has(mapping.encodingId) &&
+										firstMappingByEncoding.get(mapping.encodingId) ===
+											mapping.id && (
+											<Button
+												type="button"
+												variant="secondary"
+												size="sm"
+												disabled={removalBusy}
+												onClick={() => {
+													clearCollection.reset();
+													if (mapping.encodingId)
+														previewCollection.mutate(mapping.encodingId);
+												}}
+											>
+												{labels.open}
 											</Button>
 										)}
 								</RoleAccess>
@@ -300,6 +411,53 @@ export function DnsMappingsSettingsPanel({
 			</div>
 
 			<RoleAccess control="settings.live.dns">
+				<Dialog
+					open={!!selected}
+					onOpenChange={(open) => {
+						if (!open && !clearCollection.isPending) {
+							setCollection(null);
+							setTyped("");
+						}
+					}}
+					title={labels.open}
+					description={labels.effect}
+				>
+					{selected && (
+						<div className="space-y-3">
+							<ul className="max-h-36 list-inside list-disc overflow-auto font-mono text-xs">
+								{selected.items.map((item) => (
+									<li key={item.id} className="break-all">
+										{item.hostname ?? item.subdomain ?? item.id}
+									</li>
+								))}
+							</ul>
+							<p className="break-all font-mono text-xs">
+								{selected.encodingId}
+							</p>
+							<Field label={labels.id} htmlFor={confirmId}>
+								<Input
+									id={confirmId}
+									value={typed}
+									autoComplete="off"
+									onChange={(event) => setTyped(event.target.value)}
+								/>
+							</Field>
+							<Button
+								type="button"
+								variant="destructive"
+								disabled={typed !== selected.encodingId || removalBusy}
+								onClick={() =>
+									clearCollection.mutate({
+										...selected,
+										confirmEncodingId: typed,
+									})
+								}
+							>
+								{labels.confirm}
+							</Button>
+						</div>
+					)}
+				</Dialog>
 				<Dialog
 					open={createOpen}
 					onOpenChange={(open) => {

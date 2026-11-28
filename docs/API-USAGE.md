@@ -208,12 +208,27 @@ recorded stream's `step`, `attempt` and `confirmResourceId` with
 current set of recorded attachments. The operation detaches stream filters.
 Use the same body with `POST` to check a pending removal.
 
+To delete the attachment collection in one provider request, send
+`filters: { mode: "collection", filterIds }` with the same recorded stream
+identity. The selected stream and every listed attachment must be recorded by
+this job. The complete current provider set must match the confirmed IDs. The
+provider applies the deletion to the entire stream attachment collection when
+it processes the request, including any changes made outside BitOVP after the
+check.
+
 ### Live DNS mappings
 
 `DELETE /api/live/dns-mappings` removes the confirmed mappings for one
 Live encoding by ID. A 207 response reports IDs that still need verification. Use the per-encoding GET to retrieve that set. In the delete
 request, send `bitmovinAccountId`, `encodingId` and `confirmMappingIds`.
 Settings → Live → DNS mappings offers the same operation after confirmation.
+
+For one BitOVP-managed Live run, add `mode: "collection"` and
+`confirmEncodingId` matching `encodingId` to remove the entire ingest DNS
+collection in one provider request. BitOVP checks the run, its original
+account and the complete confirmed list. Any mappings added outside BitOVP
+after the check are also subject to deletion. Check the list before retrying
+an interrupted request.
 
 ## Public request body limits
 

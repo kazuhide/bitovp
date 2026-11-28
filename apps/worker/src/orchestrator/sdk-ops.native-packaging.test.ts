@@ -23,7 +23,7 @@ const kid = "cd".repeat(16);
 const pssh = "Zml4dHVyZSBwc3No";
 const dest = { outputKey: "origin", path: "packaging-test/" };
 
-function setup(stamp?: CreateStamp) {
+function setup(stamp?: CreateStamp, withholdProviderDetails?: true) {
 	const audit = vi.fn(async () => {});
 	const transport = vi.fn(async (_url: string, _request: RequestInit) =>
 		Response.json(
@@ -42,6 +42,7 @@ function setup(stamp?: CreateStamp) {
 					tenantOrgId: "tenant-fixture",
 					bitmovinAccountId: "fixture",
 					stamp,
+					withholdProviderDetails,
 				},
 				audit,
 			),
@@ -457,7 +458,7 @@ it("preserves a confirmed provider refusal for the ID3 retry journal", async () 
 it.each([
 	403, 429,
 ])("retains ID3 refusal %i when the response stream breaks", async (status) => {
-	const { context, transport } = setup();
+	const { audit, context, transport } = setup(undefined, true);
 	transport.mockImplementationOnce(
 		async () =>
 			new Response(
@@ -483,6 +484,14 @@ it.each([
 		method: "POST",
 		redirect: "manual",
 	});
+	expect(audit).toHaveBeenCalledExactlyOnceWith(
+		expect.objectContaining({
+			method: "POST",
+			path: `/encoding/encodings/${enc}/muxings/progressive-ts/${muxingId}/id3/raw`,
+			statusCode: status,
+			error: "Bitmovin request failed",
+		}),
+	);
 });
 
 it("preserves the original verification ID3 POST refusal without relying on read access", async () => {

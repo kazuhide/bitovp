@@ -36,6 +36,7 @@ import {
 import { createLiveStartFetch } from "./live-start-fetch";
 import { createMonitoringFetch } from "./monitoring-fetch";
 import { createOrphanStopFetch } from "./orphan-stop-fetch";
+import { ProviderCreateRefusal } from "./provider-create-refusal";
 import { createRetryingFetch } from "./retrying-fetch";
 import { type CreateStamp, createStampingFetch } from "./stamping-fetch";
 import type { StartRetryControl } from "./start-1004-retry";
@@ -2072,7 +2073,8 @@ export function createBitmovinSdkOps(
 			await safeRecord({
 				method,
 				path,
-				statusCode: e.httpStatusCode,
+				statusCode:
+					err instanceof ProviderCreateRefusal ? err.status : e.httpStatusCode,
 				durationMs: Date.now() - startedAt,
 				bitmovinAccountId: options.bitmovinAccountId,
 				request: requestSnapshot,

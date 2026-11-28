@@ -312,7 +312,11 @@ it.each([
 			),
 	);
 	vi.stubGlobal("fetch", transport);
-	const sdk = createBitmovinSdkOps({ apiKey: "test-only" }, async () => {});
+	const audit = vi.fn(async () => {});
+	const sdk = createBitmovinSdkOps(
+		{ apiKey: "test-only", withholdProviderDetails: true },
+		audit,
+	);
 	const request = sdk.createEncodingSupplement(
 		"encoding-id",
 		{ kind: "PSNR", key: "quality", renditionKey: "video" },
@@ -325,6 +329,14 @@ it.each([
 		method: "POST",
 		redirect: "manual",
 	});
+	expect(audit).toHaveBeenCalledExactlyOnceWith(
+		expect.objectContaining({
+			method: "POST",
+			path: "/encoding/encodings/encoding-id/streams/stream-id/qc/psnr",
+			statusCode: status,
+			error: "Bitmovin request failed",
+		}),
+	);
 });
 
 it("keeps a redirected PSNR refusal ambiguous", async () => {

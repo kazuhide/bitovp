@@ -280,8 +280,8 @@ model NativeEncodingOperation {
   state String
   providerId String? @db.Uuid
   passed Boolean?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   @@id([organizationId, id])
   @@index([organizationId, bitmovinAccountId, scopeVersion, createdAt], map: "NativeEncodingOperation_recent")

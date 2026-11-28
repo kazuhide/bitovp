@@ -98,13 +98,13 @@ export function claimNativeOperation(prisma: Prisma, proposal: Proposal) {
 			// after its bounded provider request window elapsed, never replay it.
 			await tx.$executeRaw`
 				UPDATE "NativeEncodingOperation"
-				SET "state" = 'UNKNOWN', "updatedAt" = clock_timestamp() AT TIME ZONE 'UTC'
+				SET "state" = 'UNKNOWN', "updatedAt" = clock_timestamp()
 				WHERE "bitmovinAccountId" = ${scope.bitmovinAccountId}::uuid
 				  AND "scopeVersion" = ${scope.scopeVersion}::uuid
 				  AND "targetId" = ${proposal.targetId}::uuid
 				  AND "state" = 'PENDING'
 				  AND "createdAt" + (${pendingWindowMs}::double precision * interval '1 millisecond')
-					<= clock_timestamp() AT TIME ZONE 'UTC'
+					<= clock_timestamp()
 			`;
 		}
 		const inserted = await tx.nativeEncodingOperation.createMany({
@@ -135,7 +135,7 @@ export async function nativeOperationDispatchBudget(
 	const [row] = await prisma.$queryRaw<{ remainingMs: number }[]>`
 		SELECT (EXTRACT(EPOCH FROM (
 			o."createdAt" + (${pendingWindowMs}::double precision * interval '1 millisecond')
-			- (clock_timestamp() AT TIME ZONE 'UTC')
+			- clock_timestamp()
 		)) * 1000)::double precision AS "remainingMs"
 		FROM "NativeEncodingOperation" o
 		JOIN "BitmovinAccount" a

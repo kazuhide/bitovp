@@ -9,7 +9,8 @@ vi.mock("@/lib/server/context", () => ({
 		},
 	}),
 }));
-vi.mock("@/lib/server/audit", () => ({ writeAuditLog: async () => {} }));
+const { audit } = vi.hoisted(() => ({ audit: vi.fn() }));
+vi.mock("@/lib/server/audit", () => ({ writeAuditLog: audit }));
 
 import { DELETE } from "./route";
 
@@ -20,6 +21,7 @@ const send = vi.fn();
 afterEach(() => {
 	vi.unstubAllGlobals();
 	send.mockReset();
+	audit.mockClear();
 });
 
 function remove() {
@@ -64,6 +66,13 @@ it("deletes only the confirmed DNS mapping IDs after checking the full list", as
 	expect(
 		new Headers(send.mock.calls[1]?.[1].headers).get("X-Tenant-Org-Id"),
 	).toBe("sdk-tenant");
+	expect(audit).toHaveBeenCalledOnce();
+	expect(audit.mock.calls[0]?.[1]).toMatchObject({
+		method: "DELETE",
+		path: `/encoding/live/encodings/${encoding}/dns-mappings/${mapping}`,
+		statusCode: 200,
+		response: { id: mapping },
+	});
 });
 
 it.each([
@@ -93,4 +102,11 @@ it("reports only confirmed IDs with an unresolved removal when the provider repl
 	expect(new URL(send.mock.calls[1]?.[0]).pathname).toBe(
 		`/v1/encoding/live/encodings/${encoding}/dns-mappings/${mapping}`,
 	);
+	expect(audit).toHaveBeenCalledOnce();
+	expect(audit.mock.calls[0]?.[1]).toMatchObject({
+		method: "DELETE",
+		path: `/encoding/live/encodings/${encoding}/dns-mappings/${mapping}`,
+		statusCode: 502,
+		error: expect.any(String),
+	});
 });

@@ -189,38 +189,39 @@ export async function DELETE(req: Request) {
 				409,
 				"The DNS mappings changed. Refresh the list before removing them.",
 			);
-		const outcome = await auditedBitmovinCall({
-			req,
-			ctx,
-			bitmovinAccountId,
-			method: "DELETE",
-			path: `/encoding/live/encodings/${encodingId}/dns-mappings`,
-			request: { confirmMappingIds },
-			call: async () => {
-				const ids: string[] = [];
-				const unresolvedIds: string[] = [];
-				// Use the immutable IDs the operator confirmed for this request.
-				for (const id of confirmMappingIds) {
-					try {
-						const result = await api.encoding.live.encodings.dnsMappings.delete(
-							encodingId,
-							id,
+		const ids: string[] = [];
+		const unresolvedIds: string[] = [];
+		for (const id of confirmMappingIds) {
+			const outcome = await auditedBitmovinCall({
+				req,
+				ctx,
+				bitmovinAccountId,
+				method: "DELETE",
+				path: `/encoding/live/encodings/${encodingId}/dns-mappings/${id}`,
+				call: async () => {
+					const result = await api.encoding.live.encodings.dnsMappings.delete(
+						encodingId,
+						id,
+					);
+					if (result.id !== id)
+						throw Object.assign(
+							new Error("Unexpected DNS mapping response ID"),
+							{
+								httpStatusCode: 502,
+								shortMessage: "Unexpected DNS mapping response ID",
+							},
 						);
-						if (result.id !== id)
-							throw new Error("Unexpected DNS mapping response ID");
-						ids.push(id);
-					} catch {
-						unresolvedIds.push(id);
-					}
-				}
-				return { ids, unresolvedIds };
+					return result;
+				},
+			});
+			(outcome.ok ? ids : unresolvedIds).push(id);
+		}
+		return NextResponse.json(
+			{ ids, unresolvedIds },
+			{
+				status: unresolvedIds.length ? 207 : 200,
 			},
-			responseSnapshot: (result) => result,
-		});
-		if (!outcome.ok) return outcome.response;
-		return NextResponse.json(outcome.result, {
-			status: outcome.result.unresolvedIds.length ? 207 : 200,
-		});
+		);
 	} catch (error) {
 		return routeError(error);
 	}

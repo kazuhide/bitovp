@@ -49,6 +49,7 @@ import {
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
 import { destinationOf } from "./ops/exec-shared";
 import { BitmovinCallError } from "./ops/shared";
+import { SupplementOutputPreflightError } from "./ops/supplements";
 import { pollSleepFor } from "./poll-sleep";
 import { ProviderCreateRefusal } from "./provider-create-refusal";
 import type { SdkOps } from "./sdk-ops";
@@ -1538,16 +1539,15 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 							compensation: err.compensation,
 						});
 					}
-					if (
-						recoverableCreate &&
-						!wasRunning &&
-						!reconcileCreate &&
-						err instanceof ProviderCreateRefusal
-					)
-						entry.response = {
-							providerCreateRefused: true,
-							httpStatusCode: err.status,
-						};
+					if (recoverableCreate && !wasRunning && !reconcileCreate) {
+						if (err instanceof ProviderCreateRefusal)
+							entry.response = {
+								providerCreateRefused: true,
+								httpStatusCode: err.status,
+							};
+						if (err instanceof SupplementOutputPreflightError)
+							entry.startedAt = undefined;
+					}
 					entry.status = "FAILED";
 					entry.finishedAt = deps.now();
 					entry.error = message;

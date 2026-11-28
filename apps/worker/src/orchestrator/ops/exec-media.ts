@@ -421,6 +421,18 @@ export async function executeMediaStep(
 
 		case "CREATE_ENCODING_SUPPLEMENT": {
 			const item = encodingSupplementSchema.parse(p.supplement);
+			const destination = destinationOf(op, ctx);
+			const mirrorRefs = Array.isArray(op.refs.mirrorOutputIds)
+				? op.refs.mirrorOutputIds
+				: [];
+			const azureOutputIds = [op.refs.outputId, ...mirrorRefs].flatMap(
+				(ref) => {
+					if (typeof ref !== "string" || ctx.outputKinds?.get(ref) !== "AZURE")
+						return [];
+					const id = ctx.ids.get(ref);
+					return id ? [id] : [];
+				},
+			);
 			const resourceId = await ctx.sdk.createEncodingSupplement(
 				refId(op, ctx, "encodingId"),
 				item,
@@ -428,7 +440,8 @@ export async function executeMediaStep(
 					streamId: optRefId(op, ctx, "streamId"),
 					inputId: optRefId(op, ctx, "inputId"),
 					inputStreamId: optRefId(op, ctx, "inputStreamId"),
-					destination: destinationOf(op, ctx),
+					destination,
+					...(azureOutputIds.length > 1 && { azureOutputIds }),
 				},
 			);
 			return {

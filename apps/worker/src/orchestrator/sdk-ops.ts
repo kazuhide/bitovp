@@ -970,6 +970,7 @@ export type SdkOps = NativePackagingOps & {
 			inputId?: string;
 			inputStreamId?: string;
 			destination?: Destination;
+			azureOutputIds?: readonly string[];
 		},
 	): Promise<string | undefined>;
 	createStreamFilters(

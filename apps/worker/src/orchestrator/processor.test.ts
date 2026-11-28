@@ -15,6 +15,7 @@ import { fakeSdk as baseFakeSdk } from "./fake-sdk";
 import { applyJitFallback } from "./jit-fallback";
 import { makeWorkerSdk } from "./make-sdk";
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
+import { SupplementOutputPreflightError } from "./ops/supplements";
 import {
 	createOrchestratorProcessor,
 	type OrchestratorDeps,
@@ -1482,6 +1483,60 @@ describe("orchestrator processor", () => {
 		if (definitive) await retry;
 		else await expect(retry).rejects.toThrow(/verify interrupted/);
 		expect(send).toHaveBeenCalledTimes(definitive ? 2 : 1);
+	});
+
+	it("retries a supplement whose destination check failed before dispatch", async () => {
+		const video = basePlan.renditions.find(({ codec }) => codec === "H264");
+		const output = basePlan.outputs[0];
+		if (!video || !output) throw new Error("Missing supplement fixture");
+		const plan = encodingPlanSchema.parse({
+			...basePlan,
+			bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
+			supplements: [
+				{
+					kind: "BIF",
+					key: "preview",
+					renditionKey: video.key,
+					destination: { outputKey: output.key, path: "extras/" },
+					filename: "preview.bif",
+					distance: 10,
+					width: 320,
+				},
+			],
+		});
+		let stamp: CreateStamp | undefined;
+		const create = vi
+			.fn(async () => "preview-id")
+			.mockRejectedValueOnce(
+				new SupplementOutputPreflightError("Azure output details unavailable"),
+			);
+		const { processor, row } = setup(
+			{ plan, stepLog: initStepLog(compilePlan(plan)) },
+			{},
+			undefined,
+			(options) => {
+				stamp = options.stamp;
+				return fakeSdk({
+					createEncodingSupplement: async () => {
+						if (stamp?.adoptWindow?.())
+							throw new Error("Unexpected reconciliation");
+						return create();
+					},
+				});
+			},
+		);
+		await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow(
+			"Azure output details unavailable",
+		);
+		const history = row.stepLog as StepLogEntry[];
+		expect(
+			history.find(({ kind }) => kind === "CREATE_ENCODING_SUPPLEMENT")
+				?.startedAt,
+		).toBeUndefined();
+		row.stepLog = reseedFailedSteps(history);
+		row.status = "QUEUED";
+		await processor({ encodingJobId: JOB_ID });
+		expect(create).toHaveBeenCalledTimes(2);
 	});
 
 	it("resumes by skipping DONE steps and reusing their resource ids", async () => {

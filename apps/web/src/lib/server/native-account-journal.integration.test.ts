@@ -23,7 +23,9 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 	"provider settings receipts under RLS",
 	() => {
 		const admin = createPrismaClient(adminUrl);
-		const runtime = createPrismaClient(runtimeUrl);
+		const zonedUrl = runtimeUrl ? new URL(runtimeUrl) : undefined;
+		zonedUrl?.searchParams.set("options", "-c TimeZone=America/New_York");
+		const runtime = createPrismaClient(zonedUrl?.toString());
 		const organizationId = randomUUID();
 		const foreignOrganizationId = randomUUID();
 		const tenant = createTenantPrismaClient(runtime, organizationId);
@@ -71,6 +73,24 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 		}
 
 		it("claims one dispatch per key, retains the response, and fences ownership by tenant", async () => {
+			expect(
+				await runtime.$queryRaw`SELECT current_setting('TimeZone') AS zone`,
+			).toEqual([{ zone: "America/New_York" }]);
+			const pending = attempt();
+			await tenant.$executeRaw`
+				INSERT INTO "NativeEncodingOperation"
+				("id", "bitmovinAccountId", "scopeVersion", "action", "fingerprint", "state", "updatedAt")
+				VALUES (
+					${pending.id}::uuid, ${pending.bitmovinAccountId}::uuid,
+					${pending.scopeVersion}::uuid, ${pending.action}, ${pending.fingerprint},
+					'PENDING', CURRENT_TIMESTAMP
+				)
+			`;
+			const defaulted = await getNativeOperation(tenant, pending.id);
+			if (!defaulted) throw new Error("missing receipt with database defaults");
+			expect(
+				await nativeOperationDispatchBudget(tenant, defaulted),
+			).toBeGreaterThan(0);
 			const submission = attempt();
 			const claims = await Promise.all([
 				claimNativeOperation(tenant, submission),
@@ -82,6 +102,9 @@ describe.runIf(!!adminUrl && !!runtimeUrl)(
 			expect(
 				await nativeOperationDispatchBudget(tenant, first.row),
 			).toBeGreaterThan(0);
+			expect(Math.abs(Date.now() - first.row.createdAt.getTime())).toBeLessThan(
+				10_000,
+			);
 			expect(
 				await nativeOperationDispatchBudget(foreign, first.row),
 			).toBeNull();

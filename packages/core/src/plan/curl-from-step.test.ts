@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { REDACTED, redactStepRequest } from "../crypto/redact";
 import { canCurlStep, curlForStep } from "./curl-from-step";
@@ -588,6 +589,8 @@ describe("every operation kind is classified", () => {
 	 * therefore be either curl-able or listed below WITH a reason.
 	 */
 	const NO_CURL_BY_DESIGN: Record<string, string> = {
+		CREATE_PROGRESSIVE_TS_ID3: "The public snapshot omits the ID3 payload",
+		CREATE_DRM_TYPED: "The request contains a vaulted DRM key",
 		CREATE_INPUT_S3_ROLE_BASED: "the role ARN is resolved from the vault",
 		CREATE_OUTPUT_S3_ROLE_BASED: "the role ARN is resolved from the vault",
 		CREATE_DRM_CENC:
@@ -618,6 +621,8 @@ describe("every operation kind is classified", () => {
 		SLATE_FAILED: "runtime record; describes a status read, not a mutation",
 		SLATE_UNCONFIRMED:
 			"runtime record; describes a status read, not a mutation",
+		CREATE_ENCODING_SUPPLEMENT:
+			"discriminated worker operation; review the audited provider request for its subtype",
 		CREATE_INPUT_RTMP: "resolved by list — Bitmovin has no POST for it",
 		CREATE_AISA_LIVE_ANALYSIS:
 			"managed preview creation requires a durable run identity; its secret-free step request intentionally omits the provider input and destinations",
@@ -656,6 +661,35 @@ describe("every operation kind is classified", () => {
 					},
 				},
 			});
+		if (
+			[
+				"CREATE_MUXING_BROADCAST_TS",
+				"CREATE_MUXING_MP3",
+				"CREATE_MUXING_MXF",
+				"CREATE_MUXING_PACKED_AUDIO",
+				"CREATE_MUXING_SEGMENTED_RAW",
+			].includes(kind)
+		) {
+			return step({
+				kind: kind as StepLogEntry["kind"],
+				refs: {
+					encodingId: "encoding",
+					streamId: "stream",
+					outputId: "output",
+				},
+				request: {
+					refs: {
+						encodingId: randomUUID(),
+						streamId: randomUUID(),
+						outputId: randomUUID(),
+					},
+					outputPath: "publication/",
+					filename: "movie.ts",
+					segmentLength: 4,
+					segmentNaming: "pack_%number%.aac",
+				},
+			});
+		}
 		const refs = {
 			encodingId: "enc",
 			inputId: "input",
@@ -960,5 +994,94 @@ describe("curlForStep — POSIX shell variable headers", () => {
 		]);
 		expect(result.command).not.toContain(apiKey);
 		expect(result.command).not.toContain(orgId);
+	});
+});
+
+it("replays the exact mirror path and ACL choices of a native muxing with two streams", () => {
+	const [encodingId, streamId, audioId, primaryId, mirrorId, secondMirrorId] =
+		Array.from({ length: 6 }, () => randomUUID());
+	const entry = step({
+		kind: "CREATE_MUXING_BROADCAST_TS",
+		refs: {
+			encodingId: "encoding",
+			streamId: "s:video",
+			additionalStreamIds: ["s:audio"],
+			outputId: "output:primary",
+			mirrorOutputIds: ["output:mirror", "output:other"],
+		},
+		request: {
+			refs: {
+				encodingId,
+				streamId,
+				additionalStreamIds: [audioId],
+				outputId: primaryId,
+				mirrorOutputIds: [mirrorId, secondMirrorId],
+			},
+			filename: "show.ts",
+			outputPath: "broadcast/",
+			acl: "PRIVATE",
+			mirrorOutputPaths: ["/broadcast/", "broadcast/"],
+			mirrorOutputAcls: ["PUBLIC_READ", null],
+		},
+	});
+	const result = curlForStep(entry);
+	if (!result.ok) throw Error(result.code);
+	expect(result.command).toContain(
+		`/encodings/${encodingId}/muxings/broadcast-ts`,
+	);
+	const body = / {2}--data '([\s\S]*)'$/.exec(result.command)?.[1];
+	expect(JSON.parse(body ?? "null")).toEqual({
+		type: "BROADCAST_TS",
+		streams: [{ streamId }, { streamId: audioId }],
+		outputs: [
+			{
+				outputId: primaryId,
+				outputPath: "broadcast/",
+				acl: [{ permission: "PRIVATE" }],
+			},
+			{
+				outputId: mirrorId,
+				outputPath: "/broadcast/",
+				acl: [{ permission: "PUBLIC_READ" }],
+			},
+			{ outputId: secondMirrorId, outputPath: "broadcast/" },
+		],
+		filename: "show.ts",
+	});
+	const request = entry.request as Record<string, unknown>;
+	const refs = request.refs as Record<string, unknown>;
+	expect(
+		curlForStep({
+			...entry,
+			request: { ...request, refs: { ...refs, outputId: "output:primary" } },
+		}),
+	).toMatchObject({ ok: false, code: "UNRESOLVED_PATH_PARAMS" });
+	expect(
+		curlForStep({
+			...entry,
+			request: { ...request, refs: { ...refs, mirrorOutputIds: [mirrorId] } },
+		}),
+	).toMatchObject({ ok: false, code: "UNRESOLVED_PATH_PARAMS" });
+});
+
+it("omits outputs when DRM owns the Packed Audio destination", () => {
+	const [encodingId, streamId] = [randomUUID(), randomUUID()];
+	const entry = step({
+		kind: "CREATE_MUXING_PACKED_AUDIO",
+		refs: { encodingId: "encoding", streamId: "stream" },
+		request: {
+			refs: { encodingId, streamId },
+			segmentLength: 4,
+			segmentNaming: "audio_%number%.aac",
+		},
+	});
+	const result = curlForStep(entry);
+	if (!result.ok) throw Error(result.code);
+	const body = / {2}--data '([\s\S]*)'$/.exec(result.command)?.[1];
+	expect(JSON.parse(body ?? "null")).toEqual({
+		type: "PACKED_AUDIO",
+		streams: [{ streamId }],
+		segmentLength: 4,
+		segmentNaming: "audio_%number%.aac",
 	});
 });

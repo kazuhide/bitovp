@@ -21,6 +21,10 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 		createdAt: string | null;
 	}[] = [];
 	return {
+		createNativeDeliveryCodec: vi.fn(nextId),
+		createNativeMuxing: vi.fn(nextId),
+		createTypedMuxingDrm: vi.fn(nextId),
+		createProgressiveTsId3: vi.fn(nextId),
 		createAisaLiveAnalysis: vi.fn(nextId),
 		getAisaLiveAnalysis: vi.fn(async (analysisId) => ({
 			analysisId,
@@ -91,6 +95,7 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 		createDashImscRepresentation: vi.fn(nextId),
 
 		createMediaFilter: vi.fn(nextId),
+		createEncodingSupplement: vi.fn(nextId),
 		createStreamFilters: vi.fn(() => Promise.resolve()),
 		createKeyframe: vi.fn(nextId),
 		createNexGuardFileMarker: vi.fn(nextId),

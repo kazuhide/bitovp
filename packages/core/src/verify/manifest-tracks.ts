@@ -51,7 +51,7 @@ type SourcePlan = Pick<EncodingPlan, "outputs" | "deliveryMirrors"> & {
 	drm?: readonly {
 		key: string;
 		muxingKey: string;
-		kind: "CENC" | "FAIRPLAY" | "SPEKE";
+		kind: EncodingPlan["drm"][number]["kind"];
 		destination: { outputKey: string; path: string };
 	}[];
 };
@@ -75,6 +75,14 @@ export function expectedHlsWriterResource(
 					(row) => row.kind === drmKind && row.muxingKey === muxingKey,
 				)
 			: undefined;
+	const boundDrmKind = drm?.kind;
+	if (
+		boundDrmKind &&
+		boundDrmKind !== "CENC" &&
+		boundDrmKind !== "FAIRPLAY" &&
+		boundDrmKind !== "SPEKE"
+	)
+		return undefined;
 	const destination =
 		drmKey || drmKind ? drm?.destination : muxing?.destination;
 	let resource: ExpectedHlsAdditionalMedia["resource"];
@@ -87,7 +95,7 @@ export function expectedHlsWriterResource(
 		const directory = outputFilePath(destination.path, "");
 		resource = {
 			muxingKey: muxing.key,
-			...(drm ? { drmKey: drm.key, drmKind: drm.kind } : {}),
+			...(drm ? { drmKey: drm.key, drmKind: boundDrmKind } : {}),
 			container: muxing.kind as NonNullable<
 				ExpectedHlsAdditionalMedia["resource"]
 			>["container"],

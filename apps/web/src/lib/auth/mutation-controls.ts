@@ -660,7 +660,7 @@ export const MUTATION_SOURCE_CENSUS = {
 		controls: ["settings.live.alerts"],
 	},
 	"app/settings/live/dns-mappings-settings-panel.tsx": {
-		writeCalls: 2,
+		writeCalls: 3,
 		controls: ["settings.live.dns"],
 	},
 	"app/settings/live/standby-pools-panel.tsx": {
@@ -1165,6 +1165,7 @@ export const MUTATION_WRITE_FAMILIES = {
 	],
 	"app/settings/live/dns-mappings-settings-panel.tsx": [
 		{ write: "POST /api/live/dns-mappings", controls: ["settings.live.dns"] },
+		{ write: "DELETE /api/live/dns-mappings", controls: ["settings.live.dns"] },
 		{
 			write: "DELETE /api/live/dns-mappings/x",
 			controls: ["settings.live.dns"],

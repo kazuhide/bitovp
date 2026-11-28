@@ -136,7 +136,8 @@ describe("catalogue parity", () => {
 		// Operation analytics adds report guidance (runtime measured: 1691).
 		// Authoring controls and guidance for Live resources pending reset.
 		// Encoding statistics adds two long labels (runtime measured: 1724).
-		pinWithDriftAid(long.length, 1724, "long");
+		// Encoding supplements and DNS collection controls add translated labels.
+		pinWithDriftAid(long.length, 1728, "long");
 		/* Assert the measured number of unique short Japanese strings. Duplicate translations count once, including singular and plural keys with the same Japanese value. */
 		// Runtime measurement includes three-way output labels (deduplicated).
 		// The two MoQ authorization labels add two unique short Japanese values.
@@ -166,7 +167,7 @@ describe("catalogue parity", () => {
 		// The Encoding account inventory and operation ledger add short labels.
 		// Codec and filter inventory adds three unique Japanese labels.
 		// Encoding settings and statistics labels (runtime measured: 3658).
-		pinWithDriftAid(short.size, 3658, "short");
+		pinWithDriftAid(short.size, 3659, "short");
 	});
 
 	/**

@@ -9,9 +9,14 @@ import {
 	readManifestLookup,
 } from "./shared";
 
-type ManifestRequest = {
-	manifestName?: string;
-	outputs?: DashManifest["outputs"];
+type ManifestResource = Pick<
+	DashManifest,
+	"id" | "manifestName" | "outputs"
+> & {
+	serverManifestName?: string;
+	clientManifestName?: string;
+};
+type ManifestRequest = Omit<ManifestResource, "id"> & {
 	customData?: unknown;
 };
 type ManifestApi<Request extends ManifestRequest> = {
@@ -25,8 +30,9 @@ type ManifestApi<Request extends ManifestRequest> = {
 		sort: string;
 		encodingId: string;
 	}) => Promise<{
-		items?: Pick<DashManifest, "id" | "manifestName" | "outputs">[];
+		items?: ManifestResource[];
 	}>;
+	matchesName?: (manifest: ManifestResource, request: Request) => boolean;
 	customData: (id: string) => Promise<{ customData?: unknown }>;
 	create: (request: Request) => Promise<{ id?: string }>;
 	auditSelection: (request: Request) => Record<string, unknown>;
@@ -84,10 +90,10 @@ export async function createOwnedDefaultManifest<
 		? api.request({ ...request, customData: { bitovp: owner } })
 		: request;
 	const destination = request.outputs?.[0];
-	const matchesDestination = (
-		manifest: Pick<DashManifest, "manifestName" | "outputs">,
-	) =>
-		manifest.manifestName === request.manifestName &&
+	const matchesDestination = (manifest: ManifestResource) =>
+		(api.matchesName
+			? api.matchesName(manifest, request)
+			: manifest.manifestName === request.manifestName) &&
 		(manifest.outputs ?? []).some(
 			(output) =>
 				output.outputId === destination?.outputId &&

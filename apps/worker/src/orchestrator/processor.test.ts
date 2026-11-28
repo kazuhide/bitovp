@@ -19,6 +19,7 @@ import {
 	createOrchestratorProcessor,
 	type OrchestratorDeps,
 } from "./processor";
+import { ProviderCreateRefusal } from "./provider-create-refusal";
 import { createBitmovinSdkOps, type SdkOps } from "./sdk-ops";
 import {
 	type CreateStamp,
@@ -1429,6 +1430,58 @@ describe("orchestrator processor", () => {
 		expect(row.status).toBe("CANCELED");
 		expect(sdk.createEncoding).not.toHaveBeenCalled();
 		expect(updates).toHaveLength(0);
+	});
+
+	it.each([
+		true,
+		false,
+	])("only replays a rejected PSNR create after a proven refusal (%s)", async (definitive) => {
+		const video = basePlan.renditions.find(({ codec }) => codec === "H264");
+		if (!video) throw new Error("Fixture has no video");
+		const plan = encodingPlanSchema.parse({
+			...basePlan,
+			bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
+			supplements: [{ kind: "PSNR", key: "psnr", renditionKey: video.key }],
+		});
+		let stamp: CreateStamp | undefined;
+		const send = vi.fn(async () => {});
+		const sdk = fakeSdk({
+			createEncodingSupplement: vi.fn(async () => {
+				if (stamp?.adoptWindow?.())
+					throw new Error("Could not verify interrupted registration");
+				await send();
+				if (send.mock.calls.length === 1)
+					throw definitive
+						? new ProviderCreateRefusal(403)
+						: new Error("Disconnected");
+				return undefined;
+			}),
+		});
+		const { processor, row } = setup(
+			{ plan, stepLog: initStepLog(compilePlan(plan)) },
+			{},
+			undefined,
+			(options) => {
+				stamp = options.stamp;
+				return sdk;
+			},
+		);
+		await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow();
+		const history = row.stepLog as StepLogEntry[];
+		const failed = history.find(
+			(entry) => entry.kind === "CREATE_ENCODING_SUPPLEMENT",
+		);
+		expect(failed?.response).toEqual(
+			definitive
+				? { providerCreateRefused: true, httpStatusCode: 403 }
+				: undefined,
+		);
+		row.stepLog = reseedFailedSteps(history);
+		row.status = "QUEUED";
+		const retry = processor({ encodingJobId: JOB_ID });
+		if (definitive) await retry;
+		else await expect(retry).rejects.toThrow(/verify interrupted/);
+		expect(send).toHaveBeenCalledTimes(definitive ? 2 : 1);
 	});
 
 	it("resumes by skipping DONE steps and reusing their resource ids", async () => {

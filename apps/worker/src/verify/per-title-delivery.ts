@@ -108,6 +108,11 @@ function providerMuxingTypes(expected: ExpectedMuxing): string[] {
 		case "PROGRESSIVE_MOV":
 		case "PROGRESSIVE_WAV":
 		case "PROGRESSIVE_WEBM":
+		case "BROADCAST_TS":
+		case "MP3":
+		case "MXF":
+		case "PACKED_AUDIO":
+		case "SEGMENTED_RAW":
 			return [expected.container];
 	}
 }

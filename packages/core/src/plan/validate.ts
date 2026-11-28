@@ -26,6 +26,7 @@ import {
 	type EgressSite,
 	type SecretEgressAllowlist,
 } from "./egress";
+import { validateEncodingSupplements } from "./encoding-supplements";
 import { checkHdr10PlusPlan } from "./hdr10-plus";
 import { hlsLegSelected, hlsVersionForLegs } from "./hls-legs";
 import {
@@ -150,6 +151,11 @@ export const MUXING_CODEC_MATRIX: Record<
 	PROGRESSIVE_MOV: ["H264", "H265", "AAC", "DD", "AC3", "AUDIO_PASSTHROUGH"],
 	PROGRESSIVE_WAV: ["PCM", "AUDIO_PASSTHROUGH"],
 	PROGRESSIVE_WEBM: ["VP9", "AV1", "OPUS"],
+	BROADCAST_TS: ["H264", "AAC", "AC3"],
+	MP3: ["MP3"],
+	MXF: ["H262", "PCM"],
+	PACKED_AUDIO: ["AAC"],
+	SEGMENTED_RAW: ["AAC"],
 };
 
 /**
@@ -398,7 +404,27 @@ export function validatePlan(
 	options: PlanValidationOptions = {},
 ): PlanIssue[] {
 	const issues: PlanIssue[] = checkInternalHevcV2Plan(plan);
-	issues.push(...checkAudioFileOutputs(plan));
+	if (
+		plan.manifests.length > 0 &&
+		(plan.drm.some(
+			({ kind }) => kind !== "CENC" && kind !== "FAIRPLAY" && kind !== "SPEKE",
+		) ||
+			plan.muxings.some(
+				({ kind }) => kind === "PACKED_AUDIO" || kind === "SEGMENTED_RAW",
+			))
+	) {
+		issues.push({
+			code: "PLAN_NATIVE_PACKAGING_MANIFEST",
+			level: "error",
+			path: "manifests",
+			message:
+				"The selected delivery packaging does not support BitOVP manifest generation.",
+		});
+	}
+	issues.push(
+		...checkAudioFileOutputs(plan),
+		...validateEncodingSupplements(plan),
+	);
 	issues.push(...checkH26xCodecControls(plan.renditions));
 	issues.push(...checkStreamConditions(plan.renditions, false));
 	issues.push(...checkAv1CodecControls(plan.renditions));
@@ -1551,6 +1577,17 @@ export function validatePlan(
 			const packaged = renditionByKey.get(key);
 			return packaged !== undefined && AUDIO_CODECS.has(packaged.codec);
 		});
+		if (
+			muxing.kind === "MXF" &&
+			renditionByKey.get(muxing.streamKey)?.codec !== "H262"
+		) {
+			issues.push({
+				code: "PLAN_MXF_VIDEO",
+				level: "error",
+				path: `muxings[${index}].streamKey`,
+				message: "XDCAM MXF requires an H.262 video stream.",
+			});
+		}
 		if (audioInContainer.length > 1) {
 			issues.push({
 				code: "PLAN_MUXING_MULTIPLE_AUDIO",
@@ -1862,6 +1899,16 @@ export function validatePlan(
 					level: "error",
 					message: `drm "${drm.key}": FairPlay/AES-128 requires a 16-byte IV`,
 					path: `drm[${index}].iv`,
+				});
+		}
+		if (drm.kind !== "SPEKE") {
+			const provider = options.credentialProviders?.get(drm.credentialId);
+			if (provider && provider !== "DRM_CENC")
+				issues.push({
+					code: "DRM_CREDENTIAL",
+					level: "error",
+					message: "This DRM configuration requires a vaulted DRM content key.",
+					path: `drm[${index}].credentialId`,
 				});
 		}
 		if (drm.kind === "CENC") {

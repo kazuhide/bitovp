@@ -31,7 +31,7 @@ describe("reset selection", () => {
 		];
 		expect(new Set(classified).size).toBe(classified.length);
 		expect(classified.sort()).toEqual(models.sort());
-		expect(models).toHaveLength(70);
+		expect(models).toHaveLength(71);
 		expect(RESET_PROTECTED_EDITING_MODELS).toContain("libraryFlowEvidencePin");
 		expect(RESET_GLOBAL_MODELS).toEqual([
 			"user",
@@ -67,6 +67,7 @@ describe("reset selection", () => {
 		"liveStopNotification",
 		"encodingResourceRemoval",
 		"nativeCodecConfiguration",
+		"nativeEncodingOperation",
 	])("preserves %s across every selectable reset category", (model) => {
 		expect(RESET_INTERNAL_MODELS).toContain(model);
 		expect(RESET_CATALOG.flatMap((entry) => entry.models)).not.toContain(model);

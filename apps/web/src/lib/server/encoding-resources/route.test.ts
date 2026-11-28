@@ -327,6 +327,25 @@ it("projects an HDR10+ track without exposing its media, sidecar, or free-form p
 	expect(transport).toHaveBeenCalledTimes(2);
 });
 
+it.each([
+	"MEDIA",
+	"STREAM",
+] as const)("rejects a recorded HLS %s tag when its parent belongs to a different manifest", async (tagTarget) => {
+	const contract = contracts.find((row) => row.tagTarget === tagTarget);
+	if (!contract) throw new Error("Missing custom tag fixture");
+	const f = fixture(contract);
+	const parent = f.steps.find(
+		(step) =>
+			step.step ===
+			(tagTarget === "MEDIA" ? "source:mediaId" : "source:streamInfoId"),
+	);
+	if (!parent) throw new Error("Missing tag parent");
+	parent.refs.manifestId = randomUUID();
+	seeded(f.steps);
+	expect((await read("step=selected&attempt=0")).status).toBe(404);
+	expect(transport).not.toHaveBeenCalled();
+});
+
 it("refuses an HDR10+ read outside the recorded encoding and account scope", async () => {
 	const contract = contracts.find(
 		(c) => c.kind === "CREATE_HDR10_PLUS_INPUT_STREAM",

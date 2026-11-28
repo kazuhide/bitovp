@@ -73,6 +73,8 @@ const DEFAULT_ATTEMPTS = 3;
 const DEFAULT_DELAY_MS = 250;
 const ROLE_STORAGE_CREATE_PATH =
 	/^\/v1\/encoding\/(?:inputs|outputs)\/s3-role-based\/?$/;
+const PROGRESSIVE_TS_ID3_CREATE_PATH =
+	/\/muxings\/progressive-ts\/[^/]+\/id3\/(?:frame-id|plain-text|raw)\/?$/;
 const MANIFEST_PROBE_PATH =
 	/^\/v1\/encoding\/manifests\/(?:hls|dash|smooth)\/[^/]+\/(?:status|customData)\/?$/;
 
@@ -102,7 +104,10 @@ export function createRetryingFetch(
 		const markNotAdmitted = child
 			? () => child.record("PREPARING")
 			: role?.release;
-		if (child || roleStorageCreate) {
+		const progressiveTsId3Create =
+			request?.method?.toUpperCase() === "POST" &&
+			PROGRESSIVE_TS_ID3_CREATE_PATH.test(pathOf(url));
+		if (child || roleStorageCreate || progressiveTsId3Create) {
 			// Send exactly once. Following a redirect could produce a refusal or DNS
 			// error for a later request after the original server received its POST.
 			let response: Response;
@@ -263,6 +268,16 @@ export function isRetryable(url: string, init: unknown): boolean {
 	// path check that a URL shape can slip past is not a guard.
 	const path = pathOf(url);
 	if (method === "POST" && ROLE_STORAGE_CREATE_PATH.test(path)) return false;
+	if (
+		method === "POST" &&
+		path.startsWith("/v1/encoding/encodings/") &&
+		/\/(captions\/scc|scte-35-triggers|sidecars(?:\/webvtt)?|bifs|burn-in-subtitles\/(?:assa|dvbsub)|captions\/608-708\/(?:scc|srt)|qc\/psnr)\/?$/.test(
+			path,
+		)
+	)
+		return false;
+	if (method === "POST" && PROGRESSIVE_TS_ID3_CREATE_PATH.test(path))
+		return false;
 	// This PATCH mutates an active encoder through a durable effect claim.
 	// A response lost after assignment must reach that claim as AMBIGUOUS,
 	// never be sent again inside the transport layer (or logged with its key).
@@ -289,7 +304,7 @@ function hasVerificationStamp(init: unknown): boolean {
 		};
 		// Presence is enough for the conservative decision. A malformed marker
 		// must not make a possibly-paid create retryable.
-		return body.customData?.["bitovp"]?.verification !== undefined;
+		return body.customData?.bitovp?.verification !== undefined;
 	} catch {
 		return false;
 	}

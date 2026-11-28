@@ -21,7 +21,7 @@ import {
 import { isAisaLiveChannelView } from "../live-channel-aisa-view";
 import type { ChildDiscriminator } from "./child-collection";
 import { diagnosticFor, inspectDiagnostic } from "./diagnostics";
-import { InvalidResourceResponse } from "./family";
+import { InvalidResourceResponse, isResourceId } from "./family";
 import {
 	childCollectionsFor,
 	findChildOnPage,
@@ -244,7 +244,12 @@ export function resourceSdk(
 	access: NonNullable<Awaited<ReturnType<typeof originalAccess>>>,
 	signal: AbortSignal,
 	id: string,
-	expected: { discriminator?: ChildDiscriminator; encodingId?: string } = {},
+	expected: {
+		discriminator?: ChildDiscriminator;
+		encodingId?: string;
+		fixedDetailPath?: string;
+		streamFilterPath?: string;
+	} = {},
 ) {
 	// Typed endpoints can omit their discriminator. Check a supplied value before
 	// the SDK maps it to a model and potentially substitutes the default type.
@@ -275,10 +280,30 @@ export function resourceSdk(
 				throw new InvalidResourceResponse();
 			}
 			const envelope = object(body);
-			const result = object(object(envelope?.data)?.result);
+			const rawResult = object(envelope?.data)?.result;
+			const path = new URL(String(url)).pathname.replace(/\/$/, "");
+			if (
+				expected.streamFilterPath &&
+				(path === expected.streamFilterPath ||
+					path.startsWith(`${expected.streamFilterPath}/`))
+			) {
+				const result = object(rawResult);
+				const isCollectionRead =
+					init?.method === "GET" && path === expected.streamFilterPath;
+				const isOneRemoval =
+					init?.method === "DELETE" &&
+					path === `${expected.streamFilterPath}/${String(result?.id ?? "")}` &&
+					isResourceId(result?.id);
+				if (
+					envelope?.status !== "SUCCESS" ||
+					!(isCollectionRead ? Array.isArray(result?.filters) : isOneRemoval)
+				)
+					throw new InvalidResourceResponse();
+				return response;
+			}
+			const result = object(rawResult);
 			if (envelope?.status !== "SUCCESS" || !result)
 				throw new InvalidResourceResponse();
-			const path = new URL(String(url)).pathname.replace(/\/$/, "");
 			if (path.toLowerCase().endsWith("/customdata")) {
 				if (
 					!object(result.customData) ||
@@ -289,7 +314,10 @@ export function resourceSdk(
 				// Information describes the addressed muxing and omits its ID.
 				if (result.id !== undefined && result.id !== id)
 					throw new InvalidResourceResponse();
-			} else if (path.endsWith(`/${encodeURIComponent(id)}`)) {
+			} else if (
+				path === expected.fixedDetailPath ||
+				path.endsWith(`/${encodeURIComponent(id)}`)
+			) {
 				if (result.id !== id || !matchesBinding(result))
 					throw new InvalidResourceResponse();
 			} else if (
@@ -415,7 +443,12 @@ export async function readResources(req: Request, owner: ResourceOwner) {
 					),
 				);
 			const api = resourceSdk(access, signal, childId ?? address.id, {
-				discriminator: child?.expectedDiscriminator,
+				fixedDetailPath: childId
+					? undefined
+					: family.fixedDetailPath?.(address),
+				discriminator: child
+					? child.expectedDiscriminator
+					: family.expectedDiscriminator,
 				encodingId: child?.encodingScope ? address.id : undefined,
 			});
 			if (child) {

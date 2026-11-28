@@ -6941,7 +6941,7 @@
 			},
 			"transport": {
 				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
-				"anchor": "api.encoding.manifests.smooth.customdata.get("
+				"anchor": "api.encoding.manifests.smooth.customdata.get(id)"
 			},
 			"contractTest": {
 				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-stop.test.ts",
@@ -8375,6 +8375,2214 @@
 				"anchor": "\"sends the watch folder collection GET"
 			},
 			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.captions.scc.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/captions/scc",
+			"scope": "vod",
+			"scenario": "Configure SCC-to-WebVTT conversion on the selected VOD encoding or rendition through a validated plan.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/supplements.ts",
+				"anchor": "api.encoding.encodings.captions.scc.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.supplements.test.ts",
+				"anchor": "await executeStep(",
+				"caseGroup": "worker-supplement-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.sidecars.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/sidecars",
+			"scope": "vod",
+			"scenario": "Configure WebVTT sidecar via the generic sidecar collection on the selected VOD encoding or rendition through a validated plan.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/supplements.ts",
+				"anchor": "api.encoding.encodings.sidecars.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.supplements.test.ts",
+				"anchor": "await executeStep(",
+				"caseGroup": "worker-supplement-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.sidecars.webvtt.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/sidecars/webvtt",
+			"scope": "vod",
+			"scenario": "Configure WebVTT sidecar on the selected VOD encoding or rendition through a validated plan.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/supplements.ts",
+				"anchor": "api.encoding.encodings.sidecars.webvtt.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.supplements.test.ts",
+				"anchor": "await executeStep(",
+				"caseGroup": "worker-supplement-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.scte35Triggers.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/scte-35-triggers",
+			"scope": "vod",
+			"scenario": "Configure SCTE-35 trigger on the selected VOD encoding or rendition through a validated plan.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/supplements.ts",
+				"anchor": "api.encoding.encodings.scte35Triggers.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.supplements.test.ts",
+				"anchor": "await executeStep(",
+				"caseGroup": "worker-supplement-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.bifs.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/bifs",
+			"scope": "vod",
+			"scenario": "Configure BIF thumbnail index on the selected VOD encoding or rendition through a validated plan.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/supplements.ts",
+				"anchor": "api.encoding.encodings.streams.bifs.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.supplements.test.ts",
+				"anchor": "await executeStep(",
+				"caseGroup": "worker-supplement-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.burnInSubtitles.assa.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/burn-in-subtitles/assa",
+			"scope": "vod",
+			"scenario": "Configure ASSA subtitle burn-in on the selected VOD encoding or rendition through a validated plan.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/supplements.ts",
+				"anchor": "api.encoding.encodings.streams.burnInSubtitles.assa.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.supplements.test.ts",
+				"anchor": "await executeStep(",
+				"caseGroup": "worker-supplement-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.burnInSubtitles.dvbsub.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/burn-in-subtitles/dvbsub",
+			"scope": "vod",
+			"scenario": "Configure DVB-SUB subtitle burn-in on the selected VOD encoding or rendition through a validated plan.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/supplements.ts",
+				"anchor": "api.encoding.encodings.streams.burnInSubtitles.dvbsub.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.supplements.test.ts",
+				"anchor": "await executeStep(",
+				"caseGroup": "worker-supplement-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.captions.cea.scc.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/scc",
+			"scope": "vod",
+			"scenario": "Configure CEA-608/708 from SCC on the selected VOD encoding or rendition through a validated plan.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/supplements.ts",
+				"anchor": "api.encoding.encodings.streams.captions.cea.scc.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.supplements.test.ts",
+				"anchor": "await executeStep(",
+				"caseGroup": "worker-supplement-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.captions.cea.srt.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/srt",
+			"scope": "vod",
+			"scenario": "Configure CEA-608/708 from SRT on the selected VOD encoding or rendition through a validated plan.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/supplements.ts",
+				"anchor": "api.encoding.encodings.streams.captions.cea.srt.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.supplements.test.ts",
+				"anchor": "await executeStep(",
+				"caseGroup": "worker-supplement-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.qc.psnr.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/qc/psnr",
+			"scope": "vod",
+			"scenario": "Configure provider stream PSNR measurement on the selected VOD encoding or rendition through a validated plan.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/supplements.ts",
+				"anchor": "api.encoding.encodings.streams.qc.psnr.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.supplements.test.ts",
+				"anchor": "await executeStep(",
+				"caseGroup": "worker-supplement-create"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.captions.scc.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/captions/scc/{captions_id}",
+			"scope": "vod",
+			"scenario": "Remove a recorded SCC-to-WebVTT conversion from its original VOD encoding and provider-account scope.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-supplements.ts",
+				"anchor": "api.encoding.encodings.captions.scc.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.sidecars.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/sidecars/{sidecar_id}",
+			"scope": "vod",
+			"scenario": "Remove a recorded WebVTT sidecar via the generic sidecar collection from its original VOD encoding and provider-account scope.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-supplements.ts",
+				"anchor": "api.encoding.encodings.sidecars.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.sidecars.webvtt.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/sidecars/webvtt/{sidecar_id}",
+			"scope": "vod",
+			"scenario": "Remove a recorded WebVTT sidecar from its original VOD encoding and provider-account scope.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-supplements.ts",
+				"anchor": "api.encoding.encodings.sidecars.webvtt.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.scte35Triggers.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/scte-35-triggers/{scte35trigger_id}",
+			"scope": "vod",
+			"scenario": "Remove a recorded SCTE-35 trigger from its original VOD encoding and provider-account scope.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-supplements.ts",
+				"anchor": "api.encoding.encodings.scte35Triggers.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.bifs.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/bifs/{bif_id}",
+			"scope": "vod",
+			"scenario": "Remove a recorded BIF thumbnail index from its original VOD encoding and provider-account scope.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-supplements.ts",
+				"anchor": "api.encoding.encodings.streams.bifs.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.burnInSubtitles.assa.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/burn-in-subtitles/assa/{subtitle_id}",
+			"scope": "vod",
+			"scenario": "Remove a recorded ASSA subtitle burn-in from its original VOD encoding and provider-account scope.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-supplements.ts",
+				"anchor": "api.encoding.encodings.streams.burnInSubtitles.assa.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.burnInSubtitles.dvbsub.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/burn-in-subtitles/dvbsub/{subtitle_id}",
+			"scope": "vod",
+			"scenario": "Remove a recorded DVB-SUB subtitle burn-in from its original VOD encoding and provider-account scope.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-supplements.ts",
+				"anchor": "api.encoding.encodings.streams.burnInSubtitles.dvbsub.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.captions.cea.scc.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/scc/{captions_id}",
+			"scope": "vod",
+			"scenario": "Remove a recorded CEA-608/708 from SCC from its original VOD encoding and provider-account scope.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-supplements.ts",
+				"anchor": "api.encoding.encodings.streams.captions.cea.scc.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.captions.cea.srt.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/captions/608-708/srt/{captions_id}",
+			"scope": "vod",
+			"scenario": "Remove a recorded CEA-608/708 from SRT from its original VOD encoding and provider-account scope.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-supplements.ts",
+				"anchor": "api.encoding.encodings.streams.captions.cea.srt.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.watermarking.nexguardFileMarker.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/watermarking/nexguard-file-marker/{nexguard_id}",
+			"scope": "vod",
+			"scenario": "Remove a recorded NexGuard file marker from its original VOD encoding and provider-account scope.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-supplements.ts",
+				"anchor": "api.encoding.encodings.streams.watermarking.nexguardFileMarker.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.kantarWatermark.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/kantar-watermark",
+			"scope": "vod",
+			"scenario": "Remove a recorded Kantar watermark from its original VOD encoding and provider-account scope.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/encoding-supplements.ts",
+				"anchor": "api.encoding.encodings.kantarWatermark.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.filters.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/filters/{filter_id}",
+			"scope": "vod",
+			"scenario": "Detach a recorded filter from one terminal VOD stream.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/stream-filter-removal.ts",
+				"anchor": "api.encoding.encodings.streams.filters.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"detaches only recorded filters from the recorded stream through %s\"",
+				"caseGroup": "recorded-stream-filter-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.aspera.create",
+			"httpVerb": "POST",
+			"path": "/encoding/inputs/aspera",
+			"scope": "settings",
+			"scenario": "create-aspera-input in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.aspera.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.aspera.create\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.aspera.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/inputs/aspera/{input_id}",
+			"scope": "settings",
+			"scenario": "delete-aspera-input in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.aspera.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.aspera.delete\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.directFileUpload.create",
+			"httpVerb": "POST",
+			"path": "/encoding/inputs/direct-file-upload",
+			"scope": "settings",
+			"scenario": "create-direct-upload in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.directFileUpload.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.directFileUpload.create\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.directFileUpload.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/inputs/direct-file-upload/{input_id}",
+			"scope": "settings",
+			"scenario": "delete-direct-upload in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.directFileUpload.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.directFileUpload.delete\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.ftp.create",
+			"httpVerb": "POST",
+			"path": "/encoding/inputs/ftp",
+			"scope": "settings",
+			"scenario": "create-ftp-input in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.ftp.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.ftp.create\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.ftp.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/inputs/ftp/{input_id}",
+			"scope": "settings",
+			"scenario": "delete-ftp-input in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.ftp.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.ftp.delete\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.http.create",
+			"httpVerb": "POST",
+			"path": "/encoding/inputs/http",
+			"scope": "settings",
+			"scenario": "create-http-input in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.http.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.http.create\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.http.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/inputs/http/{input_id}",
+			"scope": "settings",
+			"scenario": "delete-http-input in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.http.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.http.delete\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.local.create",
+			"httpVerb": "POST",
+			"path": "/encoding/inputs/local",
+			"scope": "settings",
+			"scenario": "create-local-input in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.local.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.local.create\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.local.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/inputs/local/{input_id}",
+			"scope": "settings",
+			"scenario": "delete-local-input in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.local.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.local.delete\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.sftp.create",
+			"httpVerb": "POST",
+			"path": "/encoding/inputs/sftp",
+			"scope": "settings",
+			"scenario": "create-sftp-input in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.sftp.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.sftp.create\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.inputs.sftp.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/inputs/sftp/{input_id}",
+			"scope": "settings",
+			"scenario": "delete-sftp-input in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.inputs.sftp.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches inputs.sftp.delete\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.ftp.create",
+			"httpVerb": "POST",
+			"path": "/encoding/outputs/ftp",
+			"scope": "settings",
+			"scenario": "create-ftp-output in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.outputs.ftp.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches outputs.ftp.create\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.ftp.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/outputs/ftp/{output_id}",
+			"scope": "settings",
+			"scenario": "delete-ftp-output in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.outputs.ftp.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches outputs.ftp.delete\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.local.create",
+			"httpVerb": "POST",
+			"path": "/encoding/outputs/local",
+			"scope": "settings",
+			"scenario": "create-local-output in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.outputs.local.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches outputs.local.create\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.local.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/outputs/local/{output_id}",
+			"scope": "settings",
+			"scenario": "delete-local-output in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.outputs.local.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches outputs.local.delete\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.create",
+			"httpVerb": "POST",
+			"path": "/encoding/filters/azure-speech-to-captions",
+			"scope": "settings",
+			"scenario": "create-azure-captions in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.filters.azureSpeechToCaptions.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches filters.azureSpeechToCaptions.create\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.filters.azureSpeechToCaptions.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/filters/azure-speech-to-captions/{filter_id}",
+			"scope": "settings",
+			"scenario": "delete-azure-captions in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.filters.azureSpeechToCaptions.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches filters.azureSpeechToCaptions.delete\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.templates.create",
+			"httpVerb": "POST",
+			"path": "/encoding/templates",
+			"scope": "settings",
+			"scenario": "create-template in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.templates.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches templates.create\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.templates.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/templates/{encoding_template_id}",
+			"scope": "settings",
+			"scenario": "delete-template in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.templates.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches templates.delete\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.watchFolders.create",
+			"httpVerb": "POST",
+			"path": "/encoding/watch-folders",
+			"scope": "settings",
+			"scenario": "create-watch-folder in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.watchFolders.create("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches watchFolders.create\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.watchFolders.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/watch-folders/{watch_folder_id}",
+			"scope": "settings",
+			"scenario": "delete-watch-folder in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.watchFolders.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches watchFolders.delete\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.outputs.checkPermissions",
+			"httpVerb": "POST",
+			"path": "/encoding/outputs/{output_id}/check-permissions",
+			"scope": "settings",
+			"scenario": "check-s3-output in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.outputs.checkPermissions("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches outputs.checkPermissions\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.templates.start",
+			"httpVerb": "POST",
+			"path": "/encoding/templates/start",
+			"scope": "settings",
+			"scenario": "start-template in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.templates.start("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches templates.start\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.watchFolders.start",
+			"httpVerb": "POST",
+			"path": "/encoding/watch-folders/{watch_folder_id}/start",
+			"scope": "settings",
+			"scenario": "start-watch-folder in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.watchFolders.start("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches watchFolders.start\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.watchFolders.stop",
+			"httpVerb": "POST",
+			"path": "/encoding/watch-folders/{watch_folder_id}/stop",
+			"scope": "settings",
+			"scenario": "stop-watch-folder in account-scoped Encoding resources Settings.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-native/operations",
+				"anchor": "await runOperation(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/native-account-provider.ts",
+				"anchor": "api.encoding.watchFolders.stop("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/operations/route.sdk.test.ts",
+				"anchor": "\"dispatches watchFolders.stop\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.list",
+			"httpVerb": "GET",
+			"path": "/encoding/manifests",
+			"scope": "settings",
+			"scenario": "Browse a selected Bitmovin account's DASH, HLS, and Smooth manifest IDs with validated provider pagination and projected inventory fields.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-native/manifests",
+				"anchor": "await readManifests(req)"
+			},
+			"transport": {
+				"file": "apps/web/src/app/api/encoding-native/manifests/route.ts",
+				"anchor": "api.encoding.manifests.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/app/api/encoding-native/manifests/route.test.ts",
+				"anchor": "\"lists all account manifests through the SDK and only returns inventory fields\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.fmp4.contentprotection.create",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4/{representation_id}/contentprotection",
+			"scope": "vod",
+			"scenario": "Build a validated manifest graph and send each typed mutation through the VOD worker with the resolved recorded parent IDs.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.contentprotection.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-details.test.ts",
+				"anchor": "\"dispatches supported manifest writes through their exact installed SDK paths\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.fmp4.drm.create",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4/drm",
+			"scope": "vod",
+			"scenario": "Build a validated manifest graph and send each typed mutation through the VOD worker with the resolved recorded parent IDs.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.drm.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-details.test.ts",
+				"anchor": "\"dispatches supported manifest writes through their exact installed SDK paths\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.fmp4.drm.contentprotection.create",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/fmp4/drm/{representation_id}/contentprotection",
+			"scope": "vod",
+			"scenario": "Build a validated manifest graph and send each typed mutation through the VOD worker with the resolved recorded parent IDs.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.dash.periods.adaptationsets.representations.fmp4.drm.contentprotection.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-details.test.ts",
+				"anchor": "\"dispatches supported manifest writes through their exact installed SDK paths\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.dash.periods.adaptationsets.representations.webm.contentprotection.create",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/dash/{manifest_id}/periods/{period_id}/adaptationsets/{adaptationset_id}/representations/webm/{representation_id}/contentprotection",
+			"scope": "vod",
+			"scenario": "Build a validated manifest graph and send each typed mutation through the VOD worker with the resolved recorded parent IDs.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.dash.periods.adaptationsets.representations.webm.contentprotection.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-details.test.ts",
+				"anchor": "\"dispatches supported manifest writes through their exact installed SDK paths\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.hls.media.customTags.create",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/hls/{manifest_id}/media/{media_id}/custom-tags",
+			"scope": "vod",
+			"scenario": "Build a validated manifest graph and send each typed mutation through the VOD worker with the resolved recorded parent IDs.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.hls.media.customTags.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-details.test.ts",
+				"anchor": "\"dispatches supported manifest writes through their exact installed SDK paths\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.hls.streams.customTags.create",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/hls/{manifest_id}/streams/{stream_id}/custom-tags",
+			"scope": "vod",
+			"scenario": "Build a validated manifest graph and send each typed mutation through the VOD worker with the resolved recorded parent IDs.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.hls.streams.customTags.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-details.test.ts",
+				"anchor": "\"dispatches supported manifest writes through their exact installed SDK paths\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.smooth.default.create",
+			"httpVerb": "POST",
+			"path": "/encoding/manifests/smooth/default",
+			"scope": "vod",
+			"scenario": "Create a provider-default Smooth manifest after a selected MP4 Smooth encoding finishes and recover it by the owned request identity.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/manifests.ts",
+				"anchor": "api.encoding.manifests.smooth.default.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.manifest-details.test.ts",
+				"anchor": "\"dispatches supported manifest writes through their exact installed SDK paths\""
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.hls.media.customTags.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/manifests/hls/{manifest_id}/media/{media_id}/custom-tags/{custom_tag_id}",
+			"scope": "vod",
+			"scenario": "Remove a finished VOD job's recorded child after checking its exact HLS parent, account scope and exclusive receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/hls-custom-tags.ts",
+				"anchor": "api.encoding.manifests.hls.media.customTags.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\"",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.manifests.hls.streams.customTags.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/manifests/hls/{manifest_id}/streams/{stream_id}/custom-tags/{custom_tag_id}",
+			"scope": "vod",
+			"scenario": "Remove a finished VOD job's recorded child after checking its exact HLS parent, account scope and exclusive receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/hls-custom-tags.ts",
+				"anchor": "api.encoding.manifests.hls.streams.customTags.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\"",
+				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.broadcastTs.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.broadcastTs.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits the five typed delivery muxings through an admitted VOD plan\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.broadcastTs.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/broadcast-ts/{muxing_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.broadcastTs.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.aes.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/aes",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.fmp4.drm.aes.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.aes.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/aes/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.fmp4.drm.aes.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.clearkey.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/clearkey",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.fmp4.drm.clearkey.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.clearkey.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/clearkey/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.fmp4.drm.clearkey.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.marlin.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/marlin",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.fmp4.drm.marlin.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.marlin.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/marlin/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.fmp4.drm.marlin.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.playready.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/playready",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.fmp4.drm.playready.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.playready.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/playready/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.fmp4.drm.playready.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.primetime.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/primetime",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.fmp4.drm.primetime.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.primetime.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/primetime/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.fmp4.drm.primetime.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.widevine.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/widevine",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.fmp4.drm.widevine.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.fmp4.drm.widevine.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/fmp4/{muxing_id}/drm/widevine/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.fmp4.drm.widevine.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp3.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp3",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.mp3.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits the five typed delivery muxings through an admitted VOD plan\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp3.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp3/{muxing_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.mp3.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp4.drm.clearkey.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/drm/clearkey",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.mp4.drm.clearkey.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp4.drm.clearkey.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/drm/clearkey/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.mp4.drm.clearkey.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp4.drm.marlin.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/drm/marlin",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.mp4.drm.marlin.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp4.drm.marlin.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/drm/marlin/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.mp4.drm.marlin.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp4.drm.playready.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/drm/playready",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.mp4.drm.playready.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp4.drm.playready.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/drm/playready/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.mp4.drm.playready.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp4.drm.widevine.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/drm/widevine",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.mp4.drm.widevine.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mp4.drm.widevine.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mp4/{muxing_id}/drm/widevine/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.mp4.drm.widevine.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mxf.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mxf",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.mxf.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits the five typed delivery muxings through an admitted VOD plan\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.mxf.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/mxf/{muxing_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.mxf.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.packedAudio.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.packedAudio.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits the five typed delivery muxings through an admitted VOD plan\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.packedAudio.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.packedAudio.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.packedAudio.drm.aes.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}/drm/aes",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.packedAudio.drm.aes.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.packedAudio.drm.aes.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}/drm/aes/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.packedAudio.drm.aes.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.packedAudio.drm.aes.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}/drm/aes/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Inspect the packed audio AES record from the original account with a bounded projection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/muxing-children.ts",
+				"anchor": "api.encoding.encodings.muxings.packedAudio.drm.aes.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects packed audio AES through its exact child SDK paths without exposing metadata\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.packedAudio.drm.aes.list",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}/drm/aes",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Inspect the packed audio AES record from the original account with a bounded projection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/muxing-children.ts",
+				"anchor": "api.encoding.encodings.muxings.packedAudio.drm.aes.list("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects packed audio AES through its exact child SDK paths without exposing metadata\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.packedAudio.drm.aes.customdata.get",
+			"httpVerb": "GET",
+			"path": "/encoding/encodings/{encoding_id}/muxings/packed-audio/{muxing_id}/drm/aes/{drm_id}/customData",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Inspect the packed audio AES record from the original account with a bounded projection.",
+			"entrypoint": {
+				"httpVerb": "GET",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "readResources(req, { jobId: id })"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/muxing-children.ts",
+				"anchor": "api.encoding.encodings.muxings.packedAudio.drm.aes.customdata.get("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/muxing-children.test.ts",
+				"anchor": "\"inspects packed audio AES through its exact child SDK paths without exposing metadata\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveTs.drm.aes.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}/drm/aes",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.progressiveTs.drm.aes.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveTs.drm.aes.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}/drm/aes/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.progressiveTs.drm.aes.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveTs.id3.frameId.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}/id3/frame-id",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.progressiveTs.id3.frameId.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits the three typed progressive TS ID3 formats through the compiled plan\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveTs.id3.frameId.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}/id3/frame-id/{id3_tag_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.progressiveTs.id3.frameId.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveTs.id3.plainText.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}/id3/plain-text",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.progressiveTs.id3.plainText.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits the three typed progressive TS ID3 formats through the compiled plan\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveTs.id3.plainText.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}/id3/plain-text/{id3_tag_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.progressiveTs.id3.plainText.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveTs.id3.raw.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}/id3/raw",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.progressiveTs.id3.raw.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits the three typed progressive TS ID3 formats through the compiled plan\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.progressiveTs.id3.raw.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/progressive-ts/{muxing_id}/id3/raw/{id3_tag_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.progressiveTs.id3.raw.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.segmentedRaw.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/segmented-raw",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.segmentedRaw.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits the five typed delivery muxings through an admitted VOD plan\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.segmentedRaw.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/segmented-raw/{muxing_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.segmentedRaw.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.ts.drm.aes.create",
+			"httpVerb": "POST",
+			"path": "/encoding/encodings/{encoding_id}/muxings/ts/{muxing_id}/drm/aes",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Submit typed delivery packaging through the validated VOD plan and managed encoding worker.",
+			"entrypoint": {
+				"httpVerb": "POST",
+				"path": "/api/encoding-jobs",
+				"anchor": "await getOrchestratorQueue().add("
+			},
+			"transport": {
+				"file": "apps/worker/src/orchestrator/ops/native-packaging.ts",
+				"anchor": "m.ts.drm.aes.create("
+			},
+			"contractTest": {
+				"file": "apps/worker/src/orchestrator/sdk-ops.native-packaging.test.ts",
+				"anchor": "\"submits typed muxing DRM using only the recorded muxing and vault key\""
+			}
+		},
+		{
+			"sdkMethod": "encoding.encodings.muxings.ts.drm.aes.delete",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/muxings/ts/{muxing_id}/drm/aes/{drm_id}",
+			"scope": "vod",
+			"provider": "unverified",
+			"scenario": "Remove the exact job-recorded packaging resource through its original provider account and durable receipt.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/families/native-packaging.ts",
+				"anchor": "api.encoding.encodings.muxings.ts.drm.aes.delete("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"caseGroup": "recorded-resource-deletes",
+				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result\""
+			}
 		}
 	],
 	"entries": [

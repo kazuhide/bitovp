@@ -25,6 +25,7 @@
  * see.
  */
 
+import { defaultSmoothManifestSelection } from "../plan/default-manifest-selection";
 import {
 	hlsAudioMediaDefaults,
 	hlsChildEntries,
@@ -98,7 +99,12 @@ export type ContainerKind =
 	| "PROGRESSIVE_TS"
 	| "PROGRESSIVE_MOV"
 	| "PROGRESSIVE_WAV"
-	| "PROGRESSIVE_WEBM";
+	| "PROGRESSIVE_WEBM"
+	| "BROADCAST_TS"
+	| "MP3"
+	| "MXF"
+	| "PACKED_AUDIO"
+	| "SEGMENTED_RAW";
 
 /** What one muxing must have written. */
 export type ExpectedMuxing = {
@@ -378,7 +384,7 @@ function systemIdsOf(row: {
 /** DRM expectations, checked by scanning boxes in an init segment. */
 export type ExpectedDrm = {
 	drmKey: string;
-	kind: "CENC" | "FAIRPLAY" | "SPEKE";
+	kind: EncodingPlan["drm"][number]["kind"];
 	muxingKeys: string[];
 	/** Hex KID (lower-case, no dashes) the `tenc` box must carry. */
 	kid?: string;
@@ -540,7 +546,7 @@ export function pathPattern(raw: string): PathPattern {
  * for them: a DDP muxing containing silence, AAC, or a video track passed. Found by
  * review. Importing the sets makes that drift impossible rather than merely fixed.
  */
-const VIDEO_CODECS = new Set(["H264", "H265", "VP9", "AV1"]);
+const VIDEO_CODECS = new Set(["H264", "H265", "VP9", "AV1", "H262"]);
 
 /**
  * `mode` lives on the VIDEO rendition variants only — the audio and WebVTT members
@@ -604,6 +610,11 @@ function containerOf(muxing: PlanMuxing): ContainerKind {
 		case "PROGRESSIVE_WAV":
 		case "PROGRESSIVE_MOV":
 		case "PROGRESSIVE_WEBM":
+		case "BROADCAST_TS":
+		case "MP3":
+		case "MXF":
+		case "PACKED_AUDIO":
+		case "SEGMENTED_RAW":
 			return muxing.kind;
 		default: {
 			// The union is closed today; this makes a NEW muxing kind a compile error
@@ -778,7 +789,7 @@ export function compileExpectedArtefacts(
 					sampleRate: packaged.rate,
 					channelLayout: packaged.channelLayout,
 					sampleFormat: packaged.sampleFormat,
-					singleTrackFile: true,
+					...(muxing.kind === "MXF" ? {} : { singleTrackFile: true }),
 				};
 			} else if (
 				packagedCodec !== undefined &&
@@ -1356,37 +1367,58 @@ export function compileExpectedArtefacts(
 				}
 				return configured;
 			}
+			const smoothTracks =
+				manifest.generationMode === "DEFAULT"
+					? defaultSmoothManifestSelection(plan).renditions
+					: undefined;
 			return {
 				manifestKey: manifest.key,
 				kind: "SMOOTH",
 				outputKey: manifest.destination.outputKey,
 				dir,
 				files: [manifest.serverManifestName, manifest.clientManifestName],
-				videoEntries: videoRenditions.length,
-				audioEntries: audioRenditions.length,
+				videoEntries:
+					smoothTracks?.filter(({ codec }) => VIDEO_CODECS.has(codec)).length ??
+					videoRenditions.length,
+				audioEntries:
+					smoothTracks?.filter(({ codec }) => AUDIO_CODECS.has(codec)).length ??
+					audioRenditions.length,
 				textEntries: 0,
 				postEncoding,
-				perTitle: perTitleLadderHere,
+				perTitle: smoothTracks?.some(isPerTitle) ?? perTitleLadderHere,
 				...(manifest.drmKind ? { drmKind: manifest.drmKind } : {}),
 			};
 		},
 	);
 
 	// ---- DRM ----------------------------------------------------------------
-	const drm: ExpectedDrm[] = plan.drm.map((row) => {
+	const drm: ExpectedDrm[] = plan.drm.flatMap((row): ExpectedDrm[] => {
 		if (row.destination) outputKeys.add(row.destination.outputKey);
 		if (row.kind === "SPEKE")
-			return {
-				drmKey: row.key,
-				kind: "SPEKE" as const,
-				muxingKeys: [row.muxingKey],
-				...(row.kid ? { kid: row.kid.toLowerCase() } : {}),
-				systemIds: row.systemIds.map((id) =>
-					id.replace(/-/g, "").toLowerCase(),
-				),
-				outputKey: row.destination.outputKey,
-				dir: pathPattern(withTrailingSlash(row.destination.path)),
-			};
+			return [
+				{
+					drmKey: row.key,
+					kind: "SPEKE" as const,
+					muxingKeys: [row.muxingKey],
+					...(row.kid ? { kid: row.kid.toLowerCase() } : {}),
+					systemIds: row.systemIds.map((id) =>
+						id.replace(/-/g, "").toLowerCase(),
+					),
+					outputKey: row.destination.outputKey,
+					dir: pathPattern(withTrailingSlash(row.destination.path)),
+				},
+			];
+		if (row.kind !== "CENC" && row.kind !== "FAIRPLAY") {
+			return [
+				{
+					drmKey: row.key,
+					kind: row.kind,
+					muxingKeys: [row.muxingKey],
+					outputKey: row.destination.outputKey,
+					dir: pathPattern(withTrailingSlash(row.destination.path)),
+				},
+			];
+		}
 		// C9: CTR pairs with an 8-byte IV, CBC with 16. The plan states the mode;
 		// the compiler derives the size rather than trusting a second field.
 		// C9: CTR ⇒ 8-byte IV, CBC ⇒ 16. `ivSize` is optional in the plan, and
@@ -1402,32 +1434,34 @@ export function compileExpectedArtefacts(
 						: row.encryptionMode === "CBC"
 							? 16
 							: 8;
-		return {
-			drmKey: row.key,
-			kind: row.kind,
-			muxingKeys: [row.muxingKey],
-			ivSizeBytes,
-			// From the MODE, not from the IV size. Reading the size made the two fields
-			// restate each other, so the property test that claimed to check the C9
-			// pairing was a tautology: a review measured that swapping this derivation
-			// failed 0 of the 66 goldens, and that flipping the CTR default (`: 8` → 16,
-			// a direct C9 violation) also failed 0 — because every CENC fixture happens
-			// to carry an explicit `ivSize`. cbcs is the CBC scheme; cenc is CTR.
-			schemeType:
-				row.kind === "CENC" && row.encryptionMode !== "CBC"
-					? ("cenc" as const)
-					: ("cbcs" as const),
-			...(row.kind === "CENC" && row.kid
-				? { kid: row.kid.replace(/-/g, "").toLowerCase() }
-				: {}),
-			...(systemIdsOf(row).length > 0 ? { systemIds: systemIdsOf(row) } : {}),
-			...(row.destination
-				? {
-						outputKey: row.destination.outputKey,
-						dir: pathPattern(withTrailingSlash(row.destination.path)),
-					}
-				: {}),
-		};
+		return [
+			{
+				drmKey: row.key,
+				kind: row.kind,
+				muxingKeys: [row.muxingKey],
+				ivSizeBytes,
+				// From the MODE, not from the IV size. Reading the size made the two fields
+				// restate each other, so the property test that claimed to check the C9
+				// pairing was a tautology: a review measured that swapping this derivation
+				// failed 0 of the 66 goldens, and that flipping the CTR default (`: 8` → 16,
+				// a direct C9 violation) also failed 0 — because every CENC fixture happens
+				// to carry an explicit `ivSize`. cbcs is the CBC scheme; cenc is CTR.
+				schemeType:
+					row.kind === "CENC" && row.encryptionMode !== "CBC"
+						? ("cenc" as const)
+						: ("cbcs" as const),
+				...(row.kind === "CENC" && row.kid
+					? { kid: row.kid.replace(/-/g, "").toLowerCase() }
+					: {}),
+				...(systemIdsOf(row).length > 0 ? { systemIds: systemIdsOf(row) } : {}),
+				...(row.destination
+					? {
+							outputKey: row.destination.outputKey,
+							dir: pathPattern(withTrailingSlash(row.destination.path)),
+						}
+					: {}),
+			},
+		];
 	});
 
 	// ---- thumbnails / sprites ----------------------------------------------

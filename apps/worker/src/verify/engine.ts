@@ -641,6 +641,9 @@ async function verifyMuxing(
 		muxing.container === "PROGRESSIVE_TS" ||
 		muxing.container === "PROGRESSIVE_MOV" ||
 		muxing.container === "PROGRESSIVE_WAV" ||
+		muxing.container === "BROADCAST_TS" ||
+		muxing.container === "MP3" ||
+		muxing.container === "MXF" ||
 		(muxing.container === "MP4_PROGRESSIVE" &&
 			muxing.audio?.singleTrackFile === true) ||
 		muxing.container === "PROGRESSIVE_WEBM";
@@ -1567,6 +1570,7 @@ async function verifyMediaProperties(
 			const seen = probe.videoCodec.toUpperCase();
 			const matches =
 				(want === "H264" && seen === "H264") ||
+				(want === "H262" && seen === "MPEG2VIDEO") ||
 				(want === "H265" && (seen === "HEVC" || seen === "H265")) ||
 				(want === "VP9" && seen === "VP9") ||
 				(want === "AV1" && (seen === "AV1" || seen === "LIBAOM-AV1"));
@@ -4562,6 +4566,14 @@ async function verifyDrm(
 	drm: ExpectedDrm,
 ): Promise<void> {
 	const id = `drm:${drm.drmKey}`;
+	if (drm.kind !== "CENC" && drm.kind !== "FAIRPLAY" && drm.kind !== "SPEKE") {
+		report.skip(
+			id,
+			"drm",
+			`${drm.kind} requires a dedicated media verification method`,
+		);
+		return;
+	}
 	if (!drm.dir || !drm.outputKey) {
 		report.skip(id, "drm", "the DRM row names no destination of its own");
 		return;

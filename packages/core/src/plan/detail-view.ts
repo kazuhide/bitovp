@@ -34,7 +34,7 @@ const VIDEO_CODECS = new Set(["H264", "H265", "VP9", "AV1"]);
 export type RenditionFamily = "video" | "audio" | "subtitle";
 
 export function renditionFamily(rendition: PlanRendition): RenditionFamily {
-	if (VIDEO_CODECS.has(rendition.codec)) {
+	if (rendition.codec === "H262" || VIDEO_CODECS.has(rendition.codec)) {
 		return "video";
 	}
 	return AUDIO_CODECS.has(rendition.codec) ? "audio" : "subtitle";

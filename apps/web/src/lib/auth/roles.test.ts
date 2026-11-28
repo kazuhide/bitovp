@@ -535,8 +535,10 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 		// Instance Redis memory adds one guarded platform-owner GET.
 		// Recorded VOD and Live resources each expose GET, POST and DELETE.
 		// Encoding templates and watch folders share one guarded account-wide GET.
-		// Account statistics and managed codecs add two ADMIN routes and five handlers.
+		// Account statistics, codecs, manifest inventory and operations are ADMIN routes.
 		for (const [path, allowedMethods] of [
+			["/api/encoding-native/manifests", ["GET"]],
+			["/api/encoding-native/operations", ["GET", "POST"]],
 			["/api/encoding-native/statistics", ["GET"]],
 			["/api/encoding-native/codecs", ["GET", "POST", "PATCH", "DELETE"]],
 		] as const) {
@@ -545,7 +547,7 @@ describe("every on-disk route×method is matched by a rule (from disk)", () => {
 				expect(evaluateRole("ADMIN", path, method).allowed).toBe(true);
 			}
 		}
-		expect(guarded.length).toBe(219);
-		expect(methods.length).toBe(308);
+		expect(guarded.length).toBe(221);
+		expect(methods.length).toBe(312);
 	});
 });

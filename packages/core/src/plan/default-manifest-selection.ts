@@ -1,4 +1,5 @@
-import { AUDIO_CODECS } from "./schema";
+import { muxingStreamKeys } from "./muxing-streams";
+import { AUDIO_CODECS, type EncodingPlan } from "./schema";
 
 type SelectionSource = {
 	encodings?: readonly { key: string }[];
@@ -15,6 +16,23 @@ export function defaultManifestSelection<T extends SelectionSource>(plan: T) {
 			(row) => (row.encodingKey ?? fallback) === encodingKey,
 		) as T["renditions"][number][],
 	};
+}
+
+export function defaultSmoothManifestSelection(
+	plan: Pick<EncodingPlan, "encodings" | "renditions" | "muxings">,
+) {
+	const muxings = plan.muxings.filter(
+		(muxing) =>
+			muxing.kind === "MP4" &&
+			muxing.fragmentDuration !== undefined &&
+			(muxing.manifestType ?? "SMOOTH") === "SMOOTH",
+	);
+	const keys = new Set(muxings.flatMap(muxingStreamKeys));
+	const selection = defaultManifestSelection({
+		encodings: plan.encodings,
+		renditions: plan.renditions.filter(({ key }) => keys.has(key)),
+	});
+	return { ...selection, muxings };
 }
 
 type HlsSelectionSource = SelectionSource & {

@@ -372,9 +372,9 @@ function MuxingEditor({
 	const kindCanMux = muxingKindCarriesAudio(kind);
 	const fileOnly = isFileOnlyMuxingKind(kind);
 	const physicalKind = physicalMuxingKind({ ...muxing, kind });
-	const drmKinds = (
-		Object.keys(VOD_DRM_MUXINGS) as WizardDrmRow["kind"][]
-	).filter((k) => VOD_DRM_MUXINGS[k].includes(physicalKind));
+	const drmKinds = (["CENC", "FAIRPLAY", "SPEKE"] as const).filter((kind) =>
+		VOD_DRM_MUXINGS[kind].includes(physicalKind),
+	);
 	const drmOffered = drmKinds.length > 0;
 	/**
 	 * The selection, resolved against the renditions that CURRENTLY exist.

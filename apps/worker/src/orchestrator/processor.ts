@@ -50,6 +50,7 @@ import { VerificationProviderIdPersistenceError } from "./ops/encoding";
 import { destinationOf } from "./ops/exec-shared";
 import { BitmovinCallError } from "./ops/shared";
 import { pollSleepFor } from "./poll-sleep";
+import { ProviderCreateRefusal } from "./provider-create-refusal";
 import type { SdkOps } from "./sdk-ops";
 import {
 	type CreateStamp,
@@ -1321,6 +1322,17 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				// account (dedup via customData is a P2 follow-up).
 				const wasRunning = entry.status === "RUNNING";
 				let hasStartAttempt = entry.startedAt !== undefined;
+				const recoverableCreate =
+					entry.kind === "CREATE_ENCODING_SUPPLEMENT" ||
+					entry.kind === "CREATE_PROGRESSIVE_TS_ID3";
+				const previousResponse = entry.response;
+				const refused =
+					previousResponse &&
+					typeof previousResponse === "object" &&
+					"providerCreateRefused" in previousResponse &&
+					previousResponse.providerCreateRefused === true;
+				const reconcileCreate =
+					recoverableCreate && hasStartAttempt && !refused;
 				const wasVerificationCreateAttempt =
 					isVerificationRun &&
 					entry.kind === "CREATE_ENCODING" &&
@@ -1331,6 +1343,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				entry.status = "RUNNING";
 				entry.startedAt = deps.now();
 				entry.error = undefined;
+				if (recoverableCreate) entry.response = undefined;
 				await persist(encodingJobId, entries);
 
 				try {
@@ -1340,7 +1353,8 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					// preserves its timing. For a verification provider CREATE, that
 					// still means the request may have committed before its response
 					// was lost. Reconcile the exact marker; never POST beside it.
-					stampAdopt = wasRunning || wasVerificationCreateAttempt;
+					stampAdopt =
+						wasRunning || wasVerificationCreateAttempt || reconcileCreate;
 					/**
 					 * the ONE recovery that is not a retry. When a start
 					 * dies of the measured 500/1004 signature AFTER the ladder has
@@ -1524,6 +1538,16 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 							compensation: err.compensation,
 						});
 					}
+					if (
+						recoverableCreate &&
+						!wasRunning &&
+						!reconcileCreate &&
+						err instanceof ProviderCreateRefusal
+					)
+						entry.response = {
+							providerCreateRefused: true,
+							httpStatusCode: err.status,
+						};
 					entry.status = "FAILED";
 					entry.finishedAt = deps.now();
 					entry.error = message;

@@ -67,9 +67,11 @@ const CRED = "00000000-0000-4000-8000-00000000000";
 
 type Muxing = Record<string, unknown>;
 type Rendition = Record<string, unknown>;
-const AV_FILE_KINDS = FILE_ONLY_MUXING_KINDS.filter(
-	(kind) => kind !== "PROGRESSIVE_WAV",
-);
+const AV_FILE_KINDS = [
+	"PROGRESSIVE_TS",
+	"PROGRESSIVE_MOV",
+	"PROGRESSIVE_WEBM",
+] as const;
 type FileKind = (typeof AV_FILE_KINDS)[number];
 
 const H264 = {
@@ -429,6 +431,8 @@ describe("the two predicates every layer reads", () => {
 			"PROGRESSIVE_TS",
 			"PROGRESSIVE_MOV",
 			"PROGRESSIVE_WEBM",
+			"BROADCAST_TS",
+			"MXF",
 		]);
 		// One stream, single file or not.
 		expect(muxingKindCarriesAudio("WEBM")).toBe(false);

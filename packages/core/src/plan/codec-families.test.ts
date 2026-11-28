@@ -30,11 +30,13 @@ function schemaCodecs(): string[] {
 
 /** The expected classification, written down once, by hand, on purpose. */
 const EXPECTED: Record<string, "video" | "audio" | "subtitle"> = {
+	H262: "video",
 	H264: "video",
 	H265: "video",
 	VP9: "video",
 	AV1: "video",
 	AAC: "audio",
+	MP3: "audio",
 	PCM: "audio",
 	AUDIO_PASSTHROUGH: "audio",
 	HE_AAC_V1: "audio",
@@ -76,6 +78,6 @@ describe("codec → rendition family", () => {
 		for (const codec of AUDIO_CODECS) {
 			expect(renditionFamily({ codec } as never), String(codec)).toBe("audio");
 		}
-		expect(AUDIO_CODECS.size).toBe(11);
+		expect(AUDIO_CODECS.size).toBe(12);
 	});
 });

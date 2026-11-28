@@ -586,6 +586,49 @@ it.each(
 	expect(paths).toEqual(detail ? [list, list, detail] : [list]);
 });
 
+it("inspects packed audio AES through its exact child SDK paths without exposing metadata", async () => {
+	const parent = seed("CREATE_MUXING_PACKED_AUDIO");
+	const collection = "drm.aes";
+	const list = `${parent.expected}/drm/aes`;
+	const detail = `${list}/${childId}`;
+	const paths: string[] = [];
+	transport.mockImplementation(async (url: string, init: RequestInit) => {
+		const address = new URL(url);
+		paths.push(address.pathname);
+		expect(init.method).toBe("GET");
+		expect(new Headers(init.headers).get("X-Tenant-Org-Id")).toBe(upstream);
+		const item = { ...model, type: "AES", method: "AES_128" };
+		if (address.pathname === list) {
+			expect(Object.fromEntries(address.searchParams)).toEqual({
+				offset: "0",
+				limit: "25",
+			});
+			return result({ items: [item], totalCount: 1, offset: 0 });
+		}
+		if (address.pathname === detail) return result(item);
+		expect(address.pathname).toBe(`${detail}/customData`);
+		return result({ id: childId, customData: item.customData });
+	});
+	const projection = { id: childId, type: "AES", method: "AES_128" };
+	expect(await (await ask(req("children", collection))).json()).toEqual({
+		items: [projection],
+		total: 1,
+		available: 1,
+		offset: 0,
+	});
+	expect(
+		await (await ask(req("childDetail", collection, childId))).json(),
+	).toEqual({
+		fields: projection,
+	});
+	expect(
+		await (await ask(req("childMetadata", collection, childId))).json(),
+	).toEqual({
+		fields: { keyCount: 1, executionStamp: false },
+	});
+	expect(paths).toEqual([list, list, detail, list, `${detail}/customData`]);
+});
+
 it("reads the recorded encoding root without making it removable", async () => {
 	const parent = seed("CREATE_ENCODING");
 	const index = await (

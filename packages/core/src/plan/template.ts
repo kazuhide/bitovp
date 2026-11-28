@@ -181,6 +181,11 @@ const MUXING_SECTION = {
 	PROGRESSIVE_MOV: "progressiveMov",
 	PROGRESSIVE_WAV: "progressiveWav",
 	PROGRESSIVE_WEBM: "progressiveWebm",
+	BROADCAST_TS: "broadcastTs",
+	MP3: "mp3",
+	MXF: "mxf",
+	PACKED_AUDIO: "packedAudio",
+	SEGMENTED_RAW: "segmentedRaw",
 } as const satisfies Record<EncodingPlan["muxings"][number]["kind"], string>;
 
 type AnyRendition = EncodingPlan["renditions"][number];
@@ -555,10 +560,12 @@ function buildTemplate(plan: EncodingPlan): Tree {
 	}
 
 	const h264: Tree = resourceTable();
+	const h262: Tree = resourceTable();
 	const h265: Tree = resourceTable();
 	const vp9: Tree = resourceTable();
 	const av1: Tree = resourceTable();
 	const aac: Tree = resourceTable();
+	const mp3: Tree = resourceTable();
 	const heAacV1: Tree = resourceTable();
 	const heAacV2: Tree = resourceTable();
 	const ac3: Tree = resourceTable();
@@ -839,6 +846,24 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			codecRef.set(
 				rendition.key,
 				`$/configurations/audio/${group}/${rendition.key}`,
+			);
+		} else if (rendition.codec === "MP3" || rendition.codec === "H262") {
+			const video = rendition.codec === "H262";
+			(video ? h262 : mp3)[rendition.key] = {
+				properties: dense({
+					name: rendition.name,
+					bitrate: rendition.bitrate,
+					rate: rendition.rate,
+					...(video && {
+						width: rendition.width,
+						height: rendition.height,
+						profile: rendition.profile,
+					}),
+				}),
+			};
+			codecRef.set(
+				rendition.key,
+				`$/configurations/${video ? "video/h262" : "audio/mp3"}/${rendition.key}`,
 			);
 		} else if (rendition.codec === "AAC") {
 			aac[rendition.key] = {
@@ -1387,6 +1412,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 			progressiveMov: Tree;
 			progressiveWav: Tree;
 			progressiveWebm: Tree;
+			delivery: Record<string, Tree>;
 		}
 	>();
 	for (const muxing of plan.muxings) {
@@ -1405,6 +1431,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				progressiveMov: {},
 				progressiveWav: resourceTable(),
 				progressiveWebm: resourceTable(),
+				delivery: Object.create(null),
 			};
 			muxingsByEnc.set(ownerEnc, legs);
 		}
@@ -1452,6 +1479,10 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		// schema). The content key is vault material → {{PLACEHOLDER}}.
 		const cencEntries: Tree = resourceTable();
 		const fairplayEntries: Tree = resourceTable();
+		const typedEntries: Record<string, Tree> = resourceTable() as Record<
+			string,
+			Tree
+		>;
 		for (const drm of plan.drm) {
 			if (drm.muxingKey !== muxing.key) {
 				continue;
@@ -1491,13 +1522,33 @@ function buildTemplate(plan: EncodingPlan): Tree {
 						outputs: drmOutputs,
 					}),
 				};
+			} else if (drm.kind !== "SPEKE") {
+				const {
+					kind,
+					key,
+					muxingKey: _,
+					credentialId: _credentialId,
+					destination: _destination,
+					...fields
+				} = drm;
+				const entries = typedEntries[kind.toLowerCase()] ?? resourceTable();
+				entries[key] = {
+					properties: dense({
+						...fields,
+						key: ph("DRM", key, "KEY"),
+						outputs: drmOutputs,
+					}),
+				};
+				typedEntries[kind.toLowerCase()] = entries;
 			}
 		}
 		const drmNode =
 			Object.keys(cencEntries).length > 0 ||
-			Object.keys(fairplayEntries).length > 0
+			Object.keys(fairplayEntries).length > 0 ||
+			Object.keys(typedEntries).length > 0
 				? {
 						drm: {
+							...typedEntries,
 							...(Object.keys(cencEntries).length > 0
 								? { cenc: cencEntries }
 								: {}),
@@ -1572,8 +1623,20 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				},
 			};
 		} else if (muxing.kind === "PROGRESSIVE_TS") {
+			const id3: Record<string, Tree> = Object.create(null);
+			for (const { key, format, ...fields } of muxing.id3Tags ?? []) {
+				const group = {
+					FRAME_ID: "frameId",
+					PLAIN_TEXT: "plainText",
+					RAW: "raw",
+				}[format];
+				const entries = id3[group] ?? resourceTable();
+				entries[key] = { properties: dense(fields) };
+				id3[group] = entries;
+			}
 			progressiveTs[muxing.key] = {
 				...drmNode,
+				...(Object.keys(id3).length && { id3 }),
 				properties: {
 					filename: muxing.filename,
 					// Absent fields stay absent — the encoder's defaults apply.
@@ -1600,7 +1663,21 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				properties: { filename: muxing.filename, ...shared },
 			};
 		} else {
-			unreachable(muxing);
+			const section = MUXING_SECTION[muxing.kind];
+			const group = legs.delivery[section] ?? resourceTable();
+			group[muxing.key] = {
+				...drmNode,
+				properties: {
+					...("filename" in muxing
+						? { filename: muxing.filename }
+						: {
+								segmentLength: muxing.segmentLength,
+								segmentNaming: muxing.segmentNaming,
+							}),
+					...shared,
+				},
+			};
+			legs.delivery[section] = group;
 		}
 	}
 
@@ -2193,12 +2270,14 @@ function buildTemplate(plan: EncodingPlan): Tree {
 		},
 		configurations: {
 			...(Object.keys(h264).length > 0 ||
+			Object.keys(h262).length > 0 ||
 			Object.keys(h265).length > 0 ||
 			Object.keys(vp9).length > 0 ||
 			Object.keys(av1).length > 0
 				? {
 						video: {
 							...(Object.keys(h264).length > 0 ? { h264 } : {}),
+							...(Object.keys(h262).length > 0 ? { h262 } : {}),
 							...(Object.keys(h265).length > 0 ? { h265 } : {}),
 							...(Object.keys(vp9).length > 0 ? { vp9 } : {}),
 							...(Object.keys(av1).length > 0 ? { av1 } : {}),
@@ -2206,6 +2285,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					}
 				: {}),
 			...(Object.keys(aac).length > 0 ||
+			Object.keys(mp3).length > 0 ||
 			Object.keys(heAacV1).length > 0 ||
 			Object.keys(heAacV2).length > 0 ||
 			Object.keys(ac3).length > 0 ||
@@ -2219,6 +2299,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 				? {
 						audio: {
 							...(Object.keys(aac).length > 0 ? { aac } : {}),
+							...(Object.keys(mp3).length > 0 ? { mp3 } : {}),
 							...(Object.keys(heAacV1).length ? { heAacV1 } : {}),
 							...(Object.keys(heAacV2).length ? { heAacV2 } : {}),
 							...(Object.keys(ac3).length > 0 ? { ac3 } : {}),
@@ -2261,6 +2342,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 					progressiveMov: {},
 					progressiveWav: {},
 					progressiveWebm: {},
+					delivery: {},
 				};
 				const fileEntries = fileInputStreamsByEnc.get(name) ?? {};
 				const atmosEntries = dolbyAtmosByEnc.get(name) ?? {};
@@ -2346,6 +2428,7 @@ function buildTemplate(plan: EncodingPlan): Tree {
 							: {}),
 						streams: streamsByEnc.get(name) ?? {},
 						muxings: {
+							...legs.delivery,
 							...(Object.keys(legs.fmp4).length > 0 ? { fmp4: legs.fmp4 } : {}),
 							...(Object.keys(legs.cmaf).length > 0 ? { cmaf: legs.cmaf } : {}),
 							...(Object.keys(legs.mp4).length > 0 ? { mp4: legs.mp4 } : {}),
@@ -2512,7 +2595,9 @@ export function encodingTemplateExportUnavailableReason(
 	| "MANIFEST_DETAILS"
 	| "PINNED_AUDIO_INPUT"
 	| "DOLBY_LOUDNESS"
+	| "ENCODING_SUPPLEMENTS"
 	| undefined {
+	if (plan.supplements?.length) return "ENCODING_SUPPLEMENTS";
 	if (plan.renditions.some((r) => r.codec === "AUDIO_PASSTHROUGH"))
 		return "PINNED_AUDIO_INPUT";
 	const dolby = new Set(
@@ -2528,23 +2613,24 @@ export function encodingTemplateExportUnavailableReason(
 		plan.muxings.some(
 			(muxing) => muxing.kind === "WEBM" && muxing.progressive,
 		) ||
-		plan.manifests.some(
-			(manifest) =>
-				manifest.kind !== "SMOOTH" &&
-				(manifest.generationMode === "DEFAULT" ||
-					(manifest.detailed &&
-						Object.values(manifest.detailed).some(
-							(value) => value !== undefined,
-						)) ||
-					(manifest.kind === "DASH" &&
-						manifest.adaptationSets?.some(
-							(set) =>
-								set.labels ||
-								set.roles ||
-								set.accessibilities ||
-								set.customAttributes,
-						))),
-		)
+		plan.manifests.some((manifest) => {
+			if (manifest.generationMode === "DEFAULT") return true;
+			if (manifest.kind === "SMOOTH") return false;
+			return (
+				(manifest.detailed &&
+					Object.values(manifest.detailed).some(
+						(value) => value !== undefined,
+					)) ||
+				(manifest.kind === "DASH" &&
+					manifest.adaptationSets?.some(
+						(set) =>
+							set.labels ||
+							set.roles ||
+							set.accessibilities ||
+							set.customAttributes,
+					))
+			);
+		})
 	)
 		return "MANIFEST_DETAILS";
 	for (const manifest of plan.manifests) {
@@ -2603,6 +2689,10 @@ export function planToEncodingTemplateYaml(plan: EncodingPlan): string {
 			"Re-select the HDR10+ video and metadata objects before exporting the template.",
 		);
 	const unavailable = encodingTemplateExportUnavailableReason(plan);
+	if (unavailable === "ENCODING_SUPPLEMENTS")
+		throw new Error(
+			"Use Plan JSON to preserve supplementary captions, thumbnails and provider metrics.",
+		);
 	if (unavailable === "PINNED_AUDIO_INPUT")
 		throw new Error(
 			"Use Plan JSON to retain the verified input version and selected audio track.",

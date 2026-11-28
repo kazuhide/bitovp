@@ -56,6 +56,14 @@ const MSL_KIND: PlanOutput["kind"] = "AKAMAI_MSL";
  * the bottom of this file so a future MSL5 entry cannot compile past the
  * gate/constraint either.
  */
+const fileDeliveryMuxings = [
+	"BROADCAST_TS",
+	"MP3",
+	"MXF",
+	"PACKED_AUDIO",
+	"SEGMENTED_RAW",
+] as const;
+
 export const AKAMAI_MSL_REQUIREMENTS = {
 	DASH: {
 		/** SDK supports distinct fMP4 and CMAF resources. */
@@ -81,6 +89,7 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 			"PROGRESSIVE_MOV",
 			"PROGRESSIVE_WAV",
 			"PROGRESSIVE_WEBM",
+			...fileDeliveryMuxings,
 		],
 		/**
 		 * The manifest half of the same idea, and it was declared 3× and read
@@ -105,6 +114,7 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 			"PROGRESSIVE_MOV",
 			"PROGRESSIVE_WAV",
 			"PROGRESSIVE_WEBM",
+			...fileDeliveryMuxings,
 		],
 		forbiddenManifests: ["DASH", "SMOOTH"],
 	},
@@ -120,6 +130,7 @@ export const AKAMAI_MSL_REQUIREMENTS = {
 			"PROGRESSIVE_MOV",
 			"PROGRESSIVE_WAV",
 			"PROGRESSIVE_WEBM",
+			...fileDeliveryMuxings,
 		],
 		forbiddenManifests: ["SMOOTH"],
 	},

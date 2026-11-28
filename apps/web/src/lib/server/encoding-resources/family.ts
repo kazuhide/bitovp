@@ -1,5 +1,6 @@
 import type BitmovinApi from "@bitmovin/api-sdk";
 import { z } from "zod";
+import type { ChildDiscriminator } from "./child-collection";
 
 export type ParentRef =
 	| "encodingId"
@@ -10,6 +11,7 @@ export type ParentRef =
 	| "manifestId"
 	| "periodId"
 	| "adaptationSetId"
+	| "mediaId"
 	| "streamInfoId";
 export type ResourceAddress = {
 	id: string;
@@ -23,6 +25,8 @@ export type ResourcePage = {
 };
 export type ResourceFamily = {
 	parents: readonly ParentRef[];
+	fixedDetailPath?: (address: ResourceAddress) => string;
+	expectedDiscriminator?: ChildDiscriminator;
 	listScope?: "linked";
 	customData?: (
 		api: BitmovinApi,
@@ -74,6 +78,8 @@ export function projectResourceFields<T extends ProviderResource>(
 
 export function defineFamily<T extends ProviderResource>(definition: {
 	parents: readonly ParentRef[];
+	fixedDetailPath?: (address: ResourceAddress) => string;
+	expectedDiscriminator?: ResourceFamily["expectedDiscriminator"];
 	fields: readonly (NoInfer<keyof T> & string)[];
 	listScope?: "linked";
 	customData?: ResourceFamily["customData"];
@@ -92,6 +98,8 @@ export function defineFamily<T extends ProviderResource>(definition: {
 	const list = definition.list;
 	return {
 		parents: definition.parents,
+		fixedDetailPath: definition.fixedDetailPath,
+		expectedDiscriminator: definition.expectedDiscriminator,
 		listScope: definition.listScope,
 		customData: definition.customData,
 		information: definition.information,

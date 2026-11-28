@@ -163,6 +163,58 @@ in `implementation-audit.json`. `pnpm test:api-coverage` checks the canonical
 operation inventory and rejects duplicate or stale proof anchors. Provider
 execution and request-field audits are tracked independently.
 
+### Provider account operations
+
+In Settings → Encoding, **Operations** manages the provider resources for the
+selected account. The corresponding API is `GET /api/encoding-native/operations`
+for operation receipts or `POST /api/encoding-native/operations` for an
+action. Use the account's current resource scope, pass an `Idempotency-Key`
+and use the same key to retrieve the receipt for a retried request. Starting a
+template or watch folder requires explicit confirmation. Template creation
+supports the 720p H.264/AAC MP4 form. **Manifests** lists the selected
+account's DASH, HLS and Smooth manifests via
+`GET /api/encoding-native/manifests`.
+
+### Supplementary VOD resources
+
+Set a `supplements` array in VOD Plan JSON. Each entry has a unique `key`
+and `kind`. For example, `{ "key": "provider-psnr", "kind": "PSNR",
+"renditionKey": "video-720" }` enables Bitmovin stream PSNR for that rendition
+when the worker prepares the encoding. The Provider resources panel on the
+resulting VOD job shows the provider measurement. BitOVP QC Lab measurement
+uses its existing configuration.
+
+- `SCC_CONVERSION` converts an SCC file to WebVTT. Set `inputKey`, `inputPath`,
+  `filename` and `destination`.
+- `SIDECAR` and `WEBVTT_SIDECAR` copy a WebVTT file from an existing input to
+  the selected destination. Set `inputKey`, `inputPath` and `destination`.
+- `SCTE35_TRIGGER` accepts `base64EncodedMetadata`. Encoding-level entries
+  can select an `encodingKey` in multi-encoding plans.
+- `BIF` uses `renditionKey`, `filename`, `destination`, positive thumbnail
+  `distance` in seconds and `width` or `height`.
+- `BURN_IN_ASSA` uses `renditionKey`, `inputKey`, `inputPath` and
+  `characterEncoding`. `BURN_IN_DVBSUB` uses `renditionKey` and an
+  `ingestKey` with `SUBTITLE_RELATIVE` selection under the same encoding.
+- `CEA_SCC` and `CEA_SRT` use `renditionKey`, `inputKey` and `inputPath`.
+  SCC accepts `smpteTimecodeFlavor`. SRT needs `characterEncoding` and
+  `ccChannel` (`CC1` or `CC3`).
+
+Save Plan JSON to keep these settings.
+
+For a finished VOD job, `DELETE /api/encoding-jobs/<id>/resources` accepts the
+recorded stream's `step`, `attempt` and `confirmResourceId` with
+`filters: { mode: "one", filterId }` or
+`filters: { mode: "all", filterIds }`. Bulk removal requires the complete
+current set of recorded attachments. The operation detaches stream filters.
+Use the same body with `POST` to check a pending removal.
+
+### Live DNS mappings
+
+`DELETE /api/live/dns-mappings` removes the confirmed mappings for one
+Live encoding by ID. A 207 response reports IDs that still need verification. Use the per-encoding GET to retrieve that set. In the delete
+request, send `bitmovinAccountId`, `encodingId` and `confirmMappingIds`.
+Settings → Live → DNS mappings offers the same operation after confirmation.
+
 ## Public request body limits
 
 `POST /api/auth/login` accepts up to **4 KiB**, `POST /api/auth/setup` up to

@@ -39,11 +39,24 @@ export function manifestCurlSnapshot(
 		);
 	const kind = entry.kind;
 	let body: Body;
-	if (kind === "CREATE_MANIFEST_HLS" || kind === "CREATE_MANIFEST_DASH") {
+	const defaultSmooth =
+		kind === "CREATE_MANIFEST_SMOOTH" &&
+		entry.payload.generationMode === "DEFAULT";
+	if (
+		kind === "CREATE_MANIFEST_HLS" ||
+		kind === "CREATE_MANIFEST_DASH" ||
+		defaultSmooth
+	) {
 		if (!snapshot) return undefined;
 		const outputId = id("outputId");
 		if (!outputId) return false;
-		body = pick(kind === "CREATE_MANIFEST_HLS" ? globalHls : globalDash);
+		body = pick(
+			defaultSmooth
+				? "serverManifestName clientManifestName name"
+				: kind === "CREATE_MANIFEST_HLS"
+					? globalHls
+					: globalDash,
+		);
 		body.name = String(snapshot.name ?? "");
 		for (const field of ["hlsMasterPlaylistVersion", "hlsMediaPlaylistVersion"])
 			if (typeof body[field] === "string")

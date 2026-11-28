@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-28T01:48:55.817Z",
-		"sourceCommit": "1fe1dfa2b0976dead2f0dced78a2faf646e90404",
-		"sourceFingerprint": "1c2bc97e32be56c6ac3ebb8e13ff01f055385e29f39b5c1100a687377f0cb7ee",
+		"generatedAt": "2026-11-28T02:08:13.828Z",
+		"sourceCommit": "76f8161d3a5c7a1ba516393fb7adef56d581f782",
+		"sourceFingerprint": "163db7c5e074df987b4786cca049e70752456c7ce4e30d931c32d7fb8cf48197",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -9163,7 +9163,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 393
+					"line": 394
 				}
 			]
 		},
@@ -9177,7 +9177,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 406
+					"line": 407
 				}
 			]
 		},
@@ -11067,7 +11067,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 201
+					"line": 202
 				}
 			]
 		},
@@ -11173,7 +11173,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 332
+					"line": 333
 				}
 			]
 		},
@@ -11187,7 +11187,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 341
+					"line": 342
 				}
 			]
 		},
@@ -11329,7 +11329,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 343
+					"line": 344
 				}
 			]
 		},
@@ -11343,7 +11343,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 347
+					"line": 348
 				}
 			]
 		},
@@ -11403,7 +11403,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 349
+					"line": 350
 				}
 			]
 		},
@@ -11417,7 +11417,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 357
+					"line": 358
 				}
 			]
 		},
@@ -11775,7 +11775,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 359
+					"line": 360
 				}
 			]
 		},
@@ -11789,7 +11789,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 363
+					"line": 364
 				}
 			]
 		},
@@ -11923,7 +11923,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 365
+					"line": 366
 				}
 			]
 		},
@@ -11937,7 +11937,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 369
+					"line": 370
 				}
 			]
 		},
@@ -12249,7 +12249,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 371
+					"line": 372
 				}
 			]
 		},
@@ -12263,7 +12263,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 375
+					"line": 376
 				}
 			]
 		},
@@ -15228,7 +15228,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 442
+					"line": 443
 				}
 			]
 		},
@@ -15246,7 +15246,7 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 207
+					"line": 208
 				}
 			]
 		},
@@ -15528,7 +15528,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 377
+					"line": 378
 				}
 			]
 		},
@@ -15542,7 +15542,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 385
+					"line": 386
 				}
 			]
 		},
@@ -15902,7 +15902,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 387
+					"line": 388
 				}
 			]
 		},
@@ -15916,7 +15916,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 391
+					"line": 392
 				}
 			]
 		},
@@ -16628,7 +16628,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 410
+					"line": 411
 				}
 			]
 		},
@@ -16642,7 +16642,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 418
+					"line": 419
 				}
 			]
 		},
@@ -16688,7 +16688,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 414
+					"line": 415
 				}
 			]
 		},
@@ -16702,7 +16702,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 420
+					"line": 421
 				}
 			]
 		},
@@ -16716,7 +16716,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 436
+					"line": 437
 				}
 			]
 		},
@@ -16762,7 +16762,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 438
+					"line": 439
 				}
 			]
 		},
@@ -16776,7 +16776,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/native-account-provider.ts",
-					"line": 440
+					"line": 441
 				}
 			]
 		}
@@ -34554,8 +34554,8 @@
 						"evidence": [
 							{
 								"file": "apps/web/src/lib/server/native-account-provider.ts",
-								"line": 396,
-								"callLine": 393
+								"line": 397,
+								"callLine": 394
 							}
 						]
 					},
@@ -34620,8 +34620,8 @@
 						"evidence": [
 							{
 								"file": "apps/web/src/lib/server/native-account-provider.ts",
-								"line": 395,
-								"callLine": 393
+								"line": 396,
+								"callLine": 394
 							}
 						]
 					}
@@ -38130,8 +38130,8 @@
 						"evidence": [
 							{
 								"file": "apps/web/src/lib/server/native-account-provider.ts",
-								"line": 344,
-								"callLine": 343
+								"line": 345,
+								"callLine": 344
 							}
 						]
 					},
@@ -39166,8 +39166,8 @@
 						"evidence": [
 							{
 								"file": "apps/web/src/lib/server/native-account-provider.ts",
-								"line": 366,
-								"callLine": 365
+								"line": 367,
+								"callLine": 366
 							}
 						]
 					},
@@ -39182,8 +39182,8 @@
 						"evidence": [
 							{
 								"file": "apps/web/src/lib/server/native-account-provider.ts",
-								"line": 366,
-								"callLine": 365
+								"line": 367,
+								"callLine": 366
 							}
 						]
 					}
@@ -44732,8 +44732,8 @@
 						"evidence": [
 							{
 								"file": "apps/web/src/lib/server/native-account-provider.ts",
-								"line": 445,
-								"callLine": 442
+								"line": 446,
+								"callLine": 443
 							}
 						]
 					}
@@ -45978,8 +45978,8 @@
 						"evidence": [
 							{
 								"file": "apps/web/src/lib/server/native-account-provider.ts",
-								"line": 388,
-								"callLine": 387
+								"line": 389,
+								"callLine": 388
 							}
 						]
 					},
@@ -45994,8 +45994,8 @@
 						"evidence": [
 							{
 								"file": "apps/web/src/lib/server/native-account-provider.ts",
-								"line": 388,
-								"callLine": 387
+								"line": 389,
+								"callLine": 388
 							}
 						]
 					}
@@ -46714,8 +46714,8 @@
 						"evidence": [
 							{
 								"file": "apps/web/src/lib/server/native-account-provider.ts",
-								"line": 423,
-								"callLine": 420
+								"line": 424,
+								"callLine": 421
 							}
 						]
 					},
@@ -46740,8 +46740,8 @@
 						"evidence": [
 							{
 								"file": "apps/web/src/lib/server/native-account-provider.ts",
-								"line": 422,
-								"callLine": 420
+								"line": 423,
+								"callLine": 421
 							}
 						]
 					},
@@ -46756,8 +46756,8 @@
 						"evidence": [
 							{
 								"file": "apps/web/src/lib/server/native-account-provider.ts",
-								"line": 427,
-								"callLine": 420
+								"line": 428,
+								"callLine": 421
 							}
 						]
 					},

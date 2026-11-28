@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
 	applyRoleOutputAcl,
+	azureSupplementStorageKeys,
 	type CompiledOperation,
 	checkHdr10PlusPlan,
 	checkInternalHevcV2Plan,
@@ -848,7 +849,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		// finalize without flipping the job to RUNNING first.
 		const ids = new Map<string, string>();
 		const outputKinds = vodOutputKinds(plan.outputs);
-		const azureOutputs = plan.outputs.filter(({ kind }) => kind === "AZURE");
+		const azureOutputs = azureSupplementStorageKeys(plan);
 		let checkedSupplementStorage = false;
 		// Hoisted: the answer cannot change during the run, and computing it per
 		// step made this O(n^2) over the step log (review nit).
@@ -1343,7 +1344,6 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 				try {
 					if (
 						entry.kind === "CREATE_ENCODING_SUPPLEMENT" &&
-						entry.refs.outputId !== undefined &&
 						!wasRunning &&
 						!reconcileCreate &&
 						!checkedSupplementStorage &&
@@ -1352,7 +1352,7 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 						// Distinct credentials can point at the same container. Check all
 						// planned writes before recording a new supplement dispatch.
 						const storage = await Promise.all(
-							azureOutputs.map(async ({ key }) => {
+							azureOutputs.map(async (key) => {
 								const id = ids.get(`output:${key}`);
 								if (!id)
 									throw new Error(
@@ -1374,12 +1374,19 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 						if (await checkCancel()) return await finalizeCancel();
 					}
 					// A resume can reconcile the exact payload if the reply is lost.
-					entry.payload = applyRoleOutputAcl(entry, outputKinds).payload;
-					entry.status = "RUNNING";
-					entry.startedAt = deps.now();
-					entry.error = undefined;
-					if (recoverableCreate) entry.response = undefined;
-					await persist(encodingJobId, entries);
+					const dispatchEntry: StepLogEntry = {
+						...entry,
+						payload: applyRoleOutputAcl(entry, outputKinds).payload,
+						status: "RUNNING",
+						startedAt: deps.now(),
+						error: undefined,
+						...(recoverableCreate && { response: undefined }),
+					};
+					await persist(
+						encodingJobId,
+						entries.map((step) => (step === entry ? dispatchEntry : step)),
+					);
+					Object.assign(entry, dispatchEntry);
 					activeEntry = entry;
 					stampStep = entry.step;
 					// `/retry` reseeds FAILED/RUNNING to PENDING but deliberately

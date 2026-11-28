@@ -789,7 +789,10 @@ export {
 	SecretEgressConfigError,
 	StorageEndpointBlockedError,
 } from "./plan/egress";
-export { validateEncodingSupplements } from "./plan/encoding-supplements";
+export {
+	azureSupplementStorageKeys,
+	validateEncodingSupplements,
+} from "./plan/encoding-supplements";
 export { VOD_FIXTURES } from "./plan/fixtures";
 export {
 	hasPrivateStorageLocator,

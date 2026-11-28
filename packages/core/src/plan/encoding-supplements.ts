@@ -22,6 +22,28 @@ function inputExtension(item: EncodingSupplement) {
 	}
 }
 
+/** The Azure outputs a supplement can write, and the Azure files it can collide with. */
+export function azureSupplementStorageKeys(plan: EncodingPlan): string[] {
+	const destinations = (plan.supplements ?? []).flatMap((item) =>
+		"destination" in item ? [item.destination.outputKey] : [],
+	);
+	if (!destinations.length) return [];
+	const supplementKeys = new Set([
+		...destinations,
+		...(plan.deliveryMirrors ?? []).map(({ outputKey }) => outputKey),
+	]);
+	const azure = plan.outputs.filter(({ kind }) => kind === "AZURE");
+	if (!azure.some(({ key }) => supplementKeys.has(key))) return [];
+	const otherFileKeys = new Set(
+		[...staticMuxingOutputFiles(plan), ...staticManifestOutputFiles(plan)].map(
+			({ destination }) => destination.outputKey,
+		),
+	);
+	return azure
+		.filter(({ key }) => supplementKeys.has(key) || otherFileKeys.has(key))
+		.map(({ key }) => key);
+}
+
 export function validateEncodingSupplements(
 	plan: EncodingPlan,
 	resolvedStorageKeys?: ReadonlyMap<string, string>,

@@ -1484,9 +1484,18 @@ describe("orchestrator processor", () => {
 		expect(send).toHaveBeenCalledTimes(definitive ? 2 : 1);
 	});
 
-	it("keeps Azure supplement preflight resumable until a create is sent", async () => {
+	it.each([
+		"retry",
+		"collision",
+		"unused",
+	] as const)("checks only planned Azure supplement storage before dispatch (%s)", async (scenario) => {
 		const video = basePlan.renditions.find(({ codec }) => codec === "H264");
-		if (!video) throw new Error("Missing supplement fixture");
+		const origin = basePlan.outputs[0];
+		if (!video || !origin) throw new Error("Missing supplement fixture");
+		const destinations =
+			scenario === "collision"
+				? ["azure", "mirror"]
+				: [scenario === "unused" ? origin.key : "azure"];
 		const plan = encodingPlanSchema.parse({
 			...basePlan,
 			bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
@@ -1499,17 +1508,19 @@ describe("orchestrator processor", () => {
 					container: key,
 				})),
 			],
-			deliveryMirrors: [{ outputKey: "mirror" }],
+			deliveryMirrors:
+				scenario === "retry" ? [{ outputKey: "mirror" }] : undefined,
 			supplements: [
-				{
+				{ kind: "PSNR", key: "qc", renditionKey: video.key },
+				...destinations.map((key) => ({
 					kind: "BIF",
-					key: "preview",
+					key,
 					renditionKey: video.key,
-					destination: { outputKey: "azure", path: "extras/" },
+					destination: { outputKey: key, path: "extras/" },
 					filename: "preview.bif",
 					distance: 10,
 					width: 320,
-				},
+				})),
 			],
 		});
 		const stepLog = initStepLog(compilePlan(plan));
@@ -1528,9 +1539,12 @@ describe("orchestrator processor", () => {
 			expect(saved?.startedAt).toBeUndefined();
 			expect(saved?.status).toBe("PENDING");
 			expect(create).not.toHaveBeenCalled();
-			if (preflight.mock.calls.length === 1)
+			if (
+				scenario === "unused" ||
+				(scenario === "retry" && preflight.mock.calls.length === 1)
+			)
 				throw new Error("Azure output details unavailable");
-			return outputId;
+			return scenario === "collision" ? "same-azure-container" : outputId;
 		});
 		const { processor, row } = setup(
 			{ plan, stepLog },
@@ -1548,9 +1562,20 @@ describe("orchestrator processor", () => {
 				});
 			},
 		);
-		await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow(
-			"Azure output details unavailable",
-		);
+		const result = processor({ encodingJobId: JOB_ID });
+		if (scenario === "unused") {
+			await result;
+			expect(preflight).not.toHaveBeenCalled();
+			expect(create).toHaveBeenCalledTimes(2);
+			return;
+		}
+		if (scenario === "collision") {
+			await expect(result).rejects.toThrow(/file is already written/);
+			expect(preflight).toHaveBeenCalledTimes(2);
+			expect(create).not.toHaveBeenCalled();
+			return;
+		}
+		await expect(result).rejects.toThrow("Azure output details unavailable");
 		const history = row.stepLog as StepLogEntry[];
 		expect(
 			history.find(({ kind }) => kind === "CREATE_ENCODING_SUPPLEMENT")
@@ -1565,7 +1590,68 @@ describe("orchestrator processor", () => {
 			["output:azure"],
 			["output:mirror"],
 		]);
-		expect(create).toHaveBeenCalledTimes(1);
+		expect(create).toHaveBeenCalledTimes(2);
+	});
+
+	it.each([
+		false,
+		true,
+	])("keeps an unsent supplement retryable after a failed dispatch journal write (prior refusal %s)", async (priorRefusal) => {
+		const video = basePlan.renditions.find(({ codec }) => codec === "H264");
+		if (!video) throw new Error("Missing video fixture");
+		const plan = encodingPlanSchema.parse({
+			...basePlan,
+			bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
+			supplements: [{ kind: "PSNR", key: "quality", renditionKey: video.key }],
+		});
+		const stepLog = initStepLog(compilePlan(plan));
+		const step = stepLog.find(
+			({ kind }) => kind === "CREATE_ENCODING_SUPPLEMENT",
+		);
+		if (!step) throw new Error("Missing supplement step");
+		if (priorRefusal) {
+			step.startedAt = "2026-06-10T00:00:00.000Z";
+			step.response = { providerCreateRefused: true, httpStatusCode: 403 };
+		}
+		const send = vi.fn(async () => undefined);
+		const { processor, row, updateMany } = setup(
+			{ plan, stepLog },
+			{},
+			undefined,
+			({ stamp }) =>
+				fakeSdk({
+					createEncodingSupplement: async () => {
+						if (stamp?.adoptWindow?.())
+							throw new Error("Unexpected reconciliation");
+						return send();
+					},
+				}),
+		);
+		const write = updateMany.getMockImplementation();
+		if (!write) throw new Error("Missing fixture persistence");
+		let fail = true;
+		updateMany.mockImplementation(async (args) => {
+			const receipt = (args.data.stepLog as StepLogEntry[] | undefined)?.find(
+				({ kind }) => kind === "CREATE_ENCODING_SUPPLEMENT",
+			);
+			if (fail && receipt?.status === "RUNNING") {
+				fail = false;
+				throw new Error("Opening dispatch journal failed");
+			}
+			return write(args);
+		});
+		await expect(processor({ encodingJobId: JOB_ID })).rejects.toThrow(
+			"Opening dispatch journal failed",
+		);
+		expect(send).not.toHaveBeenCalled();
+		const history = row.stepLog as StepLogEntry[];
+		const saved = history.find((entry) => entry.step === step.step);
+		expect(saved?.startedAt).toBe(step.startedAt);
+		expect(saved?.response).toEqual(step.response);
+		row.stepLog = reseedFailedSteps(history);
+		row.status = "QUEUED";
+		await processor({ encodingJobId: JOB_ID });
+		expect(send).toHaveBeenCalledOnce();
 	});
 
 	it("resumes by skipping DONE steps and reusing their resource ids", async () => {

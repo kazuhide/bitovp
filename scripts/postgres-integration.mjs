@@ -50,7 +50,7 @@ export const GROUPS = [
 		workspace: "@bitovp/web",
 		directory: "apps/web",
 		files: {
-			"src/lib/server/encoding-resources/removal.integration.test.ts": 185,
+			"src/lib/server/encoding-resources/removal.integration.test.ts": 191,
 			"src/lib/server/native-account-journal.integration.test.ts": 3,
 			"src/app/api/encoding-native/codecs/route.integration.test.ts": 21,
 			"src/lib/server/create-request.integration.test.ts": 3,

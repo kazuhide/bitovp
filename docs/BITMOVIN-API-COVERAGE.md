@@ -165,9 +165,12 @@ the analysis cannot resolve.
 
 The workflow ledger records app entry points, SDK transport tests, and provider
 execution status for each operation. It includes full filtered CSV exports.
-SDK 1.289.0 source coverage is 1,094 of 1,098. The four open operations cover
-DASH CMAF Content Protection creation and removal, and bulk deletion of DNS
-mappings and stream filter attachments. BitOVP removes confirmed IDs individually.
+SDK 1.289.0 source coverage is 1,096 of 1,098. The two open operations create
+and remove DASH Content Protection for native CMAF representations. Creation
+requires a DRM ID on the referenced muxing. The SDK does not expose DRM
+registration for native CMAF muxing. Deletion requires an existing protection
+record linked to that representation. The application can inspect those
+records when Bitmovin returns them.
 
 See [coverage queries and evidence](API-USAGE.md#encoding-api-coverage).
 
@@ -207,11 +210,14 @@ account usage statistics and management of supported provider codec configuratio
 The metadata view reports field counts for the selected resource.
 Resource inspection is scoped to a [VOD job](user-guide/VOD.md#inspect-or-remove-a-provider-resource)
 or a [Live run](user-guide/LIVE.md#inspect-a-runs-provider-resources).
-VOD removal is individually confirmed. Live resource inspection is read-only.
+VOD removal requires confirmation of the recorded target. Stream filters can
+also be detached as a collection. Live run inspection is read-only. The
+separate DNS mappings settings can remove the collection for a verified
+BitOVP-managed run.
 Presets and watch folders use application-managed templates and storage sweeps.
 
-The VOD authoring plan has no H.262, MJPEG, or VP8 configuration and no
-dedicated Broadcast TS or MXF muxing. Live output supports primary MSL.
+VOD Plan JSON supports additional muxings including Broadcast TS and MXF.
+Live output supports primary MSL.
 Author storage mirrors in the wizard and keep supported MSL or SFTP mirror
 configurations in expert JSON. MoQ setup and scope are covered in the
 [Live guide](user-guide/LIVE.md#experimental-moq-delivery).

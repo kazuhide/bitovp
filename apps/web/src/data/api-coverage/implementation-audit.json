@@ -6556,6 +6556,27 @@
 			"provider": "unverified"
 		},
 		{
+			"sdkMethod": "encoding.live.encodings.dnsMappings.deleteAll",
+			"httpVerb": "DELETE",
+			"path": "/encoding/live/encodings/{encoding_id}/dns-mappings",
+			"scope": "live",
+			"scenario": "Delete the complete confirmed ingest DNS collection from a verified BitOVP-managed Live run.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/live/dns-mappings",
+				"anchor": "deleteDnsMappingCollection(req, ctx, parsed.data)"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/dns-mapping-collection-removal.ts",
+				"anchor": "api.encoding.live.encodings.dnsMappings.deleteAll("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"dispatches the DNS collection delete on the exact owned running encoding\""
+			},
+			"provider": "unverified"
+		},
+		{
 			"sdkMethod": "encoding.live.encodings.dnsMappings.get",
 			"httpVerb": "GET",
 			"path": "/encoding/live/encodings/{encoding_id}/dns-mappings/{id}",
@@ -8835,6 +8856,27 @@
 				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
 				"anchor": "\"removes the recorded $kind through its exact SDK path and persists the result",
 				"caseGroup": "recorded-resource-deletes"
+			},
+			"provider": "unverified"
+		},
+		{
+			"sdkMethod": "encoding.encodings.streams.filters.deleteAll",
+			"httpVerb": "DELETE",
+			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/filters",
+			"scope": "vod",
+			"scenario": "Detach the complete confirmed filter collection on the stream of a terminal VOD job.",
+			"entrypoint": {
+				"httpVerb": "DELETE",
+				"path": "/api/encoding-jobs/[id]/resources",
+				"anchor": "removeResource(req, { jobId: id }, \"remove\")"
+			},
+			"transport": {
+				"file": "apps/web/src/lib/server/encoding-resources/stream-filter-removal.ts",
+				"anchor": "api.encoding.encodings.streams.filters.deleteAll("
+			},
+			"contractTest": {
+				"file": "apps/web/src/lib/server/encoding-resources/removal.integration.test.ts",
+				"anchor": "\"deletes the confirmed VOD stream-filter collection through the SDK\""
 			},
 			"provider": "unverified"
 		},

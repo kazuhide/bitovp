@@ -13,6 +13,7 @@ with versions based on [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 - Configure supplementary captions, BIF thumbnails, SCTE-35 triggers, and provider PSNR in VOD Plan JSON.
 - Author additional VOD formats including Broadcast TS, MP3, MXF, Packed Audio, and Segmented Raw. Add supported DRM to recorded packaging plans and inspect Packed Audio AES resources.
 - Detach recorded VOD stream filters and remove the confirmed group of DNS mappings for a Live encoding.
+- Remove the entire stream-filter collection for a recorded VOD stream or the ingest DNS mapping collection for a verified BitOVP-managed Live run.
 - Browse Bitmovin Encoding inputs, outputs, templates, watch folders, codecs and filters from Settings with an explicitly scoped account.
 - Configure AWS S3 role-based input and output for a fixed-ladder VOD job and reuse those settings in saved plans and template YAML.
 - Keep role-based S3 delivery mirrors private and reconcile role resources after an interrupted create request.

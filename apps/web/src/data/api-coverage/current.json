@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
 	"provenance": {
-		"generatedAt": "2026-11-28T02:13:16.982Z",
-		"sourceCommit": "729b5980f62e3ebb70d4c84ca9d807b7fe960b1a",
-		"sourceFingerprint": "2b9bd431ce3e44963c42df887e35d01884df663f9fc018e549d3f88be449b05b",
+		"generatedAt": "2026-11-28T12:44:47.077Z",
+		"sourceCommit": "dc68d0a61040071e4b744ff2fcc83587c8b78e4b",
+		"sourceFingerprint": "646e51bc47496f7d0c915d5fd62e3be47f1dafc9337b1d4ac39781c0164dc988",
 		"sdkVersion": "1.289.0",
 		"typescriptVersion": "5.9.3",
 		"sdkFingerprint": "a564d4fbedc0bf9cc7ef9116c730c60f33183e2fc16b886221e02a67b029d7e5",
@@ -12,8 +12,8 @@
 	},
 	"summary": {
 		"totalOperations": 1098,
-		"sourceConfirmed": 1094,
-		"unconfirmed": 4,
+		"sourceConfirmed": 1096,
+		"unconfirmed": 2,
 		"createTotal": 219,
 		"createSourceConfirmed": 218
 	},
@@ -27,8 +27,8 @@
 		{
 			"family": "encodings",
 			"total": 425,
-			"sourceConfirmed": 424,
-			"unconfirmed": 1
+			"sourceConfirmed": 425,
+			"unconfirmed": 0
 		},
 		{
 			"family": "errorDefinitions",
@@ -57,8 +57,8 @@
 		{
 			"family": "live",
 			"total": 22,
-			"sourceConfirmed": 21,
-			"unconfirmed": 1
+			"sourceConfirmed": 22,
+			"unconfirmed": 0
 		},
 		{
 			"family": "manifests",
@@ -2493,6 +2493,10 @@
 				{
 					"file": "apps/web/src/lib/server/aisa-live-import.ts",
 					"line": 87
+				},
+				{
+					"file": "apps/web/src/lib/server/dns-mapping-collection-removal.ts",
+					"line": 158
 				},
 				{
 					"file": "apps/web/src/lib/server/live-run-diagnostics.ts",
@@ -8592,7 +8596,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/stream-filter-removal.ts",
-					"line": 136
+					"line": 177
 				}
 			]
 		},
@@ -8602,8 +8606,13 @@
 			"operation": "deleteAll",
 			"sdkMethod": "encoding.encodings.streams.filters.deleteAll",
 			"family": "encodings",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/stream-filter-removal.ts",
+					"line": 169
+				}
+			]
 		},
 		{
 			"path": "/encoding/encodings/{encoding_id}/streams/{stream_id}/filters",
@@ -8619,7 +8628,11 @@
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/stream-filter-removal.ts",
-					"line": 106
+					"line": 96
+				},
+				{
+					"file": "apps/web/src/lib/server/encoding-resources/stream-filter-removal.ts",
+					"line": 141
 				}
 			]
 		},
@@ -12485,7 +12498,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live/dns-mappings/route.ts",
-					"line": 77
+					"line": 78
 				}
 			]
 		},
@@ -12513,7 +12526,7 @@
 			"evidence": [
 				{
 					"file": "apps/web/src/app/api/live/dns-mappings/route.ts",
-					"line": 115
+					"line": 116
 				}
 			]
 		},
@@ -12531,7 +12544,7 @@
 				},
 				{
 					"file": "apps/web/src/app/api/live/dns-mappings/route.ts",
-					"line": 202
+					"line": 210
 				}
 			]
 		},
@@ -12541,8 +12554,13 @@
 			"operation": "deleteAll",
 			"sdkMethod": "encoding.live.encodings.dnsMappings.deleteAll",
 			"family": "live",
-			"status": "unconfirmed",
-			"evidence": []
+			"status": "source-confirmed",
+			"evidence": [
+				{
+					"file": "apps/web/src/lib/server/dns-mapping-collection-removal.ts",
+					"line": 177
+				}
+			]
 		},
 		{
 			"path": "/encoding/live/encodings/{encoding_id}/dns-mappings/{id}",
@@ -12572,11 +12590,15 @@
 				},
 				{
 					"file": "apps/web/src/app/api/live/dns-mappings/route.ts",
-					"line": 73
+					"line": 74
 				},
 				{
 					"file": "apps/web/src/app/api/live/dns-mappings/route.ts",
-					"line": 168
+					"line": 176
+				},
+				{
+					"file": "apps/web/src/lib/server/dns-mapping-collection-removal.ts",
+					"line": 145
 				},
 				{
 					"file": "apps/web/src/lib/server/encoding-resources/families/encoding-children.ts",

@@ -15,6 +15,7 @@ import {
 	type StepLogEntry,
 	soleEncodingStepId,
 	stepLogSchema,
+	validateEncodingSupplements,
 	vodOutputKinds,
 } from "@bitovp/core";
 import type { AppPrismaClient, Prisma } from "@bitovp/db";
@@ -49,7 +50,6 @@ import {
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
 import { destinationOf } from "./ops/exec-shared";
 import { BitmovinCallError } from "./ops/shared";
-import { SupplementOutputPreflightError } from "./ops/supplements";
 import { pollSleepFor } from "./poll-sleep";
 import { ProviderCreateRefusal } from "./provider-create-refusal";
 import type { SdkOps } from "./sdk-ops";
@@ -848,6 +848,8 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 		// finalize without flipping the job to RUNNING first.
 		const ids = new Map<string, string>();
 		const outputKinds = vodOutputKinds(plan.outputs);
+		const azureOutputs = plan.outputs.filter(({ kind }) => kind === "AZURE");
+		let checkedSupplementStorage = false;
 		// Hoisted: the answer cannot change during the run, and computing it per
 		// step made this O(n^2) over the step log (review nit).
 		const soleStep = soleEncodingStepId(entries);
@@ -1338,16 +1340,46 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 					isVerificationRun &&
 					entry.kind === "CREATE_ENCODING" &&
 					(entry.startedAt !== undefined || entry.finishedAt !== undefined);
-				// Persist the safe dispatch payload before the provider call. If
-				// its response is lost, a resume can still prove what went out.
-				entry.payload = applyRoleOutputAcl(entry, outputKinds).payload;
-				entry.status = "RUNNING";
-				entry.startedAt = deps.now();
-				entry.error = undefined;
-				if (recoverableCreate) entry.response = undefined;
-				await persist(encodingJobId, entries);
-
 				try {
+					if (
+						entry.kind === "CREATE_ENCODING_SUPPLEMENT" &&
+						entry.refs.outputId !== undefined &&
+						!wasRunning &&
+						!reconcileCreate &&
+						!checkedSupplementStorage &&
+						azureOutputs.length > 1
+					) {
+						// Distinct credentials can point at the same container. Check all
+						// planned writes before recording a new supplement dispatch.
+						const storage = await Promise.all(
+							azureOutputs.map(async ({ key }) => {
+								const id = ids.get(`output:${key}`);
+								if (!id)
+									throw new Error(
+										"Missing Azure output for supplement verification",
+									);
+								return [key, await sdk.getAzureOutputStorageKey(id)] as const;
+							}),
+						);
+						const conflict = validateEncodingSupplements(
+							plan,
+							new Map(storage),
+						).find(
+							(issue) =>
+								issue.code === "PLAN_SUPPLEMENT_DESTINATION_MIRROR" ||
+								issue.code === "PLAN_SUPPLEMENT_OUTPUT_COLLISION",
+						);
+						if (conflict) throw new Error(conflict.message);
+						checkedSupplementStorage = true;
+						if (await checkCancel()) return await finalizeCancel();
+					}
+					// A resume can reconcile the exact payload if the reply is lost.
+					entry.payload = applyRoleOutputAcl(entry, outputKinds).payload;
+					entry.status = "RUNNING";
+					entry.startedAt = deps.now();
+					entry.error = undefined;
+					if (recoverableCreate) entry.response = undefined;
+					await persist(encodingJobId, entries);
 					activeEntry = entry;
 					stampStep = entry.step;
 					// `/retry` reseeds FAILED/RUNNING to PENDING but deliberately
@@ -1545,8 +1577,6 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 								providerCreateRefused: true,
 								httpStatusCode: err.status,
 							};
-						if (err instanceof SupplementOutputPreflightError)
-							entry.startedAt = undefined;
 					}
 					entry.status = "FAILED";
 					entry.finishedAt = deps.now();

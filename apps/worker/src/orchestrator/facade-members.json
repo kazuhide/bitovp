@@ -121,6 +121,7 @@
 	"deleteHlsManifest",
 	"findVerificationEncodings",
 	"getAisaLiveAnalysis",
+	"getAzureOutputStorageKey",
 	"getCodecConfigDetail",
 	"getDashManifestStatus",
 	"getEncodingMessages",

@@ -22,7 +22,10 @@ function inputExtension(item: EncodingSupplement) {
 	}
 }
 
-export function validateEncodingSupplements(plan: EncodingPlan): PlanIssue[] {
+export function validateEncodingSupplements(
+	plan: EncodingPlan,
+	resolvedStorageKeys?: ReadonlyMap<string, string>,
+): PlanIssue[] {
 	if (!plan.supplements?.length) return [];
 	const issues: PlanIssue[] = [];
 	const videoCodecs = new Set(["H264", "H265", "VP9", "AV1"]);
@@ -43,7 +46,7 @@ export function validateEncodingSupplements(plan: EncodingPlan): PlanIssue[] {
 		[
 			...staticMuxingOutputFiles(plan),
 			...staticManifestOutputFiles(plan),
-		].flatMap((file) => [...outputFileKeys(plan, file)]),
+		].flatMap((file) => [...outputFileKeys(plan, file, resolvedStorageKeys)]),
 	);
 	const copiedInput = plan.renditions.find(
 		(rendition) => rendition.codec === "AUDIO_PASSTHROUGH",
@@ -142,7 +145,8 @@ export function validateEncodingSupplements(plan: EncodingPlan): PlanIssue[] {
 				problem("DESTINATION", "Choose a file output", "destination");
 			if (
 				kind &&
-				outputStorageKeys(plan, item.destination.outputKey).size !==
+				outputStorageKeys(plan, item.destination.outputKey, resolvedStorageKeys)
+					.size !==
 					1 + (plan.deliveryMirrors?.length ?? 0)
 			)
 				problem(
@@ -153,10 +157,11 @@ export function validateEncodingSupplements(plan: EncodingPlan): PlanIssue[] {
 			const filename =
 				"filename" in item ? item.filename : item.inputPath.split("/").at(-1);
 			if (filename) {
-				const files = outputFileKeys(plan, {
-					destination: item.destination,
-					filename,
-				});
+				const files = outputFileKeys(
+					plan,
+					{ destination: item.destination, filename },
+					resolvedStorageKeys,
+				);
 				if ([...files].some((file) => written.has(file)))
 					problem(
 						"OUTPUT_COLLISION",

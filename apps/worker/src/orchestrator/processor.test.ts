@@ -15,7 +15,6 @@ import { fakeSdk as baseFakeSdk } from "./fake-sdk";
 import { applyJitFallback } from "./jit-fallback";
 import { makeWorkerSdk } from "./make-sdk";
 import { VerificationProviderIdPersistenceError } from "./ops/encoding";
-import { SupplementOutputPreflightError } from "./ops/supplements";
 import {
 	createOrchestratorProcessor,
 	type OrchestratorDeps,
@@ -1485,38 +1484,62 @@ describe("orchestrator processor", () => {
 		expect(send).toHaveBeenCalledTimes(definitive ? 2 : 1);
 	});
 
-	it("retries a supplement whose destination check failed before dispatch", async () => {
+	it("keeps Azure supplement preflight resumable until a create is sent", async () => {
 		const video = basePlan.renditions.find(({ codec }) => codec === "H264");
-		const output = basePlan.outputs[0];
-		if (!video || !output) throw new Error("Missing supplement fixture");
+		if (!video) throw new Error("Missing supplement fixture");
 		const plan = encodingPlanSchema.parse({
 			...basePlan,
 			bitmovin: { ...basePlan.bitmovin, accountId: ACCOUNT_ID },
+			outputs: [
+				...basePlan.outputs,
+				...["azure", "mirror"].map((key) => ({
+					key,
+					kind: "AZURE",
+					credentialId: ACCOUNT_ID,
+					container: key,
+				})),
+			],
+			deliveryMirrors: [{ outputKey: "mirror" }],
 			supplements: [
 				{
 					kind: "BIF",
 					key: "preview",
 					renditionKey: video.key,
-					destination: { outputKey: output.key, path: "extras/" },
+					destination: { outputKey: "azure", path: "extras/" },
 					filename: "preview.bif",
 					distance: 10,
 					width: 320,
 				},
 			],
 		});
+		const stepLog = initStepLog(compilePlan(plan));
+		for (const step of stepLog) {
+			if (step.kind === "CREATE_OUTPUT_AZURE") {
+				step.status = "DONE";
+				step.resourceId = step.step;
+			}
+		}
 		let stamp: CreateStamp | undefined;
-		const create = vi
-			.fn(async () => "preview-id")
-			.mockRejectedValueOnce(
-				new SupplementOutputPreflightError("Azure output details unavailable"),
+		const create = vi.fn(async () => "preview-id");
+		const preflight = vi.fn(async (outputId: string) => {
+			const saved = (row.stepLog as StepLogEntry[]).find(
+				(entry) => entry.kind === "CREATE_ENCODING_SUPPLEMENT",
 			);
+			expect(saved?.startedAt).toBeUndefined();
+			expect(saved?.status).toBe("PENDING");
+			expect(create).not.toHaveBeenCalled();
+			if (preflight.mock.calls.length === 1)
+				throw new Error("Azure output details unavailable");
+			return outputId;
+		});
 		const { processor, row } = setup(
-			{ plan, stepLog: initStepLog(compilePlan(plan)) },
+			{ plan, stepLog },
 			{},
 			undefined,
 			(options) => {
 				stamp = options.stamp;
 				return fakeSdk({
+					getAzureOutputStorageKey: preflight,
 					createEncodingSupplement: async () => {
 						if (stamp?.adoptWindow?.())
 							throw new Error("Unexpected reconciliation");
@@ -1536,7 +1559,13 @@ describe("orchestrator processor", () => {
 		row.stepLog = reseedFailedSteps(history);
 		row.status = "QUEUED";
 		await processor({ encodingJobId: JOB_ID });
-		expect(create).toHaveBeenCalledTimes(2);
+		expect(preflight.mock.calls).toEqual([
+			["output:azure"],
+			["output:mirror"],
+			["output:azure"],
+			["output:mirror"],
+		]);
+		expect(create).toHaveBeenCalledTimes(1);
 	});
 
 	it("resumes by skipping DONE steps and reusing their resource ids", async () => {

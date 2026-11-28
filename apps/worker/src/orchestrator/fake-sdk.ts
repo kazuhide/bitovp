@@ -96,6 +96,7 @@ export function fakeSdk(overrides: Partial<SdkOps> = {}): SdkOps {
 
 		createMediaFilter: vi.fn(nextId),
 		createEncodingSupplement: vi.fn(nextId),
+		getAzureOutputStorageKey: vi.fn(async (outputId) => outputId),
 		createStreamFilters: vi.fn(() => Promise.resolve()),
 		createKeyframe: vi.fn(nextId),
 		createNexGuardFileMarker: vi.fn(nextId),

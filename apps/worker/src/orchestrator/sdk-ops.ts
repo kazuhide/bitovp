@@ -962,6 +962,7 @@ export type SdkOps = NativePackagingOps & {
 		streamId: string,
 		p: { inputId: string; inputPath: string; characterEncoding: string },
 	): Promise<string>;
+	getAzureOutputStorageKey(outputId: string): Promise<string>;
 	createEncodingSupplement(
 		encodingId: string,
 		item: import("@bitovp/core").EncodingSupplement,
@@ -970,7 +971,6 @@ export type SdkOps = NativePackagingOps & {
 			inputId?: string;
 			inputStreamId?: string;
 			destination?: Destination;
-			azureOutputIds?: readonly string[];
 		},
 	): Promise<string | undefined>;
 	createStreamFilters(

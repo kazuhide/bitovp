@@ -1,4 +1,8 @@
-import { compilePlan, encodingPlanSchema } from "@bitovp/core";
+import {
+	compilePlan,
+	encodingPlanSchema,
+	validateEncodingSupplements,
+} from "@bitovp/core";
 import { afterEach, expect, it, vi } from "vitest";
 import { loadPlan } from "../../../../packages/core/src/plan/test-support";
 import { executeStep } from "./executor";
@@ -65,24 +69,38 @@ it.each([
 		});
 	});
 	vi.stubGlobal("fetch", transport);
-	const result = executeStep(step, {
-		sdk: createBitmovinSdkOps({ apiKey: "test-only" }, async () => {}),
-		ids: new Map([
-			["encoding", "encoding-id"],
-			["stream:v540", "stream-id"],
-			["output:origin", "origin-id"],
-			["output:mirror", "mirror-id"],
-		]),
-		outputKinds: new Map([
-			["output:origin", "AZURE"],
-			["output:mirror", "AZURE"],
-		]),
-		resolveCredential: vi.fn(),
-		poll: { intervalMs: 1, timeoutMs: 50, sleep: async () => {} },
-	});
+	const sdk = createBitmovinSdkOps({ apiKey: "test-only" }, async () => {});
+	const result = (async () => {
+		const keys = await Promise.all([
+			sdk.getAzureOutputStorageKey("origin-id"),
+			sdk.getAzureOutputStorageKey("mirror-id"),
+		]);
+		const issues = validateEncodingSupplements(
+			plan,
+			new Map([
+				["origin", keys[0]],
+				["mirror", keys[1]],
+			]),
+		);
+		if (issues[0]) throw new Error(issues[0].message);
+		return executeStep(step, {
+			sdk,
+			ids: new Map([
+				["encoding", "encoding-id"],
+				["stream:v540", "stream-id"],
+				["output:origin", "origin-id"],
+				["output:mirror", "mirror-id"],
+			]),
+			resolveCredential: vi.fn(),
+			poll: { intervalMs: 1, timeoutMs: 50, sleep: async () => {} },
+		});
+	})();
 	if (expected === "distinct")
 		await expect(result).resolves.toMatchObject({ resourceId: "preview-id" });
-	else await expect(result).rejects.toThrow(/Azure/);
+	else
+		await expect(result).rejects.toThrow(
+			expected === "duplicate" ? /distinct storage/ : /Azure/,
+		);
 	expect(
 		transport.mock.calls.map(([url, req]) => [
 			req.method,

@@ -27,8 +27,6 @@ import {
 type Result = { id?: string; customData?: unknown };
 type Paging = { offset: number; limit: number };
 
-export class SupplementOutputPreflightError extends Error {}
-
 function required<T>(value: T | undefined, name: string): T {
 	if (value === undefined) throw new Error(`Encoding supplement needs ${name}`);
 	return value;
@@ -36,37 +34,22 @@ function required<T>(value: T | undefined, name: string): T {
 
 export function createSupplementOps(
 	ctx: OpsContext,
-): Pick<SdkOps, "createEncodingSupplement"> {
+): Pick<SdkOps, "createEncodingSupplement" | "getAzureOutputStorageKey"> {
 	const { api, audited, id, options, stampAuditAdopt } = ctx;
 	return {
+		async getAzureOutputStorageKey(outputId) {
+			const output = await api.encoding.outputs.azure
+				.get(outputId)
+				.catch(() => null);
+			if (output?.id !== outputId || !output.accountName || !output.container)
+				throw new Error("Could not verify the Azure supplement destinations");
+			return JSON.stringify([
+				"AZURE",
+				output.accountName.toLowerCase(),
+				output.container,
+			]);
+		},
 		async createEncodingSupplement(encodingId, item, refs) {
-			if (refs.azureOutputIds && options.stamp?.adoptWindow?.() !== true) {
-				// Vault credentials can authenticate to the same storage account.
-				// Read the provider outputs to check the targets even after a retry.
-				const targets = await Promise.all(
-					refs.azureOutputIds.map(async (outputId) => {
-						const output = await api.encoding.outputs.azure.get(outputId);
-						if (
-							output.id !== outputId ||
-							!output.accountName ||
-							!output.container
-						)
-							return undefined;
-						return JSON.stringify([
-							output.accountName.toLowerCase(),
-							output.container,
-						]);
-					}),
-				).catch(() => undefined);
-				if (!targets?.length || targets.includes(undefined))
-					throw new SupplementOutputPreflightError(
-						"Could not verify the Azure supplement destinations",
-					);
-				if (new Set(targets).size !== targets.length)
-					throw new SupplementOutputPreflightError(
-						"Choose distinct Azure storage for the supplement and its mirrors",
-					);
-			}
 			const encodingPath = `/encoding/encodings/${encodingId}`;
 			const streamId = () => required(refs.streamId, "stream");
 			const streamPath = () => `${encodingPath}/streams/${streamId()}`;

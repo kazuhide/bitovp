@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compilePlan } from "./compiler";
+import { validateEncodingSupplements } from "./encoding-supplements";
 import { encodingPlanSchema } from "./schema";
 import { planToEncodingTemplateYaml } from "./template";
 import { loadPlan } from "./test-support";
@@ -132,6 +133,39 @@ describe("VOD encoding supplements", () => {
 				"PLAN_SUPPLEMENT_DESTINATION_MIRROR",
 			]),
 		);
+	});
+
+	it("detects supplement collisions across separately configured Azure aliases", () => {
+		const plan = base();
+		const aliases = ["azure", "azureAlias"];
+		const parsed = encodingPlanSchema.parse({
+			...plan,
+			outputs: [
+				...plan.outputs,
+				...aliases.map((key, index) => ({
+					key,
+					kind: "AZURE",
+					credentialId: `00000000-0000-4000-8000-00000000000${index + 1}`,
+					container: "delivery",
+				})),
+			],
+			supplements: aliases.map((key) => ({
+				kind: "BIF",
+				key,
+				renditionKey: "v540",
+				destination: { outputKey: key, path: "extras/" },
+				filename: "thumbs.bif",
+				distance: 10,
+				width: 320,
+			})),
+		});
+		expect(validateEncodingSupplements(parsed)).toEqual([]);
+		expect(
+			validateEncodingSupplements(
+				parsed,
+				new Map(aliases.map((key) => [key, "same-azure-container"])),
+			).map(({ code }) => code),
+		).toEqual(["PLAN_SUPPLEMENT_OUTPUT_COLLISION"]);
 	});
 
 	it("requires a BIF size and strict object paths", () => {

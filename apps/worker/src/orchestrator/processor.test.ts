@@ -221,6 +221,7 @@ describe("orchestrator processor", () => {
 		["SMOOTH", "user-cancel"],
 		["SMOOTH", "cancel-during-start"],
 		["SMOOTH", "cancel-at-error-write"],
+		["SMOOTH", "cancel-opening-journal"],
 		["SMOOTH", "status-503"],
 		["SMOOTH", "owner-503"],
 		["SMOOTH", "owner-forbidden"],
@@ -374,6 +375,20 @@ describe("orchestrator processor", () => {
 				return persist(args);
 			});
 		}
+		if (scenario === "cancel-opening-journal") {
+			const persist = h.updateMany.getMockImplementation();
+			if (!persist) throw new Error("Missing fixture persistence");
+			h.updateMany.mockImplementation(async (args) => {
+				const startReceipt = (
+					args.data.stepLog as StepLogEntry[] | undefined
+				)?.find(({ kind }) => kind === startKind);
+				if (!h.row.cancelRequested && startReceipt?.status === "RUNNING") {
+					h.row.cancelRequested = true;
+					throw new Error("Opening manifest journal failed");
+				}
+				return persist(args);
+			});
+		}
 		const revealAccount = vi.mocked(h.deps.revealBitmovinAccount);
 		revealAccount.mockResolvedValue({
 			apiKey: "synthetic-only",
@@ -457,7 +472,9 @@ describe("orchestrator processor", () => {
 								acl: [
 									{
 										permission:
-											scenario === "upstream-safe" || lostStart
+											scenario === "upstream-safe" ||
+											scenario === "cancel-opening-journal" ||
+											lostStart
 												? "PRIVATE"
 												: "PUBLIC_READ",
 									},
@@ -481,7 +498,11 @@ describe("orchestrator processor", () => {
 					});
 				}
 				if (decoded.endsWith("/status")) {
-					if (scenario === "status-503") return unavailable(503);
+					if (
+						scenario === "status-503" ||
+						(scenario === "cancel-opening-journal" && h.row.cancelRequested)
+					)
+						return unavailable(503);
 					return result({
 						status:
 							scenario === "upstream-safe"
@@ -550,6 +571,16 @@ describe("orchestrator processor", () => {
 				if (displaced) return;
 			}
 			const outcome = await h.processor({ encodingJobId: JOB_ID });
+			if (scenario === "cancel-opening-journal") {
+				expect(outcome.status).toBe("MANIFEST_STOP_PENDING");
+				expect(h.row).toMatchObject({
+					status: "RUNNING",
+					cancelRequested: true,
+					attemptClaimedAt: null,
+				});
+				expect(reads).not.toContain(`POST ${path}/start`);
+				return;
+			}
 			if (scenario === "scope-changed") expect(reads).toHaveLength(0);
 			else if (!userCancel && !preparationChanged)
 				expect(reads).toContain(`GET ${path}`);

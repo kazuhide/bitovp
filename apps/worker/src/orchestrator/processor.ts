@@ -1382,11 +1382,17 @@ export function createOrchestratorProcessor(deps: OrchestratorDeps) {
 						error: undefined,
 						...(recoverableCreate && { response: undefined }),
 					};
-					await persist(
-						encodingJobId,
-						entries.map((step) => (step === entry ? dispatchEntry : step)),
-					);
-					Object.assign(entry, dispatchEntry);
+					if (recoverableCreate) {
+						// A failed journal write proves this attempt never reached the SDK.
+						await persist(
+							encodingJobId,
+							entries.map((step) => (step === entry ? dispatchEntry : step)),
+						);
+						Object.assign(entry, dispatchEntry);
+					} else {
+						Object.assign(entry, dispatchEntry);
+						await persist(encodingJobId, entries);
+					}
 					activeEntry = entry;
 					stampStep = entry.step;
 					// `/retry` reseeds FAILED/RUNNING to PENDING but deliberately

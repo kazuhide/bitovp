@@ -192,7 +192,7 @@ test("a plain run may skip the tests that another job runs", () => {
 		// one WebM recovery case, plus three LOCAL QC cancellation cases and the
 		// retained export, generation history, export re-edit and recorded
 		// provider-resource removal cases, and 21 managed codec lifecycle cases.
-		["@bitovp/web", 370],
+		["@bitovp/web", 372],
 	])
 		assert.deepEqual(skipProblems(plainRun(workspace), workspace, root), {
 			problems: [],

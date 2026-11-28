@@ -165,14 +165,9 @@ the analysis cannot resolve.
 
 The workflow ledger records app entry points, SDK transport tests, and provider
 execution status for each operation. It includes full filtered CSV exports.
-The pinned JavaScript SDK 1.289.0 census has 1,094 source-confirmed operations
-out of 1,098.
-
-- DASH CMAF Content Protection creation requires a DRM ID. BitOVP also
-  requires a recorded DRM association for removal. The pinned CMAF muxing API
-  supplies no DRM configuration creation call. [CMAF Content Protection reference](https://developer.bitmovin.com/encoding/reference/postencodingmanifestsdashperiodsadaptationsetsrepresentationscmafcontentprotectionbymanifestidandperiodidandadaptationsetidandrepresentationid)
-- BitOVP deletes confirmed DNS mappings and stream filter attachments by ID.
-  Collection-wide deletion uses all entries present at dispatch. [Live DNS mapping reference](https://developer.bitmovin.com/encoding/reference/deleteencodingliveencodingsdnsmappingsbyencodingid)
+SDK 1.289.0 source coverage is 1,094 of 1,098. Four operations remain open:
+DASH CMAF Content Protection create and delete, and bulk deletion of DNS
+mappings and stream filter attachments. BitOVP removes confirmed IDs individually.
 
 See [coverage queries and evidence](API-USAGE.md#encoding-api-coverage).
 
